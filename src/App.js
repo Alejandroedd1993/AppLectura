@@ -24,6 +24,7 @@ import { PedagogyProvider } from './context/PedagogyContext';
 // Firebase Authentication Context
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/auth/Login';
+import { createActiveSession } from './firebase/sessionManager';
 
 import { lightTheme, darkTheme } from './styles/theme';
 
@@ -393,7 +394,18 @@ function AppContent() {
       <SessionConflictModal
         isOpen={sessionConflict}
         sessionInfo={conflictingSessionInfo}
-        onReload={() => window.location.reload()}
+        onReload={async () => {
+          try {
+            // Crear nueva sesión activa (esto automáticamente invalida la anterior)
+            await createActiveSession(currentUser.uid);
+            // Recargar la página para aplicar cambios
+            window.location.reload();
+          } catch (error) {
+            console.error('Error al tomar control de la sesión:', error);
+            // Si falla, al menos recargar
+            window.location.reload();
+          }
+        }}
         onLogout={async () => {
           await signOut();
           window.location.reload();
