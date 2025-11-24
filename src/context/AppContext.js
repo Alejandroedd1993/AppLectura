@@ -27,6 +27,10 @@ import {
   getSessionInfo
 } from '../firebase/sessionManager';
 
+// Backend URL configuration
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+console.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
+
 // 1. Crear el Contexto
 export const AppContext = createContext();
 
@@ -1024,8 +1028,8 @@ export const AppContextProvider = ({ children }) => {
     
     try {
       console.log('🌐 [AppContext.analyzeDocument] Llamando al endpoint /api/analysis/prelecture...');
+      console.log('🔗 [AppContext.analyzeDocument] Backend URL:', BACKEND_URL);
       
-      const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
       // Crear AbortController con timeout de 2 minutos
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 segundos

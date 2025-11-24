@@ -16,6 +16,49 @@ export function AuthProvider({ children }) {
   const [userData, setUserData] = useState(null); // Datos de Firestore (role, nombre, etc.)
   const [loading, setLoading] = useState(true); // Estado de carga inicial
   const [error, setError] = useState(null);
+  const [previousUserId, setPreviousUserId] = useState(null); // Para detectar cambios de usuario
+
+  // Función para limpiar datos locales del usuario (debe estar antes del useEffect)
+  const clearLocalUserData = () => {
+    logger.debug('🧹 [AuthContext] Limpiando datos locales del usuario...');
+    
+    // Lista de keys que deben limpiarse al cambiar de usuario
+    const keysToRemove = [
+      'applectura_sessions',
+      'applectura_current_session',
+      'rubricProgress',
+      'savedCitations',
+      'activitiesProgress',
+      'annotations_migrated_v1',
+      'analysisCache',
+      'analysis_cache_stats',
+      'analysis_cache_metrics',
+      'studyItems_cache',
+      'annotations_cache'
+    ];
+    
+    keysToRemove.forEach(key => {
+      try {
+        localStorage.removeItem(key);
+      } catch (err) {
+        logger.warn(`⚠️ No se pudo eliminar ${key}:`, err);
+      }
+    });
+    
+    // También limpiar keys que empiecen con ciertos prefijos
+    const prefixesToClear = ['activity_', 'session_', 'artifact_'];
+    Object.keys(localStorage).forEach(key => {
+      if (prefixesToClear.some(prefix => key.startsWith(prefix))) {
+        try {
+          localStorage.removeItem(key);
+        } catch (err) {
+          logger.warn(`⚠️ No se pudo eliminar ${key}:`, err);
+        }
+      }
+    });
+    
+    logger.log('✅ [AuthContext] Datos locales limpiados');
+  };
 
   // Escuchar cambios en el estado de autenticación
   useEffect(() => {
@@ -26,6 +69,14 @@ export function AuthProvider({ children }) {
       
       try {
         if (user) {
+          // Detectar cambio de usuario y limpiar localStorage
+          if (previousUserId && previousUserId !== user.uid) {
+            logger.warn('🔄 [AuthContext] Cambio de usuario detectado, limpiando datos locales...');
+            clearLocalUserData();
+          }
+          
+          setPreviousUserId(user.uid);
+          
           // Usuario autenticado: cargar datos de Firestore
           const data = await getUserData(user.uid);
           
@@ -40,7 +91,13 @@ export function AuthProvider({ children }) {
           });
           
         } else {
-          // No hay usuario autenticado
+          // No hay usuario autenticado - limpiar datos locales
+          if (previousUserId) {
+            logger.debug('🧹 [AuthContext] Usuario cerró sesión, limpiando datos locales...');
+            clearLocalUserData();
+          }
+          
+          setPreviousUserId(null);
           setCurrentUser(null);
           setUserData(null);
           
@@ -64,7 +121,7 @@ export function AuthProvider({ children }) {
       logger.debug('🔐 [AuthContext] Limpiando listener de autenticación');
       unsubscribe();
     };
-  }, []);
+  }, [previousUserId]); // Agregar previousUserId como dependencia
 
   // Función para refrescar datos del usuario (útil después de actualizaciones)
   const refreshUserData = useCallback(async () => {
@@ -85,13 +142,17 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(async () => {
     try {
       logger.debug('🔐 [AuthContext] Cerrando sesión...');
+      
+      // Limpiar datos locales antes de cerrar sesión
+      clearLocalUserData();
+      
       await firebaseSignOut(auth);
       logger.log('✅ [AuthContext] Sesión cerrada correctamente');
     } catch (err) {
       logger.error('❌ [AuthContext] Error cerrando sesión:', err);
       throw err;
     }
-  }, []);
+  }, [clearLocalUserData]);
 
   // Helpers de verificación de rol
   const isEstudiante = userData?.role === 'estudiante';
