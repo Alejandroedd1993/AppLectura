@@ -1036,9 +1036,10 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         <span aria-live="polite" style={{ fontSize: '.8rem' }}>{searchHits.length ? `${(currentHit + 1)} / ${searchHits.length}` : '0 / 0'}</span>
         <button aria-label="abrir-notas" onClick={() => window.dispatchEvent(new CustomEvent('reader-action', { detail: { action: 'notes' } }))}>📝 Notas</button>
       </ToolsBar>
-      <MetaBar>
+      <MetaBar data-testid="rw-stats">
         <span>{parrafos.length} párrafos</span>
         <span>{totalPalabras} palabras</span>
+        <span>{texto.length} caracteres</span>
         <span>~{tiempoLectura} min</span>
         {parrafos.length > VIRTUALIZATION_THRESHOLD && <span>Virtualizado</span>}
       </MetaBar>

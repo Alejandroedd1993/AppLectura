@@ -382,31 +382,35 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
     console.log(`📚 [Tutor] Cargando conversaciones guardadas para usuario: ${currentUser.uid}`);
     
     let unsubscribe = null;
+    let mounted = true;
     
     const loadSavedConversations = async () => {
       try {
-        const { subscribeToStudentProgress } = await import('../../firebase/firestore');
+        // 1. CARGA INICIAL INMEDIATA desde Firestore
+        const { getStudentProgress, subscribeToStudentProgress } = await import('../../firebase/firestore');
         
+        const initialData = await getStudentProgress(currentUser.uid, 'tutor_conversations');
+        if (mounted && initialData?.conversations && Array.isArray(initialData.conversations)) {
+          console.log(`📚 [Tutor] Carga inicial: ${initialData.conversations.length} conversaciones desde Firestore`);
+          setConvos(initialData.conversations);
+          localStorage.setItem('tutorConvos', JSON.stringify(initialData.conversations));
+        }
+        
+        // 2. SUSCRIPCIÓN para actualizaciones en tiempo real
         unsubscribe = subscribeToStudentProgress(
           currentUser.uid, 
           'tutor_conversations',
           (data) => {
-            console.log('📚 [Tutor] Datos recibidos de Firestore:', data);
+            if (!mounted) return;
+            
+            console.log('📚 [Tutor] Actualización en tiempo real de Firestore:', data);
             
             if (data?.conversations && Array.isArray(data.conversations)) {
               const remoteConvos = data.conversations;
-              const localConvos = JSON.parse(localStorage.getItem('tutorConvos') || '[]');
               
-              console.log(`📚 [Tutor] Comparando: ${remoteConvos.length} remotas vs ${localConvos.length} locales`);
-              
-              // Merge: priorizar remoto si tiene más conversaciones
-              const merged = remoteConvos.length >= localConvos.length ? remoteConvos : localConvos;
-              
-              setConvos(merged);
-              localStorage.setItem('tutorConvos', JSON.stringify(merged));
-              console.log(`✅ [Tutor] ${merged.length} conversaciones restauradas desde Firestore`);
-            } else {
-              console.log('📚 [Tutor] No hay conversaciones guardadas en Firestore aún');
+              setConvos(remoteConvos);
+              localStorage.setItem('tutorConvos', JSON.stringify(remoteConvos));
+              console.log(`✅ [Tutor] ${remoteConvos.length} conversaciones sincronizadas`);
             }
           }
         );
@@ -418,6 +422,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
     loadSavedConversations();
     
     return () => {
+      mounted = false;
       if (unsubscribe) {
         console.log('🔌 [Tutor] Desconectando listener de conversaciones');
         unsubscribe();
