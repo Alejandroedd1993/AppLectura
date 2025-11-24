@@ -1,0 +1,24 @@
+services:
+  # ============================================
+  # BACKEND NODE.JS/EXPRESS
+  # ============================================
+  - type: web
+    name: applectura-backend
+    env: node
+    region: oregon
+    plan: starter  # $7/mes - Requerido para 40 alumnos (sin spin-down)
+    buildCommand: cd server && npm install
+    startCommand: cd server && node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        sync: false  # Render lo establece automáticamente
+      - key: OPENAI_API_KEY
+        sync: false  # Configurar manualmente en Render Dashboard
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+    healthCheckPath: /health
+    # NOTA: Frontend se desplegará en Firebase Hosting, no aquí

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test de Sincronización Cross-Device</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border-left: 4px solid #2196F3;
+            background: #f9f9f9;
+        }
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .warning {
+            color: #FF9800;
+            font-weight: bold;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #results {
+            margin-top: 20px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 4px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .stat-box {
+            display: inline-block;
+            margin: 10px;
+            padding: 15px 25px;
+            border-radius: 4px;
+            font-size: 18px;
+        }
+        .stat-box.passed {
+            background: #4CAF50;
+            color: white;
+        }
+        .stat-box.failed {
+            background: #f44336;
+            color: white;
+        }
+        .stat-box.warnings {
+            background: #FF9800;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test de Sincronización Cross-Device</h1>
+        
+        <div class="test-section">
+            <h3>Ejecutar Tests</h3>
+            <button onclick="runFullTest()">▶️ Ejecutar Test Completo</button>
+            <button onclick="clearResults()">🗑️ Limpiar Resultados</button>
+        </div>
+
+        <div id="stats" style="margin: 20px 0;"></div>
+        
+        <div id="results"></div>
+    </div>
+
+    <script src="/test-cross-device-sync.js"></script>
+    <script>
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('stats').innerHTML = '';
+        }
+
+        async function runFullTest() {
+            const resultsDiv = document.getElementById('results');
+            const statsDiv = document.getElementById('stats');
+            
+            resultsDiv.innerHTML = 'Ejecutando tests...\n\n';
+            statsDiv.innerHTML = '';
+
+            // Capturar console.log
+            const originalLog = console.log;
+            const originalError = console.error;
+            const originalWarn = console.warn;
+            
+            console.log = (...args) => {
+                const message = args.join(' ');
+                resultsDiv.innerHTML += message + '\n';
+                originalLog.apply(console, args);
+            };
+            
+            console.error = (...args) => {
+                const message = args.join(' ');
+                resultsDiv.innerHTML += '❌ ' + message + '\n';
+                originalError.apply(console, args);
+            };
+            
+            console.warn = (...args) => {
+                const message = args.join(' ');
+                resultsDiv.innerHTML += '⚠️ ' + message + '\n';
+                originalWarn.apply(console, args);
+            };
+
+            try {
+                // Ejecutar el test (asumiendo que está en el script cargado)
+                const result = await (async function testCrossDeviceSync() {
+                    console.log('🧪 ========================================');
+                    console.log('🧪 TEST DE SINCRONIZACIÓN CROSS-DEVICE');
+                    console.log('🧪 ========================================\n');
+
+                    const results = {
+                        passed: [],
+                        failed: [],
+                        warnings: []
+                    };
+
+                    function check(name, condition, details = '') {
+                        if (condition) {
+                            results.passed.push(name);
+                            console.log(`✅ ${name}${details ? `: ${details}` : ''}`);
+                        } else {
+                            results.failed.push(name);
+                            console.error(`❌ ${name}${details ? `: ${details}` : ''}`);
+                        }
+                    }
+
+                    function warn(name, details = '') {
+                        results.warnings.push(name);
+                        console.warn(`⚠️  ${name}${details ? `: ${details}` : ''}`);
+                    }
+
+                    // 1. VERIFICAR SESIÓN ACTIVA
+                    console.log('\n📋 1. VERIFICANDO SESIÓN ACTIVA...');
+                    const currentSessionId = localStorage.getItem('currentSessionId');
+                    check('Hay sesión activa', !!currentSessionId, currentSessionId);
+
+                    if (!currentSessionId) {
+                        console.error('❌ No hay sesión activa. Crea una sesión primero.');
+                        return results;
+                    }
+
+                    // 2. CARGAR SESIÓN
+                    console.log('\n📋 2. CARGANDO SESIÓN...');
+                    const sessionsData = localStorage.getItem('sessions');
+                    check('Datos de sesiones existen', !!sessionsData);
+
+                    if (!sessionsData) {
+                        console.error('❌ No hay datos de sesiones');
+                        return results;
+                    }
+
+                    const sessions = JSON.parse(sessionsData);
+                    const currentSession = sessions[currentSessionId];
+                    check('Sesión actual existe', !!currentSession);
+
+                    if (!currentSession) {
+                        console.error('❌ Sesión no encontrada');
+                        return results;
+                    }
+
+                    // 3. VALIDAR CAMPOS
+                    console.log('\n📋 3. VALIDANDO ESTRUCTURA...');
+                    const requiredFields = [
+                        'id', 'title', 'createdAt', 'lastModified',
+                        'text', 'completeAnalysis', 'rubricProgress',
+                        'savedCitations', 'activitiesProgress',
+                        'artifactsDrafts', 'rewardsState', 'settings'
+                    ];
+
+                    requiredFields.forEach(field => {
+                        check(`Campo '${field}'`, field in currentSession);
+                    });
+
+                    // 4. VALIDAR CONTENIDO
+                    console.log('\n📋 4. VALIDANDO CONTENIDO...');
+                    
+                    if (currentSession.text?.content) {
+                        check('Texto presente', true, `${currentSession.text.content.length} chars`);
+                    } else {
+                        warn('No hay texto');
+                    }
+
+                    if (currentSession.completeAnalysis) {
+                        check('Análisis presente', true);
+                    } else {
+                        warn('No hay análisis');
+                    }
+
+                    if (currentSession.activitiesProgress) {
+                        const count = Object.keys(currentSession.activitiesProgress).length;
+                        check('Actividades', count >= 0, `${count} actividades`);
+                    }
+
+                    if (currentSession.artifactsDrafts) {
+                        check('Artefactos', true);
+                    } else {
+                        warn('No hay artefactos');
+                    }
+
+                    if (currentSession.rewardsState) {
+                        check('Gamificación', true, `${currentSession.rewardsState.points || 0} puntos`);
+                    } else {
+                        warn('No hay estado de recompensas');
+                    }
+
+                    // RESUMEN
+                    console.log('\n🧪 ========================================');
+                    console.log('🧪 RESUMEN');
+                    console.log('🧪 ========================================');
+                    console.log(`✅ Pasadas: ${results.passed.length}`);
+                    console.log(`❌ Fallidas: ${results.failed.length}`);
+                    console.log(`⚠️  Advertencias: ${results.warnings.length}`);
+                    console.log(`\n📊 ESTADO: ${results.failed.length === 0 ? '✅ APROBADO' : '❌ REPROBADO'}`);
+
+                    return results;
+                })();
+
+                // Mostrar estadísticas
+                statsDiv.innerHTML = `
+                    <div class="stat-box passed">✅ Pasadas: ${result.passed.length}</div>
+                    <div class="stat-box failed">❌ Fallidas: ${result.failed.length}</div>
+                    <div class="stat-box warnings">⚠️ Advertencias: ${result.warnings.length}</div>
+                `;
+
+            } catch (error) {
+                console.error('Error ejecutando test:', error);
+                resultsDiv.innerHTML += '\n\n❌ ERROR: ' + error.message;
+            } finally {
+                // Restaurar console
+                console.log = originalLog;
+                console.error = originalError;
+                console.warn = originalWarn;
+            }
+        }
+    </script>
+</body>
+</html>

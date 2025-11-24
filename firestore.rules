@@ -1,0 +1,184 @@
+rules_version = '2';
+
+/**
+ * Reglas de Seguridad de Firestore para AppLectura
+ * 
+ * Estructura de datos:
+ * - /users/{userId} - Perfiles de usuario
+ * - /textos/{textoId} - Textos pedagógicos
+ * - /students/{studentId}/progress/{textoId} - Progreso de estudiantes
+ * - /evaluaciones/{evalId} - Evaluaciones completas
+ * - /notifications/{notifId} - Notificaciones para docentes
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+    
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    function isEstudiante() {
+      return isAuthenticated() && getUserRole() == 'estudiante';
+    }
+    
+    function isDocente() {
+      return isAuthenticated() && getUserRole() == 'docente';
+    }
+    
+    function isDocenteOf(estudianteUid) {
+      return isDocente() && 
+             get(/databases/$(database)/documents/users/$(estudianteUid)).data.docenteAsignado == request.auth.uid;
+    }
+    
+    // ========================================
+    // COLECCIÓN: USERS
+    // ========================================
+    
+    match /users/{userId} {
+      // Leer: Cualquier usuario autenticado puede leer perfiles
+      allow read: if isAuthenticated();
+      
+      // Escribir: Solo el dueño puede crear/actualizar su perfil
+      allow create: if isOwner(userId) && 
+                       request.resource.data.uid == userId &&
+                       request.resource.data.role in ['estudiante', 'docente'];
+      
+      allow update: if isOwner(userId);
+      
+      // No se permite eliminar usuarios (soft delete por admin)
+      allow delete: if false;
+      
+      // ========================================
+      // SUBCOLECCIÓN: SESSIONS (anidada en /users)
+      // ========================================
+      
+      match /sessions/{sessionId} {
+        // Leer: Solo el dueño de la sesión
+        allow read: if isOwner(userId);
+        
+        // Escribir: Solo el dueño puede crear/actualizar sus sesiones
+        allow create, update: if isOwner(userId);
+        
+        // Eliminar: Solo el dueño (para limpieza de sesiones antiguas)
+        allow delete: if isOwner(userId);
+      }
+    }
+    
+    // ========================================
+    // COLECCIÓN: TEXTOS
+    // ========================================
+    
+    match /textos/{textoId} {
+      // Leer: 
+      // - Docente: solo sus propios textos
+      // - Estudiante: solo textos asignados a él
+      allow read: if isDocente() && resource.data.docenteUid == request.auth.uid ||
+                     isEstudiante() && request.auth.uid in resource.data.asignadoA;
+      
+      // Crear: Solo docentes
+      allow create: if isDocente() && 
+                       request.resource.data.docenteUid == request.auth.uid;
+      
+      // Actualizar: Solo el docente dueño
+      allow update: if isDocente() && resource.data.docenteUid == request.auth.uid;
+      
+      // Eliminar: Solo el docente dueño (mejor usar soft delete)
+      allow delete: if isDocente() && resource.data.docenteUid == request.auth.uid;
+    }
+    
+    // ========================================
+    // SUBCOLECCIÓN: PROGRESS (anidada en /students)
+    // ========================================
+    
+    match /students/{studentId}/progress/{textoId} {
+      // Leer:
+      // - El propio estudiante
+      // - Su docente asignado
+      allow read: if isOwner(studentId) || isDocenteOf(studentId);
+      
+      // Escribir:
+      // - El propio estudiante puede crear/actualizar su progreso
+      allow create, update: if isOwner(studentId) &&
+                               request.resource.data.estudianteUid == studentId;
+      
+      // Eliminar: Solo el docente (para resetear progreso)
+      allow delete: if isDocenteOf(studentId);
+    }
+    
+    // ========================================
+    // COLECCIÓN: EVALUACIONES
+    // ========================================
+    
+    match /evaluaciones/{evalId} {
+      // Leer:
+      // - El propio estudiante
+      // - Su docente asignado
+      allow read: if isOwner(resource.data.estudianteUid) || 
+                     isDocenteOf(resource.data.estudianteUid);
+      
+      // Crear: Solo estudiantes (cuando envían una evaluación)
+      allow create: if isEstudiante() && 
+                       request.resource.data.estudianteUid == request.auth.uid;
+      
+      // No se permite actualizar/eliminar evaluaciones (inmutables)
+      allow update, delete: if false;
+    }
+    
+    // ========================================
+    // COLECCIÓN: NOTIFICATIONS
+    // ========================================
+    
+    match /notifications/{notifId} {
+      // Leer: Solo el destinatario (docente)
+      allow read: if isOwner(resource.data.destinatarioUid);
+      
+      // Crear: Sistema o estudiante (para alertas pedagógicas)
+      allow create: if isAuthenticated();
+      
+      // Actualizar: Solo el destinatario (para marcar como leída)
+      allow update: if isOwner(resource.data.destinatarioUid) &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leida']);
+      
+      // Eliminar: Solo el destinatario
+      allow delete: if isOwner(resource.data.destinatarioUid);
+    }
+    
+    // ========================================
+    // COLECCIÓN: ACTIVE_SESSIONS (Control de sesión única)
+    // ========================================
+    
+    match /active_sessions/{userId} {
+      // Leer: Solo el dueño de la sesión
+      allow read: if isOwner(userId);
+      
+      // Crear/Actualizar: Solo el dueño puede gestionar su sesión activa
+      allow create, update: if isOwner(userId) &&
+                               request.resource.data.userId == userId;
+      
+      // Eliminar: Solo el dueño (al cerrar sesión)
+      allow delete: if isOwner(userId);
+    }
+    
+    // ========================================
+    // REGLA POR DEFECTO: DENEGAR TODO LO DEMÁS
+    // ========================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
