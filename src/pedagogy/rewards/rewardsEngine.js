@@ -161,7 +161,18 @@ const ACHIEVEMENTS = {
 class RewardsEngine {
   constructor(storageProvider = typeof localStorage !== 'undefined' ? localStorage : null) {
     this.storage = storageProvider;
-    this.state = this.loadState();
+    // ⚠️ NO cargar localStorage automáticamente - esperar importState() de Firebase
+    // Solo usar caché local si NO hay usuario autenticado (offline mode)
+    this.state = this.initialState();
+    
+    // Cargar localStorage SOLO como fallback temporal si no hay Firebase loading
+    if (typeof window !== 'undefined' && !window.__firebaseUserLoading) {
+      const cached = this.loadState();
+      if (cached && cached.totalPoints > 0) {
+        console.warn('⚠️ [RewardsEngine] Usando caché local temporal, Firebase tendrá prioridad...');
+        this.state = cached;
+      }
+    }
   }
 
   /**

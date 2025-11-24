@@ -1,0 +1,58 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Backend (PowerShell, background)",
+			"type": "shell",
+			"command": "node .\\server\\index.js",
+			"isBackground": true,
+			"group": "build",
+			"options": {
+				"env": {
+					"BACKEND_PORT": "${input:backendPort}"
+				}
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Kill backend ports",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"npx kill-port 3001; npx kill-port 3002\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Backend (BG 3001)",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:PORT=3001; $env:BACKEND_PORT=3001; cd server; node index.js\"",
+			"isBackground": true,
+			"group": "build",
+			"problemMatcher": {
+				"pattern": {
+					"regexp": "^$",
+					"file": 1,
+					"location": 2,
+					"message": 3
+				},
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "^.*AI Client configurado.*$",
+					"endsPattern": "^.*Backend corriendo en.*$"
+				}
+			}
+		},
+		{
+			"label": "Run tests",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"npm test --silent\""
+		}
+	],
+	"inputs": [
+		{
+			"id": "backendPort",
+			"type": "promptString",
+			"description": "Puerto del backend",
+			"default": "3001"
+		}
+	]
+}

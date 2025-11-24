@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Firebase ENV</title>
+</head>
+<body>
+    <h1>Test de Variables de Entorno Firebase</h1>
+    <pre id="result"></pre>
+    <script>
+        const config = {
+            apiKey: '%REACT_APP_FIREBASE_API_KEY%',
+            authDomain: '%REACT_APP_FIREBASE_AUTH_DOMAIN%',
+            projectId: '%REACT_APP_FIREBASE_PROJECT_ID%',
+            storageBucket: '%REACT_APP_FIREBASE_STORAGE_BUCKET%',
+            messagingSenderId: '%REACT_APP_FIREBASE_MESSAGING_SENDER_ID%',
+            appId: '%REACT_APP_FIREBASE_APP_ID%'
+        };
+        
+        document.getElementById('result').textContent = JSON.stringify(config, null, 2);
+        
+        console.log('Firebase Config:', config);
+    </script>
+</body>
+</html>

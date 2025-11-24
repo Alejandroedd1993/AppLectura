@@ -37,7 +37,7 @@ const aiClient = {
     const config = {
       deepseek: {
         baseURL: 'https://api.deepseek.com',
-        apiKey: process.env.DEEPSEEK_API_KEY || 'sk-0632e6fd405b41f3bd4db539bb60b3e8',
+        apiKey: process.env.DEEPSEEK_API_KEY,
         model: 'deepseek-chat'
       },
       openai: {

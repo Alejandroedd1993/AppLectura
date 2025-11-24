@@ -1,0 +1,47 @@
+﻿      {selectionInfo && (
+        <SelectionToolbar x={selectionInfo.x} y={selectionInfo.y} role="toolbar" aria-label="seleccion-herramientas">
+          <button aria-label="explicar-seleccion" onClick={() => dispatchAction('explain')}> Explicar</button>
+          <button aria-label="resumir-seleccion" onClick={() => dispatchAction('summarize')}> Resumir</button>
+          <button aria-label="preguntar-seleccion" onClick={() => dispatchAction('question')}> Preguntar</button>
+          <button aria-label="abrir-notas-seleccion" onClick={() => dispatchAction('notes')}> Notas</button>
+          <button aria-label="copiar-seleccion" onClick={() => { 
+            try { 
+              navigator.clipboard.writeText(selectionInfo.text || ''); 
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            } catch {}
+            clearSelection(true); 
+          }}> Copiar</button>
+          {/* Opción "Resaltar" eliminada a petición del usuario */}
+          <button aria-label="cerrar-toolbar" onClick={() => clearSelection(true)}></button>
+        </SelectionToolbar>
+      )}
+---SEPARADOR---
+      {contextMenuData && (
+        <ContextMenu 
+          $posX={contextMenuData.posX} 
+          $posY={contextMenuData.posY}
+          data-context-menu
+          role="menu"
+          aria-label="menú-contextual"
+        >
+          <button onClick={() => handleContextualMenu('explain', contextMenuData)}> Explicar</button>
+          <button onClick={() => handleContextualMenu('summarize', contextMenuData)}> Resumir</button>
+          <button onClick={() => handleContextualMenu('deep', contextMenuData)}> Análisis profundo</button>
+          <button onClick={() => handleContextualMenu('question', contextMenuData)}> Preguntar</button>
+          <button onClick={() => handleContextualMenu('notes', contextMenuData)}> Añadir nota</button>
+          <button onClick={() => {
+            try {
+              navigator.clipboard.writeText(contextMenuData.text || '');
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            } catch {}
+            setContextMenuData(null);
+            contextMenuRef.current = null;
+          }}> Copiar</button>
+          <button onClick={() => {
+            setContextMenuData(null);
+            contextMenuRef.current = null;
+          }}> Cerrar</button>
+        </ContextMenu>
+      )}

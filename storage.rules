@@ -1,0 +1,114 @@
+rules_version = '2';
+
+/**
+ * Reglas de Seguridad de Firebase Storage para AppLectura
+ * 
+ * Protege:
+ * - Textos pedagógicos subidos por docentes
+ * - Sesiones de usuarios (textos grandes >1MB)
+ * - Validación de tamaños y tipos de archivos
+ */
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+    
+    function getUserRole(uid) {
+      return firestore.get(/databases/(default)/documents/users/$(uid)).data.role;
+    }
+    
+    function isDocente() {
+      return isAuthenticated() && getUserRole(request.auth.uid) == 'docente';
+    }
+    
+    function isEstudiante() {
+      return isAuthenticated() && getUserRole(request.auth.uid) == 'estudiante';
+    }
+    
+    function isValidFileSize(maxSizeMB) {
+      return request.resource.size <= maxSizeMB * 1024 * 1024;
+    }
+    
+    function isValidTextFile() {
+      return request.resource.contentType.matches('text/.*') ||
+             request.resource.contentType == 'application/pdf' ||
+             request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+    
+    // ========================================
+    // TEXTOS PEDAGÓGICOS (Docentes)
+    // ========================================
+    
+    match /textos/{docenteUid}/{fileName} {
+      // Leer: Cualquier usuario autenticado
+      allow read: if isAuthenticated();
+      
+      // Escribir: Solo el docente dueño
+      // Límite: 10MB por archivo
+      // Tipos permitidos: PDF, DOCX, TXT
+      allow write: if isOwner(docenteUid) && 
+                      isDocente() &&
+                      isValidFileSize(10) &&
+                      isValidTextFile();
+      
+      // Eliminar: Solo el docente dueño
+      allow delete: if isOwner(docenteUid) && isDocente();
+    }
+    
+    // ========================================
+    // SESIONES DE USUARIOS (Textos grandes)
+    // ========================================
+    
+    match /users/{userId}/sessions/{sessionId}/{allPaths=**} {
+      // Leer: Solo el dueño de la sesión
+      allow read: if isOwner(userId);
+      
+      // Escribir: Solo el dueño
+      // Límite: 5MB por texto de sesión
+      allow write: if isOwner(userId) && 
+                      isValidFileSize(5) &&
+                      request.resource.contentType.matches('text/.*');
+      
+      // Eliminar: Solo el dueño (para limpieza de sesiones antiguas)
+      allow delete: if isOwner(userId);
+    }
+    
+    // ========================================
+    // AVATARES DE USUARIO (opcional, futuro)
+    // ========================================
+    
+    match /avatars/{userId}/{fileName} {
+      // Leer: Público
+      allow read: if true;
+      
+      // Escribir: Solo el dueño
+      // Límite: 2MB
+      // Solo imágenes
+      allow write: if isOwner(userId) &&
+                      isValidFileSize(2) &&
+                      request.resource.contentType.matches('image/.*');
+      
+      // Eliminar: Solo el dueño
+      allow delete: if isOwner(userId);
+    }
+    
+    // ========================================
+    // REGLA POR DEFECTO: DENEGAR TODO
+    // ========================================
+    
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

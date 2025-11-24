@@ -10,7 +10,8 @@ import {
   captureArtifactsDrafts,
   setCurrentUser as setSessionManagerUser,
   syncAllSessionsToCloud,
-  getAllSessionsMerged
+  getAllSessionsMerged,
+  getAllSessions
 } from '../services/sessionManager';
 import { useAuth } from './AuthContext';
 import {
@@ -18,7 +19,9 @@ import {
   saveEvaluacion,
   saveStudentProgress,
   getStudentProgress,
-  subscribeToStudentProgress
+  subscribeToStudentProgress,
+  getUserSessions,
+  mergeSessions
 } from '../firebase/firestore';
 import {
   createActiveSession,
@@ -1258,6 +1261,11 @@ export const AppContextProvider = ({ children }) => {
     
     console.log('👂 [AppContext] Iniciando listener de progreso en tiempo real...');
     
+    // Marcar que Firebase está cargando (para RewardsEngine)
+    if (typeof window !== 'undefined') {
+      window.__firebaseUserLoading = true;
+    }
+    
     let unsubscribe = null;
     let mounted = true;
     
@@ -1274,28 +1282,46 @@ export const AppContextProvider = ({ children }) => {
         
         console.log('✅ [AppContext] Datos iniciales cargados desde Firestore');
         
-        // 🎮 Cargar rewardsState inmediatamente
+        // 🎮 Cargar rewardsState inmediatamente (FIREBASE ES SOURCE OF TRUTH)
         if (initialData.rewardsState && window.__rewardsEngine) {
           const remotePoints = initialData.rewardsState.totalPoints || 0;
+          const remoteTimestamp = initialData.rewardsState.lastInteraction || 0;
+          
           const localState = window.__rewardsEngine.exportState();
           const localPoints = localState.totalPoints || 0;
+          const localTimestamp = localState.lastInteraction || 0;
           
-          console.log(`🎮 [Carga Inicial] Puntos - Remoto: ${remotePoints}, Local: ${localPoints}`);
+          console.log(`🎮 [Carga Inicial] Puntos - Remoto: ${remotePoints} (${new Date(remoteTimestamp).toLocaleString()}), Local: ${localPoints} (${new Date(localTimestamp).toLocaleString()})`);
           
-          if (remotePoints > localPoints) {
-            console.log(`🎮 [Carga Inicial] Cargando puntos remotos (${remotePoints} > ${localPoints})`);
+          // ✅ SIEMPRE priorizar Firebase si tiene datos (source of truth)
+          // Tiebreaker: puntos > timestamp
+          if (remotePoints > 0 && (remotePoints > localPoints || (remotePoints === localPoints && remoteTimestamp >= localTimestamp))) {
+            console.log(`✅ [Carga Inicial] Cargando puntos desde Firebase (source of truth)`);
             window.__rewardsEngine.importState(initialData.rewardsState, false);
             
-            // Disparar evento para actualizar UI
             window.dispatchEvent(new CustomEvent('rewards-state-changed', {
               detail: { 
                 totalPoints: initialData.rewardsState.totalPoints,
                 availablePoints: initialData.rewardsState.availablePoints
               }
             }));
+          } else if (localPoints > remotePoints) {
+            console.log(`⚠️ [Carga Inicial] Local tiene más puntos (${localPoints} > ${remotePoints}), mantener pero sincronizar a Firebase`);
+            // Subir puntos locales a Firebase para sincronizar
+            const currentRewardsState = window.__rewardsEngine.exportState();
+            saveStudentProgress(currentUser.uid, 'global_progress', {
+              rewardsState: currentRewardsState,
+              lastSync: new Date().toISOString(),
+              syncType: 'local_higher_on_init'
+            }).catch(err => console.error('❌ Error sincronizando puntos locales:', err));
           } else {
-            console.log(`🎮 [Carga Inicial] Manteniendo puntos locales (${localPoints} >= ${remotePoints})`);
+            console.log(`ℹ️ [Carga Inicial] Puntos iguales o Firebase vacío, mantener estado actual`);
           }
+        }
+        
+        // Marcar que Firebase terminó de cargar
+        if (typeof window !== 'undefined') {
+          window.__firebaseUserLoading = false;
         }
         
         // 📊 Cargar rubricProgress
@@ -1525,6 +1551,46 @@ export const AppContextProvider = ({ children }) => {
       }
     };
   }, [currentUser, userData]);
+
+  // 🆕 CARGA INICIAL DE SESIONES desde Firebase
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    
+    let mounted = true;
+    
+    const loadInitialSessions = async () => {
+      try {
+        console.log('📥 [AppContext] Cargando sesiones iniciales desde Firestore...');
+        
+        const firestoreSessions = await getUserSessions(currentUser.uid);
+        
+        if (!mounted) return;
+        
+        // Merge con sesiones locales
+        const localSessions = getAllSessions();
+        const merged = mergeSessions(localSessions, firestoreSessions);
+        
+        // Guardar merged en localStorage
+        localStorage.setItem('appLectura_sessions', JSON.stringify(merged));
+        
+        console.log(`✅ [AppContext] ${merged.length} sesiones cargadas desde Firebase (${firestoreSessions.length} remotas, ${localSessions.length} locales)`);
+        
+        // Emitir evento para actualizar UI
+        window.dispatchEvent(new CustomEvent('sessions-loaded-from-firebase', {
+          detail: { count: merged.length }
+        }));
+        
+      } catch (error) {
+        console.error('❌ [AppContext] Error cargando sesiones iniciales:', error);
+      }
+    };
+    
+    loadInitialSessions();
+    
+    return () => {
+      mounted = false;
+    };
+  }, [currentUser]);
 
   // 🆕 FASE 2: Auto-generación de notas cuando el análisis completo termina
   const [notasAutoGeneradas, setNotasAutoGeneradas] = useState(false);
