@@ -4,7 +4,7 @@ import TutorCore from './TutorCore';
 import useTutorPersistence from '../../hooks/useTutorPersistence';
 import useFollowUpQuestion from '../../hooks/useFollowUpQuestion';
 import useReaderActions from '../../hooks/useReaderActions';
-import { AppContext } from '../../context/AppContext';
+import { AppContext, BACKEND_URL } from '../../context/AppContext';
 import { generateTextHash } from '../../utils/cache';
 
 /**
@@ -499,6 +499,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
       initialMessages={initialMessages}
       onMessagesChange={handleMessagesChange}
       onAssistantMessage={onAssistantMessage}
+      backendUrl={BACKEND_URL}
     >
       {(api) => {
         // Establecer contexto base con el texto completo cuando cambie
@@ -859,6 +860,21 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
                       textarea.style.height = 'auto';
                       const newHeight = Math.min(Math.max(textarea.scrollHeight, 32), 120);
                       textarea.style.height = `${newHeight}px`;
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        const value = e.target.value?.trim();
+                        if (value && !api.loading) {
+                          api.sendPrompt(value);
+                          e.target.value = '';
+                          // Resetear altura
+                          if (chatInputRef.current) {
+                            chatInputRef.current.style.height = '32px';
+                          }
+                        }
+                      }
+                      // Shift+Enter permite nueva línea (comportamiento por defecto)
                     }}
                   />
                   <Btn type="submit" disabled={api.loading}>

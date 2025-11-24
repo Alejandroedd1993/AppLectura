@@ -393,16 +393,26 @@ export default function ReadingWorkspace({ enableWeb = true, followUps = true })
 
   // Auto-ajustar altura del textarea según contenido
   const handlePromptChange = useCallback((e) => {
-    const textarea = e.target;
-    setPrompt(textarea.value);
-    
-    // Resetear altura para calcular scrollHeight correctamente
-    textarea.style.height = 'auto';
-    
-    // Ajustar altura entre min (36px) y max (120px) - más compacto
-    const newHeight = Math.min(Math.max(textarea.scrollHeight, 36), 120);
-    textarea.style.height = `${newHeight}px`;
+    setPrompt(e.target.value);
+    // Auto-expandir el textarea
+    if (promptInputRef.current) {
+      const textarea = promptInputRef.current;
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 36), 120);
+      textarea.style.height = `${newHeight}px`;
+    }
   }, []);
+
+  // Manejar Enter para enviar, Shift+Enter para nueva línea
+  const handlePromptKeyDown = useCallback((e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); // Evitar salto de línea
+      if (prompt.trim()) {
+        enviarPromptDirecto();
+      }
+    }
+    // Si es Shift+Enter, dejar comportamiento por defecto (nueva línea)
+  }, [prompt, enviarPromptDirecto]);
 
   // Handler completo para acciones del lector (notes, explain, summarize, question)
   useEffect(() => {
@@ -529,6 +539,7 @@ export default function ReadingWorkspace({ enableWeb = true, followUps = true })
                 placeholder="Pregunta algo sobre el texto..."
                 value={prompt}
                 onChange={handlePromptChange}
+                onKeyDown={handlePromptKeyDown}
                 rows={1}
               />
               <WebEnrichmentButton

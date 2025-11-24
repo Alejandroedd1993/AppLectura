@@ -38,8 +38,9 @@ try {
  *  - initialMessages: [{role, content}] para hidratar historial previo (no IDs externos)
  *  - onMessagesChange: callback(messages) para persistencia externa (se invoca tras cada mutación)
  *  - maxMessages: límite FIFO de mensajes retenidos (default 40, alineado con persistencia en LecturaInteractiva)
+ *  - backendUrl: URL del backend (default: http://localhost:3001)
  */
-export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantMessage, initialMessages = [], children, maxMessages = 40 }) {
+export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantMessage, initialMessages = [], children, maxMessages = 40, backendUrl = 'http://localhost:3001' }) {
   // ✨ FASE 2: Integrar hooks pedagógicos
   const pedagogyIntegration = React.useZDPIntegration ? React.useZDPIntegration() : { zdp: null, rew: null };
   zdpDetector = pedagogyIntegration.zdp;
@@ -371,7 +372,7 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       const ctx = lastActionInfoRef.current || {};
       const temperature = ctx.temperature || 0.7; // Default 0.7 si no se especifica
       
-      const res = await fetch('/api/chat/completion', {
+      const res = await fetch(`${backendUrl}/api/chat/completion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

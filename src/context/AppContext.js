@@ -28,7 +28,7 @@ import {
 } from '../firebase/sessionManager';
 
 // Backend URL configuration
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 console.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
 
 // 1. Crear el Contexto

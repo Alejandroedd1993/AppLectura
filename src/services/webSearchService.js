@@ -44,26 +44,34 @@ class WebSearchService {
         ...options
       };
 
+      const requestBody = {
+        query,
+        type: options.analysisType || 'general',
+        maxResults: searchOptions.maxResults
+      };
+
+      console.log('📤 [webSearchService] Enviando petición a /api/web-search:', requestBody);
+
       // ✅ USAR BACKEND en lugar de llamar APIs externas directamente
       const response = await fetchWithTimeout('/api/web-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query,
-          type: options.analysisType || 'general',
-          maxResults: searchOptions.maxResults
-        })
+        body: JSON.stringify(requestBody)
       }, 60000); // 60 segundos timeout para búsquedas
+
+      console.log('📥 [webSearchService] Respuesta recibida:', response.status, response.statusText);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error('❌ [webSearchService] Error del backend:', errorData);
         throw new Error(`Backend search error: ${response.status} - ${errorData.error || response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('📊 [webSearchService] Datos recibidos del backend:', data);
       
       // Formatear resultados del backend al formato esperado por el frontend
-      return (data.resultados || []).map(r => ({
+      const formattedResults = (data.resultados || []).map(r => ({
         title: r.titulo,
         url: r.url,
         snippet: r.resumen || '',
@@ -71,6 +79,9 @@ class WebSearchService {
         relevanceScore: r.score || 0,
         publishedDate: r.fecha
       }));
+      
+      console.log('✅ [webSearchService] Resultados formateados:', formattedResults.length);
+      return formattedResults;
       
     } catch (error) {
       console.error('❌ Error en búsqueda web:', error);
