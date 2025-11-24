@@ -21,7 +21,8 @@ import {
   getStudentProgress,
   subscribeToStudentProgress,
   getUserSessions,
-  mergeSessions
+  mergeSessions,
+  subscribeToUserSessions
 } from '../firebase/firestore';
 import {
   createActiveSession,
@@ -1489,49 +1490,59 @@ export const AppContextProvider = ({ children }) => {
             const remoteTimestamp = remoteState.lastInteraction || 0;
             const localTimestamp = localRewardsState.lastInteraction || 0;
             
-            // ESTRATEGIA: Puntuación más alta gana, timestamp como desempate
-            if (remotePoints > localPoints) {
-              console.log(`🎮 [Sync] Usando rewardsState remoto (${remotePoints} pts > ${localPoints} pts locales)`);
+            // ESTRATEGIA MEJORADA: Timestamp manda (Source of Truth)
+            // 1. Si remoto es más reciente -> Gana remoto (incluso si tiene menos puntos disponibles, ej: gasto)
+            // 2. Si local es más reciente -> Gana local (se sube a nube)
+            // 3. Si son cercanos -> Gana el que tenga más PUNTOS TOTALES (progreso acumulado)
+            
+            const TIME_TOLERANCE = 2000; // 2 segundos de tolerancia
+            
+            const remoteIsNewer = remoteTimestamp > (localTimestamp + TIME_TOLERANCE);
+            const localIsNewer = localTimestamp > (remoteTimestamp + TIME_TOLERANCE);
+            const remoteHasMoreProgress = remotePoints > localPoints;
+            const localHasMoreProgress = localPoints > remotePoints;
+
+            if (remoteIsNewer) {
+              console.log(`🎮 [Sync] Remoto es más reciente (${new Date(remoteTimestamp).toLocaleTimeString()} vs ${new Date(localTimestamp).toLocaleTimeString()}) -> Actualizando local`);
               window.__rewardsEngine.importState(remoteState, false);
               
-              // Disparar evento para que UI se actualice INMEDIATAMENTE
               window.dispatchEvent(new CustomEvent('rewards-state-changed', {
                 detail: { 
                   totalPoints: remoteState.totalPoints,
                   availablePoints: remoteState.availablePoints
                 }
               }));
-              
-              window.dispatchEvent(new CustomEvent('progress-synced-from-cloud', {
-                detail: { type: 'rewardsState', timestamp: Date.now() }
-              }));
-            } else if (remotePoints === localPoints && remoteTimestamp > localTimestamp) {
-              console.log(`🎮 [Sync] Usando rewardsState remoto (mismo pts, más reciente: ${new Date(remoteTimestamp).toLocaleString()})`);
-              window.__rewardsEngine.importState(remoteState, false);
-              
-              // Disparar evento para que UI se actualice INMEDIATAMENTE
-              window.dispatchEvent(new CustomEvent('rewards-state-changed', {
-                detail: { 
-                  totalPoints: remoteState.totalPoints,
-                  availablePoints: remoteState.availablePoints
-                }
-              }));
-              
-              window.dispatchEvent(new CustomEvent('progress-synced-from-cloud', {
-                detail: { type: 'rewardsState', timestamp: Date.now() }
-              }));
-            } else if (localPoints > remotePoints) {
-              console.log(`🎮 [Sync] Local tiene más puntos (${localPoints} > ${remotePoints}), subiendo a Firestore`);
-              // Subir estado local a Firestore para sincronizar
+            } else if (localIsNewer) {
+              console.log(`🎮 [Sync] Local es más reciente -> Subiendo a Firestore`);
               const currentRewardsState = window.__rewardsEngine.exportState();
               await saveStudentProgress(currentUser.uid, 'global_progress', {
                 rewardsState: currentRewardsState,
                 lastSync: new Date().toISOString(),
-                syncType: 'local_higher_score'
+                syncType: 'local_newer'
               });
-              console.log('📤 [Sync] Estado local con más puntos subido a Firestore');
             } else {
-              console.log(`🎮 [Sync] Estados iguales (${localPoints} pts), manteniendo local`);
+              // Conflicto o tiempos cercanos: Usar progreso total como desempate
+              if (remoteHasMoreProgress) {
+                console.log(`🎮 [Sync] Tiempos cercanos, pero remoto tiene más progreso (${remotePoints} > ${localPoints}) -> Actualizando local`);
+                window.__rewardsEngine.importState(remoteState, false);
+                
+                window.dispatchEvent(new CustomEvent('rewards-state-changed', {
+                  detail: { 
+                    totalPoints: remoteState.totalPoints,
+                    availablePoints: remoteState.availablePoints
+                  }
+                }));
+              } else if (localHasMoreProgress) {
+                console.log(`🎮 [Sync] Tiempos cercanos, pero local tiene más progreso -> Subiendo a Firestore`);
+                const currentRewardsState = window.__rewardsEngine.exportState();
+                await saveStudentProgress(currentUser.uid, 'global_progress', {
+                  rewardsState: currentRewardsState,
+                  lastSync: new Date().toISOString(),
+                  syncType: 'local_more_progress'
+                });
+              } else {
+                console.log(`🎮 [Sync] Estados sincronizados`);
+              }
             }
           } catch (error) {
             console.error('❌ [Sync] Error en merge de rewardsState:', error);
@@ -1589,6 +1600,44 @@ export const AppContextProvider = ({ children }) => {
     
     return () => {
       mounted = false;
+    };
+  }, [currentUser]);
+
+  // 🆕 LISTENER DE SESIONES EN TIEMPO REAL
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    console.log('👂 [AppContext] Iniciando listener de sesiones en tiempo real...');
+    
+    const unsubscribe = subscribeToUserSessions(currentUser.uid, (sessions) => {
+      console.log(`📥 [AppContext] Actualización de sesiones en tiempo real: ${sessions.length} sesiones`);
+      
+      // Actualizar localStorage para persistencia offline y consistencia
+      // Nota: subscribeToUserSessions ya devuelve las sesiones mapeadas y ordenadas
+      
+      // Combinar con sesiones locales que NO estén en la nube (borradores locales puros)
+      const localSessions = getAllSessions();
+      const localOnly = localSessions.filter(s => !s.inCloud && s.source === 'local');
+      
+      // Merge simple: sesiones de nube + sesiones solo locales
+      // Las sesiones que existen en ambos lados se toman de la nube (source of truth)
+      const merged = [...sessions, ...localOnly].sort((a, b) => {
+        const dateA = new Date(a.lastModified || a.createdAt).getTime();
+        const dateB = new Date(b.lastModified || b.createdAt).getTime();
+        return dateB - dateA;
+      });
+      
+      localStorage.setItem('appLectura_sessions', JSON.stringify(merged));
+      
+      // Emitir evento para actualizar UI
+      window.dispatchEvent(new CustomEvent('sessions-loaded-from-firebase', {
+        detail: { count: merged.length }
+      }));
+    });
+
+    return () => {
+      console.log('🔌 [AppContext] Desconectando listener de sesiones');
+      unsubscribe();
     };
   }, [currentUser]);
 
