@@ -165,7 +165,9 @@ class RewardsEngine {
     // Solo usar caché local si NO hay usuario autenticado (offline mode)
     this.state = this.initialState();
     
-    // Cargar localStorage SOLO como fallback temporal si no hay Firebase loading
+    // MODIFICACIÓN: Eliminada carga automática para evitar conflictos de prioridad.
+    // Ahora AppContext debe llamar explícitamente a loadFromCache() si falla Firebase.
+    /*
     if (typeof window !== 'undefined' && !window.__firebaseUserLoading) {
       const cached = this.loadState();
       if (cached && cached.totalPoints > 0) {
@@ -173,6 +175,31 @@ class RewardsEngine {
         this.state = cached;
       }
     }
+    */
+  }
+
+  /**
+   * Carga explícita desde caché local (fallback)
+   */
+  loadFromCache() {
+    console.log('📂 [RewardsEngine] Intentando cargar desde caché local...');
+    const cached = this.loadState();
+    if (cached && cached.totalPoints > 0) {
+      console.log('✅ [RewardsEngine] Caché local cargado:', cached.totalPoints, 'pts');
+      this.state = cached;
+      // Notificar cambio
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rewards-state-changed', {
+          detail: { 
+            totalPoints: this.state.totalPoints,
+            availablePoints: this.state.availablePoints,
+            streak: this.state.streak
+          }
+        }));
+      }
+      return true;
+    }
+    return false;
   }
 
   /**
