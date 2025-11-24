@@ -17,6 +17,7 @@ import {
   uploadTexto,
   saveEvaluacion,
   saveStudentProgress,
+  getStudentProgress,
   subscribeToStudentProgress
 } from '../firebase/firestore';
 import {
@@ -1257,11 +1258,70 @@ export const AppContextProvider = ({ children }) => {
     
     console.log('👂 [AppContext] Iniciando listener de progreso en tiempo real...');
     
-    // Suscribirse a cambios en progreso global del estudiante
-    const unsubscribe = subscribeToStudentProgress(
+    let unsubscribe = null;
+    let mounted = true;
+    
+    // 1️⃣ CARGA INICIAL INMEDIATA desde Firestore
+    const loadInitialProgress = async () => {
+      try {
+        console.log('📥 [AppContext] Cargando progreso inicial desde Firestore...');
+        const initialData = await getStudentProgress(currentUser.uid, 'global_progress');
+        
+        if (!mounted || !initialData) {
+          console.log('ℹ️ [AppContext] No hay datos iniciales en Firestore');
+          return;
+        }
+        
+        console.log('✅ [AppContext] Datos iniciales cargados desde Firestore');
+        
+        // 🎮 Cargar rewardsState inmediatamente
+        if (initialData.rewardsState && window.__rewardsEngine) {
+          const remotePoints = initialData.rewardsState.totalPoints || 0;
+          const localState = window.__rewardsEngine.exportState();
+          const localPoints = localState.totalPoints || 0;
+          
+          console.log(`🎮 [Carga Inicial] Puntos - Remoto: ${remotePoints}, Local: ${localPoints}`);
+          
+          if (remotePoints > localPoints) {
+            console.log(`🎮 [Carga Inicial] Cargando puntos remotos (${remotePoints} > ${localPoints})`);
+            window.__rewardsEngine.importState(initialData.rewardsState, false);
+            
+            // Disparar evento para actualizar UI
+            window.dispatchEvent(new CustomEvent('rewards-state-changed', {
+              detail: { 
+                totalPoints: initialData.rewardsState.totalPoints,
+                availablePoints: initialData.rewardsState.availablePoints
+              }
+            }));
+          } else {
+            console.log(`🎮 [Carga Inicial] Manteniendo puntos locales (${localPoints} >= ${remotePoints})`);
+          }
+        }
+        
+        // 📊 Cargar rubricProgress
+        if (initialData.rubricProgress && Object.keys(initialData.rubricProgress).length > 0) {
+          console.log('📊 [Carga Inicial] Cargando rubricProgress');
+          setRubricProgress(prev => ({ ...prev, ...initialData.rubricProgress }));
+        }
+        
+        // 🎯 Cargar activitiesProgress
+        if (initialData.activitiesProgress && Object.keys(initialData.activitiesProgress).length > 0) {
+          console.log('🎯 [Carga Inicial] Cargando activitiesProgress');
+          setActivitiesProgress(prev => ({ ...prev, ...initialData.activitiesProgress }));
+        }
+      } catch (error) {
+        console.error('❌ [AppContext] Error cargando progreso inicial:', error);
+      }
+    };
+    
+    loadInitialProgress();
+    
+    // 2️⃣ Suscribirse a cambios en progreso global del estudiante
+    unsubscribe = subscribeToStudentProgress(
       currentUser.uid,
       'global_progress',
       async (progressData) => {
+        if (!mounted) return;
         if (!progressData) {
           console.log('ℹ️ [AppContext] No hay progreso remoto aún');
           return;
@@ -1458,8 +1518,11 @@ export const AppContextProvider = ({ children }) => {
     
     // Cleanup al desmontar o cambiar usuario
     return () => {
+      mounted = false;
       console.log('🔌 [AppContext] Desconectando listener de progreso');
-      unsubscribe();
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
   }, [currentUser, userData]);
 
