@@ -1,0 +1,204 @@
+{
+  "meta": {
+    "id": "critical_literacy_v2",
+    "previousIds": ["critical_literacy_v1"],
+    "name": "Rúbricas Integradas de Literacidad Crítica (Formativo)",
+    "version": 2,
+    "mode": "formative",
+    "levelScale": ["novato", "aprendiz", "competente", "experto"],
+    "dimensionsOrder": [
+      "comprension_analitica",
+      "analisis_ideologico_discursivo",
+      "contextualizacion_socio_historica",
+      "argumentacion_contraargumento",
+      "metacognicion_etica_ia"
+    ]
+  },
+  "dimensions": [
+    {
+      "id": "comprension_analitica",
+      "label": "Comprensión Analítica",
+      "description": "Capacidad para resumir, citar e inferir de forma rigurosa y significativa.",
+      "criteria": [
+        {
+          "id": "seleccion_citas",
+          "label": "Selección y uso de citas",
+          "levels": {
+            "novato": "Citas inexistentes, irrelevantes o desconectadas.",
+            "aprendiz": "Citas pertinentes pero no siempre representativas; integración mecánica.",
+            "competente": "Citas pertinentes que apoyan ideas clave e integradas coherentemente.",
+            "experto": "Citas de alto impacto que complejizan el argumento e impulsan el análisis."
+          }
+        },
+        {
+          "id": "calidad_inferencias",
+          "label": "Calidad de la inferencia",
+          "levels": {
+            "novato": "Inferencias ausentes o basadas en opiniones sin sustento textual.",
+            "aprendiz": "Inferencias simples o literales sin profundidad.",
+            "competente": "Inferencias lógicas y plausibles que leen entre líneas.",
+            "experto": "Inferencias profundas y perspicaces que revelan significado nuevo."
+          }
+        },
+        {
+          "id": "precision_resumen",
+          "label": "Precisión y claridad del resumen",
+          "levels": {
+            "novato": "Resumen confuso, distorsiona tesis o copia fragmentos.",
+            "aprendiz": "Captura ideas principales con omisiones o malentendidos menores.",
+            "competente": "Resume con claridad tesis y argumentos con sus propias palabras.",
+            "experto": "Sintetiza magistralmente esencia, tono, matices y postura del autor."
+          }
+        }
+      ]
+    },
+    {
+      "id": "analisis_ideologico_discursivo",
+      "label": "Análisis Ideológico-Discursivo",
+      "description": "Identificación de marcos ideológicos, retórica y voces presentes/ausentes.",
+      "criteria": [
+        {
+          "id": "marco_ideologico",
+          "label": "Identificación del marco ideológico",
+          "levels": {
+            "novato": "Describe tema superficialmente sin ideología.",
+            "aprendiz": "Identifica punto de vista básico sin sistema de valores.",
+            "competente": "Identifica marco (ej. feminista) y cómo promueve ideas.",
+            "experto": "Explica marco, beneficiarios y evidencia textual que lo sustenta."
+          }
+        },
+        {
+          "id": "estrategias_retóricas",
+          "label": "Análisis de estrategias retóricas",
+          "levels": {
+            "novato": "No identifica estrategias o sólo menciona lo obvio.",
+            "aprendiz": "Identifica algunas estrategias con análisis vago.",
+            "competente": "Explica propósito de varias estrategias con claridad.",
+            "experto": "Analiza críticamente múltiples estrategias y su poder persuasivo."
+          }
+        },
+        {
+          "id": "voces_silencios",
+          "label": "Reconocimiento de voces y silencios",
+          "levels": {
+            "novato": "No cuestiona ausencias.",
+            "aprendiz": "Menciona posibles voces ausentes sin especificar.",
+            "competente": "Identifica voces destacadas y silenciadas explicando efecto.",
+            "experto": "Analiza legitimación y exclusión con implicaciones de poder."
+          }
+        }
+      ]
+    },
+    {
+      "id": "contextualizacion_socio_historica",
+      "label": "Contextualización Socio-Histórica",
+      "description": "Vinculación del texto con actores, contextos y consecuencias sociales.",
+      "criteria": [
+        {
+          "id": "actores_contexto",
+          "label": "Identificación de actores y contexto",
+          "levels": {
+            "novato": "Sólo actores obvios y contexto estereotipado.",
+            "aprendiz": "Actores principales explícitos, contexto básico.",
+            "competente": "Actores principales y secundarios en contexto pertinente.",
+            "experto": "Red compleja de actores y tensiones político–culturales detalladas."
+          }
+        },
+        {
+          "id": "conexiones_intereses",
+          "label": "Análisis de conexiones e intereses",
+          "levels": {
+            "novato": "Conexiones inexistentes o simplistas.",
+            "aprendiz": "Conexiones lineales sin intereses subyacentes.",
+            "competente": "Explica conexiones y analiza intereses de actores.",
+            "experto": "Analiza relaciones de poder e influencia y posicionamiento del texto."
+          }
+        },
+        {
+          "id": "impacto_consecuencias",
+          "label": "Evaluación de impacto y consecuencias",
+          "levels": {
+            "novato": "No menciona impacto o especulativo.",
+            "aprendiz": "Consecuencias generales sin procesos sociales claros.",
+            "competente": "Describe consecuencias reales o potenciales con ejemplos.",
+            "experto": "Evalúa impacto a corto y largo plazo sobre dinámicas sociales."
+          }
+        }
+      ]
+    },
+    {
+      "id": "argumentacion_contraargumento",
+      "label": "Argumentación y Contraargumento",
+      "description": "Calidad estructural y dialógica de la postura argumentativa.",
+      "criteria": [
+        {
+          "id": "solidez_tesis",
+          "label": "Solidez de la tesis",
+          "levels": {
+            "novato": "Sin tesis clara o simple opinión.",
+            "aprendiz": "Tesis general o ambigua.",
+            "competente": "Tesis clara, específica y defendible.",
+            "experto": "Tesis original, matizada y de pensamiento complejo."
+          }
+        },
+        {
+          "id": "uso_evidencia",
+          "label": "Uso de evidencia",
+          "levels": {
+            "novato": "Opiniones sin sustento.",
+            "aprendiz": "Evidencia superficial sin análisis.",
+            "competente": "Evidencia pertinente explicada lógicamente.",
+            "experto": "Evidencia integrada estratégicamente para construir profundidad."
+          }
+        },
+        {
+          "id": "manejo_contraargumento",
+          "label": "Manejo del contraargumento",
+          "levels": {
+            "novato": "Ignora puntos de vista opuestos.",
+            "aprendiz": "Contraargumento superficial o caricaturizado.",
+            "competente": "Presenta y refuta contraargumento relevante.",
+            "experto": "Refuta de forma sólida el contraargumento más fuerte fortaleciendo su postura."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metacognicion_etica_ia",
+      "label": "Metacognición Ética del Uso de IA",
+      "description": "Reflexión transparente, crítica y responsable sobre el uso de IA.",
+      "criteria": [
+        {
+          "id": "registro_transparencia",
+          "label": "Registro y transparencia del proceso",
+            "levels": {
+            "novato": "Registro inexistente o incompleto.",
+            "aprendiz": "Registro parcial e inconsistente.",
+            "competente": "Documenta interacciones clave y su propósito.",
+            "experto": "Trazabilidad detallada y autoconciente de decisiones y usos."
+          }
+        },
+        {
+          "id": "evaluacion_critica_herramienta",
+          "label": "Evaluación crítica de la herramienta",
+          "levels": {
+            "novato": "Acepta respuestas como verdades absolutas.",
+            "aprendiz": "Reconoce necesidad de verificar sin explicar pasos.",
+            "competente": "Describe verificación e identifica limitaciones.",
+            "experto": "Analiza sesgos y cómo influyeron en su producción."
+          }
+        },
+        {
+          "id": "agencia_responsabilidad",
+          "label": "Agencia y responsabilidad",
+          "levels": {
+            "novato": "Dependencia alta de la IA sin reflexión.",
+            "aprendiz": "Declara responsabilidad con reflexión limitada.",
+            "competente": "Diferencia decisiones propias y uso como andamiaje.",
+            "experto": "Profunda reflexión sobre influencia de la IA y agencia intelectual."
+          }
+        }
+      ]
+    }
+  ]
+}

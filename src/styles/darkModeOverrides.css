@@ -1,0 +1,44 @@
+/* CSS overrides for better dark mode contrast */
+
+/* Button defaults in dark mode */
+[data-theme="dark"] button {
+  transition: all 0.2s ease;
+}
+
+/* Select elements in dark mode */
+[data-theme="dark"] select {
+  background-color: #1B2230 !important; /* theme.surface */
+  color: #E6EAF0 !important;           /* theme.text */
+  border-color: #2A3240 !important;     /* theme.border */
+}
+
+[data-theme="dark"] select option {
+  background-color: #1B2230 !important;
+  color: #E6EAF0 !important;
+}
+
+/* Input elements in dark mode */
+[data-theme="dark"] input {
+  background-color: #1B2230 !important;
+  color: #E6EAF0 !important;
+  border-color: #2A3240 !important;
+}
+
+[data-theme="dark"] input::placeholder {
+  color: #A7B4C2 !important; /* theme.textMuted */
+}
+
+/* Ensure proper contrast for transparent buttons */
+[data-theme="dark"] button[style*="transparent"] {
+  background-color: #1B2230 !important;
+  color: #E6EAF0 !important;
+  border-color: #2A3240 !important;
+}
+
+/* Focus states */
+[data-theme="dark"] button:focus,
+[data-theme="dark"] select:focus,
+[data-theme="dark"] input:focus {
+  outline: 2px solid #3190FC; /* theme.primary */
+  outline-offset: 2px;
+}

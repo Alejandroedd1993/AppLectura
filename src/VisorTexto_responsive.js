@@ -1,0 +1,1111 @@
+import React, { useMemo, useCallback, useEffect, useState, useRef, useContext } from 'react';
+import styled from 'styled-components';
+import { Virtuoso } from 'react-virtuoso';
+import { getSegmentedCached } from './services/segmentTextService';
+import { estimarTiempoLectura } from './utils/textAnalysisMetrics';
+import { AppContext } from './context/AppContext';
+import { applyStructureToText } from './services/textStructureService';
+import PDFViewer from './components/PDFViewer';
+import './setupPdfWorker';
+// Eliminado sistema de anotaciones persistentes (resaltado)
+
+/**
+ * VisorTexto_responsive (versión restaurada mínima)
+ * -------------------------------------------------
+ * Este archivo fue recreado tras haberse eliminado accidentalmente.
+ * Implementa un visor de texto simplificado con:
+ *  - División básica en párrafos (doble salto de línea) o líneas si no hay dobles saltos
+ *  - Virtualización opcional cuando el número de párrafos supera un umbral
+ *  - Metadatos superiores (contador de párrafos y palabras, tiempo estimado)
+ *  - Selección contextual con acciones (Explicar, Guardar Cita, Notas, Copiar)
+ *  - Eventos de modo enfoque (enviar customEvent "visor-focus-mode") para integrarse con App
+ *  - API de props: { texto, onParagraphClick? }
+ *  - Emite CustomEvents 'reader-action' para integrarse con módulos (Tutor / Notas) sin acoplar
+ *
+ * Si se necesita la versión completa (resaltados, tutor, notas, etc.) se puede
+ * reconstruir a partir de un commit anterior o documentación histórica.
+ */
+
+const VIRTUALIZATION_THRESHOLD = 400; // umbral para virtualización
+const LARGE_TEXT_THRESHOLD = 800; // umbral para desactivar animaciones/hover costosos
+const MIN_FONT_SIZE = 12;
+const MAX_FONT_SIZE = 22;
+const DEFAULT_FONT_SIZE = 16;
+
+function dividirParrafos(texto) {
+  if (!texto) return [];
+  // Normalizar saltos Windows/Unix
+  const norm = texto.replace(/\r\n?/g, '\n').trim();
+  // Intentar separar por bloques dobles primero
+  let bloques = norm.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+  if (bloques.length <= 1) {
+    // Fallback: separar por línea simple si no hubo bloques
+    bloques = norm.split(/\n/).map(l => l.trim()).filter(Boolean);
+  }
+  return bloques;
+}
+
+const VisorWrapper = styled.div`
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1.25rem clamp(1rem, 2vw, 2rem);
+  background: ${p => p.theme?.background || '#ffffff'};
+  color: ${p => p.theme?.text || '#222'};
+  /* El tamaño base se sobrescribe con style={{ fontSize }} */
+  font-size: clamp(15px, 1rem, 18px);
+  line-height: 1.55;
+  overscroll-behavior: contain;
+`;
+
+const MetaBar = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  font-size: .8rem;
+  color: ${p => p.theme?.textSecondary || '#555'};
+  > span { background: ${p => p.theme?.surface || '#f4f4f6'}; padding: 4px 8px; border-radius: 6px; }
+`;
+
+// Prefijo $ para evitar pasar props custom al DOM
+// Nota: 'as' prop permite renderizar como h1, h2, h3 o p dinámicamente
+const Parrafo = styled.p`
+  margin: 0 0 1.25rem 0;
+  padding: .75rem 1rem;
+  border-radius: 8px;
+  transition: ${p => p.$compact ? 'none' : 'background .2s ease'};
+  position: relative;
+  background: ${p => p.$selected ? (p.theme?.surface || '#f0f2f5') : 'transparent'};
+  &:hover { background: ${p => p.$compact ? 'transparent' : (p.theme?.surface || '#f0f2f5')}; }
+  /* Eliminamos contorno por párrafo al buscar; ahora se resaltan solo las coincidencias */
+  outline: none;
+  box-shadow: none;
+  mark { background: #fff59d; color: inherit; padding: 0 2px; border-radius: 3px; }
+  /* Resalta con más intensidad las coincidencias del párrafo activo en navegación */
+  ${p => p.$currentHit ? `
+    mark { background: #ffd54f; box-shadow: 0 0 0 1px rgba(99,102,241,.35) inset; }
+  ` : ''}
+  
+  /* Estilos para títulos cuando se renderiza como h1, h2, h3 */
+  ${p => p.as === 'h1' ? `
+    font-size: 1.8em;
+    font-weight: 700;
+    color: ${p.theme?.academicSection || p.theme?.accent || '#6366f1'};
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    line-height: 1.2;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  ` : ''}
+  
+  ${p => p.as === 'h2' ? `
+    font-size: 1.5em;
+    font-weight: 700;
+    color: ${p.theme?.academicSubtitle || p.theme?.primary || '#8b5cf6'};
+    margin-top: 1.25rem;
+    margin-bottom: 0.85rem;
+    line-height: 1.3;
+    border-left: 4px solid ${p.theme?.academicSubtitle || p.theme?.primary || '#8b5cf6'};
+    padding-left: 1rem;
+    background: ${p.theme?.name === 'dark' ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)'};
+  ` : ''}
+  
+  ${p => p.as === 'h3' ? `
+    font-size: 1.25em;
+    font-weight: 600;
+    color: ${p.theme?.text || '#222'};
+    margin-top: 1rem;
+    margin-bottom: 0.65rem;
+    line-height: 1.4;
+    border-bottom: 2px solid ${p.theme?.border || '#e5e7eb'};
+    padding-bottom: 0.25rem;
+  ` : ''}
+  
+  /* Párrafos normales con indentación opcional */
+  ${p => p.as === 'p' || !p.as ? `
+    text-align: justify;
+    text-indent: 1.5em;
+    line-height: 1.65;
+    
+    /* Quitar indentación si es el primer párrafo después de un título */
+    &:first-of-type { text-indent: 0; }
+  ` : ''}
+`;
+
+// Componente para listas con viñetas o numeradas
+const ListItem = styled.li`
+  margin: 0.5rem 0;
+  padding: 0.5rem 1rem 0.5rem ${p => p.$bullet ? '2.5rem' : '3rem'};
+  position: relative;
+  line-height: 1.6;
+  background: ${p => p.$selected ? (p.theme?.surface || '#f0f2f5') : 'transparent'};
+  border-radius: 8px;
+  transition: background 0.2s ease;
+  list-style: none;
+  
+  &:hover {
+    background: ${p => p.theme?.surface || '#f0f2f5'};
+  }
+  
+  /* Viñeta o número posicionado absolutamente */
+  &::before {
+    content: ${p => p.$marker ? `"${p.$marker}"` : '"•"'};
+    position: absolute;
+    left: 1rem;
+    color: ${p => p.theme?.primary || '#2563eb'};
+    font-weight: 600;
+    font-size: ${p => p.$bullet ? '1.2em' : '0.9em'};
+  }
+  
+  mark { background: #fff59d; color: inherit; padding: 0 2px; border-radius: 3px; }
+  ${p => p.$currentHit ? `mark { background: #ffd54f; }` : ''}
+`;
+
+// Componente para citas o bloques indentados
+const BlockQuote = styled.blockquote`
+  margin: 1rem 0;
+  padding: 1rem 1.5rem;
+  border-left: 4px solid ${p => p.theme?.academicQuote || p.theme?.accent || '#6b7280'};
+  background: ${p => p.theme?.name === 'dark' ? 'rgba(107, 114, 128, 0.1)' : 'rgba(107, 114, 128, 0.05)'};
+  border-radius: 0 8px 8px 0;
+  font-style: italic;
+  color: ${p => p.theme?.textSecondary || '#64748b'};
+  line-height: 1.6;
+  position: relative;
+  
+  &:hover {
+    background: ${p => p.theme?.name === 'dark' ? 'rgba(107, 114, 128, 0.15)' : 'rgba(107, 114, 128, 0.08)'};
+  }
+  
+  &::before {
+    content: '"';
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    font-size: 3em;
+    color: ${p => p.theme?.academicQuote || '#6b7280'};
+    opacity: 0.2;
+    font-family: Georgia, serif;
+    line-height: 1;
+  }
+  
+  mark { background: #fff59d; color: inherit; padding: 0 2px; border-radius: 3px; }
+`;
+
+// Componente para notas al pie
+const Footnote = styled.div`
+  margin: 0.5rem 0;
+  padding: 0.5rem 1rem;
+  font-size: 0.85em;
+  color: ${p => p.theme?.academicFootnote || p.theme?.textSecondary || '#9ca3af'};
+  background: ${p => p.theme?.name === 'dark' ? 'rgba(156, 163, 175, 0.08)' : 'rgba(156, 163, 175, 0.05)'};
+  border-left: 2px solid ${p => p.theme?.academicFootnote || p.theme?.border || '#9ca3af'};
+  border-radius: 4px;
+  line-height: 1.5;
+  font-style: italic;
+  
+  &:hover {
+    background: ${p => p.theme?.name === 'dark' ? 'rgba(156, 163, 175, 0.12)' : 'rgba(156, 163, 175, 0.08)'};
+  }
+  
+  mark { background: #fff59d; color: inherit; padding: 0 2px; border-radius: 3px; }
+`;
+
+const SelectionToolbar = styled.div`
+  position: fixed;
+  top: ${p => p.y}px;
+  left: ${p => p.x}px;
+  transform: translateY(-120%);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  gap: 4px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.25), 0 2px 8px rgba(102,126,234,0.2);
+  z-index: 10000;
+  animation: fadeIn .15s ease;
+  button {
+    background: ${p => p.theme?.primary || '#2563eb'};
+    color: #fff;
+    border: none;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    &:hover { opacity: 0.9; transform: translateY(-1px); }
+    &:active { transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(calc(-120% - 4px)); }
+    to { opacity: 1; transform: translateY(-120%); }
+  }
+`;
+
+
+const CopyToast = styled.div`
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: ${p => p.theme?.surface || '#111827'};
+  color: ${p => p.theme?.text || '#fff'};
+  border: 1px solid ${p => p.theme?.border || '#374151'};
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: .8rem;
+  box-shadow: 0 6px 16px rgba(0,0,0,.2);
+  z-index: 2000;
+`;
+
+// 🆕 Componente para feedback de cita guardada
+const SaveSuccessToast = styled.div`
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: ${p => p.theme?.accent || '#10b981'};
+  color: white;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: .9rem;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+  z-index: 2000;
+  animation: slideIn 0.3s ease-out;
+  
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+`;
+
+const ToolsBar = styled.div`
+  position: sticky;
+  top: 6px; /* debajo de la barra de progreso sticky */
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+  margin-bottom: .5rem;
+  background: ${p => p.theme?.background || '#ffffff'};
+  padding: 6px 6px;
+  border-radius: 8px;
+  box-shadow: 0 1px 0 rgba(0,0,0,.03);
+  > input[type="search"] { padding: 6px 8px; border:1px solid ${p => p.theme?.border || '#cbd5e1'}; border-radius: 6px; min-width: 200px; }
+  > button { background: ${p => p.theme?.surface || '#eef2ff'}; border:1px solid ${p => p.theme?.border || '#cbd5e1'}; color:${p => p.theme?.text || '#1f2937'}; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:.8rem; }
+`;
+
+const ProgressBar = styled.div`
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: ${p => p.theme?.surface || '#eef2ff'};
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: .5rem;
+  &:before { content: ''; display: block; height: 100%; width: ${p => Math.max(0, Math.min(100, p.$percent || 0))}%; background: ${p => p.theme?.accent || '#6366f1'}; transition: width .12s linear; }
+`;
+
+function VisorTextoResponsive({ texto, onParagraphClick }) {
+  const { textStructure, archivoActual, saveCitation, completeAnalysis } = useContext(AppContext); // 🆕 Obtener estructura, archivo, análisis y función para guardar citas
+  
+  const [enfoque, setEnfoque] = useState(false);
+  const [selectionInfo, setSelectionInfo] = useState(null); // {x,y,text}
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false); // 🆕 Feedback visual al guardar cita
+  const lockRef = useRef(false);
+  const virtuosoRef = useRef(null);
+  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const [progress, setProgress] = useState(0); // 0..1
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchHits, setSearchHits] = useState([]); // índices de párrafos
+  const [currentHit, setCurrentHit] = useState(-1); // posición en searchHits
+  const [copied, setCopied] = useState(false);
+  // Eliminado color de resaltado persistente
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const isVirtualizedRef = useRef(false);
+  const paraRefs = useRef([]); // sólo cuando no hay virtualización
+  const lastPointerTypeRef = useRef('mouse');
+  const selectionInfoRef = useRef(null);
+
+  // 🆕 Estados para modo PDF (scroll continuo)
+  const [pdfNumPages, setPdfNumPages] = useState(null);
+  const [pdfScale, setPdfScale] = useState(1.0);
+  const [pdfSource, setPdfSource] = useState(null);
+
+  // 🆕 Detectar si el contenido actual es un PDF
+  const isPDF = useMemo(() => {
+    return archivoActual && (
+      archivoActual.type === 'application/pdf' ||
+      archivoActual.name?.toLowerCase().endsWith('.pdf')
+    );
+  }, [archivoActual]);
+
+  // 🆕 Preparar fuente del PDF cuando sea necesario
+  useEffect(() => {
+    if (!isPDF || !archivoActual) {
+      setPdfSource(null);
+      return;
+    }
+
+    // Si es un File object, usarlo directamente
+    if (archivoActual.file instanceof File) {
+      setPdfSource(archivoActual.file);
+      return;
+    }
+
+    // Si tiene objectUrl, usarlo
+    if (archivoActual.objectUrl) {
+      setPdfSource(archivoActual.objectUrl);
+      return;
+    }
+
+    setPdfSource(null);
+  }, [isPDF, archivoActual]);
+
+  useEffect(() => { selectionInfoRef.current = selectionInfo; }, [selectionInfo]);
+
+  // Eliminado hook de anotaciones persistentes
+
+  // Limpieza de claves legacy (one-shot)
+  useEffect(() => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      if (!localStorage.getItem('annotations_migrated_v1')) {
+        const toDelete = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (!k) continue;
+            if (k.startsWith('visor_highlights_') || k === 'notasLectura') {
+              toDelete.push(k);
+            }
+        }
+        toDelete.forEach(k => localStorage.removeItem(k));
+        localStorage.setItem('annotations_migrated_v1', '1');
+      }
+    } catch {}
+  }, []);
+
+  const parrafos = useMemo(() => {
+    if (!texto || !texto.trim()) return [];
+    
+    console.log('📐 [VisorTexto] Procesando texto, estructura IA disponible:', !!textStructure);
+    
+    // 🆕 PRIORIDAD 1: Si hay estructura detectada por IA, usarla
+    if (textStructure && textStructure.sections && textStructure.elements) {
+      console.log('✨ Usando estructura detectada por IA:', textStructure);
+      const segments = applyStructureToText(texto, textStructure);
+      return segments.map(seg => ({
+        text: seg.text,
+        type: seg.type,
+        metadata: seg.metadata
+      }));
+    }
+    
+    console.log('🔧 [VisorTexto] Usando segmentación manual/heurística');
+    
+    // 🔧 PRIORIDAD 2: Respetar estructura original del texto (doble salto de línea)
+    if (/\n\n/.test(texto)) {
+      const manual = texto.split(/\n\n+/).map(t => t.trim()).filter(Boolean);
+      // Solo usar split manual si produce al menos 2 párrafos razonables
+      if (manual.length >= 2 && manual.some(p => p.length > 20)) {
+        console.log(`📄 [VisorTexto] Usando ${manual.length} párrafos por \\n\\n`);
+        return manual.map(text => ({ text, type: 'paragraph', metadata: {} }));
+      }
+    }
+    
+    // 🔧 PRIORIDAD 3: Fallback - servicio de segmentación inteligente
+    const seg = getSegmentedCached(texto, { minParagraphLen: 10 }).map(p => p.content);
+    console.log(`🤖 [VisorTexto] Usando ${seg.length} párrafos por segmentación algorítmica`);
+    return seg.map(text => ({ text, type: 'paragraph', metadata: {} }));
+  }, [texto, textStructure]);
+  const bigText = parrafos.length > LARGE_TEXT_THRESHOLD;
+  const totalPalabras = useMemo(() => (texto ? texto.split(/\s+/).filter(Boolean).length : 0), [texto]);
+  const tiempoLectura = useMemo(() => estimarTiempoLectura(texto || ''), [texto]);
+
+  // Sin resaltado persistente
+
+  const toggleEnfoque = useCallback(() => {
+    setEnfoque(prev => {
+      const next = !prev;
+      try {
+        window.dispatchEvent(new CustomEvent('visor-focus-mode', { detail: { active: next } }));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => { if (typeof e?.detail?.active === 'boolean') setEnfoque(e.detail.active); };
+    window.addEventListener('visor-focus-mode-external', handler);
+    return () => window.removeEventListener('visor-focus-mode-external', handler);
+  }, []);
+
+  const handleParagraphClick = useCallback((idx, contenido) => { if (onParagraphClick) onParagraphClick(idx, contenido); }, [onParagraphClick]);
+
+  // 🆕 Función para guardar una cita seleccionada (usando selectionInfo)
+  const handleSaveCitation = useCallback(() => {
+    if (!selectionInfo?.text || selectionInfo.text.trim().length < 10) {
+      console.warn('⚠️ [VisorTexto] Cita muy corta (mínimo 10 caracteres)');
+      return;
+    }
+
+    // Usar documentId del análisis completo si está disponible, o generar uno simple
+    const documentId = completeAnalysis?.metadata?.document_id || 
+                       (texto ? `doc_${texto.substring(0, 50).replace(/\s+/g, '_')}` : 'documento_sin_id');
+    
+    const success = saveCitation({
+      documentId,
+      texto: selectionInfo.text.trim(),
+      nota: '' // El usuario puede agregar notas después en el panel
+    });
+
+    if (success !== false) {
+      console.log(`✅ [VisorTexto] Cita guardada para documento: ${documentId}`);
+      setShowSaveSuccess(true);
+      setTimeout(() => setShowSaveSuccess(false), 2000);
+    }
+
+    // Cerrar toolbar después de guardar
+    setTimeout(() => {
+      setSelectionInfo(null);
+    }, 100);
+  }, [selectionInfo, texto, saveCitation, completeAnalysis]);
+
+  // Función para emitir acciones desde SelectionToolbar
+  const dispatchAction = useCallback((action) => {
+    if (!selectionInfo?.text) return;
+    
+    const customEvent = new CustomEvent('reader-action', {
+      detail: {
+        action,
+        text: selectionInfo.text,
+        fragment: selectionInfo.text,
+        fullText: texto
+      },
+      bubbles: true,
+      cancelable: true
+    });
+    
+    window.dispatchEvent(customEvent);
+    
+    // Cerrar toolbar después de la acción (excepto para copiar que tiene su propia lógica)
+    if (action !== 'copy') {
+      setTimeout(() => {
+        setSelectionInfo(null);
+      }, 100);
+    }
+  }, [selectionInfo, texto]);
+
+  // Función para limpiar la selección
+  const clearSelection = useCallback((clearTextSelection = false) => {
+    setSelectionInfo(null);
+    if (clearTextSelection) {
+      try {
+        window.getSelection()?.removeAllRanges();
+      } catch {}
+    }
+  }, []);
+  
+
+  // Listener para selección de texto (mouseup) - muestra SelectionToolbar
+  useEffect(() => {
+    const handleMouseUp = (e) => {
+      // Evitar abrir toolbar si se hizo click en un botón de acción
+      if (e.target.closest('button')) return;
+      
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        setSelectionInfo(null);
+        return;
+      }
+      
+      const selectedText = selection.toString().trim();
+      if (!selectedText || selectedText.length < 3) {
+        setSelectionInfo(null);
+        return;
+      }
+      
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      
+      // Calcular posición centrada sobre la selección
+      const x = rect.left + (rect.width / 2) + window.scrollX;
+      const y = rect.top + window.scrollY;
+      
+      setSelectionInfo({
+        text: selectedText,
+        x,
+        y
+      });
+    };
+    
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  // Búsqueda: recompute hits al cambiar query
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) { setSearchHits([]); setCurrentHit(-1); return; }
+    const lc = q.toLowerCase();
+    const hits = [];
+    for (let i = 0; i < parrafos.length; i++) {
+      const content = typeof parrafos[i] === 'string' ? parrafos[i] : (parrafos[i].text || '');
+      if (content.toLowerCase().includes(lc)) {
+        hits.push(i);
+      }
+    }
+    setSearchHits(hits);
+    setCurrentHit(hits.length ? 0 : -1);
+  }, [searchQuery, parrafos]);
+
+  // Auto-scroll al primer resultado cuando cambia currentHit
+  useEffect(() => {
+    if (currentHit >= 0 && searchHits.length > 0) {
+      const idx = searchHits[currentHit];
+      if (idx >= 0 && idx < parrafos.length) {
+        // Pequeño delay para que se renderice el highlight
+        setTimeout(() => {
+          if (isVirtualizedRef.current && virtuosoRef.current && typeof virtuosoRef.current.scrollToIndex === 'function') {
+            virtuosoRef.current.scrollToIndex({ index: idx, align: 'center', behavior: 'smooth' });
+          } else {
+            const el = paraRefs.current[idx];
+            if (el && typeof el.scrollIntoView === 'function') {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }
+        }, 100);
+      }
+    }
+  }, [currentHit, searchHits, parrafos.length]);
+
+  const scrollToPara = useCallback((idx) => {
+    if (idx < 0 || idx >= parrafos.length) return;
+    if (isVirtualizedRef.current && virtuosoRef.current && typeof virtuosoRef.current.scrollToIndex === 'function') {
+      virtuosoRef.current.scrollToIndex({ index: idx, align: 'start', behavior: 'smooth' });
+    } else {
+      const el = paraRefs.current[idx];
+      if (el && typeof el.scrollIntoView === 'function') {
+        const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        el.scrollIntoView({ behavior: prefersReduced ? 'auto' : 'smooth', block: 'start' });
+      }
+    }
+  }, [parrafos.length]);
+
+  const goNextHit = useCallback(() => {
+    if (!searchHits.length) return;
+    setCurrentHit(prev => {
+      const next = (prev + 1) % searchHits.length;
+      const idx = searchHits[next];
+      scrollToPara(idx);
+      return next;
+    });
+  }, [searchHits, scrollToPara]);
+
+  const goPrevHit = useCallback(() => {
+    if (!searchHits.length) return;
+    setCurrentHit(prev => {
+      const next = (prev - 1 + searchHits.length) % searchHits.length;
+      const idx = searchHits[next];
+      scrollToPara(idx);
+      return next;
+    });
+  }, [searchHits, scrollToPara]);
+
+  // 🆕 Handlers para zoom en PDF (scroll continuo)
+  const handlePdfZoomIn = useCallback(() => {
+    setPdfScale(prev => Math.min(prev + 0.2, 3.0));
+    clearSelection(true);
+  }, []);
+
+  const handlePdfZoomOut = useCallback(() => {
+    setPdfScale(prev => Math.max(prev - 0.2, 0.5));
+    clearSelection(true);
+  }, []);
+
+  const handlePdfZoomReset = useCallback(() => {
+    setPdfScale(1.0);
+    clearSelection(true);
+  }, []);
+
+  // 🆕 Estado para navegación de búsqueda en PDF
+  const [pdfSearchNav, setPdfSearchNav] = useState({ next: null, prev: null, total: 0, current: 0 });
+
+  const handlePdfSearchNavigation = useCallback((navFunctions) => {
+    setPdfSearchNav(navFunctions);
+  }, []);
+
+  const handlePdfSelection = useCallback((selectionData) => {
+    if (!selectionData?.text) return;
+    
+    setSelectionInfo({
+      text: selectionData.text,
+      x: selectionData.x,
+      y: selectionData.y,
+      page: selectionData.page
+    });
+  }, []);
+
+  // Progreso: con virtualización usamos rangeChanged; sin virtualización, IntersectionObserver
+  useEffect(() => {
+    if (isVirtualizedRef.current) return; // manejado por rangeChanged
+    if (!parrafos.length) { setProgress(0); return; }
+    const options = { root: null, rootMargin: '0px', threshold: 0.2 };
+    const seen = new Set();
+    const observer = new IntersectionObserver((entries) => {
+      let maxIdx = -1;
+      entries.forEach(e => {
+        const idx = Number(e.target.getAttribute('data-parrafo'));
+        if (e.isIntersecting) seen.add(idx); else seen.delete(idx);
+        if (e.isIntersecting) {
+          if (idx > maxIdx) maxIdx = idx;
+        }
+      });
+      const highest = seen.size ? Math.max(...Array.from(seen)) : Math.max(maxIdx, 0);
+      setProgress(((highest + 1) / parrafos.length) * 100);
+    }, options);
+    paraRefs.current.forEach(el => el && observer.observe(el));
+    return () => observer.disconnect();
+  }, [parrafos.length]);
+
+  const copyToClipboard = useCallback(async (textToCopy) => {
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      // Opcional: mostrar notificación de éxito
+      console.log('✅ Texto copiado al portapapeles');
+    } catch (err) {
+      console.error('❌ Error copiando al portapapeles:', err);
+      // Fallback para navegadores antiguos
+      const textArea = document.createElement('textarea');
+      textArea.value = textToCopy;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        console.log('✅ Texto copiado (método fallback)');
+      } catch (e) {
+        console.error('❌ Error en fallback:', e);
+      }
+      document.body.removeChild(textArea);
+    }
+  }, []);
+
+  // Función mejorada para detectar tipo de elemento textual
+  const detectParagraphType = useCallback((text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return 'p';
+    
+    // 🆕 0. SECCIONES ACADÉMICAS ESPECÍFICAS (prioridad máxima)
+    const academicSections = /^(resumen|abstract|introducción|introduction|objetivos|objectives|metodología|methodology|resultados|results|conclusiones|conclusions|referencias|references|bibliografía|bibliography|anexos|appendix|agradecimientos|acknowledgments|marco teórico|theoretical framework|discusión|discussion|análisis|analysis)/i;
+    if (academicSections.test(trimmed) && trimmed.length < 100) {
+      return { 
+        type: 'section-header', 
+        level: 1,
+        category: trimmed.toLowerCase().replace(/\s+/g, '_').split(/[:\-]/)[0]
+      };
+    }
+    
+    // 1. LISTAS CON VIÑETAS: -, *, •, ◦, ▪, ‣
+    const bulletPattern = /^[\-\*\•\◦\▪\‣]\s+/;
+    if (bulletPattern.test(trimmed)) {
+      return { type: 'list-item', bullet: true };
+    }
+    
+    // 2. LISTAS NUMERADAS (con captura del número): 1., 1), a), a., i., etc.
+    const numberedListPattern = /^([\d]+|[a-z]|[ivxlcdm]+)[\.\)]\s+/i;
+    if (numberedListPattern.test(trimmed)) {
+      return { type: 'list-item', bullet: false, marker: trimmed.match(numberedListPattern)[0] };
+    }
+    
+    // 3. CITAS O BLOQUES INDENTADOS: empieza con > o tiene indentación notable
+    if (trimmed.startsWith('>') || /^\s{4,}/.test(text)) {
+      return { type: 'blockquote' };
+    }
+    
+    // 4. NOTAS AL PIE O REFERENCIAS: [1], (1), *1, †
+    const footnotePattern = /^[\[\(]?\d+[\]\)]?\s*[:\-]?\s+/;
+    if (footnotePattern.test(trimmed) && trimmed.length < 200) {
+      return { type: 'footnote' };
+    }
+    
+    // 5. TÍTULOS CON FORMATO ESPECIAL
+    const isShort = trimmed.length < 120;
+    const noPeriod = !trimmed.endsWith('.');
+    const startsWithNumber = /^[\d]+[\.\)]\s+[A-ZÁÉÍÓÚÑ]/.test(trimmed); // Requiere mayúscula después
+    const startsWithRoman = /^[IVX]+[\.\)]\s+/.test(trimmed);
+    const hasChapter = /^(capítulo|cap\.|chapter|sección|parte|anexo|apéndice)/i.test(trimmed);
+    const isAllCaps = trimmed === trimmed.toUpperCase() && /[A-ZÁÉÍÓÚÑ]/.test(trimmed) && trimmed.length > 3 && trimmed.length < 100;
+    const isFirstLineShort = trimmed.split('\n')[0].length < 80;
+    
+    // Detectar títulos con mayor precisión
+    if (isAllCaps && isShort) {
+      return { type: 'h1' }; // Títulos en mayúsculas = H1
+    }
+    
+    if (hasChapter || startsWithRoman) {
+      return { type: 'h2' }; // Capítulos o numeración romana = H2
+    }
+    
+    if (startsWithNumber && isShort && noPeriod) {
+      return { type: 'h3' }; // Numerados cortos sin punto final = H3
+    }
+    
+    if (isShort && noPeriod && isFirstLineShort && !bulletPattern.test(trimmed) && /^[A-ZÁÉÍÓÚÑ]/.test(trimmed)) {
+      // Líneas cortas que empiezan con mayúscula, sin punto final = probablemente título
+      return { type: 'h3' };
+    }
+    
+    // 6. PÁRRAFO NORMAL
+    return { type: 'p' };
+  }, []);
+
+  const renderParrafo = useCallback((parrafoData, index) => {
+    // Manejar tanto formato antiguo (string) como nuevo (objeto con text/type/metadata)
+    const content = typeof parrafoData === 'string' ? parrafoData : parrafoData.text;
+    const aiType = typeof parrafoData === 'object' ? parrafoData.type : null;
+    const metadata = typeof parrafoData === 'object' ? parrafoData.metadata : {};
+    
+    const isSearchHit = searchHits.includes(index);
+    const isCurrent = currentHit >= 0 && searchHits[currentHit] === index;
+    
+    // Determinar tipo de elemento
+    let elementType = aiType; // Priorizar tipo de IA si existe
+    let detection = null;
+    
+    // Si no hay tipo de IA o es 'paragraph', usar detección heurística
+    if (!elementType || elementType === 'paragraph') {
+      detection = detectParagraphType(content);
+      elementType = typeof detection === 'string' ? detection : detection.type;
+      
+      // Debug: mostrar detecciones especiales
+      if (elementType === 'section-header') {
+        console.log('🎯 [VisorTexto] Sección detectada:', {
+          index,
+          preview: content.substring(0, 50),
+          type: elementType,
+          category: detection.category
+        });
+      }
+    }
+
+    const renderWithHighlights = (text, query) => {
+      const q = (query || '').trim();
+      if (!q) return text;
+      try {
+        const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(${escaped})`, 'gi');
+        const parts = text.split(regex);
+        return parts.map((part, i) => {
+          if (part.toLowerCase() === q.toLowerCase()) {
+            return <mark key={`m-${index}-${i}`}>{part}</mark>;
+          }
+          return <React.Fragment key={`t-${index}-${i}`}>{part}</React.Fragment>;
+        });
+      } catch {
+        return text;
+      }
+    };
+    
+    // Preparar contenido (quitar viñetas/marcadores del texto si no vienen de IA)
+    let displayContent = content;
+    if (!aiType) {
+      // Solo limpiar si estamos usando detección heurística
+      if (elementType === 'list-item') {
+        displayContent = content.replace(/^[\-\*\•\◦\▪\‣]\s+/, '').replace(/^([\d]+|[a-z]|[ivxlcdm]+)[\.\)]\s+/i, '');
+      } else if (elementType === 'blockquote') {
+        displayContent = content.replace(/^>\s*/, '').replace(/^\s{4,}/, '');
+      }
+    }
+    
+    const renderedContent = searchQuery ? renderWithHighlights(displayContent, searchQuery) : displayContent;
+    
+    // 🆕 Renderizar elementos académicos especiales detectados por IA o heurística
+    if (elementType === 'section-header') {
+      const level = metadata.level || 1;
+      const category = metadata.category || '';
+      
+      // Determinar si viene de heurística o IA
+      const detection = !aiType ? detectParagraphType(content) : null;
+      const actualCategory = category || (detection?.category) || '';
+      
+      return (
+        <Parrafo
+          key={index}
+          as="h1"
+          data-parrafo={index}
+          data-section-category={actualCategory}
+          ref={el => { if (!isVirtualizedRef.current) paraRefs.current[index] = el; }}
+          $compact={false}
+          $selected={activeIndex === index}
+          $searchHit={isSearchHit}
+          $currentHit={isCurrent}
+          style={{
+            color: actualCategory.includes('resumen') || actualCategory.includes('abstract') 
+              ? '#6366f1' 
+              : actualCategory.includes('introduc') || actualCategory.includes('introduction')
+              ? '#8b5cf6'
+              : actualCategory.includes('metodolog') || actualCategory.includes('methodology')
+              ? '#3b82f6'
+              : actualCategory.includes('resultado') || actualCategory.includes('results')
+              ? '#10b981'
+              : actualCategory.includes('conclus') || actualCategory.includes('conclusion')
+              ? '#f59e0b'
+              : '#6366f1',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            textAlign: 'center',
+            borderBottom: '3px solid currentColor',
+            paddingBottom: '0.5rem',
+            marginTop: '2rem',
+            marginBottom: '1.5rem'
+          }}
+          onClick={(e) => {
+            handleParagraphClick(index, content);
+            setActiveIndex(index);
+          }}
+        >
+          {renderedContent}
+        </Parrafo>
+      );
+    }
+    
+    if (elementType === 'emphasis') {
+      return (
+        <Parrafo
+          key={index}
+          data-parrafo={index}
+          ref={el => { if (!isVirtualizedRef.current) paraRefs.current[index] = el; }}
+          $compact={bigText}
+          $selected={activeIndex === index}
+          $searchHit={isSearchHit}
+          $currentHit={isCurrent}
+          style={{
+            backgroundColor: 'rgba(255, 235, 59, 0.15)',
+            borderLeft: '3px solid #fbc02d',
+            fontWeight: 500
+          }}
+          onClick={(e) => {
+            handleParagraphClick(index, content);
+            setActiveIndex(index);
+          }}
+        >
+          {renderedContent}
+        </Parrafo>
+      );
+    }
+    
+    // Renderizar según el tipo detectado (heurístico o IA)
+    if (elementType === 'list-item') {
+      const detection = detectParagraphType(content);
+      return (
+        <ListItem
+          key={index}
+          data-parrafo={index}
+          $bullet={typeof detection === 'object' ? detection.bullet !== false : true}
+          $marker={typeof detection === 'object' ? detection.marker : null}
+          $selected={activeIndex === index}
+          $searchHit={isSearchHit}
+          $currentHit={isCurrent}
+          onClick={(e) => {
+            handleParagraphClick(index, content);
+            setActiveIndex(index);
+          }}
+        >
+          {renderedContent}
+        </ListItem>
+      );
+    }
+    
+    if (elementType === 'blockquote') {
+      return (
+        <BlockQuote
+          key={index}
+          data-parrafo={index}
+          onClick={(e) => {
+            handleParagraphClick(index, content);
+            setActiveIndex(index);
+          }}
+        >
+          {renderedContent}
+        </BlockQuote>
+      );
+    }
+    
+    if (elementType === 'footnote') {
+      return (
+        <Footnote
+          key={index}
+          data-parrafo={index}
+          onClick={(e) => {
+            handleParagraphClick(index, content);
+            setActiveIndex(index);
+          }}
+        >
+          {renderedContent}
+        </Footnote>
+      );
+    }
+    
+    // Renderizado por defecto para títulos y párrafos
+    return (
+      <Parrafo
+        key={index}
+        as={elementType}
+        data-parrafo={index}
+        ref={el => { if (!isVirtualizedRef.current) paraRefs.current[index] = el; }}
+        $compact={bigText}
+        $selected={activeIndex === index}
+        $searchHit={isSearchHit}
+        $currentHit={isCurrent}
+        onClick={(e) => {
+          handleParagraphClick(index, content);
+          setActiveIndex(index);
+        }}
+      >
+        {renderedContent}
+      </Parrafo>
+    );
+  }, [handleParagraphClick, searchHits, currentHit, bigText, activeIndex, searchQuery, detectParagraphType]);
+  
+
+  const isVirtualized = parrafos.length > VIRTUALIZATION_THRESHOLD;
+  isVirtualizedRef.current = isVirtualized;
+
+  // 🆕 Header chrome para modo PDF (scroll continuo)
+  const pdfHeaderChrome = isPDF && pdfNumPages ? (
+    <>
+      <ToolsBar aria-label="herramientas-pdf">
+        <button aria-label="zoom-out" onClick={handlePdfZoomOut}>🔍−</button>
+        <span style={{ fontSize: '.85rem', fontWeight: '600', minWidth: '55px', textAlign: 'center' }}>{Math.round(pdfScale * 100)}%</span>
+        <button aria-label="zoom-in" onClick={handlePdfZoomIn}>🔍+</button>
+        <button aria-label="reset-zoom" onClick={handlePdfZoomReset}>Reset</button>
+        <input
+          type="search"
+          placeholder="Buscar en el PDF..."
+          aria-label="buscar-pdf"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{ minWidth: '200px' }}
+        />
+        <button aria-label="anterior-coincidencia" disabled={pdfSearchNav.total === 0} onClick={() => pdfSearchNav.prev?.()}>◀</button>
+        <button aria-label="siguiente-coincidencia" disabled={pdfSearchNav.total === 0} onClick={() => pdfSearchNav.next?.()}>▶</button>
+        <span aria-live="polite" style={{ fontSize: '.8rem' }}>{pdfSearchNav.total > 0 ? `${pdfSearchNav.current} / ${pdfSearchNav.total}` : '0 / 0'}</span>
+        <button aria-label="abrir-notas" onClick={() => window.dispatchEvent(new CustomEvent('reader-action', { detail: { action: 'notes' } }))}>📝 Notas</button>
+      </ToolsBar>
+      <MetaBar>
+        <span>📄 {archivoActual?.name || 'Documento PDF'}</span>
+        <span>{pdfNumPages} páginas • Lectura continua</span>
+      </MetaBar>
+    </>
+  ) : null;
+
+  // Header chrome para modo texto
+  const headerChrome = !isPDF ? (
+    <>
+      <ProgressBar aria-label="progreso-lectura" $percent={progress} />
+      <ToolsBar aria-label="herramientas-lectura">
+        <button aria-label="disminuir-tamano" onClick={() => setFontSize(f => Math.max(MIN_FONT_SIZE, f - 1))}>A−</button>
+        <button aria-label="aumentar-tamano" onClick={() => setFontSize(f => Math.min(MAX_FONT_SIZE, f + 1))}>A+</button>
+        <button aria-label="reset-visor" onClick={() => { setFontSize(DEFAULT_FONT_SIZE); setSearchQuery(''); setSearchHits([]); setCurrentHit(-1); setEnfoque(false); }}>Reset</button>
+        <input
+          type="search"
+          placeholder="Buscar en el texto..."
+          aria-label="buscar-texto"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+        />
+        <button aria-label="anterior-coincidencia" disabled={!searchHits.length} onClick={goPrevHit}>◀</button>
+        <button aria-label="siguiente-coincidencia" disabled={!searchHits.length} onClick={goNextHit}>▶</button>
+        <span aria-live="polite" style={{ fontSize: '.8rem' }}>{searchHits.length ? `${(currentHit + 1)} / ${searchHits.length}` : '0 / 0'}</span>
+        <button aria-label="abrir-notas" onClick={() => window.dispatchEvent(new CustomEvent('reader-action', { detail: { action: 'notes' } }))}>📝 Notas</button>
+      </ToolsBar>
+      <MetaBar>
+        <span>{parrafos.length} párrafos</span>
+        <span>{totalPalabras} palabras</span>
+        <span>~{tiempoLectura} min</span>
+        {parrafos.length > VIRTUALIZATION_THRESHOLD && <span>Virtualizado</span>}
+      </MetaBar>
+    </>
+  ) : null;
+
+  // 🆕 Renderizado dual: PDF (scroll continuo) vs Texto
+  const body = isPDF && pdfSource ? (
+    <>
+      {pdfHeaderChrome}
+      <PDFViewer
+        key={`pdf-scale-${pdfScale.toFixed(2)}`}
+        file={pdfSource}
+        scale={pdfScale}
+        searchQuery={searchQuery}
+        onSearchNavigation={handlePdfSearchNavigation}
+        onDocumentLoad={({ numPages }) => setPdfNumPages(numPages)}
+        onSelection={handlePdfSelection}
+      />
+    </>
+  ) : isVirtualized ? (
+    <Virtuoso
+      style={{ height: '100%' }}
+      ref={virtuosoRef}
+      totalCount={parrafos.length}
+      components={{ Header: () => headerChrome }}
+      itemContent={(i) => renderParrafo(parrafos[i], i)}
+      rangeChanged={(range) => {
+        // range: { startIndex, endIndex }
+        const pct = ((range.endIndex + 1) / parrafos.length) * 100;
+        setProgress(pct);
+      }}
+    />
+  ) : (
+    <>
+      {headerChrome}
+      {parrafos.map(renderParrafo)}
+    </>
+  );
+
+  return (
+    <VisorWrapper style={isPDF ? undefined : { fontSize: `${fontSize}px` }}>
+      <div role="document" aria-label="contenido-lectura">{body}</div>
+      {selectionInfo && (
+        <SelectionToolbar x={selectionInfo.x} y={selectionInfo.y} role="toolbar" aria-label="seleccion-herramientas">
+          <button aria-label="explicar-seleccion" onClick={() => dispatchAction('explain')}>💡 Explicar</button>
+          <button aria-label="guardar-cita-seleccion" onClick={handleSaveCitation}>💾 Guardar Cita</button>
+          <button aria-label="abrir-notas-seleccion" onClick={() => dispatchAction('notes')}>📓 Notas</button>
+          <button aria-label="copiar-seleccion" onClick={() => { 
+            try { 
+              navigator.clipboard.writeText(selectionInfo.text || ''); 
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            } catch {}
+            clearSelection(true); 
+          }}>📋 Copiar</button>
+          <button aria-label="cerrar-toolbar" onClick={() => clearSelection(true)}>✖</button>
+        </SelectionToolbar>
+      )}
+      {copied && (
+        <CopyToast role="status" aria-live="polite">✅ Copiado</CopyToast>
+      )}
+      {showSaveSuccess && (
+        <SaveSuccessToast role="status" aria-live="polite">💾 ¡Cita guardada!</SaveSuccessToast>
+      )}
+    </VisorWrapper>
+  );
+}
+
+export default React.memo(VisorTextoResponsive);
