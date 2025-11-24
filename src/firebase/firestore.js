@@ -239,6 +239,12 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
         }
       });
     }
+
+    // 🆕 MERGEAR rewardsState (Gamificación)
+    // Si viene en progressData, siempre actualiza (la lógica de conflicto está en el cliente/AppContext)
+    if (progressData.rewardsState) {
+      mergedData.rewardsState = progressData.rewardsState;
+    }
     
     // Calcular métricas agregadas
     const rubricas = Object.keys(mergedData.rubricProgress || {}).filter(k => k.startsWith('rubrica'));
