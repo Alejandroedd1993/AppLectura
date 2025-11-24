@@ -1299,7 +1299,11 @@ export const AppContextProvider = ({ children }) => {
             }
           }));
         } else {
-           console.log('ℹ️ [Carga Inicial] No hay datos de rewards en Firebase, iniciando en 0 o manteniendo local si es offline');
+           console.log('ℹ️ [Carga Inicial] No hay datos de rewards en Firebase, intentando cargar caché local...');
+           // FALLBACK: Si no hay datos en Firebase, intentar cargar de caché local
+           if (window.__rewardsEngine) {
+             window.__rewardsEngine.loadFromCache();
+           }
         }
         
         // Marcar que Firebase terminó de cargar
@@ -1322,6 +1326,11 @@ export const AppContextProvider = ({ children }) => {
         }
       } catch (error) {
         console.error('❌ [AppContext] Error cargando progreso inicial:', error);
+        // FALLBACK EN ERROR: Intentar cargar caché local
+        if (window.__rewardsEngine) {
+             console.log('⚠️ [AppContext] Error en Firebase, usando caché local para rewards...');
+             window.__rewardsEngine.loadFromCache();
+        }
       }
     };
     
