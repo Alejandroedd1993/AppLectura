@@ -1285,39 +1285,21 @@ export const AppContextProvider = ({ children }) => {
         
         // 🎮 Cargar rewardsState inmediatamente (FIREBASE ES SOURCE OF TRUTH)
         if (initialData.rewardsState && window.__rewardsEngine) {
-          const remotePoints = initialData.rewardsState.totalPoints || 0;
-          const remoteTimestamp = initialData.rewardsState.lastInteraction || 0;
+          console.log('🔥 [Carga Inicial] Aplicando datos de Firebase como VERDAD ABSOLUTA (Sobrescribiendo local)');
           
-          const localState = window.__rewardsEngine.exportState();
-          const localPoints = localState.totalPoints || 0;
-          const localTimestamp = localState.lastInteraction || 0;
+          // ESTRATEGIA: Al inicio, Firebase siempre manda.
+          // Ignoramos si el local tiene más puntos (pueden ser datos viejos/basura).
+          // false = reemplazo total del estado, no merge.
+          window.__rewardsEngine.importState(initialData.rewardsState, false);
           
-          console.log(`🎮 [Carga Inicial] Puntos - Remoto: ${remotePoints} (${new Date(remoteTimestamp).toLocaleString()}), Local: ${localPoints} (${new Date(localTimestamp).toLocaleString()})`);
-          
-          // ✅ SIEMPRE priorizar Firebase si tiene datos (source of truth)
-          // Tiebreaker: puntos > timestamp
-          if (remotePoints > 0 && (remotePoints > localPoints || (remotePoints === localPoints && remoteTimestamp >= localTimestamp))) {
-            console.log(`✅ [Carga Inicial] Cargando puntos desde Firebase (source of truth)`);
-            window.__rewardsEngine.importState(initialData.rewardsState, false);
-            
-            window.dispatchEvent(new CustomEvent('rewards-state-changed', {
-              detail: { 
-                totalPoints: initialData.rewardsState.totalPoints,
-                availablePoints: initialData.rewardsState.availablePoints
-              }
-            }));
-          } else if (localPoints > remotePoints) {
-            console.log(`⚠️ [Carga Inicial] Local tiene más puntos (${localPoints} > ${remotePoints}), mantener pero sincronizar a Firebase`);
-            // Subir puntos locales a Firebase para sincronizar
-            const currentRewardsState = window.__rewardsEngine.exportState();
-            saveStudentProgress(currentUser.uid, 'global_progress', {
-              rewardsState: currentRewardsState,
-              lastSync: new Date().toISOString(),
-              syncType: 'local_higher_on_init'
-            }).catch(err => console.error('❌ Error sincronizando puntos locales:', err));
-          } else {
-            console.log(`ℹ️ [Carga Inicial] Puntos iguales o Firebase vacío, mantener estado actual`);
-          }
+          window.dispatchEvent(new CustomEvent('rewards-state-changed', {
+            detail: { 
+              totalPoints: initialData.rewardsState.totalPoints,
+              availablePoints: initialData.rewardsState.availablePoints
+            }
+          }));
+        } else {
+           console.log('ℹ️ [Carga Inicial] No hay datos de rewards en Firebase, iniciando en 0 o manteniendo local si es offline');
         }
         
         // Marcar que Firebase terminó de cargar
@@ -1327,14 +1309,16 @@ export const AppContextProvider = ({ children }) => {
         
         // 📊 Cargar rubricProgress
         if (initialData.rubricProgress && Object.keys(initialData.rubricProgress).length > 0) {
-          console.log('📊 [Carga Inicial] Cargando rubricProgress');
-          setRubricProgress(prev => ({ ...prev, ...initialData.rubricProgress }));
+          console.log('📊 [Carga Inicial] Cargando rubricProgress desde Firebase (Sobrescribiendo local)');
+          // Prioridad absoluta a Firebase al inicio
+          setRubricProgress(initialData.rubricProgress);
         }
         
         // 🎯 Cargar activitiesProgress
         if (initialData.activitiesProgress && Object.keys(initialData.activitiesProgress).length > 0) {
-          console.log('🎯 [Carga Inicial] Cargando activitiesProgress');
-          setActivitiesProgress(prev => ({ ...prev, ...initialData.activitiesProgress }));
+          console.log('🎯 [Carga Inicial] Cargando activitiesProgress desde Firebase (Sobrescribiendo local)');
+          // Prioridad absoluta a Firebase al inicio
+          setActivitiesProgress(initialData.activitiesProgress);
         }
       } catch (error) {
         console.error('❌ [AppContext] Error cargando progreso inicial:', error);
