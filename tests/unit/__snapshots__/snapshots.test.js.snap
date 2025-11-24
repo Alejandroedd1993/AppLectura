@@ -1,0 +1,163 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`UI Components Snapshots EstimatedTimeBadge debe mantener estructura visual (compact) 1`] = `
+<span
+  className="sc-Qotzb bAIOAK"
+  title="Tiempo estimado: 20 minutos"
+>
+  ⏱️ 
+  20m
+</span>
+`;
+
+exports[`UI Components Snapshots EstimatedTimeBadge debe mantener estructura visual (normal) 1`] = `
+<span
+  className="sc-Qotzb gBNmUa"
+  title="Tiempo estimado: 15 minutos"
+>
+  ⏱️ 
+  ~15 min
+</span>
+`;
+
+exports[`UI Components Snapshots EstimatedTimeBadge debe mantener estructura visual (sin minutos) 1`] = `null`;
+
+exports[`UI Components Snapshots KeyboardShortcutsBar debe mantener estructura visual (shortcuts complejos) 1`] = `
+<div
+  className="sc-fYsHOw ckmXGy"
+>
+  <div
+    className="sc-dKREkF SswTr"
+  >
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      Ctrl
+    </kbd>
+    <span
+      className="sc-dIMoHT bCIMpA"
+    >
+      +
+    </span>
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      Shift
+    </kbd>
+    <span
+      className="sc-dIMoHT bCIMpA"
+    >
+      +
+    </span>
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      A
+    </kbd>
+    <span
+      className="sc-iQQCXo dcOFyD"
+    >
+      Acción compleja
+    </span>
+  </div>
+  <div
+    className="sc-dKREkF SswTr"
+  >
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      Alt
+    </kbd>
+    <span
+      className="sc-dIMoHT bCIMpA"
+    >
+      +
+    </span>
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      F4
+    </kbd>
+    <span
+      className="sc-iQQCXo dcOFyD"
+    >
+      Cerrar ventana
+    </span>
+  </div>
+</div>
+`;
+
+exports[`UI Components Snapshots KeyboardShortcutsBar debe mantener estructura visual (shortcuts estándar) 1`] = `
+<div
+  className="sc-fYsHOw ckmXGy"
+>
+  <div
+    className="sc-dKREkF SswTr"
+  >
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      Ctrl
+    </kbd>
+    <span
+      className="sc-dIMoHT bCIMpA"
+    >
+      +
+    </span>
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      S
+    </kbd>
+    <span
+      className="sc-iQQCXo dcOFyD"
+    >
+      Guardar
+    </span>
+  </div>
+  <div
+    className="sc-dKREkF SswTr"
+  >
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      Ctrl
+    </kbd>
+    <span
+      className="sc-dIMoHT bCIMpA"
+    >
+      +
+    </span>
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      Enter
+    </kbd>
+    <span
+      className="sc-iQQCXo dcOFyD"
+    >
+      Evaluar
+    </span>
+  </div>
+  <div
+    className="sc-dKREkF SswTr"
+  >
+    <kbd
+      className="sc-fWnslK bFXuUU"
+    >
+      Esc
+    </kbd>
+    <span
+      className="sc-iQQCXo dcOFyD"
+    >
+      Cerrar
+    </span>
+  </div>
+</div>
+`;
+
+exports[`UI Components Snapshots KeyboardShortcutsBar debe mantener estructura visual (sin shortcuts) 1`] = `
+<div
+  className="sc-fYsHOw ckmXGy"
+/>
+`;

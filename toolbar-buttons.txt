@@ -1,0 +1,6 @@
+﻿          <button aria-label="explicar-seleccion" onClick={() => dispatchAction('explain')} title="Explica el significado"> Explicar</button>
+          <button aria-label="resumir-seleccion" onClick={() => dispatchAction('summarize')} title="Resume en 3 puntos clave"> Resumir</button>
+          <button aria-label="preguntar-seleccion" onClick={() => dispatchAction('question')} title="Genera preguntas de comprensión"> Preguntar</button>
+          <button aria-label="abrir-notas-seleccion" onClick={() => dispatchAction('notes')} title="Guarda en notas"> Notas</button>
+          <button aria-label="copiar-seleccion" onClick={() => dispatchAction('copy')} title="Copiar al portapapeles"> Copiar</button>
+          <button aria-label="cerrar-toolbar" onClick={() => clearSelection(true)} title="Cerrar"></button>

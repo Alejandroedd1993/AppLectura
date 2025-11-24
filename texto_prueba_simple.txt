@@ -1,0 +1,20 @@
+Este es un texto de prueba simple para verificar que la funcionalidad de carga de archivos funciona correctamente.
+
+La inteligencia artificial está transformando la educación de maneras innovadoras. Los sistemas de IA pueden personalizar el aprendizaje para cada estudiante, identificar áreas donde necesitan más apoyo y proporcionar retroalimentación inmediata.
+
+Algunas ventajas de la IA en educación incluyen:
+
+1. Personalización del aprendizaje según el ritmo de cada estudiante
+2. Evaluación automática y retroalimentación instantánea
+3. Identificación de patrones de aprendizaje
+4. Asistencia disponible las 24 horas del día
+5. Análisis predictivo para prevenir el abandono escolar
+
+Sin embargo, también hay desafíos importantes que considerar:
+
+- La necesidad de mantener el elemento humano en la educación
+- Preocupaciones sobre la privacidad de los datos de los estudiantes
+- La importancia de la transparencia en los algoritmos de IA
+- El riesgo de amplificar sesgos existentes
+
+En conclusión, la IA tiene un gran potencial para mejorar la educación, pero debe implementarse de manera responsable y ética.
