@@ -231,7 +231,8 @@ ${contextLines.join('\n')}`;
 
     if (usarOpenAI) {
       // Llamar al cliente OpenAI ya configurado
-      const { openai } = await import('../config/apiClients.js');
+      const { getOpenAI } = await import('../config/apiClients.js');
+      const openai = getOpenAI();
       const completion = await openai.chat.completions.create({
         model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
         messages: [

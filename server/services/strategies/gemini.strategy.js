@@ -1,6 +1,4 @@
-
-
-import { gemini } from '../../config/apiClients.js';
+import { getGemini } from '../../config/apiClients.js';
 import { settings } from '../../config/settings.js';
 
 /**
@@ -10,6 +8,7 @@ import { settings } from '../../config/settings.js';
  * @throws {Error} Si la API no está configurada o la solicitud falla.
  */
 export async function geminiStrategy(prompt) {
+  const gemini = getGemini();
   if (!gemini) {
     throw new Error("API Key de Gemini no configurada");
   }
