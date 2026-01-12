@@ -1,4 +1,4 @@
-import { openai, gemini } from '../config/apiClients.js';
+import { getOpenAI, getGemini } from '../config/apiClients.js';
 import { settings } from '../config/settings.js';
 import fetch from 'node-fetch';
 
@@ -19,6 +19,8 @@ const NIVEL_INSTRUCCIONES = {
 };
 
 export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademico = 'pregrado') {
+  const openai = getOpenAI();
+
   // ✅ Construir prompt enriquecido con contexto del análisis
   let prompt = `Genera notas de estudio claras y concisas del siguiente texto.`;
   

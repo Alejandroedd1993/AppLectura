@@ -1,5 +1,5 @@
 
-import { openai } from '../../config/apiClients.js';
+import { getOpenAI } from '../../config/apiClients.js';
 import { settings } from '../../config/settings.js';
 
 /**
@@ -10,6 +10,8 @@ import { settings } from '../../config/settings.js';
  * @throws {Error} Si la solicitud a la API falla.
  */
 export async function openaiStrategy(prompt, options = {}) {
+  const openai = getOpenAI();
+
   const parseAllowedModelsCsv = (csv) => {
     if (typeof csv !== 'string') return [];
     return csv
