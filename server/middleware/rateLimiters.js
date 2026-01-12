@@ -1,5 +1,9 @@
 import crypto from 'crypto';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+
+// express-rate-limit v6+ no exporta ipKeyGenerator; usamos req.ip directamente
+// (Express normaliza IPv6 cuando trust proxy está activo)
+const getClientIp = (req) => req.ip || req.socket?.remoteAddress || 'unknown';
 
 const toPositiveInt = (value, fallback) => {
   const numberValue = Number(value);
@@ -28,8 +32,7 @@ export const analysisLimiter = rateLimit({
   keyGenerator: (req) => {
     const token = getBearerToken(req);
     if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    // Importante: usar helper oficial para normalizar IPv6 y evitar bypass/errores
-    return ipKeyGenerator(req);
+    return getClientIp(req);
   },
   handler: (req, res, next, options) => {
     const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
@@ -53,7 +56,7 @@ export const chatLimiter = rateLimit({
   keyGenerator: (req) => {
     const token = getBearerToken(req);
     if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return ipKeyGenerator(req);
+    return getClientIp(req);
   },
   handler: (req, res, next, options) => {
     const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
@@ -75,7 +78,7 @@ export const notesLimiter = rateLimit({
   keyGenerator: (req) => {
     const token = getBearerToken(req);
     if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return ipKeyGenerator(req);
+    return getClientIp(req);
   },
   handler: (req, res, next, options) => {
     const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
@@ -97,7 +100,7 @@ export const webSearchLimiter = rateLimit({
   keyGenerator: (req) => {
     const token = getBearerToken(req);
     if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return ipKeyGenerator(req);
+    return getClientIp(req);
   },
   handler: (req, res, next, options) => {
     const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
@@ -121,7 +124,7 @@ export const assessmentLimiter = rateLimit({
   keyGenerator: (req) => {
     const token = getBearerToken(req);
     if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return ipKeyGenerator(req);
+    return getClientIp(req);
   },
   handler: (req, res, next, options) => {
     const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
