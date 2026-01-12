@@ -10,12 +10,31 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
- const openaiTimeoutMs = Number.parseInt(process.env.OPENAI_TIMEOUT || '', 10);
- export const openai = new OpenAI({
-   apiKey: process.env.OPENAI_API_KEY,
-   timeout: Number.isFinite(openaiTimeoutMs) ? openaiTimeoutMs : 45000,
- });
+let cachedOpenAI = null;
+let cachedGemini = null;
 
-export const gemini = process.env.GEMINI_API_KEY 
-  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  : null;
+export function getOpenAI() {
+  if (cachedOpenAI) return cachedOpenAI;
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || !String(apiKey).trim()) {
+    throw new Error('OPENAI_API_KEY no configurada en el entorno (Render Environment).');
+  }
+
+  const openaiTimeoutMs = Number.parseInt(process.env.OPENAI_TIMEOUT || '', 10);
+  cachedOpenAI = new OpenAI({
+    apiKey: String(apiKey).trim(),
+    timeout: Number.isFinite(openaiTimeoutMs) ? openaiTimeoutMs : 45000,
+  });
+
+  return cachedOpenAI;
+}
+
+export function getGemini() {
+  if (cachedGemini) return cachedGemini;
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !String(apiKey).trim()) return null;
+  cachedGemini = new GoogleGenerativeAI(String(apiKey).trim());
+  return cachedGemini;
+}
