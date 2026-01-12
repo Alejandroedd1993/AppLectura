@@ -1,5 +1,7 @@
 // src/utils/accessibility.js
 
+import { useCallback } from 'react';
+
 /**
  * Utilidades de accesibilidad para mejorar UX
  */

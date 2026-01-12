@@ -1,12 +1,15 @@
 // src/components/artefactos/RespuestaArgumentativa.js
-import React, { useState, useContext, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useContext, useCallback, useMemo, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
 import { useRewards } from '../../context/PedagogyContext';
 import { evaluateRespuestaArgumentativa } from '../../services/respuestaArgumentativa.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
-import { getDimension, scoreToLevelDescriptor } from '../../pedagogy/rubrics/criticalLiteracyRubric';
+import useRateLimit from '../../hooks/useRateLimit'; // 🆕 Rate Limiting
+import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
+
+import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 
@@ -208,7 +211,7 @@ const PrimaryButton = styled(Button)`
   }
 `;
 
-const SecondaryButton = styled(Button)`
+const _SecondaryButton = styled(Button)`
   background: ${props => props.theme.surface};
   color: ${props => props.theme.text};
   border: 1px solid ${props => props.theme.border};
@@ -240,7 +243,7 @@ const NivelGlobal = styled.div`
   padding: 0.5rem 1rem;
   border-radius: 20px;
   background: ${props => {
-    switch(props.$nivel) {
+    switch (props.$nivel) {
       case 1: return '#fee2e2';
       case 2: return '#fed7aa';
       case 3: return '#dcfce7';
@@ -249,7 +252,7 @@ const NivelGlobal = styled.div`
     }
   }};
   color: ${props => {
-    switch(props.$nivel) {
+    switch (props.$nivel) {
       case 1: return '#991b1b';
       case 2: return '#c2410c';
       case 3: return '#166534';
@@ -299,7 +302,7 @@ const CriterioNivel = styled.span`
   font-size: 0.8rem;
   font-weight: 600;
   background: ${props => {
-    switch(props.$nivel) {
+    switch (props.$nivel) {
       case 1: return '#fee2e2';
       case 2: return '#fed7aa';
       case 3: return '#dcfce7';
@@ -308,7 +311,7 @@ const CriterioNivel = styled.span`
     }
   }};
   color: ${props => {
-    switch(props.$nivel) {
+    switch (props.$nivel) {
       case 1: return '#991b1b';
       case 2: return '#c2410c';
       case 3: return '#166534';
@@ -613,33 +616,168 @@ const AutoSaveMessage = styled(motion.div)`
 `;
 
 // ============================================
+// 🆕 STYLED COMPONENTS - HISTORIAL
+// ============================================
+
+const HistoryRibbon = styled.div`
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: ${props => props.theme.surface};
+  border-bottom: 1px solid ${props => props.theme.border};
+  overflow-x: auto;
+  align-items: center;
+  margin-bottom: 1rem;
+  
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: ${props => props.theme.border};
+    border-radius: 4px;
+  }
+`;
+
+const HistoryTitle = styled.span`
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: ${props => props.theme.textMuted};
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+`;
+
+const HistoryBadge = styled.button`
+  padding: 0.25rem 0.75rem;
+  border-radius: 16px;
+  border: 1px solid ${props => props.$active ? props.theme.primary : props.theme.border};
+  background: ${props => props.$active ? props.theme.primary + '15' : 'transparent'};
+  color: ${props => props.$active ? props.theme.primary : props.theme.textMuted};
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  &:hover {
+    background: ${props => props.theme.primary + '10'};
+    border-color: ${props => props.theme.primary};
+  }
+
+  .score {
+    font-weight: 700;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.4rem;
+    background: ${props => props.$active ? props.theme.primary : props.theme.border};
+    color: ${props => props.$active ? '#fff' : props.theme.textMuted};
+    border-radius: 8px;
+  }
+`;
+
+const RestoreBanner = styled(motion.div)`
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9rem;
+`;
+
+const RestoreButton = styled.button`
+  background: #f59e0b;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.8rem;
+  
+  &:hover {
+    background: #d97706;
+  }
+`;
+
+// ============================================
 // COMPONENTE PRINCIPAL
 // ============================================
 
 export default function RespuestaArgumentativa({ theme }) {
-  const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation } = useContext(AppContext);
+  const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation, updateActivitiesProgress, sourceCourseId, currentTextoId, activitiesProgress } = useContext(AppContext);
   const rewards = useRewards(); // 🎮 Hook de recompensas
+  const rateLimit = useRateLimit('evaluate_respuesta_argumentativa', { cooldownMs: 5000, maxPerHour: 10 }); // Rate limiting
+  const MAX_ATTEMPTS = 3; // 🆕 Límite de intentos
 
-  // Estados del formulario con recuperación de sessionStorage
-  const [tesis, setTesis] = useState(() => 
-    sessionStorage.getItem('respuestaArgumentativa_tesis') || ''
-  );
-  const [evidencias, setEvidencias] = useState(() => 
-    sessionStorage.getItem('respuestaArgumentativa_evidencias') || ''
-  );
-  const [contraargumento, setContraargumento] = useState(() => 
-    sessionStorage.getItem('respuestaArgumentativa_contraargumento') || ''
-  );
-  const [refutacion, setRefutacion] = useState(() => 
-    sessionStorage.getItem('respuestaArgumentativa_refutacion') || ''
-  );
+  // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
+  const resetProcessedRef = useRef(null);
+
+  // 🆕 FASE 1 FIX: Estados con carga dinámica por textoId
+  const [tesis, setTesis] = useState('');
+  const [evidencias, setEvidencias] = useState('');
+  const [contraargumento, setContraargumento] = useState('');
+  const [refutacion, setRefutacion] = useState('');
+
+  // 🆕 Efecto para cargar borradores cuando cambia el textoId
+  useEffect(() => {
+    if (!currentTextoId) return;
+
+    // Evitar contaminación visual entre documentos mientras se rehidrata
+    setTesis('');
+    setEvidencias('');
+    setContraargumento('');
+    setRefutacion('');
+
+    let cancelled = false;
+
+    import('../../services/sessionManager').then(({ getDraftKey }) => {
+      if (cancelled) return;
+      const getKey = (base) => getDraftKey(base, currentTextoId);
+
+      const readAndMigrateLegacy = (base) => {
+        const scopedKey = getKey(base);
+        const scoped = sessionStorage.getItem(scopedKey) || '';
+        if (scoped) return scoped;
+
+        const legacy = sessionStorage.getItem(base) || '';
+        if (legacy) {
+          sessionStorage.setItem(scopedKey, legacy);
+          sessionStorage.removeItem(base);
+          return legacy;
+        }
+        return '';
+      };
+
+      setTesis(readAndMigrateLegacy('respuestaArgumentativa_tesis'));
+      setEvidencias(readAndMigrateLegacy('respuestaArgumentativa_evidencias'));
+      setContraargumento(readAndMigrateLegacy('respuestaArgumentativa_contraargumento'));
+      setRefutacion(readAndMigrateLegacy('respuestaArgumentativa_refutacion'));
+
+      console.log('📂 [RespuestaArgumentativa] Borradores cargados para textoId:', currentTextoId);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTextoId]);
 
   // Estados de evaluación
   const [feedback, setFeedback] = useState(null);
   const [loading, setLoading] = useState(false);
   const [currentEvaluationStep, setCurrentEvaluationStep] = useState(null); // 🆕 Paso actual de evaluación
+  const [evaluationAttempts, setEvaluationAttempts] = useState(0); // 🆕 Contador de intentos
+  const [history, setHistory] = useState([]); // 🆕 Historial de versiones
+  const [viewingVersion, setViewingVersion] = useState(null); // 🆕 Versión en modo lectura
+  const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
   const [showGuide, setShowGuide] = useState(true);
-  
+
   // 🆕 Estados para panel de citas y error de pegado
   const [showCitasPanel, setShowCitasPanel] = useState(false);
   const [pasteError, setPasteError] = useState(null);
@@ -656,12 +794,79 @@ export default function RespuestaArgumentativa({ theme }) {
     refutacion: 0
   });
 
+  // 🆕 Keyboard shortcuts para productividad
+  const [showSaveHint, setShowSaveHint] = useState(false);
+
+  useKeyboardShortcuts({
+    'ctrl+s': (_e) => {
+      console.log('⌨️ Ctrl+S: Guardando borrador RespuestaArgumentativa...');
+      if (!currentTextoId) return;
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const getKey = (base) => getDraftKey(base, currentTextoId);
+        if (tesis) sessionStorage.setItem(getKey('respuestaArgumentativa_tesis'), tesis);
+        if (evidencias) sessionStorage.setItem(getKey('respuestaArgumentativa_evidencias'), evidencias);
+        if (contraargumento) sessionStorage.setItem(getKey('respuestaArgumentativa_contraargumento'), contraargumento);
+        if (refutacion) sessionStorage.setItem(getKey('respuestaArgumentativa_refutacion'), refutacion);
+      });
+      setShowSaveHint(true);
+      setTimeout(() => setShowSaveHint(false), 2000);
+    },
+    'ctrl+enter': (_e) => {
+      console.log('⌨️ Ctrl+Enter: Evaluando Respuesta Argumentativa...');
+      if (!loading && isValid && rateLimit.canProceed && evaluationAttempts < MAX_ATTEMPTS && !isSubmitted && !viewingVersion) {
+        handleEvaluate();
+      }
+    },
+    'escape': (_e) => {
+      console.log('⌨️ Esc: Cerrando paneles...');
+      if (showCitasPanel) {
+        setShowCitasPanel(false);
+      } else if (pasteError) {
+        setPasteError(null);
+      } else if (viewingVersion) {
+        setViewingVersion(null);
+      }
+    }
+  }, {
+    enabled: true,
+    excludeInputs: false
+  });
+
+  // 🆕 Memo para contenido visualizado (actual o histórico)
+  const displayedContent = useMemo(() => {
+    if (viewingVersion) {
+      return {
+        tesis: viewingVersion.content.tesis,
+        evidencias: viewingVersion.content.evidencias,
+        contraargumento: viewingVersion.content.contraargumento,
+        refutacion: viewingVersion.content.refutacion,
+        feedback: viewingVersion.feedback
+      };
+    }
+    return {
+      tesis,
+      evidencias,
+      contraargumento,
+      refutacion,
+      feedback
+    };
+  }, [viewingVersion, tesis, evidencias, contraargumento, refutacion, feedback]);
+
+  const isReadOnly = viewingVersion !== null || isSubmitted;
+
+  // 🆕 Función para desbloquear y seguir editando después de recibir feedback
+  const handleSeguirEditando = useCallback(() => {
+    console.log('✏️ [RespuestaArgumentativa] Desbloqueando para editar...');
+    setIsLocked(false);
+    setFeedback(null); // Ocultar evaluación anterior para enfocarse en editar
+  }, []);
+
   // Validación
   const isValid = useMemo(() => {
     return tesis.trim().length >= 20 &&
-           evidencias.trim().length >= 30 &&
-           contraargumento.trim().length >= 20 &&
-           refutacion.trim().length >= 30;
+      evidencias.trim().length >= 30 &&
+      contraargumento.trim().length >= 20 &&
+      refutacion.trim().length >= 30;
   }, [tesis, evidencias, contraargumento, refutacion]);
 
   const validationMessage = useMemo(() => {
@@ -676,106 +881,343 @@ export default function RespuestaArgumentativa({ theme }) {
     return '✅ Argumento completo. Solicita evaluación criterial.';
   }, [tesis, evidencias, contraargumento, refutacion]);
 
-  // 🆕 Auto-save en sessionStorage (respaldo inmediato)
+  // 🆕 FASE 1 FIX: Guardar respaldo en sessionStorage con claves namespaced
   useEffect(() => {
-    if (tesis) sessionStorage.setItem('respuestaArgumentativa_tesis', tesis);
-  }, [tesis]);
+    if (!currentTextoId) return;
 
-  useEffect(() => {
-    if (evidencias) sessionStorage.setItem('respuestaArgumentativa_evidencias', evidencias);
-  }, [evidencias]);
+    import('../../services/sessionManager').then(({ getDraftKey }) => {
+      const getKey = (base) => getDraftKey(base, currentTextoId);
 
-  useEffect(() => {
-    if (contraargumento) sessionStorage.setItem('respuestaArgumentativa_contraargumento', contraargumento);
-  }, [contraargumento]);
+      if (tesis) sessionStorage.setItem(getKey('respuestaArgumentativa_tesis'), tesis);
+      if (evidencias) sessionStorage.setItem(getKey('respuestaArgumentativa_evidencias'), evidencias);
+      if (contraargumento) sessionStorage.setItem(getKey('respuestaArgumentativa_contraargumento'), contraargumento);
+      if (refutacion) sessionStorage.setItem(getKey('respuestaArgumentativa_refutacion'), refutacion);
 
+      console.log('💾 [RespuestaArgumentativa] Borradores guardados para textoId:', currentTextoId);
+    });
+  }, [tesis, evidencias, contraargumento, refutacion, currentTextoId]);
+
+  // 🆕 Sincronización en la nube de borradores (debounced)
   useEffect(() => {
-    if (refutacion) sessionStorage.setItem('respuestaArgumentativa_refutacion', refutacion);
-  }, [refutacion]);
+    if (!currentTextoId) return;
+
+    if (tesis || evidencias || contraargumento || refutacion) {
+      const timer = setTimeout(() => {
+        import('../../services/sessionManager').then(({ updateCurrentSession, captureArtifactsDrafts }) => {
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+        });
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [tesis, evidencias, contraargumento, refutacion, currentTextoId]);
 
   // 🆕 Escuchar restauración de sesión para actualizar estados desde sessionStorage
   useEffect(() => {
+    if (!currentTextoId) return;
+
     const handleSessionRestored = () => {
-      const restoredTesis = sessionStorage.getItem('respuestaArgumentativa_tesis') || '';
-      const restoredEvidencias = sessionStorage.getItem('respuestaArgumentativa_evidencias') || '';
-      const restoredContra = sessionStorage.getItem('respuestaArgumentativa_contraargumento') || '';
-      const restoredRefutacion = sessionStorage.getItem('respuestaArgumentativa_refutacion') || '';
-      
-      if (restoredTesis !== tesis) setTesis(restoredTesis);
-      if (restoredEvidencias !== evidencias) setEvidencias(restoredEvidencias);
-      if (restoredContra !== contraargumento) setContraargumento(restoredContra);
-      if (restoredRefutacion !== refutacion) setRefutacion(restoredRefutacion);
-      
-      if (restoredTesis || restoredEvidencias || restoredContra || restoredRefutacion) {
-        console.log('🔄 [RespuestaArgumentativa] Borradores restaurados desde sesión');
-      }
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const getKey = (base) => getDraftKey(base, currentTextoId);
+
+        const readAndMigrateLegacy = (base) => {
+          const scopedKey = getKey(base);
+          const scoped = sessionStorage.getItem(scopedKey) || '';
+          if (scoped) return scoped;
+
+          const legacy = sessionStorage.getItem(base) || '';
+          if (legacy) {
+            sessionStorage.setItem(scopedKey, legacy);
+            sessionStorage.removeItem(base);
+            return legacy;
+          }
+          return '';
+        };
+
+        const restoredTesis = readAndMigrateLegacy('respuestaArgumentativa_tesis');
+        const restoredEvidencias = readAndMigrateLegacy('respuestaArgumentativa_evidencias');
+        const restoredContra = readAndMigrateLegacy('respuestaArgumentativa_contraargumento');
+        const restoredRefutacion = readAndMigrateLegacy('respuestaArgumentativa_refutacion');
+
+        if (restoredTesis !== tesis) setTesis(restoredTesis);
+        if (restoredEvidencias !== evidencias) setEvidencias(restoredEvidencias);
+        if (restoredContra !== contraargumento) setContraargumento(restoredContra);
+        if (restoredRefutacion !== refutacion) setRefutacion(restoredRefutacion);
+
+        if (restoredTesis || restoredEvidencias || restoredContra || restoredRefutacion) {
+          console.log('🔄 [RespuestaArgumentativa] Borradores restaurados desde sesión');
+        }
+      });
     };
-    
+
     window.addEventListener('session-restored', handleSessionRestored);
     return () => window.removeEventListener('session-restored', handleSessionRestored);
-  }, [tesis, evidencias, contraargumento, refutacion]);
+  }, [tesis, evidencias, contraargumento, refutacion, currentTextoId]);
 
   // Persistencia
   const documentId = completeAnalysis?.metadata?.document_id || null;
-  const persistenceKey = `respuesta_argumentativa_${documentId}`;
+  const lectureId = currentTextoId || documentId || null;
+  const rewardsResourceId = lectureId ? `${lectureId}:RespuestaArgumentativa` : null;
+  const persistenceKey = lectureId ? `respuesta_argumentativa_${lectureId}` : null;
 
-  useActivityPersistence(persistenceKey, {
-    enabled: documentId !== null,
+  // ✅ Estructura corregida: capturamos el retorno del hook para usar saveManual
+  const persistence = useActivityPersistence(persistenceKey, {
+    enabled: !!persistenceKey,
+    courseId: sourceCourseId, // 🆕 Aislar datos por curso
+    legacyDocumentIds: (currentTextoId && documentId && lectureId && lectureId !== documentId) ? [`respuesta_argumentativa_${documentId}`] : [],
     studentAnswers: {
       tesis: tesis,
       evidencias: evidencias,
       contraargumento: contraargumento,
       refutacion: refutacion
     },
+    attempts: evaluationAttempts,
+    history: history,
+    submitted: isSubmitted,
     aiFeedbacks: { respuesta_argumentativa: feedback },
     onRehydrate: (data) => {
       if (data.student_answers?.tesis) setTesis(data.student_answers.tesis);
       if (data.student_answers?.evidencias) setEvidencias(data.student_answers.evidencias);
       if (data.student_answers?.contraargumento) setContraargumento(data.student_answers.contraargumento);
       if (data.student_answers?.refutacion) setRefutacion(data.student_answers.refutacion);
+      if (data.attempts) setEvaluationAttempts(data.attempts);
+      if (data.history) setHistory(data.history);
+      if (data.submitted) setIsSubmitted(true);
       if (data.ai_feedbacks?.respuesta_argumentativa) setFeedback(data.ai_feedbacks.respuesta_argumentativa);
     }
   });
+
+  // 🆕 CLOUD SYNC: Cargar history/drafts desde Firestore (activitiesProgress)
+  // También detecta resets del docente y limpia el estado local
+  useEffect(() => {
+    if (!lectureId) return;
+
+    const findCloudArtifact = (artifactKey) => {
+      if (!activitiesProgress) return null;
+      const nested = activitiesProgress?.[lectureId]?.artifacts?.[artifactKey];
+      if (nested) return nested;
+      const direct = activitiesProgress?.artifacts?.[artifactKey];
+      if (direct) return direct;
+      if (typeof activitiesProgress === 'object') {
+        for (const key of Object.keys(activitiesProgress)) {
+          const candidate = activitiesProgress?.[key]?.artifacts?.[artifactKey];
+          if (candidate) return candidate;
+        }
+      }
+      return null;
+    };
+
+    const cloudData = findCloudArtifact('respuestaArgumentativa');
+    
+    // 🔄 DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
+    // Convertir resetAt a timestamp en milisegundos (puede ser string ISO, Firestore Timestamp, o número)
+    const rawResetAt = cloudData?.resetAt;
+    let resetTimestamp = 0;
+    if (rawResetAt) {
+      if (rawResetAt.seconds) {
+        // Firestore Timestamp
+        resetTimestamp = rawResetAt.seconds * 1000;
+      } else if (typeof rawResetAt === 'string') {
+        // ISO string
+        resetTimestamp = new Date(rawResetAt).getTime();
+      } else if (typeof rawResetAt === 'number') {
+        // Ya es timestamp (verificar si es segundos o milisegundos)
+        resetTimestamp = rawResetAt > 1e12 ? rawResetAt : rawResetAt * 1000;
+      }
+    }
+    
+    // 🆕 CLAVE: Si submitted === false explícitamente por el reset, debemos aplicarlo
+    // El reset escribe submitted: false, así que si cloudData.submitted es false
+    // y hay resetBy='docente', es un reset válido
+    const wasResetByDocente = cloudData?.resetBy === 'docente' && resetTimestamp > 0;
+    const isCurrentlySubmitted = cloudData?.submitted === true;
+    
+    // Solo aplicar reset si:
+    // 1. Hay resetBy='docente' y resetTimestamp válido
+    // 2. El artefacto NO está actualmente submitted (el docente lo reseteó a submitted: false)
+    const shouldApplyReset = wasResetByDocente && !isCurrentlySubmitted;
+    
+    if (shouldApplyReset) {
+      // Verificar si ya procesamos este reset específico
+      const resetKey = `${lectureId}_${resetTimestamp}`;
+      if (resetProcessedRef.current === resetKey) {
+        // Ya procesamos este reset, no hacer nada
+        return;
+      }
+      
+      console.log('🔄 [RespuestaArgumentativa] Detectado RESET por docente, limpiando estado local...');
+      console.log('🔄 [RespuestaArgumentativa] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
+      resetProcessedRef.current = resetKey; // Marcar como procesado
+      
+      // Limpiar estados
+      setIsSubmitted(false);
+      setIsLocked(false);
+      setHistory([]);
+      setEvaluationAttempts(0);
+      setFeedback(null);
+      setTesis('');
+      setEvidencias('');
+      setContraargumento('');
+      setRefutacion('');
+      setViewingVersion(null);
+      
+      // Limpiar sessionStorage
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const getKey = (base) => getDraftKey(base, lectureId);
+        sessionStorage.removeItem(getKey('respuestaArgumentativa_tesis'));
+        sessionStorage.removeItem(getKey('respuestaArgumentativa_evidencias'));
+        sessionStorage.removeItem(getKey('respuestaArgumentativa_contraargumento'));
+        sessionStorage.removeItem(getKey('respuestaArgumentativa_refutacion'));
+        console.log('🧹 [RespuestaArgumentativa] Borradores locales limpiados tras reset');
+      });
+      
+      if (persistence?.clearResults) persistence.clearResults();
+      
+      return;
+    }
+    
+    if (!cloudData) return;
+
+    if (cloudData.history && Array.isArray(cloudData.history)) {
+      console.log('☁️ [RespuestaArgumentativa] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
+      setHistory(prev => prev.length >= cloudData.history.length ? prev : cloudData.history);
+    }
+
+    if (cloudData.attempts) setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
+    if (cloudData.submitted) setIsSubmitted(true);
+
+    if (cloudData.drafts) {
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const getKey = (base) => getDraftKey(base, lectureId);
+
+        if (cloudData.drafts.tesis && !sessionStorage.getItem(getKey('respuestaArgumentativa_tesis'))) {
+          sessionStorage.setItem(getKey('respuestaArgumentativa_tesis'), cloudData.drafts.tesis);
+          setTesis(cloudData.drafts.tesis);
+        }
+        if (cloudData.drafts.evidencias && !sessionStorage.getItem(getKey('respuestaArgumentativa_evidencias'))) {
+          sessionStorage.setItem(getKey('respuestaArgumentativa_evidencias'), cloudData.drafts.evidencias);
+          setEvidencias(cloudData.drafts.evidencias);
+        }
+        if (cloudData.drafts.contraargumento && !sessionStorage.getItem(getKey('respuestaArgumentativa_contraargumento'))) {
+          sessionStorage.setItem(getKey('respuestaArgumentativa_contraargumento'), cloudData.drafts.contraargumento);
+          setContraargumento(cloudData.drafts.contraargumento);
+        }
+        if (cloudData.drafts.refutacion && !sessionStorage.getItem(getKey('respuestaArgumentativa_refutacion'))) {
+          sessionStorage.setItem(getKey('respuestaArgumentativa_refutacion'), cloudData.drafts.refutacion);
+          setRefutacion(cloudData.drafts.refutacion);
+        }
+        console.log('☁️ [RespuestaArgumentativa] Borradores restaurados desde Firestore');
+      });
+    }
+  }, [lectureId, activitiesProgress, persistence]);
+
+  // 🆕 Manejadores de Historial (definidos DESPUÉS de persistence para poder usar saveManual)
+  const handleViewVersion = useCallback((version) => {
+    setViewingVersion(version);
+  }, []);
+
+  const handleRestoreVersion = useCallback(() => {
+    if (!viewingVersion) return;
+
+    setTesis(viewingVersion.content.tesis);
+    setEvidencias(viewingVersion.content.evidencias);
+    setContraargumento(viewingVersion.content.contraargumento);
+    setRefutacion(viewingVersion.content.refutacion);
+    setFeedback(viewingVersion.feedback);
+    setViewingVersion(null);
+
+    setTimeout(() => persistence.saveManual(), 100);
+  }, [viewingVersion, persistence]);
+
+  // 🆕 Handle submission
+  const handleSubmit = useCallback(() => {
+    if (!feedback) return;
+
+    if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
+      setIsSubmitted(true);
+
+      // ✅ Forzar guardado inmediato con saveManual
+      setTimeout(() => persistence.saveManual(), 100);
+
+      // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
+      if (lectureId && updateActivitiesProgress) {
+        updateActivitiesProgress(lectureId, prev => {
+          // Obtener el score previo guardado (lastScore) o calcular desde feedback
+          const previousArtifact = prev?.artifacts?.respuestaArgumentativa || {};
+          const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
+          
+          console.log('📤 [RespuestaArgumentativa] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
+          
+          return {
+            ...prev,
+            artifacts: {
+              ...(prev?.artifacts || {}),
+              respuestaArgumentativa: {
+                ...previousArtifact,
+                submitted: true,
+                submittedAt: Date.now(),
+                score: scoreToUse,
+                nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
+                history: history,
+                attempts: evaluationAttempts,
+                finalContent: { tesis, evidencias, contraargumento, refutacion }
+              }
+            }
+          };
+        });
+      }
+
+      const event = new CustomEvent('evaluation-complete', {
+        detail: {
+          artefacto: 'RespuestaArgumentativa',
+          score: feedback.nivel_global * 2.5,
+          submitted: true
+        }
+      });
+      window.dispatchEvent(event);
+
+      console.log('✅ [RespuestaArgumentativa] Tarea entregada y sincronizada con Dashboard');
+    }
+  }, [feedback, persistence, lectureId, updateActivitiesProgress, history, evaluationAttempts, tesis, evidencias, contraargumento, refutacion]);
 
   // Rúbrica
   const rubricDimension = useMemo(() => getDimension('argumentacion'), []);
 
   // 🆕 Gestión de citas guardadas
   const citasGuardadas = useMemo(() => {
-    if (!documentId) return [];
-    return getCitations(documentId);
-  }, [documentId, getCitations]);
+    if (!lectureId) return [];
+    return getCitations(lectureId);
+  }, [lectureId, getCitations]);
 
   const insertarCita = useCallback((textoCita, campo) => {
     const citaFormateada = `"${textoCita}" `;
-    
+
     const refMap = {
       tesis: tesisRef,
       evidencias: evidenciasRef,
       contraargumento: contraargumentoRef,
       refutacion: refutacionRef
     };
-    
+
     const setterMap = {
       tesis: setTesis,
       evidencias: setEvidencias,
       contraargumento: setContraargumento,
       refutacion: setRefutacion
     };
-    
+
     const ref = refMap[campo];
     const setter = setterMap[campo];
-    
+
     if (ref && ref.current && setter) {
       const textarea = ref.current;
       const start = textarea.selectionStart || cursorPositions[campo] || 0;
       const end = textarea.selectionEnd || cursorPositions[campo] || 0;
-      
+
       setter(prev => {
         const before = prev.substring(0, start);
         const after = prev.substring(end);
         const newText = before + citaFormateada + after;
-        
+
         // Refocus y reposicionar cursor después de la inserción
         setTimeout(() => {
           if (textarea) {
@@ -784,11 +1226,11 @@ export default function RespuestaArgumentativa({ theme }) {
             textarea.setSelectionRange(newPosition, newPosition);
           }
         }, 0);
-        
+
         return newText;
       });
     }
-    
+
     setShowCitasPanel(false);
   }, [cursorPositions]);
 
@@ -798,16 +1240,16 @@ export default function RespuestaArgumentativa({ theme }) {
   }, []);
 
   const handleEliminarCita = useCallback((citaId) => {
-    if (documentId) {
-      deleteCitation(documentId, citaId);
+    if (lectureId) {
+      deleteCitation(lectureId, citaId);
     }
-  }, [documentId, deleteCitation]);
+  }, [lectureId, deleteCitation]);
 
   const handlePaste = useCallback((e) => {
     e.preventDefault();
     const pastedText = e.clipboardData.getData('text');
     const wordCount = pastedText.trim().split(/\s+/).filter(word => word.length > 0).length;
-    
+
     if (wordCount <= 40) {
       // Permitir paste de hasta 40 palabras
       document.execCommand('insertText', false, pastedText);
@@ -821,6 +1263,17 @@ export default function RespuestaArgumentativa({ theme }) {
   const handleEvaluate = useCallback(async () => {
     if (!isValid || !texto) return;
 
+    // 🆕 Verificar límites
+    if (!rateLimit.canProceed) {
+      setError(`⏳ ${Math.ceil(rateLimit.nextAvailableIn / 1000)}s para nuevo intento`);
+      return;
+    }
+    if (evaluationAttempts >= MAX_ATTEMPTS) {
+      setError(`⚠️ Límite de ${MAX_ATTEMPTS} intentos alcanzado`);
+      return;
+    }
+
+    setEvaluationAttempts(prev => prev + 1); // 🆕 Incrementar intentos
     setLoading(true);
     setError(null);
     setCurrentEvaluationStep({ label: 'Iniciando análisis argumentativo...', icon: '🔍', duration: 2 });
@@ -846,33 +1299,97 @@ export default function RespuestaArgumentativa({ theme }) {
       timeouts.forEach(clearTimeout);
 
       setFeedback(result);
-      
+      setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
+
+      // 🆕 Guardar en historial
+      const newHistoryEntry = {
+        timestamp: new Date().toISOString(),
+        attemptNumber: evaluationAttempts + 1,
+        content: {
+          tesis,
+          evidencias,
+          contraargumento,
+          refutacion
+        },
+        feedback: result,
+        score: result.nivel_global * 2.5
+      };
+      setHistory(prev => [...prev, newHistoryEntry]);
+
+      // 🆕 CLOUD SYNC: Sincronizar historial y borradores con Firestore
+      if (lectureId && updateActivitiesProgress) {
+        updateActivitiesProgress(lectureId, prev => ({
+          ...prev,
+          artifacts: {
+            ...(prev?.artifacts || {}),
+            respuestaArgumentativa: {
+              ...(prev?.artifacts?.respuestaArgumentativa || {}),
+              history: [...(prev?.artifacts?.respuestaArgumentativa?.history || []), newHistoryEntry],
+              attempts: evaluationAttempts + 1,
+              lastScore: result.nivel_global * 2.5,
+              lastNivel: result.nivel_global,
+              lastEvaluatedAt: Date.now(),
+              drafts: { tesis, evidencias, contraargumento, refutacion },
+              // 🆕 Limpiar flags de reset cuando el estudiante trabaja
+              resetBy: null,
+              resetAt: null
+            }
+          }
+        }));
+        console.log('☁️ [RespuestaArgumentativa] Historial sincronizado con Firestore');
+      }
+
+      // 🆕 Limpiar drafts
+      if (currentTextoId) {
+        import('../../services/sessionManager').then(({ getDraftKey, updateCurrentSession, captureArtifactsDrafts }) => {
+          const getKey = (base) => getDraftKey(base, currentTextoId);
+
+          // scoped
+          sessionStorage.removeItem(getKey('respuestaArgumentativa_tesis'));
+          sessionStorage.removeItem(getKey('respuestaArgumentativa_evidencias'));
+          sessionStorage.removeItem(getKey('respuestaArgumentativa_contraargumento'));
+          sessionStorage.removeItem(getKey('respuestaArgumentativa_refutacion'));
+
+          // legacy
+          sessionStorage.removeItem('respuestaArgumentativa_tesis');
+          sessionStorage.removeItem('respuestaArgumentativa_evidencias');
+          sessionStorage.removeItem('respuestaArgumentativa_contraargumento');
+          sessionStorage.removeItem('respuestaArgumentativa_refutacion');
+
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+        });
+      }
+
       // 🆕 Actualizar progreso global de rúbrica
       updateRubricScore('rubrica4', {
         score: result.nivel_global * 2.5, // Convertir nivel 1-4 a escala 2.5-10
         nivel: result.nivel_global,
         artefacto: 'RespuestaArgumentativa',
-        criterios: result.criterios
+        criterios: result.criterios,
+        textoId: lectureId
       });
 
       // 🎮 Registrar recompensas
       if (rewards) {
         rewards.recordEvent('EVALUATION_SUBMITTED', {
           artefacto: 'RespuestaArgumentativa',
-          rubricId: 'rubrica4'
+          rubricId: 'rubrica4',
+          resourceId: rewardsResourceId
         });
 
         rewards.recordEvent(`EVALUATION_LEVEL_${result.nivel_global}`, {
           score: result.nivel_global * 2.5,
           nivel: result.nivel_global,
-          artefacto: 'RespuestaArgumentativa'
+          artefacto: 'RespuestaArgumentativa',
+          resourceId: rewardsResourceId
         });
 
         // Bonificación por tesis crítica sólida (>100 caracteres)
         if (tesis.length > 100) {
           rewards.recordEvent('CRITICAL_THESIS_DEVELOPED', {
             length: tesis.length,
-            artefacto: 'RespuestaArgumentativa'
+            artefacto: 'RespuestaArgumentativa',
+            resourceId: rewardsResourceId
           });
         }
 
@@ -880,7 +1397,8 @@ export default function RespuestaArgumentativa({ theme }) {
         if (contraargumento.length > 80) {
           rewards.recordEvent('COUNTERARGUMENT_ANTICIPATED', {
             length: contraargumento.length,
-            artefacto: 'RespuestaArgumentativa'
+            artefacto: 'RespuestaArgumentativa',
+            resourceId: rewardsResourceId
           });
         }
 
@@ -888,7 +1406,8 @@ export default function RespuestaArgumentativa({ theme }) {
         if (refutacion.length > 80) {
           rewards.recordEvent('REFUTATION_ELABORATED', {
             length: refutacion.length,
-            artefacto: 'RespuestaArgumentativa'
+            artefacto: 'RespuestaArgumentativa',
+            resourceId: rewardsResourceId
           });
         }
 
@@ -896,13 +1415,14 @@ export default function RespuestaArgumentativa({ theme }) {
         if (result.nivel_global === 4) {
           rewards.recordEvent('PERFECT_SCORE', {
             score: 10,
-            artefacto: 'RespuestaArgumentativa'
+            artefacto: 'RespuestaArgumentativa',
+            resourceId: rewardsResourceId
           });
         }
 
-      console.log('🎮 [RespuestaArgumentativa] Recompensas registradas');
+        console.log('🎮 [RespuestaArgumentativa] Recompensas registradas');
       }
-      
+
     } catch (error) {
       console.error('Error evaluando Respuesta Argumentativa:', error);
       setError(error.message || 'Error al evaluar el argumento');
@@ -912,7 +1432,7 @@ export default function RespuestaArgumentativa({ theme }) {
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
-  }, [isValid, texto, tesis, evidencias, contraargumento, refutacion, setError]);
+  }, [isValid, texto, tesis, evidencias, contraargumento, refutacion, setError, rewards, rewardsResourceId]);
 
   // Verificar si hay texto
   if (!texto) {
@@ -936,6 +1456,20 @@ export default function RespuestaArgumentativa({ theme }) {
         </Subtitle>
       </Header>
 
+      {/* 🆕 Banner de Entrega Final */}
+      {isSubmitted && (
+        <SubmissionBanner
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          theme={theme}
+        >
+          <span className="icon">✅</span>
+          <span className="text">
+            <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
+          </span>
+        </SubmissionBanner>
+      )}
+
       {/* 🆕 Botón flotante para citas guardadas */}
       {/* 🆕 Panel lateral de citas guardadas */}
       <AnimatePresence>
@@ -951,12 +1485,12 @@ export default function RespuestaArgumentativa({ theme }) {
             <CitasPanelHeader theme={theme}>
               <h3 style={{ margin: 0 }}>📋 Mis Citas Guardadas</h3>
               <p style={{ fontSize: '0.85rem', margin: '0.5rem 0 0 0', opacity: 0.8 }}>
-                {citasGuardadas.length === 0 
+                {citasGuardadas.length === 0
                   ? 'Selecciona texto en "Lectura Guiada" y guarda citas'
                   : 'Selecciona el campo y haz clic en el botón correspondiente'}
               </p>
             </CitasPanelHeader>
-            
+
             <CitasList>
               {citasGuardadas.length === 0 ? (
                 <EmptyCitasMessage theme={theme}>
@@ -975,8 +1509,8 @@ export default function RespuestaArgumentativa({ theme }) {
                     <CitaTexto theme={theme}>{cita.texto}</CitaTexto>
                     <CitaFooter>
                       <CitaInfo theme={theme}>
-                        {new Date(cita.timestamp).toLocaleDateString('es-ES', { 
-                          month: 'short', 
+                        {new Date(cita.timestamp).toLocaleDateString('es-ES', {
+                          month: 'short',
                           day: 'numeric'
                         })}
                       </CitaInfo>
@@ -1006,6 +1540,51 @@ export default function RespuestaArgumentativa({ theme }) {
         )}
       </AnimatePresence>
 
+      {/* 🆕 Historial y Navegación de Versiones */}
+      {history.length > 0 && (
+        <HistoryRibbon theme={theme}>
+          <HistoryTitle theme={theme}>📜 Historial:</HistoryTitle>
+          <HistoryBadge
+            theme={theme}
+            $active={!viewingVersion}
+            onClick={() => handleViewVersion(null)}
+          >
+            <span>Actual</span>
+            <span className="score">Editando</span>
+          </HistoryBadge>
+          {history.slice().reverse().map((entry, idx) => (
+            <HistoryBadge
+              key={idx}
+              theme={theme}
+              $active={viewingVersion === entry}
+              onClick={() => handleViewVersion(entry)}
+            >
+              <span>Intento {entry.attemptNumber}</span>
+              <span className="score">{entry.score?.toFixed(1)}/10</span>
+            </HistoryBadge>
+          ))}
+        </HistoryRibbon>
+      )}
+
+      {/* 🆕 Banner de Restauración */}
+      <AnimatePresence>
+        {viewingVersion && (
+          <RestoreBanner
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+          >
+            <span>
+              👁️ Estás viendo el <strong>Intento {viewingVersion.attemptNumber}</strong> ({new Date(viewingVersion.timestamp).toLocaleString()}).
+              Es de solo lectura.
+            </span>
+            <RestoreButton onClick={handleRestoreVersion}>
+              🔄 Restaurar esta versión
+            </RestoreButton>
+          </RestoreBanner>
+        )}
+      </AnimatePresence>
+
       {/* Guía pedagógica */}
       <GuideSection theme={theme} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <GuideHeader onClick={() => setShowGuide(!showGuide)}>
@@ -1032,8 +1611,22 @@ export default function RespuestaArgumentativa({ theme }) {
         </AnimatePresence>
       </GuideSection>
 
-      {/* Formulario */}
-      {!feedback && (
+      {/* 🔒 Mensaje cuando está bloqueado después de evaluar */}
+      {isLocked && !viewingVersion && !isSubmitted && (
+        <LockedMessage theme={theme}>
+          <LockIcon>🔒</LockIcon>
+          <LockText>
+            <strong>Argumento enviado a evaluación</strong>
+            <span>Revisa el feedback abajo. Si deseas mejorar tu trabajo, haz clic en "Seguir Editando".</span>
+          </LockText>
+          <UnlockButton onClick={handleSeguirEditando} theme={theme}>
+            ✏️ Seguir Editando
+          </UnlockButton>
+        </LockedMessage>
+      )}
+
+      {/* Formulario - Visible solo cuando no está bloqueado */}
+      {!viewingVersion && (
         <>
           {/* 🆕 Mensaje de guardado automático */}
           {(tesis || evidencias || contraargumento || refutacion) && (
@@ -1048,13 +1641,13 @@ export default function RespuestaArgumentativa({ theme }) {
             <Textarea
               ref={tesisRef}
               theme={theme}
-              value={tesis}
-              onChange={(e) => setTesis(e.target.value)}
+              value={displayedContent.tesis}
+              onChange={(e) => !viewingVersion && setTesis(e.target.value)}
               onClick={(e) => handleCursorChange('tesis', e)}
               onKeyUp={(e) => handleCursorChange('tesis', e)}
               onPaste={handlePaste}
               placeholder="Ej: Sostengo que el texto naturaliza la lógica neoliberal al presentar la competencia como única forma legítima de organización social, excluyendo alternativas cooperativas del debate público."
-              disabled={loading}
+              disabled={loading || isReadOnly}
             />
             {pasteError && <PasteErrorMessage theme={theme}>{pasteError}</PasteErrorMessage>}
             <HintText theme={theme}>
@@ -1068,13 +1661,13 @@ export default function RespuestaArgumentativa({ theme }) {
             <Textarea
               ref={evidenciasRef}
               theme={theme}
-              value={evidencias}
-              onChange={(e) => setEvidencias(e.target.value)}
+              value={displayedContent.evidencias}
+              onChange={(e) => !viewingVersion && setEvidencias(e.target.value)}
               onClick={(e) => handleCursorChange('evidencias', e)}
               onKeyUp={(e) => handleCursorChange('evidencias', e)}
               onPaste={handlePaste}
               placeholder='Ej: En el párrafo 3, el autor afirma que "la competencia es ley natural", naturalizando así un modelo económico histórico como inevitable. Además, al usar metáforas deportivas ("ganar/perder") en el párrafo 5, refuerza una visión individualista donde solo hay ganadores y perdedores, omitiendo modelos de economía solidaria documentados en...'
-              disabled={loading}
+              disabled={loading || isReadOnly}
               style={{ minHeight: '150px' }}
             />
             <HintText theme={theme}>
@@ -1087,13 +1680,13 @@ export default function RespuestaArgumentativa({ theme }) {
             <Textarea
               ref={contraargumentoRef}
               theme={theme}
-              value={contraargumento}
-              onChange={(e) => setContraargumento(e.target.value)}
+              value={displayedContent.contraargumento}
+              onChange={(e) => !viewingVersion && setContraargumento(e.target.value)}
               onClick={(e) => handleCursorChange('contraargumento', e)}
               onKeyUp={(e) => handleCursorChange('contraargumento', e)}
               onPaste={handlePaste}
               placeholder="Ej: Se podría objetar que la competencia ha demostrado históricamente generar innovación tecnológica y mejora de productos, como evidencia el desarrollo industrial de los últimos dos siglos."
-              disabled={loading}
+              disabled={loading || isReadOnly}
               style={{ minHeight: '120px' }}
             />
             <HintText theme={theme}>
@@ -1106,13 +1699,13 @@ export default function RespuestaArgumentativa({ theme }) {
             <Textarea
               ref={refutacionRef}
               theme={theme}
-              value={refutacion}
-              onChange={(e) => setRefutacion(e.target.value)}
+              value={displayedContent.refutacion}
+              onChange={(e) => !viewingVersion && setRefutacion(e.target.value)}
               onClick={(e) => handleCursorChange('refutacion', e)}
               onKeyUp={(e) => handleCursorChange('refutacion', e)}
               onPaste={handlePaste}
               placeholder="Ej: Si bien es cierto que la competencia puede generar innovación, esta lógica ignora los costos sociales (precarización laboral, desigualdad extrema) y excluye del análisis modelos donde la cooperación también produjo innovación significativa, como el software libre, las cooperativas de Mondragón, o la economía social y solidaria en América Latina."
-              disabled={loading}
+              disabled={loading || isReadOnly}
               style={{ minHeight: '150px' }}
             />
             <HintText theme={theme}>
@@ -1140,9 +1733,20 @@ export default function RespuestaArgumentativa({ theme }) {
             >
               {showCitasPanel ? '✕ Cerrar Citas' : `📋 Mis Citas (${citasGuardadas.length})`}
             </CitasButton>
-            <PrimaryButton onClick={handleEvaluate} disabled={!isValid || loading}>
-              {loading ? '⏳ Evaluando...' : '💭 Solicitar Evaluación Criterial'}
+            <PrimaryButton
+              onClick={handleEvaluate}
+              disabled={!isValid || loading || evaluationAttempts >= MAX_ATTEMPTS || !rateLimit.canProceed || isReadOnly}
+            >
+              {loading ? '⏳ Evaluando...' :
+                !rateLimit.canProceed ? `⏳ Espera ${Math.ceil(rateLimit.nextAvailableIn / 1000)}s` :
+                  `💭 Solicitar Evaluación Criterial (Intento ${evaluationAttempts}/${MAX_ATTEMPTS})`}
             </PrimaryButton>
+
+            {!isSubmitted && feedback && !viewingVersion && !loading && (
+              <SubmitButton onClick={handleSubmit} theme={theme}>
+                🔒 Entregar Tarea
+              </SubmitButton>
+            )}
           </ButtonGroup>
         </>
       )}
@@ -1171,7 +1775,7 @@ export default function RespuestaArgumentativa({ theme }) {
 
       {/* Feedback */}
       <AnimatePresence>
-        {feedback && !loading && (
+        {displayedContent.feedback && !loading && (
           <FeedbackSection
             theme={theme}
             initial={{ opacity: 0, y: 20 }}
@@ -1181,16 +1785,16 @@ export default function RespuestaArgumentativa({ theme }) {
             <FeedbackHeader>
               <div>
                 <h3 style={{ margin: '0 0 0.5rem 0', color: theme.text }}>
-                  📊 Evaluación Criterial
+                  📊 Evaluación Criterial ({viewingVersion ? `Intento ${viewingVersion.attemptNumber}` : 'IA Dual'})
                 </h3>
-                <NivelGlobal $nivel={feedback.nivel_global}>
-                  Nivel {feedback.nivel_global}/4
+                <NivelGlobal $nivel={displayedContent.feedback.nivel_global}>
+                  Nivel {displayedContent.feedback.nivel_global}/4
                 </NivelGlobal>
               </div>
             </FeedbackHeader>
 
             <DimensionLabel theme={theme}>
-              <strong>{feedback.dimension_label}:</strong> {feedback.dimension_description}
+              <strong>{displayedContent.feedback.dimension_label}:</strong> {displayedContent.feedback.dimension_description}
             </DimensionLabel>
 
             <CriteriosGrid>
@@ -1198,16 +1802,16 @@ export default function RespuestaArgumentativa({ theme }) {
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Solidez de la Tesis</CriterioTitle>
-                  <CriterioNivel $nivel={feedback.criterios.solidez_tesis.nivel}>
-                    Nivel {feedback.criterios.solidez_tesis.nivel}/4
+                  <CriterioNivel $nivel={displayedContent.feedback.criterios.solidez_tesis.nivel}>
+                    Nivel {displayedContent.feedback.criterios.solidez_tesis.nivel}/4
                   </CriterioNivel>
                 </CriterioHeader>
 
-                {feedback.criterios.solidez_tesis.fortalezas?.length > 0 && (
+                {displayedContent.feedback.criterios.solidez_tesis.fortalezas?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>✅ Fortalezas:</ListTitle>
                     <List>
-                      {feedback.criterios.solidez_tesis.fortalezas.map((f, idx) => (
+                      {displayedContent.feedback.criterios.solidez_tesis.fortalezas.map((f, idx) => (
                         <ListItem key={idx} theme={theme} $icon="✓">
                           {renderMarkdown(f)}
                         </ListItem>
@@ -1216,11 +1820,11 @@ export default function RespuestaArgumentativa({ theme }) {
                   </ListSection>
                 )}
 
-                {feedback.criterios.solidez_tesis.mejoras?.length > 0 && (
+                {displayedContent.feedback.criterios.solidez_tesis.mejoras?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>💡 Oportunidades de mejora:</ListTitle>
                     <List>
-                      {feedback.criterios.solidez_tesis.mejoras.map((m, idx) => (
+                      {displayedContent.feedback.criterios.solidez_tesis.mejoras.map((m, idx) => (
                         <ListItem key={idx} theme={theme} $icon="→">
                           {renderMarkdown(m)}
                         </ListItem>
@@ -1234,16 +1838,16 @@ export default function RespuestaArgumentativa({ theme }) {
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Uso de Evidencia</CriterioTitle>
-                  <CriterioNivel $nivel={feedback.criterios.uso_evidencia.nivel}>
-                    Nivel {feedback.criterios.uso_evidencia.nivel}/4
+                  <CriterioNivel $nivel={displayedContent.feedback.criterios.uso_evidencia.nivel}>
+                    Nivel {displayedContent.feedback.criterios.uso_evidencia.nivel}/4
                   </CriterioNivel>
                 </CriterioHeader>
 
-                {feedback.criterios.uso_evidencia.fortalezas?.length > 0 && (
+                {displayedContent.feedback.criterios.uso_evidencia.fortalezas?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>✅ Fortalezas:</ListTitle>
                     <List>
-                      {feedback.criterios.uso_evidencia.fortalezas.map((f, idx) => (
+                      {displayedContent.feedback.criterios.uso_evidencia.fortalezas.map((f, idx) => (
                         <ListItem key={idx} theme={theme} $icon="✓">
                           {renderMarkdown(f)}
                         </ListItem>
@@ -1252,11 +1856,11 @@ export default function RespuestaArgumentativa({ theme }) {
                   </ListSection>
                 )}
 
-                {feedback.criterios.uso_evidencia.mejoras?.length > 0 && (
+                {displayedContent.feedback.criterios.uso_evidencia.mejoras?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>💡 Oportunidades de mejora:</ListTitle>
                     <List>
-                      {feedback.criterios.uso_evidencia.mejoras.map((m, idx) => (
+                      {displayedContent.feedback.criterios.uso_evidencia.mejoras.map((m, idx) => (
                         <ListItem key={idx} theme={theme} $icon="→">
                           {renderMarkdown(m)}
                         </ListItem>
@@ -1270,16 +1874,16 @@ export default function RespuestaArgumentativa({ theme }) {
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Manejo del Contraargumento</CriterioTitle>
-                  <CriterioNivel $nivel={feedback.criterios.manejo_contraargumento.nivel}>
-                    Nivel {feedback.criterios.manejo_contraargumento.nivel}/4
+                  <CriterioNivel $nivel={displayedContent.feedback.criterios.manejo_contraargumento.nivel}>
+                    Nivel {displayedContent.feedback.criterios.manejo_contraargumento.nivel}/4
                   </CriterioNivel>
                 </CriterioHeader>
 
-                {feedback.criterios.manejo_contraargumento.fortalezas?.length > 0 && (
+                {displayedContent.feedback.criterios.manejo_contraargumento.fortalezas?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>✅ Fortalezas:</ListTitle>
                     <List>
-                      {feedback.criterios.manejo_contraargumento.fortalezas.map((f, idx) => (
+                      {displayedContent.feedback.criterios.manejo_contraargumento.fortalezas.map((f, idx) => (
                         <ListItem key={idx} theme={theme} $icon="✓">
                           {renderMarkdown(f)}
                         </ListItem>
@@ -1288,11 +1892,11 @@ export default function RespuestaArgumentativa({ theme }) {
                   </ListSection>
                 )}
 
-                {feedback.criterios.manejo_contraargumento.mejoras?.length > 0 && (
+                {displayedContent.feedback.criterios.manejo_contraargumento.mejoras?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>💡 Oportunidades de mejora:</ListTitle>
                     <List>
-                      {feedback.criterios.manejo_contraargumento.mejoras.map((m, idx) => (
+                      {displayedContent.feedback.criterios.manejo_contraargumento.mejoras.map((m, idx) => (
                         <ListItem key={idx} theme={theme} $icon="→">
                           {renderMarkdown(m)}
                         </ListItem>
@@ -1309,4 +1913,103 @@ export default function RespuestaArgumentativa({ theme }) {
   );
 }
 
+const SubmissionBanner = styled(motion.div)`
+  background: ${props => `${props.theme.success || '#4CAF50'}10`};
+  border: 1px solid ${props => props.theme.success || '#4CAF50'};
+  color: ${props => props.theme.success || '#1b5e20'};
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 
+  .icon { font-size: 1.5rem; }
+  .text { font-size: 1rem; }
+`;
+
+const SubmitButton = styled.button`
+  padding: 1rem 2rem;
+  background: ${props => props.theme.success || '#4CAF50'};
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px ${props => `${props.theme.success || '#4CAF50'}40`};
+  
+  &:hover {
+    background: ${props => props.theme.successDark || '#388E3C'};
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px ${props => `${props.theme.success || '#4CAF50'}50`};
+  }
+`;
+
+// 🆕 Componentes para Bloqueo y Seguir Editando
+const LockedMessage = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  background: linear-gradient(135deg, ${props => props.theme.primary}15, ${props => props.theme.info}10);
+  border: 2px solid ${props => props.theme.primary}40;
+  border-radius: 8px;
+  animation: slideIn 0.3s ease-out;
+  
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
+const LockIcon = styled.span`
+  font-size: 1.5rem;
+`;
+
+const LockText = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  
+  strong {
+    color: ${props => props.theme?.text || '#333'};
+    font-size: 1rem;
+  }
+  
+  span {
+    color: ${props => props.theme?.textSecondary || '#666'};
+    font-size: 0.9rem;
+  }
+`;
+
+const UnlockButton = styled.button`
+  padding: 0.6rem 1.2rem;
+  background: ${props => props.theme.primary || '#2196F3'};
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: ${props => props.theme.primaryHover || '#1976D2'};
+    transform: translateY(-1px);
+  }
+`;

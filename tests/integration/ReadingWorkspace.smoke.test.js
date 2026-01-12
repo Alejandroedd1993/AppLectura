@@ -2,6 +2,7 @@ import React from 'react';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import ReadingWorkspace from '../../src/components/ReadingWorkspace';
 import { AppContext } from '../../src/context/AppContext';
+import { AuthProvider } from '../../src/context/AuthContext';
 
 // Mock mínimo del servicio de búsqueda web reutilizado por el botón
 jest.mock('../../src/hooks/useWebSearchTutor', () => {
@@ -19,7 +20,11 @@ function Wrapper({ children }) {
     texto: 'Texto de prueba para workspace.\nSegundo párrafo educativo.',
     setTexto: () => {}
   };
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AuthProvider>
+      <AppContext.Provider value={value}>{children}</AppContext.Provider>
+    </AuthProvider>
+  );
 }
 
 describe('ReadingWorkspace smoke', () => {

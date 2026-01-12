@@ -14,7 +14,12 @@ export default function useTutorPersistence(options = {}) {
     try {
       const raw = JSON.parse(localStorage.getItem(storageKey) || '[]');
       if (!Array.isArray(raw)) return [];
-      return raw.map(o => ({ role: o.r, content: o.c })).filter(m => m.content);
+      return raw
+        .map((o) => ({
+          role: o?.r || o?.role,
+          content: o?.c || o?.content
+        }))
+        .filter(m => m.content);
     } catch { return []; }
   }, [storageKey]);
 
@@ -25,5 +30,11 @@ export default function useTutorPersistence(options = {}) {
     } catch { /* noop */ }
   }, [storageKey, max]);
 
-  return { initialMessages, handleMessagesChange };
+  const clearHistory = useCallback(() => {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch { /* noop */ }
+  }, [storageKey]);
+
+  return { initialMessages, handleMessagesChange, clearHistory };
 }

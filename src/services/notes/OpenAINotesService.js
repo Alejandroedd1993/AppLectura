@@ -6,6 +6,7 @@
  */
 
 import { OpenAI } from 'openai';
+import StorageService from './StorageService';
 
 /**
  * Servicio de OpenAI para notas de estudio
@@ -26,17 +27,41 @@ class OpenAINotesService {
   }
 
   /**
+   * Obtiene la API key configurada por el usuario (BYOK).
+   * Nota: Por seguridad, el frontend NO debe usar REACT_APP_* para claves privadas.
+   * @returns {string|null}
+   */
+  getUserApiKey() {
+    try {
+      if (typeof window === 'undefined') return null;
+      if (!StorageService?.isStorageAvailable?.()) return null;
+
+      const key = localStorage.getItem(StorageService.keys.API_KEY);
+      return key && typeof key === 'string' && key.trim().length > 0 ? key.trim() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Indica si hay una API key BYOK configurada por el usuario.
+   * @returns {boolean}
+   */
+  hasUserApiKey() {
+    return !!this.getUserApiKey();
+  }
+
+  /**
    * Obtiene el cliente de OpenAI configurado
    * @returns {OpenAI} Cliente de OpenAI
    * @throws {Error} Si no se encuentra la API key
    */
   getClient() {
     try {
-      const key = process.env.REACT_APP_OPENAI_API_KEY || 
-                  localStorage.getItem('user_openai_api_key');
+      const key = this.getUserApiKey();
       
       if (!key) {
-        throw new Error('No se encontró una clave API de OpenAI. Por favor, configura tu API key.');
+        throw new Error('No se encontró una clave API de OpenAI (BYOK). Configura tu API key para usar OpenAI directo.');
       }
 
       return new OpenAI({
@@ -153,7 +178,7 @@ ${this.limitTextForAPI(texto)}`;
       const result = await this.callWithRetry(async () => {
         const openai = this.getClient();
         const response = await openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
+          model: "gpt-4o-mini",
           messages: [{ role: "user", content: prompt }],
           temperature: 0.3,
           max_tokens: 50
@@ -290,7 +315,7 @@ ${textoLimitado}`;
       const respuesta = await this.callWithRetry(async () => {
         const openai = this.getClient();
         const response = await openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
+          model: "gpt-4o-mini",
           messages: [{ role: "user", content: prompt }],
           temperature: 0.7,
           max_tokens: this.maxTokensOutput

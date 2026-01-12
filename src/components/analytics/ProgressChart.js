@@ -43,6 +43,62 @@ const EmptyState = styled.div`
   font-size: 0.9rem;
 `;
 
+const InfoBox = styled.div`
+  background: ${props => props.theme.infoBg || props.theme.background};
+  border: 1px solid ${props => props.theme.primary}40;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: ${props => props.theme.text};
+`;
+
+const InfoIcon = styled.span`
+  font-size: 1.25rem;
+  flex-shrink: 0;
+`;
+
+const InfoContent = styled.div`
+  flex: 1;
+  line-height: 1.5;
+  
+  strong {
+    color: ${props => props.theme.primary};
+  }
+`;
+
+const StatsRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid ${props => props.theme.border};
+`;
+
+const StatBadge = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: ${props => props.theme.surface};
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 6px;
+  font-size: 0.8rem;
+  
+  span:first-child {
+    font-weight: 600;
+    color: ${props => props.$color || props.theme.primary};
+  }
+  
+  span:last-child {
+    color: ${props => props.theme.textMuted};
+  }
+`;
+
 const CustomTooltip = styled.div`
   background: ${props => props.theme.surface};
   border: 1px solid ${props => props.theme.border};
@@ -109,16 +165,19 @@ const CustomTooltipContent = ({ active, payload, label, theme }) => {
 
 const ProgressChart = ({ rubricProgress = {}, theme }) => {
   // Transformar datos para el gráfico
-  const chartData = useMemo(() => {
-    // Obtener todas las rúbricas con datos
-    const rubrics = Object.entries(rubricProgress).filter(
-      ([key, data]) => key.startsWith('rubrica') && data.scores?.length > 0
-    );
+  const { chartData, stats } = useMemo(() => {
+    // Obtener todas las rúbricas con datos, ordenadas por ID
+    const rubrics = Object.entries(rubricProgress)
+      .filter(([key, data]) => key.startsWith('rubrica') && data.scores?.length > 0)
+      .sort((a, b) => a[0].localeCompare(b[0])); // Ordenar por rubricId
 
-    if (rubrics.length === 0) return [];
+    if (rubrics.length === 0) return { chartData: [], stats: null };
 
-    // Encontrar el máximo número de intentos
+    // Calcular estadísticas
+    const totalAttempts = rubrics.reduce((sum, [_, data]) => sum + data.scores.length, 0);
     const maxAttempts = Math.max(...rubrics.map(([_, data]) => data.scores.length));
+    const avgAttemptsPerRubric = totalAttempts / rubrics.length;
+    const rubricsWithMultiple = rubrics.filter(([_, data]) => data.scores.length >= 2).length;
 
     // Crear array de datos por intento
     const data = [];
@@ -137,13 +196,23 @@ const ProgressChart = ({ rubricProgress = {}, theme }) => {
       data.push(point);
     }
 
-    return data;
+    return {
+      chartData: data,
+      stats: {
+        totalAttempts,
+        maxAttempts,
+        avgAttemptsPerRubric: avgAttemptsPerRubric.toFixed(1),
+        rubricsWithMultiple,
+        totalRubrics: rubrics.length,
+        needsMoreData: maxAttempts < 2
+      }
+    };
   }, [rubricProgress]);
 
   const activeRubrics = useMemo(() => {
-    return Object.keys(rubricProgress).filter(
-      key => key.startsWith('rubrica') && rubricProgress[key]?.scores?.length > 0
-    );
+    return Object.keys(rubricProgress)
+      .filter(key => key.startsWith('rubrica') && rubricProgress[key]?.scores?.length > 0)
+      .sort(); // Ordenar alfabéticamente para consistencia
   }, [rubricProgress]);
 
   if (chartData.length === 0) {
@@ -152,7 +221,7 @@ const ProgressChart = ({ rubricProgress = {}, theme }) => {
         <ChartTitle theme={theme}>📈 Evolución Temporal</ChartTitle>
         <EmptyState theme={theme}>
           <p>📊 Aún no hay suficientes datos para generar el gráfico</p>
-          <p>Completa al menos 2 evaluaciones en una rúbrica para ver tu progreso</p>
+          <p>Completa al menos 1 evaluación en cualquier dimensión para comenzar</p>
         </EmptyState>
       </ChartContainer>
     );
@@ -165,6 +234,33 @@ const ProgressChart = ({ rubricProgress = {}, theme }) => {
         Observa cómo ha evolucionado tu desempeño en cada dimensión a lo largo de tus intentos.
         Las líneas ascendentes indican mejora continua.
       </ChartDescription>
+
+      {/* Panel informativo cuando hay pocos datos para evolución */}
+      {stats?.needsMoreData && (
+        <InfoBox theme={theme}>
+          <InfoIcon>💡</InfoIcon>
+          <InfoContent theme={theme}>
+            <strong>¡Buen comienzo!</strong> Has completado <strong>{stats.totalAttempts} evaluaciones</strong> en <strong>{stats.totalRubrics} dimensiones</strong>.
+            <br />
+            Para ver la evolución temporal, necesitas al menos <strong>2 intentos en una misma dimensión</strong>.
+            ¡Vuelve a evaluar una dimensión para ver tu progreso!
+            <StatsRow theme={theme}>
+              <StatBadge theme={theme} $color="#3B82F6">
+                <span>{stats.totalAttempts}</span>
+                <span>intentos totales</span>
+              </StatBadge>
+              <StatBadge theme={theme} $color="#10B981">
+                <span>{stats.totalRubrics}</span>
+                <span>dimensiones evaluadas</span>
+              </StatBadge>
+              <StatBadge theme={theme} $color="#F59E0B">
+                <span>{stats.avgAttemptsPerRubric}</span>
+                <span>promedio por dimensión</span>
+              </StatBadge>
+            </StatsRow>
+          </InfoContent>
+        </InfoBox>
+      )}
 
       <ResponsiveContainer width="100%" height={350}>
         <LineChart

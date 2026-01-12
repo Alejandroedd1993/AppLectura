@@ -6,7 +6,7 @@
  * y recibir evaluación criterial dual (DeepSeek + OpenAI)
  */
 
-import React, { useState, useContext, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useContext, useCallback, useMemo, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
@@ -16,19 +16,46 @@ import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useRateLimit from '../../hooks/useRateLimit';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
-import { renderMarkdown, renderMarkdownList } from '../../utils/markdownUtils';
+import { renderMarkdown } from '../../utils/markdownUtils';
 
 const ResumenAcademico = ({ theme }) => {
-  const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation } = useContext(AppContext);
+  const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation, updateActivitiesProgress, sourceCourseId, currentTextoId, activitiesProgress } = useContext(AppContext);
   const rewards = useRewards();
   const documentId = completeAnalysis?.metadata?.document_id || null;
-  
+  const lectureId = currentTextoId || documentId || null;
+  const rewardsResourceId = lectureId ? `${lectureId}:ResumenAcademico` : null;
+
+  // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
+  const resetProcessedRef = useRef(null);
+
   // Estados con recuperación de sessionStorage como respaldo
-  const [resumen, setResumen] = useState(() => {
-    // 🆕 Intentar recuperar desde sessionStorage primero
-    const sessionBackup = sessionStorage.getItem('resumenAcademico_draft');
-    return sessionBackup || '';
-  });
+  // 🆕 FASE 1 FIX: Usa claves namespaced por textoId (se re-evalúa cuando currentTextoId cambia)
+  const [resumen, setResumen] = useState('');
+
+  // 🆕 Efecto para cargar borrador cuando cambia el lectureId
+  useEffect(() => {
+    if (!lectureId) return;
+
+    // Al cambiar de lectura, limpiar primero para evitar que contenido
+    // del documento anterior se persista con la nueva clave.
+    setResumen('');
+
+    let cancelled = false;
+
+    // Importar helper dinámicamente para evitar dependencia circular
+    import('../../services/sessionManager').then(({ getDraftKey }) => {
+      const key = getDraftKey('resumenAcademico_draft', lectureId);
+      const savedDraft = sessionStorage.getItem(key);
+      if (savedDraft) {
+        if (!cancelled) setResumen(savedDraft);
+        console.log('📂 [ResumenAcademico] Borrador cargado para lectureId:', lectureId);
+      } else {
+        console.log('📝 [ResumenAcademico] Sin borrador para lectureId:', lectureId);
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [lectureId]);
   const [evaluacion, setEvaluacion] = useState(null);
   const [loading, setLoading] = useState(false);
   const [currentEvaluationStep, setCurrentEvaluationStep] = useState(null); // 🆕 Paso actual de evaluación
@@ -36,57 +63,71 @@ const ResumenAcademico = ({ theme }) => {
   const [showCitasPanel, setShowCitasPanel] = useState(false); // 🆕 Panel de citas guardadas
   const [pasteError, setPasteError] = useState(null); // 🆕 Error de pegado externo
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
-  
+  const [evaluationAttempts, setEvaluationAttempts] = useState(0); // 🆕 Intentos de evaluación (Max 3)
+  const [history, setHistory] = useState([]); // 🆕 Historial de versiones { timestamp, resumen, evaluacion }
+  const [viewingVersion, setViewingVersion] = useState(null); // 🆕 Versión que se está visualizando (null = actual)
+  const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const MAX_ATTEMPTS = 3;
+
   // 🆕 Rate limiting: 5s cooldown, máximo 10 evaluaciones/hora
   const rateLimit = useRateLimit('evaluate_resumen', {
     cooldownMs: 5000,
     maxPerHour: 10
   });
-  
+
   // 🆕 Keyboard shortcuts para productividad
   const [showShortcutsHint, setShowShortcutsHint] = useState(false);
-  
+
   useKeyboardShortcuts({
-    'ctrl+s': (e) => {
+    'ctrl+s': (_e) => {
       console.log('⌨️ Ctrl+S: Guardando borrador manualmente...');
       persistence.saveManual();
       // Mostrar feedback visual
       setShowShortcutsHint(true);
       setTimeout(() => setShowShortcutsHint(false), 2000);
     },
-    'ctrl+enter': (e) => {
+    'ctrl+enter': (_e) => {
       console.log('⌨️ Ctrl+Enter: Evaluando resumen...');
-      if (!loading && validacion.valid && rateLimit.canProceed) {
+      if (!loading && validacion.valid && rateLimit.canProceed && evaluationAttempts < MAX_ATTEMPTS) {
         handleEvaluar();
       }
     },
-    'escape': (e) => {
+    'escape': (_e) => {
       console.log('⌨️ Esc: Cerrando paneles...');
       if (showCitasPanel) {
         setShowCitasPanel(false);
       } else if (pasteError) {
         setPasteError(null);
+      } else if (viewingVersion) {
+        setViewingVersion(null); // Salir del modo historial
       }
     }
   }, {
     enabled: true,
     excludeInputs: false // Permitir en textarea
   });
-  
+
   // Persistencia
-  const persistence = useActivityPersistence(documentId, {
-    enabled: !!documentId,
+  const persistence = useActivityPersistence(lectureId, {
+    enabled: !!lectureId,
+    courseId: sourceCourseId, // 🆕 Aislar datos por curso
+    legacyDocumentIds: (currentTextoId && documentId && currentTextoId !== documentId) ? [documentId] : [],
     studentAnswers: { resumen },
     aiFeedbacks: { evaluacion },
     criterionFeedbacks: {},
     currentIndex: 0,
+    attempts: evaluationAttempts, // 🆕 Persistir intentos
+    history, // 🆕 Persistir historial
+    submitted: isSubmitted, // 🆕 Persistir estado de entrega
     onRehydrate: (data) => {
       console.log('📦 [ResumenAcademico] Rehidratando datos...', {
         documentId,
         hasResumen: !!data.student_answers?.resumen,
-        hasEvaluacion: !!data.ai_feedbacks?.evaluacion
+        hasEvaluacion: !!data.ai_feedbacks?.evaluacion,
+        attempts: data.attempts,
+        historyLength: data.history?.length || 0
       });
-      
+
       // ✅ Rehidratación robusta
       if (data.student_answers?.resumen) {
         setResumen(data.student_answers.resumen);
@@ -96,67 +137,280 @@ const ResumenAcademico = ({ theme }) => {
         setEvaluacion(data.ai_feedbacks.evaluacion);
         console.log('✅ Evaluación rehidratada');
       }
+
+      // 🆕 Rehidratar intentos
+      if (typeof data.attempts === 'number') {
+        setEvaluationAttempts(data.attempts);
+        console.log(`✅ Intentos rehidratados: ${data.attempts}`);
+      }
+
+      // 🆕 Rehidratar historial
+      if (Array.isArray(data.history)) {
+        setHistory(data.history);
+        console.log(`✅ Historial rehidratado: ${data.history.length} versiones`);
+      }
+
+      // 🆕 Rehidratar estado de entrega
+      if (data.submitted) {
+        setIsSubmitted(true);
+        console.log('✅ Estado de entrega rehidratado: ENTREGADO');
+      }
     }
   });
-  
-  // 🆕 Guardar respaldo en sessionStorage al cambiar resumen
+
+  // 🆕 CLOUD SYNC: Cargar history/drafts desde Firestore (activitiesProgress) - tiene prioridad sobre localStorage
+  // También detecta resets del docente y limpia el estado local
   useEffect(() => {
-    if (resumen) {
-      sessionStorage.setItem('resumenAcademico_draft', resumen);
-      console.log('💾 Respaldo guardado en sessionStorage');
+    if (!lectureId) return;
+    
+    const findCloudArtifact = (artifactKey) => {
+      if (!activitiesProgress) return null;
+      const nested = activitiesProgress?.[lectureId]?.artifacts?.[artifactKey];
+      if (nested) return nested;
+      const direct = activitiesProgress?.artifacts?.[artifactKey];
+      if (direct) return direct;
+      if (typeof activitiesProgress === 'object') {
+        for (const key of Object.keys(activitiesProgress)) {
+          const candidate = activitiesProgress?.[key]?.artifacts?.[artifactKey];
+          if (candidate) return candidate;
+        }
+      }
+      return null;
+    };
+
+    const cloudData = findCloudArtifact('resumenAcademico');
+    
+    // � DEBUG: Ver datos del cloud para diagnóstico
+    console.log('🔍 [ResumenAcademico] Cloud data check:', {
+      hasCloudData: !!cloudData,
+      resetBy: cloudData?.resetBy,
+      resetAt: cloudData?.resetAt,
+      submitted: cloudData?.submitted,
+      hasHistory: !!(cloudData?.history?.length)
+    });
+    
+    // �🔄 DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
+    // Convertir resetAt a timestamp en milisegundos (puede ser string ISO, Firestore Timestamp, o número)
+    const rawResetAt = cloudData?.resetAt;
+    let resetTimestamp = 0;
+    if (rawResetAt) {
+      if (rawResetAt.seconds) {
+        // Firestore Timestamp
+        resetTimestamp = rawResetAt.seconds * 1000;
+      } else if (typeof rawResetAt === 'string') {
+        // ISO string
+        resetTimestamp = new Date(rawResetAt).getTime();
+      } else if (typeof rawResetAt === 'number') {
+        // Ya es timestamp (verificar si es segundos o milisegundos)
+        resetTimestamp = rawResetAt > 1e12 ? rawResetAt : rawResetAt * 1000;
+      }
     }
-  }, [resumen]);
+    
+    // 🆕 CLAVE: Si submitted === false explícitamente por el reset, debemos aplicarlo
+    // El reset escribe submitted: false, así que si cloudData.submitted es false
+    // y hay resetBy='docente', es un reset válido
+    const wasResetByDocente = cloudData?.resetBy === 'docente' && resetTimestamp > 0;
+    const isCurrentlySubmitted = cloudData?.submitted === true;
+    
+    // Solo aplicar reset si:
+    // 1. Hay resetBy='docente' y resetTimestamp válido
+    // 2. El artefacto NO está actualmente submitted (el docente lo reseteó a submitted: false)
+    const shouldApplyReset = wasResetByDocente && !isCurrentlySubmitted;
+    
+    if (shouldApplyReset) {
+      // Verificar si ya procesamos este reset específico
+      const resetKey = `${lectureId}_${resetTimestamp}`;
+      if (resetProcessedRef.current === resetKey) {
+        // Ya procesamos este reset, no hacer nada
+        return;
+      }
+      
+      console.log('🔄 [ResumenAcademico] Detectado RESET por docente, limpiando estado local...');
+      console.log('🔄 [ResumenAcademico] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
+      resetProcessedRef.current = resetKey; // Marcar como procesado
+      
+      // Limpiar estados
+      setIsSubmitted(false);
+      setIsLocked(false);
+      setHistory([]);
+      setEvaluationAttempts(0);
+      setEvaluacion(null);
+      setResumen('');
+      setViewingVersion(null);
+      
+      // Limpiar sessionStorage
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const key = getDraftKey('resumenAcademico_draft', lectureId);
+        sessionStorage.removeItem(key);
+        console.log('🧹 [ResumenAcademico] Borrador sessionStorage limpiado tras reset');
+      });
+      
+      // Limpiar localStorage (persistence storage key)
+      if (persistence?.clearResults) {
+        persistence.clearResults();
+      }
+      // También limpiar directamente localStorage con la key del artefacto
+      try {
+        const storageKeys = Object.keys(localStorage).filter(k => 
+          k.includes('activity_results_') && k.includes(lectureId)
+        );
+        storageKeys.forEach(k => {
+          localStorage.removeItem(k);
+          console.log('🧹 [ResumenAcademico] localStorage key limpiada:', k);
+        });
+      } catch (e) {
+        console.warn('Error limpiando localStorage:', e);
+      }
+      
+      return; // No procesar más, ya reseteamos
+    }
+    
+    if (!cloudData) return;
+
+    // Priorizar datos de cloud sobre localStorage
+    if (cloudData.history && Array.isArray(cloudData.history)) {
+      console.log('☁️ [ResumenAcademico] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
+      setHistory(prev => {
+        // Merge: mantener el que tenga más versiones o timestamps más recientes
+        if (prev.length >= cloudData.history.length) return prev;
+        return cloudData.history;
+      });
+    }
+
+    if (cloudData.attempts && typeof cloudData.attempts === 'number') {
+      setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
+    }
+
+    if (cloudData.submitted) {
+      setIsSubmitted(true);
+    }
+
+    // 🆕 Restaurar borrador desde cloud si existe y sessionStorage está vacío
+    if (cloudData.draft) {
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const key = getDraftKey('resumenAcademico_draft', lectureId);
+        const localDraft = sessionStorage.getItem(key);
+        if (!localDraft || localDraft.length === 0) {
+          sessionStorage.setItem(key, cloudData.draft);
+          setResumen(cloudData.draft);
+          console.log('☁️ [ResumenAcademico] Borrador restaurado desde Firestore');
+        }
+      });
+    }
+  }, [lectureId, activitiesProgress, persistence]);
+
+  // 🆕 FASE 1 FIX: Guardar respaldo en sessionStorage con clave namespaced
+  useEffect(() => {
+    if (!lectureId) return;
+
+    // Si está bloqueado por evaluación, entregado o mostrando versión histórica, no re-guardar borrador
+    if (isLocked || isSubmitted || viewingVersion) return;
+
+    if (!resumen) return;
+
+    let cancelled = false;
+    let timeoutId = null;
+
+    import('../../services/sessionManager').then(({ getDraftKey, updateCurrentSession, captureArtifactsDrafts }) => {
+      if (cancelled) return;
+
+      const key = getDraftKey('resumenAcademico_draft', lectureId);
+      sessionStorage.setItem(key, resumen);
+      console.log('💾 [ResumenAcademico] Borrador guardado para lectureId:', lectureId);
+
+      // 🆕 Trigger cloud sync (debounced)
+      timeoutId = setTimeout(() => {
+        if (cancelled) return;
+        updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(lectureId) });
+      }, 4000);
+    });
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [resumen, lectureId, isLocked, isSubmitted, viewingVersion]);
 
   // 🆕 Escuchar restauración de sesión para actualizar el estado desde sessionStorage
   useEffect(() => {
     const handleSessionRestored = () => {
-      const restoredDraft = sessionStorage.getItem('resumenAcademico_draft');
+      // Compat: preferir clave namespaced por lectureId, con fallback a clave legacy
+      let restoredDraft = null;
+
+      if (lectureId) {
+        import('../../services/sessionManager').then(({ getDraftKey }) => {
+          const key = getDraftKey('resumenAcademico_draft', lectureId);
+          const scoped = sessionStorage.getItem(key);
+          const legacy = sessionStorage.getItem('resumenAcademico_draft');
+          const picked = scoped || legacy;
+          if (picked && picked !== resumen) {
+            console.log('🔄 [ResumenAcademico] Restaurando borrador desde sesión...');
+            setResumen(picked);
+            // Normalizar: si venía de legacy, copiar a namespaced
+            if (!scoped && legacy) {
+              sessionStorage.setItem(key, legacy);
+            }
+          }
+        });
+        return;
+      }
+
+      restoredDraft = sessionStorage.getItem('resumenAcademico_draft');
       if (restoredDraft && restoredDraft !== resumen) {
         console.log('🔄 [ResumenAcademico] Restaurando borrador desde sesión...');
         setResumen(restoredDraft);
       }
     };
-    
+
     window.addEventListener('session-restored', handleSessionRestored);
     return () => window.removeEventListener('session-restored', handleSessionRestored);
-  }, [resumen]);
-  
+  }, [resumen, lectureId]);
+
   // Validación en tiempo real
   const validacion = useMemo(() => {
     if (!resumen || !texto) return { valid: false, errors: [], citasEncontradas: 0 };
     return validarResumenAcademico(resumen, texto);
   }, [resumen, texto]);
-  
+
   // Contador de palabras
   const palabras = useMemo(() => {
     return resumen.trim().split(/\s+/).filter(Boolean).length;
   }, [resumen]);
-  
+
   // Handler de evaluación
   const handleEvaluar = useCallback(async () => {
     if (!validacion.valid) {
       setError(validacion.errors.join('\n'));
       return;
     }
-    
+
+    // 🆕 Verificar límite de intentos
+    if (evaluationAttempts >= MAX_ATTEMPTS) {
+      setError(`🚫 Has alcanzado el límite de ${MAX_ATTEMPTS} intentos de evaluación para este artefacto.`);
+      return;
+    }
+
     // ✅ Verificar rate limit antes de proceder
     const rateLimitResult = rateLimit.attemptOperation();
     if (!rateLimitResult.allowed) {
       if (rateLimitResult.reason === 'cooldown') {
         setError(`⏱️ Por favor espera ${rateLimitResult.waitSeconds} segundos antes de evaluar nuevamente.`);
       } else if (rateLimitResult.reason === 'hourly_limit') {
-        setError(`🚦 Has alcanzado el límite de 10 evaluaciones por hora. Intenta más tarde.`);
+        setError(`🚦 Has alcanzado el límite de 10 evaluaciones totales por hora. Intenta más tarde.`);
       }
       return;
     }
-    
+
     setLoading(true);
     setError(null);
     setCurrentEvaluationStep({ label: 'Iniciando evaluación...', icon: '🚀', duration: 2 });
-    
+
+    // 🆕 Incrementar intentos inmediatamente
+    setEvaluationAttempts(prev => prev + 1);
+
     try {
-      console.log('📝 [ResumenAcademico] Solicitando evaluación dual...');
-      
+      console.log(`📝 [ResumenAcademico] Solicitando evaluación dual (Intento ${evaluationAttempts + 1}/${MAX_ATTEMPTS})...`);
+
       // Simular pasos para feedback visual
       const stepTimeouts = [
         setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando estructura...', icon: '📊', duration: 5 }), 1000),
@@ -164,80 +418,131 @@ const ResumenAcademico = ({ theme }) => {
         setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 10 }), 15000),
         setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando feedback...', icon: '🔧', duration: 3 }), 25000)
       ];
-      
+
       const result = await evaluarResumenAcademico({
         resumen,
         textoOriginal: texto
       });
-      
+
       // Cancelar timeouts pendientes si la evaluación terminó antes
       stepTimeouts.forEach(timeout => clearTimeout(timeout));
-      
+
       console.log('✅ [ResumenAcademico] Evaluación recibida:', result);
       setEvaluacion(result);
       setIsLocked(true); // 🔒 Bloquear textarea después de evaluar
-      
+
       // 🆕 Actualizar progreso global de rúbrica
       updateRubricScore('rubrica1', {
         score: result.scoreGlobal,
         nivel: result.nivel,
         artefacto: 'ResumenAcademico',
-        criterios: result.criteriosEvaluados
+        criterios: result.criteriosEvaluados,
+        textoId: lectureId
       });
-      
-      // 🎮 REGISTRAR RECOMPENSAS
+
+      // 🆕 Archivar en Historial
+      const newHistoryEntry = {
+        timestamp: new Date().toISOString(),
+        content: { resumen },
+        feedback: result,
+        score: result.scoreGlobal,
+        attemptNumber: evaluationAttempts + 1
+      };
+
+      setHistory(prev => [...prev, newHistoryEntry]);
+      console.log('📜 [ResumenAcademico] Versión archivada en historial');
+
+      // 🔄 CLOUD SYNC: Sincronizar historial y borrador con Firestore para cross-browser
+      if (lectureId && updateActivitiesProgress) {
+        updateActivitiesProgress(lectureId, prev => ({
+          ...prev,
+          artifacts: {
+            ...(prev?.artifacts || {}),
+            resumenAcademico: {
+              ...(prev?.artifacts?.resumenAcademico || {}),
+              history: [...(prev?.artifacts?.resumenAcademico?.history || []), newHistoryEntry],
+              attempts: evaluationAttempts + 1,
+              lastScore: result.scoreGlobal,
+              lastNivel: result.nivel,
+              lastEvaluatedAt: Date.now(),
+              draft: resumen, // Guardar el borrador actual también
+              // 🆕 Limpiar flags de reset cuando el estudiante trabaja
+              resetBy: null,
+              resetAt: null
+            }
+          }
+        }));
+        console.log('☁️ [ResumenAcademico] Historial sincronizado con Firestore');
+      }
+
+      // �🎮 REGISTRAR RECOMPENSAS
       if (rewards) {
         // Puntos base por enviar evaluación
         rewards.recordEvent('EVALUATION_SUBMITTED', {
           artefacto: 'ResumenAcademico',
-          rubricId: 'rubrica1'
+          rubricId: 'rubrica1',
+          resourceId: rewardsResourceId
         });
-        
+
         // Puntos según nivel alcanzado
         const nivelEvent = `EVALUATION_LEVEL_${result.nivel}`;
         rewards.recordEvent(nivelEvent, {
           score: result.scoreGlobal,
           nivel: result.nivel,
-          artefacto: 'ResumenAcademico'
+          artefacto: 'ResumenAcademico',
+          resourceId: rewardsResourceId
         });
-        
+
         // Puntos por citas textuales usadas
         const citasCount = (resumen.match(/"/g) || []).length / 2; // Contar pares de comillas
         if (citasCount > 0) {
           rewards.recordEvent('QUOTE_USED', {
             count: Math.floor(citasCount),
-            artefacto: 'ResumenAcademico'
+            artefacto: 'ResumenAcademico',
+            resourceId: rewardsResourceId
           });
         }
-        
+
         // Bonus si el anclaje textual es sólido (3+ citas)
         if (citasCount >= 3) {
           rewards.recordEvent('STRONG_TEXTUAL_ANCHORING', {
             citasCount: Math.floor(citasCount),
-            artefacto: 'ResumenAcademico'
+            artefacto: 'ResumenAcademico',
+            resourceId: rewardsResourceId
           });
         }
-        
+
+
         // Achievement: Score perfecto
         if (result.scoreGlobal >= 9.5) {
           rewards.recordEvent('PERFECT_SCORE', {
             score: result.scoreGlobal,
-            artefacto: 'ResumenAcademico'
+            artefacto: 'ResumenAcademico',
+            resourceId: rewardsResourceId
           });
         }
-        
+
         console.log('🎮 [ResumenAcademico] Recompensas registradas');
       }
-      
+
       // 🗑️ Limpiar sessionStorage para eliminar advertencia de borrador
+      try {
+        if (lectureId) {
+          import('../../services/sessionManager').then(({ getDraftKey }) => {
+            const key = getDraftKey('resumenAcademico_draft', lectureId);
+            sessionStorage.removeItem(key);
+          });
+        }
+      } catch { /* noop */ }
+      // Legacy (compat)
       sessionStorage.removeItem('resumenAcademico_draft');
-      
+
       // 📢 Disparar evento para que DraftWarning se actualice inmediatamente
       window.dispatchEvent(new Event('evaluation-complete'));
-      
+
       // Guardar manualmente para asegurar persistencia inmediata
       persistence.saveManual();
-      
+
     } catch (error) {
       console.error('❌ [ResumenAcademico] Error:', error);
       setError(`Error al evaluar: ${error.message}`);
@@ -245,21 +550,73 @@ const ResumenAcademico = ({ theme }) => {
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
-  }, [resumen, texto, validacion, setError, persistence, rateLimit, updateRubricScore]);
-  
+  }, [resumen, texto, validacion.valid, evaluationAttempts, rateLimit, rewards, rewardsResourceId, setError, updateRubricScore, persistence, lectureId, updateActivitiesProgress]);
+
+  // 🆕 Función para entrega final
+  const handleSubmit = useCallback(() => {
+    if (!evaluacion) return;
+
+    if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
+      setIsSubmitted(true);
+
+      // Guardar inmediatamente
+      setTimeout(() => persistence.saveManual(), 100);
+
+      // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
+      if (lectureId && updateActivitiesProgress) {
+        updateActivitiesProgress(lectureId, prev => {
+          // Obtener el score previo guardado (lastScore) o usar puntuacion_global
+          const previousArtifact = prev?.artifacts?.resumenAcademico || {};
+          const scoreToUse = previousArtifact.lastScore || evaluacion.puntuacion_global || 0;
+          
+          console.log('📤 [ResumenAcademico] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'puntuacion_global:', evaluacion.puntuacion_global);
+          
+          return {
+            ...prev,
+            artifacts: {
+              ...(prev?.artifacts || {}),
+              resumenAcademico: {
+                ...previousArtifact,
+                submitted: true,
+                submittedAt: Date.now(),
+                score: scoreToUse,
+                nivel: evaluacion.nivel || previousArtifact.lastNivel || 'Sin evaluar',
+                history: history,
+                attempts: evaluationAttempts,
+                finalContent: resumen
+              }
+            }
+          };
+        });
+      }
+
+      // Registrar evento de recompensa
+      if (rewards) {
+        rewards.recordEvent('ARTIFACT_SUBMITTED', {
+          artefacto: 'ResumenAcademico',
+          level: evaluacion.nivel,
+          resourceId: rewardsResourceId
+        });
+      }
+
+      console.log('✅ [ResumenAcademico] Tarea entregada y sincronizada con Dashboard');
+    }
+  }, [evaluacion, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, resumen]);
+
   // 🆕 Función para desbloquear y seguir editando después de recibir feedback
   const handleSeguirEditando = useCallback(() => {
     console.log('✏️ [ResumenAcademico] Desbloqueando para editar...');
     setIsLocked(false);
     setEvaluacion(null); // Ocultar evaluación anterior para enfocarse en editar
   }, []);
-  
+
   // 🆕 Obtener citas guardadas manualmente por el estudiante (sin auto-extraer)
   const citasGuardadas = useMemo(() => {
-    if (!documentId) return [];
-    return getCitations(documentId);
-  }, [documentId, getCitations]);
-  
+    if (!lectureId) return [];
+    const arr = getCitations?.(lectureId);
+    return Array.isArray(arr) ? arr : [];
+  }, [lectureId, getCitations]);
+
   // 🆕 Insertar cita en el resumen con formato
   const insertarCita = useCallback((textoCita) => {
     const citaFormateada = `"${textoCita}" `;
@@ -270,34 +627,51 @@ const ResumenAcademico = ({ theme }) => {
     setShowCitasPanel(false); // Cerrar panel después de insertar
     console.log('✅ Cita insertada en el resumen');
   }, []);
-  
+
   // 🆕 Eliminar cita guardada
   const handleEliminarCita = useCallback((citaId) => {
-    if (documentId) {
-      deleteCitation(documentId, citaId);
+    if (lectureId) {
+      deleteCitation(lectureId, citaId);
       console.log(`🗑️ Cita ${citaId} eliminada`);
     }
-  }, [documentId, deleteCitation]);
-  
-  // 🆕 Prevención de pegado externo (anti-plagio)
+  }, [lectureId, deleteCitation]);
+
+  // 🆕 Prevención de pegado externo (anti-plagio) mejorada
   const handlePaste = useCallback((e) => {
     e.preventDefault();
     const pastedText = e.clipboardData.getData('text');
     const wordCount = pastedText.trim().split(/\s+/).filter(word => word.length > 0).length;
-    
-    if (wordCount <= 40) {
-      // Permitir paste de hasta 40 palabras
-      document.execCommand('insertText', false, pastedText);
-      console.log(`✅ Paste permitido: ${wordCount} palabras`);
-    } else {
+
+    // Si intenta pegar mucho texto (>40 palabras), bloquear
+    if (wordCount > 40) {
       const message = `⚠️ Solo puedes pegar hasta 40 palabras (intentaste pegar ${wordCount}). Escribe con tus propias palabras o usa citas guardadas.`;
       setPasteError(message);
       setTimeout(() => setPasteError(null), 5000);
       console.warn('🚫 Intento de pegado bloqueado (excede 40 palabras)');
+      return;
     }
-  }, []);
-  
-  // Helper para obtener color por nivel
+
+    // ✅ Lógica correcta para insertar en textarea controlado
+    const textarea = e.target;
+    const { selectionStart, selectionEnd } = textarea;
+    const currentText = resumen || '';
+
+    // Insertar texto en la posición del cursor o reemplazar selección
+    const newText =
+      currentText.substring(0, selectionStart) +
+      pastedText +
+      currentText.substring(selectionEnd);
+
+    // Actualizar estado y luego restaurar cursor (necesita useEffect o setTimeout, 
+    // pero React input normal suele moverlo al final. Para mejor UX, podríamos gestionarlo, 
+    // pero lo básico es que inserte el texto.)
+    setResumen(newText);
+
+    console.log(`✅ Paste permitido: ${wordCount} palabras`);
+    setPasteError(null); // Limpiar error si lo hubiera
+  }, [resumen]);
+
+  // 🆕 Helper para obtener color por nivel
   const getNivelColor = useCallback((nivel) => {
     const colors = {
       1: theme.danger || '#F44336',
@@ -307,7 +681,43 @@ const ResumenAcademico = ({ theme }) => {
     };
     return colors[nivel] || '#757575';
   }, [theme]);
-  
+
+  // 🆕 Visualizar una versión histórica
+  const handleViewVersion = useCallback((entry) => {
+    if (!entry) {
+      setViewingVersion(null); // Volver al actual
+      return;
+    }
+    setViewingVersion(entry);
+    console.log(`📜 Visualizando versión: Intento ${entry.attemptNumber}`);
+  }, []);
+
+  // 🆕 Restaurar versión antigua como actual
+  const handleRestoreVersion = useCallback(() => {
+    if (!viewingVersion) return;
+
+    // Restaurar contenido
+    setResumen(viewingVersion.content.resumen);
+
+    // Restaurar evaluación
+    setEvaluacion(viewingVersion.feedback);
+
+    // Configurar estado
+    setViewingVersion(null);
+    setIsLocked(true); // Se restaura bloqueado para que vea el feedback asociado
+
+    // Guardar inmediatamente este cambio de estado
+    // Nota: No incrementamos intentos ni borramos historial, solo "rebobinamos" el presente
+    setTimeout(() => persistence.saveManual(), 100);
+
+    console.log('rewind ⏪ Versión restaurada exitosamente');
+  }, [viewingVersion, persistence]);
+
+  // Determine what to show: Current state or specific version
+  const displayedResumen = viewingVersion ? viewingVersion.content.resumen : resumen;
+  const displayedEvaluacion = viewingVersion ? viewingVersion.feedback : evaluacion;
+  const _isReadOnly = !!viewingVersion || (isLocked && !viewingVersion); // Read only if viewing history OR locked current
+
   // Helper para obtener label por nivel
   const getNivelLabel = useCallback((nivel) => {
     const labels = {
@@ -318,7 +728,7 @@ const ResumenAcademico = ({ theme }) => {
     };
     return labels[nivel] || 'En desarrollo';
   }, []);
-  
+
   // Si no hay texto cargado
   if (!texto) {
     return (
@@ -331,7 +741,7 @@ const ResumenAcademico = ({ theme }) => {
       </EmptyState>
     );
   }
-  
+
   return (
     <Container>
       {/* Header */}
@@ -344,39 +754,57 @@ const ResumenAcademico = ({ theme }) => {
           Demuestra tu comprensión analítica resumiendo las ideas centrales del texto con al menos 2 citas textuales.
         </HeaderDescription>
       </Header>
-      
-      {/* Guía pedagógica colapsable */}
-      <AnimatePresence>
-        {showGuide && (
-          <GuideCard
-            as={motion.div}
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            theme={theme}
-          >
-            <GuideHeader>
-              <GuideTitle theme={theme}>💡 ¿Cómo escribir un buen resumen académico?</GuideTitle>
-              <CloseButton onClick={() => setShowGuide(false)}>✕</CloseButton>
-            </GuideHeader>
-            <GuideContent theme={theme}>
-              <GuideItem>
-                <strong>1. Identifica la tesis central:</strong> ¿Cuál es la idea principal que defiende el autor?
-              </GuideItem>
-              <GuideItem>
-                <strong>2. Usa citas textuales:</strong> Selecciona al menos 2 fragmentos representativos entre "comillas".
-              </GuideItem>
-              <GuideItem>
-                <strong>3. Parafrasea con tus palabras:</strong> No copies párrafos enteros, demuestra comprensión.
-              </GuideItem>
-              <GuideItem>
-                <strong>4. Construye inferencias:</strong> ¿Qué sugiere el autor sin decirlo explícitamente?
-              </GuideItem>
+
+      {/* 🆕 Banner de Entrega Final - SIEMPRE después del Header */}
+      {isSubmitted && (
+        <SubmissionBanner
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          theme={theme}
+        >
+          <span className="icon">✅</span>
+          <span className="text">
+            <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
+          </span>
+        </SubmissionBanner>
+      )}
+
+      {/* Guía pedagógica colapsable - estilo expandir/colapsar */}
+      <GuideSection theme={theme} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+        <GuideHeader onClick={() => setShowGuide(!showGuide)}>
+          <GuideTitle theme={theme}>
+            💡 ¿Cómo escribir un buen resumen académico?
+          </GuideTitle>
+          <ToggleIcon $expanded={showGuide}>▼</ToggleIcon>
+        </GuideHeader>
+        <AnimatePresence>
+          {showGuide && (
+            <GuideContent
+              theme={theme}
+              as={motion.div}
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+            >
+              <GuideList>
+                <GuideItem>
+                  <strong>1. Identifica la tesis central:</strong> ¿Cuál es la idea principal que defiende el autor?
+                </GuideItem>
+                <GuideItem>
+                  <strong>2. Usa citas textuales:</strong> Selecciona al menos 2 fragmentos representativos entre "comillas".
+                </GuideItem>
+                <GuideItem>
+                  <strong>3. Parafrasea con tus palabras:</strong> No copies párrafos enteros, demuestra comprensión.
+                </GuideItem>
+                <GuideItem>
+                  <strong>4. Construye inferencias:</strong> ¿Qué sugiere el autor sin decirlo explícitamente?
+                </GuideItem>
+              </GuideList>
             </GuideContent>
-          </GuideCard>
-        )}
-      </AnimatePresence>
-      
+          )}
+        </AnimatePresence>
+      </GuideSection>
+
       {/* 🆕 Panel lateral de citas guardadas manualmente */}
       <AnimatePresence>
         {showCitasPanel && (
@@ -391,12 +819,12 @@ const ResumenAcademico = ({ theme }) => {
             <CitasPanelHeader theme={theme}>
               <h3 style={{ margin: 0 }}>📋 Mis Citas Guardadas</h3>
               <p style={{ fontSize: '0.85rem', margin: '0.5rem 0 0 0', opacity: 0.8 }}>
-                {citasGuardadas.length === 0 
+                {citasGuardadas.length === 0
                   ? 'Selecciona texto en "Lectura Guiada" y haz clic en "💾 Guardar Cita"'
                   : 'Haz clic en "Insertar" para añadir al resumen'}
               </p>
             </CitasPanelHeader>
-            
+
             <CitasList>
               {citasGuardadas.length === 0 ? (
                 <EmptyCitasMessage theme={theme}>
@@ -418,8 +846,8 @@ const ResumenAcademico = ({ theme }) => {
                     )}
                     <CitaFooter>
                       <CitaInfo theme={theme}>
-                        {new Date(cita.timestamp).toLocaleDateString('es-ES', { 
-                          month: 'short', 
+                        {new Date(cita.timestamp).toLocaleDateString('es-ES', {
+                          month: 'short',
                           day: 'numeric',
                           hour: '2-digit',
                           minute: '2-digit'
@@ -430,7 +858,7 @@ const ResumenAcademico = ({ theme }) => {
                           onClick={() => insertarCita(cita.texto)}
                           theme={theme}
                         >
-                          � Insertar
+                          📌 Insertar
                         </InsertarButton>
                         <EliminarButton
                           onClick={() => handleEliminarCita(cita.id)}
@@ -448,11 +876,60 @@ const ResumenAcademico = ({ theme }) => {
           </CitasPanel>
         )}
       </AnimatePresence>
-      
+
       {/* Formulario del resumen */}
       <EditorSection>
+        {/* 🆕 Ribbon de Historial - "Actual" primero, luego historial */}
+        {history.length > 0 && (
+          <HistoryRibbon theme={theme}>
+            <HistoryTitle theme={theme}>Versiones:</HistoryTitle>
+
+            <HistoryBadge
+              $active={!viewingVersion}
+              onClick={() => handleViewVersion(null)}
+              theme={theme}
+            >
+              Actual
+              <span className="score">En progreso</span>
+            </HistoryBadge>
+
+            {history.slice().reverse().map((entry, idx) => (
+              <HistoryBadge
+                key={idx}
+                $active={viewingVersion && viewingVersion.timestamp === entry.timestamp}
+                onClick={() => handleViewVersion(entry)}
+                theme={theme}
+              >
+                Intento {entry.attemptNumber}
+                <span className="score">★ {entry.score}</span>
+              </HistoryBadge>
+            ))}
+          </HistoryRibbon>
+        )}
+
+        {/* 🆕 Banner de Restauración */}
+        <AnimatePresence>
+          {viewingVersion && (
+            <RestoreBanner
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              theme={theme}
+            >
+              <span>
+                👁️ Estás viendo el <strong>Intento {viewingVersion.attemptNumber}</strong> ({new Date(viewingVersion.timestamp).toLocaleString()}).
+                Es de solo lectura.
+              </span>
+              <RestoreButton onClick={handleRestoreVersion} theme={theme}>
+                🔄 Restaurar esta versión
+              </RestoreButton>
+            </RestoreBanner>
+          )}
+        </AnimatePresence>
+
+
         <EditorHeader>
-          <Label theme={theme}>✏️ Tu resumen</Label>
+          <Label theme={theme}>✏️ Tu resumen {viewingVersion ? '(Histórico)' : ''}</Label>
           <Stats>
             <Stat $valid={palabras >= 50} theme={theme}>
               {palabras} palabras
@@ -462,14 +939,14 @@ const ResumenAcademico = ({ theme }) => {
             </Stat>
           </Stats>
         </EditorHeader>
-        
-        {/* 🆕 Mensaje de auto-guardado */}
-        {resumen.length > 0 && (
+
+        {/* 🆕 Mensaje de auto-guardado (solo si es actual) */}
+        {!viewingVersion && resumen.length > 0 && (
           <AutoSaveMessage theme={theme}>
             💾 Tu trabajo se guarda automáticamente. Puedes cambiar de pestaña sin perder tu progreso.
           </AutoSaveMessage>
         )}
-        
+
         {/* 🆕 Hints de atajos de teclado */}
         <AnimatePresence>
           {showShortcutsHint && (
@@ -484,7 +961,7 @@ const ResumenAcademico = ({ theme }) => {
             </ShortcutsHint>
           )}
         </AnimatePresence>
-        
+
         <ShortcutsBar theme={theme}>
           <ShortcutItem theme={theme}>
             <kbd>Ctrl</kbd> + <kbd>S</kbd> <span>Guardar</span>
@@ -496,20 +973,21 @@ const ResumenAcademico = ({ theme }) => {
             <kbd>Esc</kbd> <span>Cerrar</span>
           </ShortcutItem>
         </ShortcutsBar>
-        
+
         <Textarea
-          value={resumen}
-          onChange={(e) => setResumen(e.target.value)}
+          value={displayedResumen}
+          onChange={(e) => !viewingVersion && !isSubmitted && setResumen(e.target.value)}
           onPaste={handlePaste}
-          placeholder='Ejemplo: El autor argumenta que "la literacidad crítica es esencial en la era digital". Esta tesis se sustenta en...'
+          placeholder="Escribe tu resumen académico aquí..."
           rows={12}
           theme={theme}
-          disabled={loading || isLocked}
-          $isLocked={isLocked}
+          disabled={loading || !!viewingVersion || isSubmitted}
+          spellCheck="false"
+          style={isLocked ? { borderColor: theme.success || '#4CAF50' } : {}}
         />
-        
+
         {/* 🔒 Mensaje cuando está bloqueado después de evaluar */}
-        {isLocked && (
+        {isLocked && !viewingVersion && (
           <LockedMessage theme={theme}>
             <LockIcon>🔒</LockIcon>
             <LockText>
@@ -521,23 +999,23 @@ const ResumenAcademico = ({ theme }) => {
             </UnlockButton>
           </LockedMessage>
         )}
-        
+
         {/* 🆕 Mensaje de error cuando se intenta pegar desde fuente externa */}
         {pasteError && (
           <PasteErrorMessage theme={theme}>
             {pasteError}
           </PasteErrorMessage>
         )}
-        
+
         {/* Validación en tiempo real */}
-        {resumen.length > 0 && !validacion.valid && (
+        {!viewingVersion && resumen.length > 0 && !validacion.valid && (
           <ValidationErrors theme={theme}>
             {validacion.errors.map((error, i) => (
               <ErrorItem key={i}>⚠️ {error}</ErrorItem>
             ))}
           </ValidationErrors>
         )}
-        
+
         {/* Botón de evaluación */}
         <ActionButtons>
           <CitasButton
@@ -549,27 +1027,40 @@ const ResumenAcademico = ({ theme }) => {
           >
             {showCitasPanel ? '✕ Cerrar Citas' : `📋 Mis Citas (${citasGuardadas.length})`}
           </CitasButton>
-          
+
           <EvaluateButton
             onClick={handleEvaluar}
-            disabled={!validacion.valid || loading || !rateLimit.canProceed}
+            disabled={!validacion.valid || loading || evaluationAttempts >= MAX_ATTEMPTS || !rateLimit.canProceed || isSubmitted || Boolean(viewingVersion)}
             theme={theme}
             title={
-              !rateLimit.canProceed && rateLimit.nextAvailableIn > 0
-                ? `Espera ${rateLimit.nextAvailableIn}s`
-                : rateLimit.remaining === 0
-                ? 'Límite de evaluaciones alcanzado (10/hora)'
-                : `${rateLimit.remaining} evaluaciones restantes esta hora`
+              viewingVersion
+                ? 'Estás viendo una versión histórica. Vuelve a "Actual" para editar.'
+                : evaluationAttempts >= MAX_ATTEMPTS
+                  ? 'Has agotado tus intentos de evaluación'
+                  : !rateLimit.canProceed && rateLimit.nextAvailableIn > 0
+                    ? `Espera ${rateLimit.nextAvailableIn}s`
+                    : rateLimit.remaining === 0
+                      ? 'Límite de evaluaciones alcanzado (10/hora)'
+                      : `${rateLimit.remaining} evaluaciones restantes esta hora`
             }
           >
-            {loading ? '⏳ Evaluando con IA Dual...' : 
-             !rateLimit.canProceed && rateLimit.nextAvailableIn > 0 ? `⏱️ Espera ${rateLimit.nextAvailableIn}s` :
-             rateLimit.remaining === 0 ? '🚦 Límite alcanzado' :
-             '🎓 Solicitar Evaluación Criterial'}
+            {loading ? '⏳ Evaluando con IA Dual...' :
+              viewingVersion ? '👁️ Modo Lectura' :
+                evaluationAttempts >= MAX_ATTEMPTS ? '🚫 Intentos Agotados' :
+                  !rateLimit.canProceed && rateLimit.nextAvailableIn > 0 ? `⏱️ Espera ${rateLimit.nextAvailableIn}s` :
+                    rateLimit.remaining === 0 ? '🚦 Límite alcanzado' :
+                      `🎓 Solicitar Evaluación (${MAX_ATTEMPTS - evaluationAttempts} restantes)`}
           </EvaluateButton>
+
+          {/* 🆕 Botón de Entrega Final */}
+          {!isSubmitted && evaluacion && !viewingVersion && !loading && (
+            <SubmitButton onClick={handleSubmit} theme={theme}>
+              🔒 Entregar Tarea
+            </SubmitButton>
+          )}
         </ActionButtons>
       </EditorSection>
-      
+
       {/* 🆕 Barra de progreso durante evaluación */}
       <AnimatePresence>
         {loading && (
@@ -581,10 +1072,10 @@ const ResumenAcademico = ({ theme }) => {
           />
         )}
       </AnimatePresence>
-      
+
       {/* Resultados de la evaluación */}
       <AnimatePresence>
-        {evaluacion && (
+        {displayedEvaluacion && (
           <ResultsSection
             as={motion.div}
             initial={{ opacity: 0, y: 20 }}
@@ -595,23 +1086,23 @@ const ResumenAcademico = ({ theme }) => {
             <ResultsHeader theme={theme}>
               <ResultsTitle>
                 <span>🎓</span>
-                Evaluación Criterial de Comprensión Analítica
+                Evaluación Criterial de Comprensión Analítica {viewingVersion ? `(Histórico: Intento ${viewingVersion.attemptNumber})` : ''}
               </ResultsTitle>
-              <NivelGlobalBadge $color={getNivelColor(evaluacion.nivel)}>
-                Nivel {evaluacion.nivel}/4: {getNivelLabel(evaluacion.nivel)}
+              <NivelGlobalBadge $color={getNivelColor(displayedEvaluacion.nivel)}>
+                Nivel {displayedEvaluacion.nivel}/4: {getNivelLabel(displayedEvaluacion.nivel)}
               </NivelGlobalBadge>
             </ResultsHeader>
-            
+
             {/* Resumen de la dimensión */}
-            {evaluacion.resumenDimension && (
+            {displayedEvaluacion.resumenDimension && (
               <ResumenDimension theme={theme}>
-                {renderMarkdown(evaluacion.resumenDimension)}
+                {renderMarkdown(displayedEvaluacion.resumenDimension)}
               </ResumenDimension>
             )}
-            
+
             {/* Criterios evaluados */}
             <CriteriosGrid>
-              {evaluacion.criteriosEvaluados?.map((criterio, idx) => (
+              {displayedEvaluacion.criteriosEvaluados?.map((criterio, idx) => (
                 <CriterioCard key={idx} theme={theme}>
                   <CriterioHeader>
                     <CriterioTitulo theme={theme}>
@@ -621,7 +1112,7 @@ const ResumenAcademico = ({ theme }) => {
                       Nivel {criterio.nivel}/4
                     </NivelBadge>
                   </CriterioHeader>
-                  
+
                   {/* Evidencias */}
                   {criterio.evidencia && criterio.evidencia.length > 0 && (
                     <EvidenciaSection>
@@ -631,7 +1122,7 @@ const ResumenAcademico = ({ theme }) => {
                       ))}
                     </EvidenciaSection>
                   )}
-                  
+
                   {/* Fortalezas */}
                   {criterio.fortalezas && criterio.fortalezas.length > 0 && (
                     <FeedbackSection>
@@ -643,7 +1134,7 @@ const ResumenAcademico = ({ theme }) => {
                       </FeedbackList>
                     </FeedbackSection>
                   )}
-                  
+
                   {/* Mejoras */}
                   {criterio.mejoras && criterio.mejoras.length > 0 && (
                     <FeedbackSection>
@@ -655,7 +1146,7 @@ const ResumenAcademico = ({ theme }) => {
                       </FeedbackList>
                     </FeedbackSection>
                   )}
-                  
+
                   {/* Fuente de la IA */}
                   <FuenteLabel theme={theme}>
                     Evaluado por: {criterio.fuente}
@@ -663,9 +1154,9 @@ const ResumenAcademico = ({ theme }) => {
                 </CriterioCard>
               ))}
             </CriteriosGrid>
-            
+
             {/* Siguientes pasos */}
-            {evaluacion.siguientesPasos && evaluacion.siguientesPasos.length > 0 && (
+            {Array.isArray(evaluacion?.siguientesPasos) && evaluacion.siguientesPasos.length > 0 && (
               <SiguientesPasosCard theme={theme}>
                 <SiguientesPasosTitle theme={theme}>
                   🚀 Siguientes pasos para mejorar
@@ -682,7 +1173,7 @@ const ResumenAcademico = ({ theme }) => {
           </ResultsSection>
         )}
       </AnimatePresence>
-    </Container>
+    </Container >
   );
 };
 
@@ -692,35 +1183,41 @@ const ResumenAcademico = ({ theme }) => {
 
 const Container = styled.div`
   padding: 1.5rem;
-  max-width: 1200px;
+  max-width: 900px;
   margin: 0 auto;
 `;
 
 const Header = styled.div`
+  text-align: center;
   margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid ${props => props.theme.primary || '#2196F3'};
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #009688 0%, #00796B 100%);
+  border-radius: 12px;
+  color: white;
 `;
 
-const HeaderTitle = styled.h1`
+const HeaderTitle = styled.h2`
   margin: 0 0 0.5rem 0;
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: ${props => props.theme.textPrimary || '#333'};
+  font-size: 1.8rem;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: center;
+  gap: 0.5rem;
+  color: white;
 `;
 
 const HeaderDescription = styled.p`
   margin: 0;
-  color: ${props => props.theme.textSecondary || '#666'};
-  line-height: 1.6;
+  font-size: 0.95rem;
+  opacity: 0.9;
+  line-height: 1.5;
+  color: white;
 `;
 
-const GuideCard = styled.div`
-  background: ${props => `${props.theme.primary || '#2196F3'}08`};
-  border: 1px solid ${props => `${props.theme.primary || '#2196F3'}40`};
+// 🆕 Guía pedagógica estilo expandir/colapsar (consistente con otros artefactos)
+const GuideSection = styled(motion.div)`
+  background: ${props => props.theme.surface || '#ffffff'};
+  border: 1px solid ${props => props.theme.border || '#e0e0e0'};
   border-radius: 8px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
@@ -728,43 +1225,143 @@ const GuideCard = styled.div`
 
 const GuideHeader = styled.div`
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-`;
-
-const GuideTitle = styled.h3`
-  margin: 0;
-  font-size: 1.1rem;
-  color: ${props => props.theme.textPrimary || '#333'};
-`;
-
-const CloseButton = styled.button`
-  background: none;
-  border: none;
-  font-size: 1.25rem;
+  justify-content: space-between;
   cursor: pointer;
-  color: ${props => props.theme.textSecondary || '#666'};
-  padding: 0.25rem 0.5rem;
-  
-  &:hover {
-    color: ${props => props.theme.textPrimary || '#333'};
-  }
+  user-select: none;
+`;
+
+const GuideTitle = styled.h4`
+  margin: 0;
+  color: ${props => props.theme.text || '#333'};
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+`;
+
+const ToggleIcon = styled.span`
+  transition: transform 0.3s ease;
+  transform: ${props => props.$expanded ? 'rotate(180deg)' : 'rotate(0deg)'};
 `;
 
 const GuideContent = styled.div`
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid ${props => props.theme.border || '#e0e0e0'};
+`;
+
+const GuideList = styled.ul`
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 `;
 
-const GuideItem = styled.div`
-  color: ${props => props.theme.textPrimary || '#333'};
-  line-height: 1.6;
-  font-size: 0.95rem;
+const GuideItem = styled.li`
+  color: ${props => props.theme.textMuted || '#666'};
+  font-size: 0.9rem;
+  padding-left: 1.5rem;
+  position: relative;
+  line-height: 1.5;
+
+  &::before {
+    content: '💡';
+    position: absolute;
+    left: 0;
+  }
+`;
+
+// 🆕 Componentes para Historial de Versiones
+const HistoryRibbon = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: ${props => props.theme.surfaceAlt || '#f8f9fa'};
+  border-bottom: 1px solid ${props => props.theme.border || '#e0e0e0'};
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  border-radius: 8px 8px 0 0;
   
-  strong {
-    color: ${props => props.theme.primary || '#2196F3'};
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: ${props => props.theme.border || '#ccc'};
+    border-radius: 2px;
+  }
+`;
+
+const HistoryTitle = styled.div`
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: ${props => props.theme.textSecondary};
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+`;
+
+const HistoryBadge = styled.button`
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 20px;
+  border: 1px solid ${props => props.$active ? props.theme.primary : props.theme.border};
+  background: ${props => props.$active ? props.theme.primary : 'transparent'};
+  color: ${props => props.$active ? 'white' : props.theme.textSecondary};
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  
+  &:hover {
+    background: ${props => props.$active ? props.theme.primaryHover : props.theme.background};
+    border-color: ${props => props.theme.primary};
+  }
+  
+  span.score {
+    background: ${props => props.$active ? 'rgba(255,255,255,0.2)' : props.theme.surfaceAlt};
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+  }
+`;
+
+const RestoreBanner = styled(motion.div)`
+  background: ${props => props.theme.warning}15;
+  border: 1px solid ${props => props.theme.warning};
+  color: ${props => props.theme.warning};
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9rem;
+`;
+
+const RestoreButton = styled.button`
+  background: ${props => props.theme.warning};
+  color: white;
+  border: none;
+  padding: 0.4rem 1rem;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   }
 `;
 
@@ -807,6 +1404,8 @@ const Stat = styled.span`
 
 const Textarea = styled.textarea`
   width: 100%;
+  max-width: 100%; /* Evitar desbordamiento horizontal */
+  box-sizing: border-box; /* Asegurar padding dentro del ancho */
   padding: 1rem;
   border-radius: 8px;
   border: 2px solid ${props => props.theme.border || '#e0e0e0'};
@@ -817,6 +1416,8 @@ const Textarea = styled.textarea`
   font-family: inherit;
   resize: vertical;
   min-height: 200px;
+  overflow-y: auto; /* Scroll si el contenido es muy largo */
+  white-space: pre-wrap; /* Mantener saltos de línea y ajustar */
   opacity: ${props => props.$isLocked ? 0.7 : 1};
   
   &:focus {
@@ -851,6 +1452,59 @@ const LockedMessage = styled.div`
       opacity: 1;
       transform: translateY(0);
     }
+  }
+  border-radius: 8px;
+  animation: slideIn 0.3s ease-out;
+  
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
+const SubmissionBanner = styled(motion.div)`
+  background: ${props => `${props.theme.success || '#4CAF50'}10`};
+  border: 1px solid ${props => props.theme.success || '#4CAF50'};
+  color: ${props => props.theme.success || '#1b5e20'};
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+
+  .icon { font-size: 1.5rem; }
+  .text { font-size: 1rem; }
+`;
+
+const SubmitButton = styled.button`
+  padding: 0.9rem 1.8rem;
+  background: ${props => props.theme.success || '#4CAF50'};
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  
+  &:hover {
+    background: ${props => props.theme.successDark || '#388E3C'};
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px ${props => `${props.theme.success || '#4CAF50'}40`};
   }
 `;
 
@@ -942,7 +1596,7 @@ const EvaluateButton = styled.button`
   }
 `;
 
-const SecondaryButton = styled.button`
+const _SecondaryButton = styled.button`
   padding: 0.9rem 1.8rem;
   background: transparent;
   color: ${props => props.theme.primary || '#2196F3'};
@@ -1257,7 +1911,7 @@ const CitaInfo = styled.span`
   color: ${props => props.theme.textMuted};
 `;
 
-const CopiarButton = styled.button`
+const _CopiarButton = styled.button`
   padding: 0.4rem 0.8rem;
   background: ${props => props.theme.primary};
   color: white;

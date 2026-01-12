@@ -20,14 +20,15 @@ const performanceMiddleware = (app) => {
       const ms = Date.now() - start;
       try {
         res.setHeader('X-Response-Time', `${ms}ms`);
-      } catch (_) {}
+      } catch (_) { }
       if (ms > 5000) console.log(`⚠️ Lento ${req.method} ${req.originalUrl} -> ${ms}ms`);
     });
     next();
   });
 
   app.use((req, res, next) => {
-    res.setTimeout(30000, () => {
+    // Aumentar timeout global a 120s para permitir análisis de IA
+    res.setTimeout(120000, () => {
       console.log('⏰ Timeout:', req.method, req.originalUrl);
       if (!res.headersSent) res.status(408).json({ error: 'Timeout de servidor' });
     });

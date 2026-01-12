@@ -1,6 +1,6 @@
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
-module.exports = function(app) {
+module.exports = function (app) {
   const targetPort = process.env.BACKEND_PORT || process.env.PORT_BACKEND || '3001';
   const target = `http://localhost:${targetPort}`;
   console.log('[proxy] Enrutando /api hacia', target);
@@ -9,8 +9,8 @@ module.exports = function(app) {
     createProxyMiddleware({
       target,
       changeOrigin: true,
-      timeout: 60000,
-      proxyTimeout: 60000,
+      timeout: 120000,
+      proxyTimeout: 120000,
     })
   );
 };

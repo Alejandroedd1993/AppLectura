@@ -16,16 +16,11 @@ const contarSilabas = (texto) => {
   if (!texto) return 0;
 
   const palabras = texto.toLowerCase()
-    .replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, '')
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
     .split(/\s+/)
     .filter(p => p.length > 0);
 
   let totalSilabas = 0;
-
-  // Vocales fuertes (abiertas): a, e, o
-  // Vocales débiles (cerradas): i, u
-  const vocalesFuertes = /[aeoáéó]/gi;
-  const vocalesDebiles = /[iuüíú]/gi;
 
   for (const palabra of palabras) {
     if (palabra.length === 0) continue;
@@ -166,7 +161,7 @@ export const identificarConceptosClave = (texto) => {
   
   // Tokenizar el texto y eliminar signos de puntuación
   const palabras = texto.toLowerCase()
-    .replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, '')
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
     .split(/\s+/);
   
   // Contar frecuencias de palabras que no sean vacías y tengan al menos 4 caracteres
@@ -245,7 +240,7 @@ export const calcularDensidadLexica = (texto) => {
   
   // Tokenizar y limpiar
   const palabras = texto.toLowerCase()
-    .replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, '')
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
     .split(/\s+/)
     .filter(p => p.length > 0);
   

@@ -7,7 +7,7 @@
  */
 
 import React, { useContext, useState, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import styled from 'styled-components';
 import { AppContext } from '../context/AppContext';
 
@@ -24,8 +24,8 @@ import { exportarResultados } from '../utils/exportUtils';
 import { lightTheme, darkTheme } from '../styles/theme';
 
 const PreLectura = () => {
-  const { completeAnalysis, modoOscuro, loading, texto } = useContext(AppContext);
-  
+  const { completeAnalysis, modoOscuro, loading, texto, error, analyzeDocument } = useContext(AppContext);
+
   // Estados para glosario y términos clickeables
   const [glossary, setGlossary] = useState([]);
   const [loadingGlossary, setLoadingGlossary] = useState(false);
@@ -35,19 +35,19 @@ const PreLectura = () => {
 
   // Calcular tema
   const theme = modoOscuro ? darkTheme : lightTheme;
-  
-  // Estado de carga: Si está cargando O (hay texto pero no análisis)
-  const isLoading = loading || (texto && !completeAnalysis);
+
+  // Estado de carga: Solo si loading es true (no depender de completeAnalysis para evitar loading infinito)
+  const isLoading = loading;
 
   // Funciones para glosario
   const generateGlossaryAsync = useCallback(async () => {
     if (!texto || texto.length < 200) return;
-    
+
     // Generar hash simple del texto para caché
     // Usar encodeURIComponent para manejar caracteres especiales (ñ, acentos, emojis)
     const textHash = btoa(encodeURIComponent(texto.substring(0, 500))).substring(0, 32);
     const cacheKey = `glossary_cache_${textHash}`;
-    
+
     // Intentar recuperar del caché primero
     try {
       const cached = localStorage.getItem(cacheKey);
@@ -55,7 +55,7 @@ const PreLectura = () => {
         const { data, timestamp } = JSON.parse(cached);
         const cacheAge = Date.now() - timestamp;
         const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 horas
-        
+
         if (cacheAge < CACHE_DURATION) {
           console.log('✅ Glosario recuperado del caché');
           setGlossary(data || []);
@@ -65,13 +65,13 @@ const PreLectura = () => {
     } catch (err) {
       console.log('⚠️ Error leyendo caché de glosario:', err);
     }
-    
+
     // Si no hay caché válido, generar nuevo glosario
     setLoadingGlossary(true);
     try {
       const glossaryData = await generateGlossary(texto);
       setGlossary(glossaryData || []);
-      
+
       // Guardar en caché
       try {
         localStorage.setItem(cacheKey, JSON.stringify({
@@ -91,7 +91,7 @@ const PreLectura = () => {
 
   const handleExportGlossary = useCallback(async () => {
     if (glossary.length === 0) return;
-    
+
     try {
       await downloadGlossaryAsPDF(glossary, texto.slice(0, 100));
     } catch (error) {
@@ -103,7 +103,7 @@ const PreLectura = () => {
     setSelectedTerm(term);
     setLoadingTermDefinition(true);
     setTermDefinition(null);
-    
+
     try {
       const definition = await fetchTermDefinition(term, texto);
       setTermDefinition(definition);
@@ -138,8 +138,37 @@ const PreLectura = () => {
       generateGlossaryAsync();
     }
   }, [completeAnalysis, generateGlossaryAsync]);
-  
+
+  // 🆕 A3 FIX: Estado para mostrar tiempo transcurrido
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // 🆕 A3 FIX: Efecto para contar tiempo transcurrido durante carga
+  useEffect(() => {
+    let interval;
+    if (isLoading) {
+      setElapsedSeconds(0);
+      interval = setInterval(() => {
+        setElapsedSeconds(prev => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isLoading]);
+
+  // 🆕 A3 FIX: Calcular progreso estimado y mensaje dinámico
+  const getProgressInfo = () => {
+    if (elapsedSeconds < 10) return { step: 1, msg: 'Iniciando análisis...' };
+    if (elapsedSeconds < 30) return { step: 2, msg: 'Preparando contexto (si aplica)...' };
+    if (elapsedSeconds < 60) return { step: 3, msg: 'Analizando con DeepSeek AI...' };
+    if (elapsedSeconds < 90) return { step: 4, msg: 'Estructurando resultados...' };
+    return { step: 5, msg: 'Finalizando... (textos largos tardan más)' };
+  };
+
   if (isLoading) {
+    const progressInfo = getProgressInfo();
+    const estimatedRemaining = Math.max(0, 90 - elapsedSeconds);
+
     return (
       <Container $darkMode={modoOscuro}>
         <LoadingState
@@ -163,47 +192,66 @@ const PreLectura = () => {
           </LoadingSpinner>
           <LoadingTitle>Analizando documento...</LoadingTitle>
           <LoadingDescription>
-            Realizando análisis académico profundo
+            {progressInfo.msg}
           </LoadingDescription>
+
+          {/* 🆕 A3 FIX: Indicador de tiempo */}
+          <div style={{
+            fontSize: '14px',
+            color: modoOscuro ? '#9ca3af' : '#6b7280',
+            marginBottom: '12px',
+            display: 'flex',
+            gap: '20px',
+            justifyContent: 'center'
+          }}>
+            <span>⏱️ Tiempo: {elapsedSeconds}s</span>
+            {elapsedSeconds < 90 && (
+              <span>📊 ~{estimatedRemaining}s restantes</span>
+            )}
+            {elapsedSeconds >= 90 && (
+              <span style={{ color: '#f59e0b' }}>⏳ Casi listo...</span>
+            )}
+          </div>
+
           <LoadingSteps>
             <LoadingStep
               as={motion.div}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 }}
+              initial={{ opacity: 0.5 }}
+              animate={{ opacity: progressInfo.step >= 1 ? 1 : 0.5 }}
+              style={{ color: progressInfo.step >= 2 ? '#10b981' : 'inherit' }}
             >
-              <StepIcon>🔍</StepIcon> Detectando necesidad de contexto web
+              <StepIcon>{progressInfo.step >= 2 ? '✅' : '🔍'}</StepIcon> Detectando necesidad de contexto
             </LoadingStep>
             <LoadingStep
               as={motion.div}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.5 }}
+              initial={{ opacity: 0.5 }}
+              animate={{ opacity: progressInfo.step >= 2 ? 1 : 0.5 }}
+              style={{ color: progressInfo.step >= 3 ? '#10b981' : 'inherit' }}
             >
-              <StepIcon>🤖</StepIcon> Analizando estructura y argumentación
+              <StepIcon>{progressInfo.step >= 3 ? '✅' : '🤖'}</StepIcon> Analizando estructura y argumentación
             </LoadingStep>
             <LoadingStep
               as={motion.div}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.8 }}
+              initial={{ opacity: 0.5 }}
+              animate={{ opacity: progressInfo.step >= 3 ? 1 : 0.5 }}
+              style={{ color: progressInfo.step >= 4 ? '#10b981' : 'inherit' }}
             >
-              <StepIcon>📝</StepIcon> Generando análisis académico
+              <StepIcon>{progressInfo.step >= 4 ? '✅' : '📝'}</StepIcon> Generando análisis académico
             </LoadingStep>
           </LoadingSteps>
           <ProgressBar
             as={motion.div}
             initial={{ width: "0%" }}
-            animate={{ width: "100%" }}
-            transition={{ duration: 60, ease: "easeOut" }}
+            animate={{ width: `${Math.min(95, (elapsedSeconds / 90) * 100)}%` }}
+            transition={{ duration: 0.5 }}
           />
         </LoadingState>
       </Container>
     );
   }
-  
+
   // Estado vacío: No hay texto cargado
-  if (!texto || !completeAnalysis || !completeAnalysis.prelecture) {
+  if (!texto) {
     return (
       <Container $darkMode={modoOscuro}>
         <EmptyState>
@@ -217,9 +265,62 @@ const PreLectura = () => {
     );
   }
 
+  // Estado de error o análisis fallido
+  if (!completeAnalysis || !completeAnalysis.prelecture) {
+    const errorMsg = completeAnalysis?._errorMessage || error || 'El análisis no pudo completarse';
+    const isConnectionError = errorMsg.includes('Failed to fetch') || errorMsg.includes('Network Error');
+
+    return (
+      <Container $darkMode={modoOscuro}>
+        <EmptyState>
+          <Icon>⚠️</Icon>
+          <Title>Análisis no disponible</Title>
+          <Description>
+            {errorMsg}
+          </Description>
+          {isConnectionError && (
+            <Description style={{ color: '#ef4444', fontWeight: 'bold' }}>
+              Asegúrate de que el servidor backend esté ejecutándose (puerto 3001).
+            </Description>
+          )}
+          <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+            <button
+              onClick={() => {
+                // 🆕 A2 FIX: Re-intentar análisis sin recargar página
+                if (texto && texto.length > 0) {
+                  analyzeDocument(texto, null, { force: true });
+                } else {
+                  // Fallback: Si no hay texto, recargar como último recurso
+                  window.location.reload();
+                }
+              }}
+              disabled={loading}
+              style={{
+                padding: '8px 16px',
+                background: loading ? '#9ca3af' : theme.primary,
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {loading ? '⏳ Analizando...' : '🔄 Reintentar análisis'}
+            </button>
+          </div>
+          <Description style={{ marginTop: '10px', fontSize: '14px', opacity: 0.7 }}>
+            Puedes seguir leyendo el texto en la pestaña "Lectura Guiada"
+          </Description>
+        </EmptyState>
+      </Container>
+    );
+  }
+
   const { prelecture, critical, metadata: analysisMeta } = completeAnalysis;
   const { metadata, argumentation, linguistics, web_sources, web_summary } = prelecture;
-  
+
   // Extraer datos de Análisis Crítico del Discurso (ACD)
   const acdData = critical?.contexto_critico || {};
 
@@ -238,6 +339,40 @@ const PreLectura = () => {
         )}
       </Header>
 
+      {/* Warning Banner for Fallback */}
+      {completeAnalysis._isFallback && (
+        <WarningBanner $darkMode={modoOscuro}>
+          <span style={{ fontSize: '20px' }}>⚠️</span>
+          <div>
+            <strong>Análisis Parcial:</strong> {completeAnalysis._errorMessage || 'El análisis tardó demasiado y se muestran resultados básicos.'}
+            <br />
+            Algunas secciones pueden estar incompletas. Intenta analizar un texto más corto para mejores resultados.
+          </div>
+        </WarningBanner>
+      )}
+
+      {/* 🆕 A1 FIX: Banner de análisis preliminar */}
+      {analysisMeta?._isPreliminary && !completeAnalysis._isFallback && (
+        <PreliminaryBanner $darkMode={modoOscuro}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <motion.span
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              style={{ fontSize: '24px' }}
+            >
+              ⏳
+            </motion.span>
+            <div>
+              <strong style={{ color: '#3b82f6' }}>Análisis preliminar mostrado</strong>
+              <br />
+              <span style={{ fontSize: '13px', opacity: 0.8 }}>
+                El análisis profundo con IA está en progreso y actualizará automáticamente...
+              </span>
+            </div>
+          </div>
+        </PreliminaryBanner>
+      )}
+
       {/* FASE I: CONTEXTUALIZACIÓN */}
       <Section
         as={motion.div}
@@ -249,31 +384,31 @@ const PreLectura = () => {
           <SectionIcon>🎯</SectionIcon>
           <SectionTitle>Fase I: Contextualización</SectionTitle>
         </SectionHeader>
-        
+
         <SectionContent>
           <InfoGrid>
             <InfoItem>
               <Label>Género Textual</Label>
               <Value>{metadata.genero_textual}</Value>
             </InfoItem>
-            
+
             <InfoItem>
               <Label>Propósito Comunicativo</Label>
               <Value>{metadata.proposito_comunicativo}</Value>
             </InfoItem>
-            
+
             <InfoItem>
               <Label>Tipología Textual</Label>
               <Value>{metadata.tipologia_textual}</Value>
             </InfoItem>
-            
+
             {metadata.autor && (
               <InfoItem>
                 <Label>Autor</Label>
                 <Value>{metadata.autor}</Value>
               </InfoItem>
             )}
-            
+
             {metadata.audiencia_objetivo && (
               <InfoItem>
                 <Label>Audiencia Objetivo</Label>
@@ -302,7 +437,7 @@ const PreLectura = () => {
           <SectionIcon>💡</SectionIcon>
           <SectionTitle>Fase II: Contenido y Argumentación</SectionTitle>
         </SectionHeader>
-        
+
         <SectionContent>
           {argumentation.tesis_central && (
             <Highlight $darkMode={modoOscuro}>
@@ -316,7 +451,7 @@ const PreLectura = () => {
               <Label>Tipo de Argumentación</Label>
               <Value>{argumentation.tipo_argumentacion}</Value>
             </InfoItem>
-            
+
             {argumentation.tipo_razonamiento && (
               <InfoItem>
                 <Label>Tipo de Razonamiento</Label>
@@ -421,25 +556,25 @@ const PreLectura = () => {
           <SectionIcon>📖</SectionIcon>
           <SectionTitle>Fase III: Análisis Formal y Lingüístico</SectionTitle>
         </SectionHeader>
-        
+
         <SectionContent>
           <InfoGrid>
             <InfoItem>
               <Label>Tipo de Estructura</Label>
               <Value>{linguistics.tipo_estructura}</Value>
             </InfoItem>
-            
+
             <InfoItem>
               <Label>Registro Lingüístico</Label>
               <Value>{linguistics.registro_linguistico}</Value>
             </InfoItem>
-            
+
             <InfoItem>
               <Label>Nivel de Complejidad</Label>
               <Badge $type={
                 linguistics.nivel_complejidad === 'Básico' ? 'success' :
-                linguistics.nivel_complejidad === 'Intermedio' ? 'warning' :
-                'info'
+                  linguistics.nivel_complejidad === 'Intermedio' ? 'warning' :
+                    'info'
               }>
                 {linguistics.nivel_complejidad}
               </Badge>
@@ -593,7 +728,7 @@ const PreLectura = () => {
               <FigurasList>
                 {linguistics.figuras_retoricas.map((figura, index) => {
                   // Normalizar SIEMPRE a objeto para consistencia
-                  const figuraObj = typeof figura === 'string' 
+                  const figuraObj = typeof figura === 'string'
                     ? { tipo: figura, ejemplo: null }
                     : figura;
 
@@ -607,13 +742,13 @@ const PreLectura = () => {
                           </ConfidenceBadge>
                         )}
                       </FiguraTipo>
-                      
+
                       {figuraObj.ejemplo && (
                         <FiguraEjemplo $darkMode={modoOscuro}>
                           "{figuraObj.ejemplo}"
                         </FiguraEjemplo>
                       )}
-                      
+
                       {figuraObj.justificacion && (
                         <FiguraJustificacion $darkMode={modoOscuro}>
                           💡 {figuraObj.justificacion}
@@ -637,16 +772,15 @@ const PreLectura = () => {
           transition={{ duration: 0.4, delay: 0.25 }}
         >
           <SectionHeader>
-            <SectionIcon>🔍</SectionIcon>
+            <SectionIcon>ACD</SectionIcon>
             <SectionTitle>Fase IV: Análisis Ideológico-Discursivo (ACD)</SectionTitle>
           </SectionHeader>
-          
+
           <SectionContent>
             {/* Marco Ideológico */}
             {acdData.ideologia_subyacente && (
               <ACDCard $darkMode={modoOscuro} $variant="ideology">
                 <ACDLabel>
-                  <ACDIcon>🎭</ACDIcon>
                   Marco Ideológico Subyacente
                 </ACDLabel>
                 <ACDValue>{acdData.ideologia_subyacente}</ACDValue>
@@ -657,13 +791,12 @@ const PreLectura = () => {
             {acdData.voces_representadas?.length > 0 && (
               <ACDCard $darkMode={modoOscuro} $variant="represented">
                 <ACDLabel>
-                  <ACDIcon>📢</ACDIcon>
                   Voces Representadas (legitimadas en el discurso)
                 </ACDLabel>
                 <VoicesList>
                   {acdData.voces_representadas.map((voz, index) => (
                     <VoiceChip key={index} $type="represented" $darkMode={modoOscuro}>
-                      ✓ {voz}
+                      {voz}
                     </VoiceChip>
                   ))}
                 </VoicesList>
@@ -674,27 +807,25 @@ const PreLectura = () => {
             {acdData.voces_silenciadas?.length > 0 && (
               <ACDCard $darkMode={modoOscuro} $variant="silenced">
                 <ACDLabel>
-                  <ACDIcon>🔇</ACDIcon>
                   Voces Silenciadas (ausentes o marginadas)
                 </ACDLabel>
                 <VoicesList>
                   {acdData.voces_silenciadas.map((voz, index) => (
                     <VoiceChip key={index} $type="silenced" $darkMode={modoOscuro}>
-                      ✗ {voz}
+                      {voz}
                     </VoiceChip>
                   ))}
                 </VoicesList>
                 <ACDWarning $darkMode={modoOscuro}>
-                  ⚠️ Pregunta crítica: ¿Por qué estas perspectivas están ausentes? ¿Qué implicaciones tiene su exclusión?
+                  Pregunta crítica: ¿Por qué estas perspectivas están ausentes? ¿Qué implicaciones tiene su exclusión?
                 </ACDWarning>
               </ACDCard>
             )}
 
             {/* Contraste con Contexto Web (si existe) */}
-            {acdData.contraste_web && (
+            {(acdData.contraste_web?.texto_actualizado || acdData.contraste_web?.datos_verificados) && (
               <ACDCard $darkMode={modoOscuro} $variant="web">
                 <ACDLabel>
-                  <ACDIcon>🌐</ACDIcon>
                   Contraste con Contexto Web Actual
                 </ACDLabel>
                 {acdData.contraste_web.texto_actualizado && (
@@ -727,11 +858,14 @@ const PreLectura = () => {
             <SectionIcon>🌐</SectionIcon>
             <SectionTitle>Fuentes Web Consultadas</SectionTitle>
           </SectionHeader>
-          
+
           <SectionContent>
             {web_summary && (
               <TextBlock $darkMode={modoOscuro}>
-                <p>{web_summary}</p>
+                {Array.isArray(web_summary)
+                  ? web_summary.filter(Boolean).map((item, idx) => <p key={idx}>{item}</p>)
+                  : <p>{web_summary}</p>
+                }
               </TextBlock>
             )}
 
@@ -756,7 +890,7 @@ const PreLectura = () => {
       )}
 
       {/* Glosario Dinámico */}
-      <GlossaryPanel 
+      <GlossaryPanel
         glossary={glossary}
         loading={loadingGlossary}
         onExport={handleExportGlossary}
@@ -788,8 +922,8 @@ const PreLectura = () => {
         description="Ahora que has analizado el texto críticamente (marco ideológico, voces representadas/silenciadas), ve a la pestaña Actividades para practicar la identificación de dimensiones críticas con feedback formativo."
         actionLabel="Ir a Actividades →"
         onAction={() => {
-          window.dispatchEvent(new CustomEvent('app-change-tab', { 
-            detail: { tabId: 'actividades' } 
+          window.dispatchEvent(new CustomEvent('app-change-tab', {
+            detail: { tabId: 'actividades' }
           }));
         }}
         theme={theme}
@@ -962,7 +1096,13 @@ const SectionHeader = styled.div`
 `;
 
 const SectionIcon = styled.span`
-  font-size: 28px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #3498db;
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  padding: 6px 10px;
+  border-radius: 999px;
 `;
 
 const SectionTitle = styled.h2`
@@ -1319,51 +1459,33 @@ const ExportButton = styled.button`
 // ============================================
 
 const ACDCard = styled.div`
-  background: ${props => {
-    if (props.$variant === 'ideology') return props.$darkMode ? '#312e81' : '#eef2ff';
-    if (props.$variant === 'represented') return props.$darkMode ? '#064e3b' : '#d1fae5';
-    if (props.$variant === 'silenced') return props.$darkMode ? '#7f1d1d' : '#fee2e2';
-    if (props.$variant === 'web') return props.$darkMode ? '#1e3a8a' : '#dbeafe';
-    return props.$darkMode ? '#2d3748' : '#f8f9fa';
+  background: ${props => props.$darkMode ? '#2d3748' : '#f8f9fa'};
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border-left: 3px solid ${props => {
+    // Reusar la paleta existente del componente (coherente con otras secciones)
+    if (props.$variant === 'ideology') return '#9b59b6';
+    if (props.$variant === 'represented') return '#27ae60';
+    if (props.$variant === 'silenced') return '#e67e22';
+    if (props.$variant === 'web') return '#3498db';
+    return '#3498db';
   }};
-  padding: 20px;
-  border-radius: 12px;
-  margin-bottom: 16px;
-  border-left: 4px solid ${props => {
-    if (props.$variant === 'ideology') return '#6366f1';
-    if (props.$variant === 'represented') return '#10b981';
-    if (props.$variant === 'silenced') return '#ef4444';
-    if (props.$variant === 'web') return '#3b82f6';
-    return '#9ca3af';
-  }};
-  transition: all 0.3s ease;
-
-  &:hover {
-    transform: translateX(4px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  }
 `;
 
 const ACDLabel = styled.div`
-  font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #7f8c8d;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: ${props => props.theme?.primary || '#2563eb'};
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-`;
-
-const ACDIcon = styled.span`
-  font-size: 18px;
+  margin-bottom: 10px;
 `;
 
 const ACDValue = styled.p`
   font-size: 15px;
   line-height: 1.7;
-  color: ${props => props.theme?.text || '#1f2937'};
+  color: #2c3e50;
   margin: 0;
   font-weight: 500;
 `;
@@ -1382,33 +1504,63 @@ const VoiceChip = styled.span`
   border-radius: 20px;
   font-size: 14px;
   font-weight: 600;
-  transition: all 0.2s ease;
 
   ${props => props.$type === 'represented' ? `
-    background: ${props.$darkMode ? '#065f46' : '#a7f3d0'};
-    color: ${props.$darkMode ? '#d1fae5' : '#064e3b'};
-    border: 2px solid ${props.$darkMode ? '#10b981' : '#059669'};
+    background: ${props.$darkMode ? '#2d3748' : '#ffffff'};
+    color: ${props.$darkMode ? '#e5e7eb' : '#2c3e50'};
+    border: 1px solid ${props.$darkMode ? '#4b5563' : '#e0e0e0'};
   ` : `
-    background: ${props.$darkMode ? '#991b1b' : '#fecaca'};
-    color: ${props.$darkMode ? '#fee2e2' : '#7f1d1d'};
-    border: 2px solid ${props.$darkMode ? '#ef4444' : '#dc2626'};
+    background: ${props.$darkMode ? '#2d3748' : '#ffffff'};
+    color: ${props.$darkMode ? '#e5e7eb' : '#2c3e50'};
+    border: 1px solid ${props.$darkMode ? '#4b5563' : '#e0e0e0'};
   `}
-
-  &:hover {
-    transform: scale(1.05);
-  }
 `;
 
 const ACDWarning = styled.div`
   margin-top: 16px;
   padding: 12px 16px;
-  background: ${props => props.$darkMode ? '#451a03' : '#fef3c7'};
+  background: ${props => props.$darkMode ? '#2d3748' : '#f8f9fa'};
   border-radius: 8px;
-  border-left: 3px solid #f59e0b;
+  border-left: 3px solid #e67e22;
   font-size: 13px;
   line-height: 1.6;
-  color: ${props => props.$darkMode ? '#fde68a' : '#78350f'};
-  font-style: italic;
+  color: ${props => props.$darkMode ? '#e5e7eb' : '#2c3e50'};
+`;
+
+const WarningBanner = styled.div`
+  background: ${props => props.$darkMode ? 'rgba(245, 158, 11, 0.2)' : '#fff3cd'};
+  color: ${props => props.$darkMode ? '#fcd34d' : '#856404'};
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 24px;
+  border-left: 4px solid #f59e0b;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+`;
+
+// 🆕 A1 FIX: Banner de análisis preliminar
+const PreliminaryBanner = styled.div`
+  background: ${props => props.$darkMode ? 'rgba(59, 130, 246, 0.15)' : '#eff6ff'};
+  color: ${props => props.$darkMode ? '#93c5fd' : '#1e40af'};
+  padding: 14px 18px;
+  border-radius: 10px;
+  margin-bottom: 24px;
+  border-left: 4px solid #3b82f6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  
+  animation: pulse 2s ease-in-out infinite;
+  
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.85; }
+  }
 `;
 
 export default PreLectura;

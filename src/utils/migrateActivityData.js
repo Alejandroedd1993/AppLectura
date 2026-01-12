@@ -6,15 +6,23 @@
  */
 
 const ACTIVITY_PREFIX = 'activity_results_';
-const NEW_KEY = 'activitiesProgress';
+const DEFAULT_NEW_KEY = 'activitiesProgress';
 
 /**
  * Migra datos de persistencia antigua a nuevo formato
+ *
+ * Nota: el destino puede ser por-usuario (p.ej. activitiesProgress_<uid>)
+ * para evitar contaminación entre cuentas.
+ *
+ * @param {object} [options]
+ * @param {string} [options.storageKey] - Key destino en localStorage
  * @returns {object} - { migrated: number, errors: number, data: object }
  */
-export function migrateActivityDataToContext() {
+export function migrateActivityDataToContext(options = {}) {
   try {
     console.log('🔄 [Migration] Iniciando migración de datos de actividades...');
+
+    const storageKey = options?.storageKey || DEFAULT_NEW_KEY;
     
     // 1. Obtener todas las claves de activity_results_
     const activityKeys = Object.keys(localStorage)
@@ -30,7 +38,7 @@ export function migrateActivityDataToContext() {
     // 2. Cargar activitiesProgress actual (puede estar vacío)
     let activitiesProgress = {};
     try {
-      const existing = localStorage.getItem(NEW_KEY);
+      const existing = localStorage.getItem(storageKey);
       if (existing) {
         activitiesProgress = JSON.parse(existing);
       }
@@ -81,7 +89,7 @@ export function migrateActivityDataToContext() {
     });
     
     // 4. Guardar activitiesProgress actualizado
-    localStorage.setItem(NEW_KEY, JSON.stringify(activitiesProgress));
+    localStorage.setItem(storageKey, JSON.stringify(activitiesProgress));
     
     console.log(`✅ [Migration] Migración completada: ${migrated} exitosos, ${errors} errores`);
     

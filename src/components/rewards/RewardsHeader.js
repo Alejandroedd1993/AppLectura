@@ -223,68 +223,80 @@ export default function RewardsHeader({ onClickDetails }) {
   const [toastInfo, setToastInfo] = useState(null); // { points, reason, multiplier }
   const [achievementPopup, setAchievementPopup] = useState(null); // { achievement }
   const [showAnalytics, setShowAnalytics] = useState(false); // 📊 Panel de analytics
-  
+
+  // 🆕 Flag para evitar popups de achievements al iniciar sesión
+  const isInitialLoadRef = React.useRef(true);
+
+  // 🆕 Después de 5 segundos, habilitar popups de achievements
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      isInitialLoadRef.current = false;
+      console.log('🎮 [RewardsHeader] Achievement popups habilitados');
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
   // 🆕 Suscribirse a eventos de cambio de rewardsEngine (actualización INMEDIATA)
   useEffect(() => {
     if (!rewards) return;
-    
-    const handleRewardsChange = (event) => {
+
+    const handleRewardsChange = () => {
       const newState = rewards.getState();
-      
+
       setState(prevState => {
         const prevPoints = prevState.totalPoints;
         const newPoints = newState.totalPoints;
-        
+
         console.log('🎮 [RewardsHeader] rewards-state-changed:', { prevPoints, newPoints });
-        
+
         // Detectar incremento de puntos y mostrar toast
         if (newPoints > prevPoints) {
           const diff = newPoints - prevPoints;
           setToastInfo({
             points: diff,
-            reason: 'Acción completada',
+            reason: newState.lastEventLabel || 'Acción completada', // 🆕 Usar label específico
             multiplier: newState.lastMultiplier || 1
           });
-          
+
           // Auto-cerrar toast después de 4 segundos
           setTimeout(() => setToastInfo(null), 4000);
         }
-        
-        // Detectar nuevo achievement
+
+        // Detectar nuevo achievement (solo si no es carga inicial)
         const prevAchievements = prevState.achievements?.length || 0;
         const newAchievements = newState.achievements?.length || 0;
-        if (newAchievements > prevAchievements) {
+        if (newAchievements > prevAchievements && !isInitialLoadRef.current) {
           const latestAchievementId = newState.achievements[newAchievements - 1];
           const achievementData = ACHIEVEMENTS[latestAchievementId.toUpperCase()];
           if (achievementData) {
             setAchievementPopup({ achievement: achievementData });
-            
+
             // Auto-cerrar popup después de 6 segundos
             setTimeout(() => setAchievementPopup(null), 6000);
           }
         }
-        
+
         return newState;
       });
     };
-    
+
     // Escuchar evento de cambio en rewardsEngine
     window.addEventListener('rewards-state-changed', handleRewardsChange);
-    
+
     // Actualizar estado inicial al montar
     const initialState = rewards.getState();
     setState(initialState);
-    
+
     return () => window.removeEventListener('rewards-state-changed', handleRewardsChange);
   }, [rewards]); // Solo depende de rewards, no de state
 
   // 🆕 LISTENER: Actualizar inmediatamente cuando llega sync de Firestore
   useEffect(() => {
     if (!rewards) return;
-    
+
     const handleProgressSync = (event) => {
       console.log('🔄 [RewardsHeader] Evento progress-synced-from-cloud recibido:', event.detail);
-      
+
       // Diferir setState para evitar warning de React
       setTimeout(() => {
         const newState = rewards.getState();
@@ -295,28 +307,28 @@ export default function RewardsHeader({ onClickDetails }) {
         setState(newState);
       }, 0);
     };
-    
+
     window.addEventListener('progress-synced-from-cloud', handleProgressSync);
-    
+
     return () => {
       window.removeEventListener('progress-synced-from-cloud', handleProgressSync);
     };
   }, [rewards]);
-  
+
   if (!rewards) return null; // No renderizar si no hay sistema de rewards
-  
+
   const { totalPoints, availablePoints, streak, achievements } = state;
   const achievementCount = achievements?.length || 0;
-  
+
   // Calcular nivel aproximado (cada 500 puntos = 1 nivel)
   const level = Math.floor(totalPoints / 500) + 1;
-  
+
   // Handler para abrir analytics
   const handleOpenAnalytics = () => {
     setShowAnalytics(true);
     if (onClickDetails) onClickDetails();
   };
-  
+
   return (
     <>
       <HeaderContainer>
@@ -330,7 +342,7 @@ export default function RewardsHeader({ onClickDetails }) {
           <span className="value">{totalPoints}</span>
           <span style={{ fontSize: '0.8em', opacity: 0.9 }}>pts</span>
         </PointsBadge>
-        
+
         <StreakBadge
           $streak={streak}
           title={`Racha: ${streak} días consecutivos`}
@@ -338,7 +350,7 @@ export default function RewardsHeader({ onClickDetails }) {
           <span className="icon">{getStreakEmoji(streak)}</span>
           <span>{streak} días</span>
         </StreakBadge>
-        
+
         <AchievementsBadge
           onClick={handleOpenAnalytics}
           title={`Achievements desbloqueados: ${achievementCount}`}
@@ -348,13 +360,13 @@ export default function RewardsHeader({ onClickDetails }) {
           <span className="icon">🏆</span>
           <span>{achievementCount}</span>
         </AchievementsBadge>
-        
+
         <LevelBadge title={`Nivel ${level} (${totalPoints} pts)`}>
           <span className="level-icon">🎓</span>
           <span>Nivel {level}</span>
         </LevelBadge>
       </HeaderContainer>
-      
+
       {/* Toast de puntos ganados */}
       <AnimatePresence>
         {toastInfo && (
@@ -379,39 +391,32 @@ export default function RewardsHeader({ onClickDetails }) {
           </PointsToast>
         )}
       </AnimatePresence>
-      
-      {/* Popup de achievement desbloqueado */}
+
+      {/* Achievement popup */}
       <AnimatePresence>
         {achievementPopup && (
           <AchievementPopup
-            initial={{ opacity: 0, scale: 0.5, rotate: -10 }}
-            animate={{ opacity: 1, scale: 1, rotate: 0 }}
-            exit={{ opacity: 0, scale: 0.5, rotate: 10 }}
-            transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+            initial={{ opacity: 0, scale: 0.5, y: -50 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.5, y: 50 }}
             onClick={() => setAchievementPopup(null)}
           >
-            <div className="title">🎊 Achievement Desbloqueado!</div>
-            <div className="icon">{achievementPopup.achievement?.icon || '🏆'}</div>
-            <div style={{ fontSize: '1.3rem', fontWeight: 700, marginTop: '0.5rem' }}>
-              {achievementPopup.achievement?.name || 'Logro Especial'}
+            <div className="title">¡Logro Desbloqueado!</div>
+            <div className="icon">{achievementPopup.achievement.icon || '🏆'}</div>
+            <div className="name" style={{ fontSize: '1.2rem', fontWeight: '800' }}>
+              {achievementPopup.achievement.name}
             </div>
-            <div className="description">
-              {achievementPopup.achievement?.description || 'Has alcanzado un hito importante'}
-            </div>
-            <div className="points">
-              +{achievementPopup.achievement?.points || 0} pts
-            </div>
-            <div style={{ fontSize: '0.75rem', marginTop: '1rem', opacity: 0.8 }}>
-              Click para cerrar
-            </div>
+            <div className="description">{achievementPopup.achievement.description}</div>
+            <div className="points">+{achievementPopup.achievement.points} Puntos Bonus</div>
+            <div style={{ marginTop: '1rem', fontSize: '0.8rem', opacity: 0.8 }}>Click para cerrar</div>
           </AchievementPopup>
         )}
       </AnimatePresence>
-      
+
       {/* Panel de Analytics */}
-      <RewardsAnalytics 
-        isOpen={showAnalytics} 
-        onClose={() => setShowAnalytics(false)} 
+      <RewardsAnalytics
+        isOpen={showAnalytics}
+        onClose={() => setShowAnalytics(false)}
       />
     </>
   );

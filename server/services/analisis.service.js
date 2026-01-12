@@ -16,6 +16,27 @@ const strategies = {
 // Define un timeout por defecto, y permite que sea sobreescrito por configuraciones específicas.
 const DEFAULT_API_TIMEOUT = 45000; // 45 segundos
 
+function pickMode(envKey, defaultMode) {
+  const raw = String(process.env[envKey] || defaultMode).trim().toLowerCase();
+  return (raw === 'parallel' || raw === 'paralelo') ? 'parallel' : 'single';
+}
+
+function pickDebateMode(defaultMode = 'lite') {
+  const raw = String(process.env.ANALYSIS_DEBATE_MODE || defaultMode).trim().toLowerCase();
+  if (raw === 'parallel' || raw === 'paralelo') return 'parallel';
+  if (raw === 'single') return 'single';
+  if (raw === 'lite') return 'lite';
+  return defaultMode;
+}
+
+async function runProviderJson(providerName, prompt, options) {
+  const strategy = strategies[providerName];
+  if (!strategy) throw new Error(`Proveedor de IA no válido: ${providerName}`);
+  const res = await strategy(prompt, options);
+  const jsonText = extractJson(res);
+  return JSON.parse(jsonText);
+}
+
 /**
  * Extrae un objeto JSON de una cadena de texto, incluso si está envuelto en ```json ... ```.
  * @param {string} text - El texto que contiene el JSON.
@@ -75,19 +96,32 @@ function mergeAnalyses(primary, secondary) {
 // Ejecuta DeepSeek y OpenAI en paralelo y combina el resultado en un único análisis válido
 async function analizarTextoSmart(texto) {
   const prompt = getAnalysisPrompt(texto);
+  const mode = pickMode('ANALYSIS_SMART_MODE', 'single');
+
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+  const hasDeepSeek = Boolean(process.env.DEEPSEEK_API_KEY);
+
+  // Por defecto evitamos doble coste: una sola llamada, con fallback.
+  if (mode === 'single') {
+    const primary = hasOpenAI ? 'openai' : (hasDeepSeek ? 'deepseek' : null);
+    const fallback = primary === 'openai' ? 'deepseek' : 'openai';
+    if (!primary) throw new Error('No hay proveedores configurados para estrategia smart');
+
+    try {
+      return await runProviderJson(primary, prompt);
+    } catch (e) {
+      // Fallback controlado si hay otro proveedor disponible
+      if ((fallback === 'openai' && hasOpenAI) || (fallback === 'deepseek' && hasDeepSeek)) {
+        return await runProviderJson(fallback, prompt);
+      }
+      throw e;
+    }
+  }
+
   const providerTimeout = settings.openai?.timeout || DEFAULT_API_TIMEOUT;
 
-  const pOpenAI = (async () => {
-    const res = await openaiStrategy(prompt);
-    const jsonText = extractJson(res);
-    return JSON.parse(jsonText);
-  })();
-
-  const pDeepSeek = (async () => {
-    const res = await deepseekStrategy(prompt);
-    const jsonText = extractJson(res);
-    return JSON.parse(jsonText);
-  })();
+  const pOpenAI = runProviderJson('openai', prompt);
+  const pDeepSeek = runProviderJson('deepseek', prompt);
 
   // Correr en paralelo con timeout global
   const timeoutPromise = new Promise((_, reject) =>
@@ -126,19 +160,117 @@ async function analizarTextoSmart(texto) {
 // Ejecuta DeepSeek y OpenAI y devuelve un objeto de consenso + fuentes completas
 async function analizarTextoDebate(texto) {
   const prompt = getAnalysisPrompt(texto);
+  const mode = pickDebateMode('lite');
+
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+  const hasDeepSeek = Boolean(process.env.DEEPSEEK_API_KEY);
+
+  const pickPrimary = () => (hasOpenAI ? 'openai' : (hasDeepSeek ? 'deepseek' : null));
+  const pickFallback = (primary) => (primary === 'openai' ? 'deepseek' : 'openai');
+
+  // Debate-lite (recomendado): 1 análisis completo + 1 crítica dirigida (más barata) + merge.
+  if (mode === 'lite') {
+    const primary = pickPrimary();
+    if (!primary) throw new Error('No hay proveedores configurados para estrategia debate');
+    const fallback = pickFallback(primary);
+
+    let primaryObj;
+    try {
+      primaryObj = await runProviderJson(primary, prompt);
+    } catch (e) {
+      if ((fallback === 'openai' && hasOpenAI) || (fallback === 'deepseek' && hasDeepSeek)) {
+        primaryObj = await runProviderJson(fallback, prompt);
+      } else {
+        throw e;
+      }
+    }
+
+    const criticProvider = (primary === 'openai' && hasDeepSeek)
+      ? 'deepseek'
+      : (primary === 'deepseek' && hasOpenAI)
+        ? 'openai'
+        : primary;
+
+    const criticCapFromEnv = Number.parseInt(process.env.ANALYSIS_DEBATE_LITE_CRITIC_MAX_TOKENS_CAP || '', 10);
+    const criticMaxTokens = Number.isFinite(criticCapFromEnv)
+      ? Math.max(64, Math.min(criticCapFromEnv, 1024))
+      : 512;
+
+    const primarySnapshot = JSON.stringify({
+      resumen: primaryObj?.resumen,
+      ideasPrincipales: Array.isArray(primaryObj?.ideasPrincipales) ? primaryObj.ideasPrincipales.slice(0, 8) : [],
+      analisisEstilistico: primaryObj?.analisisEstilistico,
+      preguntasReflexion: Array.isArray(primaryObj?.preguntasReflexion) ? primaryObj.preguntasReflexion.slice(0, 8) : [],
+      vocabulario: Array.isArray(primaryObj?.vocabulario) ? primaryObj.vocabulario.slice(0, 10) : [],
+      complejidad: primaryObj?.complejidad,
+      temas: Array.isArray(primaryObj?.temas) ? primaryObj.temas.slice(0, 10) : [],
+    }).slice(0, 6000);
+
+    const criticPrompt = [
+      'Eres un CRÍTICO SOCRÁTICO de análisis textual (educación).',
+      'Tu tarea: identificar huecos, sesgos, omisiones y proponer mejoras concretas.',
+      'IMPORTANTE: Devuelve ÚNICAMENTE un JSON válido.',
+      'Devuelve el mismo esquema del análisis (puedes omitir claves si no aportas cambios):',
+      '{ resumen, ideasPrincipales[], analisisEstilistico{tono,sentimiento,estilo,publicoObjetivo}, preguntasReflexion[], vocabulario[{palabra,definicion}], complejidad, temas[] }',
+      'Reglas:',
+      '- No reescribas todo; prioriza AÑADIDOS y correcciones puntuales.',
+      '- Si sugieres resumen, mantenlo corto (2-4 frases).',
+      '- No inventes definiciones raras: vocabulario solo si es realmente útil.',
+      '',
+      'ANÁLISIS PRIMARIO (para criticar/mejorar):',
+      primarySnapshot,
+    ].join('\n');
+
+    let criticObj = null;
+    try {
+      if (criticProvider === 'openai') {
+        criticObj = await runProviderJson('openai', criticPrompt, {
+          system: 'Actúa como crítico socrático. Sé conciso y útil. Responde solo JSON.',
+          max_tokens: criticMaxTokens,
+          temperature: 0.2,
+        });
+      } else {
+        criticObj = await runProviderJson('deepseek', criticPrompt);
+      }
+    } catch (e) {
+      // Si falla la crítica, devuelve solo el análisis primario (degradación suave)
+      return primaryObj;
+    }
+
+    const merged = mergeAnalyses(primaryObj || {}, criticObj || {});
+    return {
+      ...merged,
+      meta: {
+        estrategia: 'debate',
+        modo: 'lite',
+        fuentes: {
+          openai: primary === 'openai' ? primaryObj : (criticProvider === 'openai' ? criticObj : null),
+          deepseek: primary === 'deepseek' ? primaryObj : (criticProvider === 'deepseek' ? criticObj : null),
+        },
+      },
+    };
+  }
+
+  // En modo single, no hacemos crítica: una sola llamada con fallback.
+  if (mode === 'single') {
+    const primary = pickPrimary();
+    const fallback = primary ? pickFallback(primary) : null;
+    if (!primary) throw new Error('No hay proveedores configurados para estrategia debate');
+
+    try {
+      return await runProviderJson(primary, prompt);
+    } catch (e) {
+      if (fallback && ((fallback === 'openai' && hasOpenAI) || (fallback === 'deepseek' && hasDeepSeek))) {
+        return await runProviderJson(fallback, prompt);
+      }
+      throw e;
+    }
+  }
+
   const providerTimeout = settings.openai?.timeout || DEFAULT_API_TIMEOUT;
 
-  const pOpenAI = (async () => {
-    const res = await openaiStrategy(prompt);
-    const jsonText = extractJson(res);
-    return JSON.parse(jsonText);
-  })();
-
-  const pDeepSeek = (async () => {
-    const res = await deepseekStrategy(prompt);
-    const jsonText = extractJson(res);
-    return JSON.parse(jsonText);
-  })();
+  const pOpenAI = runProviderJson('openai', prompt);
+  const pDeepSeek = runProviderJson('deepseek', prompt);
 
   const timeoutPromise = new Promise((_, reject) =>
     setTimeout(() => reject(new Error(`Timeout: La solicitud de debate tardó demasiado (${providerTimeout}ms)`)), providerTimeout)
@@ -170,7 +302,8 @@ async function analizarTextoDebate(texto) {
       fuentes: {
         openai: okOpenAI || null,
         deepseek: okDeepSeek || null
-      }
+      },
+      modo: 'parallel',
     }
   };
 }
@@ -217,7 +350,7 @@ export async function analizarTexto(texto, proveedor) {
     );
 
     // Ejecuta la estrategia seleccionada con el timeout.
-  const responsePromise = strategy(prompt);
+    const responsePromise = strategy(prompt);
     const responseText = await Promise.race([responsePromise, timeoutPromise]);
 
     console.log(`Respuesta recibida de ${proveedor}`);

@@ -400,11 +400,11 @@ const CronogramaRepaso = React.memo(({
     !notasRepasadas[index]
   );
   
-  const repasosCompletados = cronograma.filter((repaso, index) => 
+  const _repasosCompletados = cronograma.filter((repaso, index) => 
     repaso.completado || notasRepasadas[index]
   );
   
-  const repasosPendientes = cronograma.filter((repaso, index) => 
+  const _repasosPendientes = cronograma.filter((repaso, index) => 
     !repaso.completado && 
     !notasRepasadas[index] && 
     new Date(repaso.fecha).toDateString() !== hoy.toDateString()
@@ -462,7 +462,7 @@ const CronogramaRepaso = React.memo(({
             maxWidth: tokens.containerWidth.md,
             margin: '0 auto'
           }}>
-            {repasosHoy.map((repaso, originalIndex) => {
+            {repasosHoy.map((repaso, _originalIndex) => {
               const index = cronograma.findIndex(r => r === repaso);
               return (
                 <RepasoItem 

@@ -9,6 +9,7 @@
 import { enrichWithWebContext, buildEnrichedPrompt } from './ragEnrichmentService';
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { extractKeywords } from './webSearchDetector';
+import { ANALYSIS_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 /**
  * Genera un ID único para el documento basado en su contenido
@@ -43,7 +44,7 @@ function generateDocumentId(text) {
  */
 export async function performFullAnalysis(text, options = {}) {
   console.log('📊 ORQUESTADOR: Iniciando análisis completo con arquitectura unificada...');
-  
+
   const startTime = Date.now();
 
   try {
@@ -51,11 +52,11 @@ export async function performFullAnalysis(text, options = {}) {
     // FASE 1: ENRIQUECIMIENTO RAG (si es necesario)
     // ========================================================
     console.log('\n🌐 FASE 1: Enriquecimiento RAG...');
-    
+
     const enrichment = await enrichWithWebContext(text, options.metadata || {});
-    
+
     const webEnriched = enrichment.requires_web_search && enrichment.web_context !== null;
-    
+
     if (webEnriched) {
       console.log(`✅ Texto enriquecido con ${enrichment.web_context.sources.length} fuentes web`);
     } else {
@@ -66,9 +67,9 @@ export async function performFullAnalysis(text, options = {}) {
     // FASE 2: CONSTRUCCIÓN DE PROMPT UNIFICADO
     // ========================================================
     console.log('\n📝 FASE 2: Construcción de prompt unificado...');
-    
+
     const prompt = buildUnifiedAnalysisPrompt(text, enrichment);
-    
+
     console.log(`📏 Longitud del prompt: ${prompt.length} caracteres`);
 
     // ========================================================
@@ -76,20 +77,20 @@ export async function performFullAnalysis(text, options = {}) {
     // ========================================================
     console.log('\n🤖 FASE 3: Análisis con IA (llamada única)...');
     console.log('   Provider: DeepSeek (optimizado para análisis profundo)');
-    
+
     const response = await chatCompletion({
       provider: 'deepseek',
-      messages: [{ 
-        role: 'user', 
-        content: prompt 
+      messages: [{
+        role: 'user',
+        content: prompt
       }],
       temperature: 0.3,  // Bajo para análisis objetivo
       max_tokens: 3000,  // Suficiente para análisis completo
-      timeoutMs: 90000   // 90s para análisis profundo con web context
+      timeoutMs: ANALYSIS_TIMEOUT_MS   // 🆕 A5 FIX: Usar constante unificada (3 min)
     });
 
     const content = extractContent(response);
-    
+
     if (!content) {
       throw new Error('No se obtuvo respuesta válida de la IA');
     }
@@ -100,14 +101,14 @@ export async function performFullAnalysis(text, options = {}) {
     // FASE 4: PARSEO Y ESTRUCTURACIÓN
     // ========================================================
     console.log('\n🔧 FASE 4: Estructurando análisis...');
-    
+
     const parsedAnalysis = parseUnifiedAnalysis(content);
-    
+
     // ========================================================
     // FASE 5: ESTRUCTURACIÓN FINAL PARA AMBAS PESTAÑAS
     // ========================================================
     console.log('\n📦 FASE 5: Estructurando para Pre-lectura + Análisis Crítico...');
-    
+
     const finalAnalysis = {
       // =====================================================
       // PARA PESTAÑA PRE-LECTURA
@@ -122,7 +123,7 @@ export async function performFullAnalysis(text, options = {}) {
           fecha_texto: parsedAnalysis.fecha_texto || null,
           web_enriched: webEnriched
         },
-        
+
         // FASE II: Análisis de Contenido y Argumentación
         argumentation: {
           tesis_central: parsedAnalysis.tesis_central || null,
@@ -131,7 +132,7 @@ export async function performFullAnalysis(text, options = {}) {
           tipo_razonamiento: parsedAnalysis.tipo_razonamiento || null,
           argumentos_principales: parsedAnalysis.argumentos_principales || []
         },
-        
+
         // FASE III: Análisis Formal y Lingüístico
         linguistics: {
           tipo_estructura: parsedAnalysis.tipo_estructura || 'No identificado',
@@ -140,12 +141,12 @@ export async function performFullAnalysis(text, options = {}) {
           nivel_complejidad: parsedAnalysis.nivel_complejidad || 'Medio',
           figuras_retoricas: parsedAnalysis.figuras_retoricas || []
         },
-        
+
         // Fuentes web (si se usaron)
         web_sources: webEnriched ? enrichment.web_context.sources.slice(0, 5) : [],
         web_summary: webEnriched ? enrichment.web_context.summary : null
       },
-      
+
       // =====================================================
       // PARA PESTAÑA ANÁLISIS CRÍTICO (mantiene formato actual)
       // =====================================================
@@ -153,7 +154,7 @@ export async function performFullAnalysis(text, options = {}) {
         resumen: parsedAnalysis.resumen || '',
         temas_principales: parsedAnalysis.temas_principales || [],
         palabras_clave: parsedAnalysis.palabras_clave || extractKeywords(text, 5),
-        
+
         contexto_critico: {
           genero_textual: parsedAnalysis.genero_textual || 'No identificado',
           complejidad_critica: parsedAnalysis.complejidad_critica || 'Media',
@@ -161,7 +162,7 @@ export async function performFullAnalysis(text, options = {}) {
           voces_silenciadas: parsedAnalysis.voces_silenciadas || [],
           marcadores_criticos: parsedAnalysis.marcadores_criticos || {},
           ideologia_subyacente: parsedAnalysis.ideologia_subyacente || null,
-          
+
           // NUEVO: Contraste con contexto web actual
           contraste_web: webEnriched ? {
             texto_actualizado: parsedAnalysis.texto_actualizado || null,
@@ -170,7 +171,7 @@ export async function performFullAnalysis(text, options = {}) {
           } : null
         }
       },
-      
+
       // =====================================================
       // METADATOS DEL ANÁLISIS
       // =====================================================
@@ -197,7 +198,7 @@ export async function performFullAnalysis(text, options = {}) {
 
   } catch (error) {
     console.error('❌ ORQUESTADOR: Error en análisis completo:', error);
-    
+
     // Retornar estructura fallback
     return buildFallbackAnalysis(text, error);
   }
@@ -212,10 +213,10 @@ function buildUnifiedAnalysisPrompt(text, enrichment) {
 
 Analiza el siguiente texto de forma COMPLETA siguiendo el modelo académico de análisis textual:
 
-${enrichment.requires_web_search && enrichment.web_context ? 
-  buildEnrichedPrompt(text, enrichment, '') : 
-  `TEXTO A ANALIZAR:\n${text.substring(0, 4000)}${text.length > 4000 ? '...' : ''}`
-}
+${enrichment.requires_web_search && enrichment.web_context ?
+      buildEnrichedPrompt(text, enrichment, '') :
+      `TEXTO A ANALIZAR:\n${text.substring(0, 4000)}${text.length > 4000 ? '...' : ''}`
+    }
 
 TAREA: Proporciona un análisis COMPLETO en formato JSON con la siguiente estructura:
 
@@ -280,32 +281,32 @@ function parseUnifiedAnalysis(content) {
   try {
     // Intentar extraer JSON si viene con texto adicional
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    
+
     if (!jsonMatch) {
       throw new Error('No se encontró JSON en la respuesta');
     }
-    
+
     const parsed = JSON.parse(jsonMatch[0]);
-    
+
     console.log('✅ JSON parseado exitosamente');
-    
+
     return parsed;
-    
+
   } catch (error) {
     console.warn('⚠️ Error parseando JSON, intentando limpieza...', error.message);
-    
+
     // Intentar limpieza de caracteres problemáticos
     try {
       let cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '');
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      
+
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
     } catch (e) {
       console.error('❌ No se pudo parsear JSON después de limpieza');
     }
-    
+
     // Retornar estructura vacía como fallback
     return {};
   }
@@ -316,9 +317,9 @@ function parseUnifiedAnalysis(content) {
  */
 function buildFallbackAnalysis(text, error) {
   console.warn('⚠️ Construyendo análisis fallback...');
-  
+
   const keywords = extractKeywords(text, 5);
-  
+
   return {
     prelecture: {
       metadata: {

@@ -182,7 +182,7 @@ ${citas.map((c, i) => `${i + 1}. "${c.cita}"`).join('\n')}
  * @param {Object} params
  * @returns {Promise<Object>}
  */
-async function evaluarConOpenAI({ resumen, textoOriginal, citas }) {
+async function evaluarConOpenAI({ resumen, textoOriginal, citas: _citas }) {
   const prompt = `Evalúa la CALIDAD DE INFERENCIAS en este resumen académico.
 
 **TEXTO ORIGINAL:**

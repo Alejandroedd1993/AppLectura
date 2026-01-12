@@ -108,7 +108,7 @@ const ErrorMessage = styled.div`
  */
 function PDFViewer({
   file,
-  pageNumber = 1, // Ya no se usa para navegación, solo para scroll inicial
+  pageNumber: _pageNumber = 1, // Ya no se usa para navegación, solo para scroll inicial
   scale = 1.2,
   onDocumentLoad,
   onLoadError,
@@ -122,6 +122,22 @@ function PDFViewer({
   const [searchApplied, setSearchApplied] = useState(false);
   const searchMatchesRef = useRef([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+
+  // 🆕 FIX: Generar key única para cada archivo para forzar remount del Document
+  // Esto evita que react-pdf mantenga estado corrupto del PDF anterior
+  const fileId = React.useMemo(() => {
+    if (!file) return 'no-file';
+    if (file instanceof File) return `file-${file.name}-${file.size}-${file.lastModified}`;
+    if (typeof file === 'string') return `url-${file.substring(0, 100)}`;
+    if (file instanceof Blob) return `blob-${file.size}-${Date.now()}`;
+    return `unknown-${Date.now()}`;
+  }, [file]);
+
+  // 🆕 FIX: Reset numPages when file changes to prevent stale rendering
+  useEffect(() => {
+    console.log('📄 [PDFViewer] Archivo cambió, reseteando estado');
+    setNumPages(null);
+  }, [fileId]);
 
   const handleDocumentLoadSuccess = useCallback((doc) => {
     console.log('📄 PDF cargado:', doc.numPages, 'páginas (modo continuo)');
@@ -152,7 +168,7 @@ function PDFViewer({
     try {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      
+
       // Determinar en qué página está la selección
       let selectedPage = 1;
       const pageElements = containerRef.current?.querySelectorAll('[data-page-number]');
@@ -164,7 +180,7 @@ function PDFViewer({
           }
         });
       }
-      
+
       onSelection({
         text: selectedText,
         x: rect.left + window.scrollX + rect.width / 2,
@@ -215,7 +231,7 @@ function PDFViewer({
 
       textLayers.forEach(layer => {
         const spans = Array.from(layer.querySelectorAll('span'));
-        
+
         // Limpiar clases previas
         spans.forEach(span => {
           span.classList.remove('pdf-search-highlight', 'pdf-search-current');
@@ -224,7 +240,7 @@ function PDFViewer({
         // Reconstruir texto completo de la página manteniendo estructura
         let fullText = '';
         const spanMap = []; // Mapeo de posición en fullText a span
-        
+
         spans.forEach(span => {
           const text = span.textContent || '';
           const start = fullText.length;
@@ -234,41 +250,34 @@ function PDFViewer({
         });
 
         // Buscar en el texto completo (con espacios)
-        const fullTextLower = fullText.toLowerCase();
         const queryLower = query.toLowerCase();
-        
-        // Función mejorada para verificar si un carácter es alfanumérico (incluyendo acentos)
-        const isWordChar = (c) => {
-          if (!c) return false;
-          return /[a-záéíóúñü0-9]/i.test(c);
-        };
-        
+
         // Buscar todas las ocurrencias usando split para palabras completas
         const words = fullText.split(/\b/);
         let currentPos = 0;
-        
+
         words.forEach(word => {
           const wordLower = word.toLowerCase();
-          
+
           // Verificar coincidencia exacta (ignorando mayúsculas)
           if (wordLower === queryLower) {
             const matchStart = currentPos;
             const matchEnd = currentPos + word.length;
             const affectedSpans = [];
-            
+
             for (const spanInfo of spanMap) {
               // Si el span intersecta con el rango de la coincidencia
               if (spanInfo.end > matchStart && spanInfo.start < matchEnd) {
                 affectedSpans.push(spanInfo.span);
               }
             }
-            
+
             if (affectedSpans.length > 0) {
               affectedSpans.forEach(span => span.classList.add('pdf-search-highlight'));
               matchedSpanGroups.push(affectedSpans[0]); // Primer span para scroll
             }
           }
-          
+
           currentPos += word.length;
         });
       });
@@ -303,10 +312,10 @@ function PDFViewer({
       if (matches.length === 0) return;
 
       matches[currentMatchIndex]?.classList.remove('pdf-search-current');
-      
+
       const nextIndex = (currentMatchIndex + 1) % matches.length;
       setCurrentMatchIndex(nextIndex);
-      
+
       matches[nextIndex].classList.add('pdf-search-current');
       matches[nextIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
@@ -316,10 +325,10 @@ function PDFViewer({
       if (matches.length === 0) return;
 
       matches[currentMatchIndex]?.classList.remove('pdf-search-current');
-      
+
       const prevIndex = (currentMatchIndex - 1 + matches.length) % matches.length;
       setCurrentMatchIndex(prevIndex);
-      
+
       matches[prevIndex].classList.add('pdf-search-current');
       matches[prevIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
@@ -351,7 +360,7 @@ function PDFViewer({
       onMouseDown={handleMouseDown}
     >
       <Document
-        key={`doc-${scale.toFixed(2)}`}
+        key={`doc-${fileId}-${scale.toFixed(2)}`}
         file={file}
         onLoadSuccess={handleDocumentLoadSuccess}
         onLoadError={handleDocumentLoadError}

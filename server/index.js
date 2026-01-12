@@ -12,6 +12,7 @@ import notesRoutes from './routes/notes.routes.js';
 import webSearchRoutes from './routes/webSearch.routes.js';
 import pdfRoutes from './routes/pdf.routes.js';
 import ocrRoutes from './routes/ocr.routes.js';
+import storageRoutes from './routes/storage.routes.js';
 
 // CORRECCIÓN: Agregar ruta de assessment
 import assessmentRoutes from './routes/assessment.route.js';
@@ -25,8 +26,26 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
+function maskKey(key) {
+  if (!key || typeof key !== 'string') return 'NO_CONFIG';
+  const trimmed = key.trim();
+  if (!trimmed) return 'NO_CONFIG';
+  const last4 = trimmed.slice(-4);
+  return `${trimmed.length} chars, ****${last4}`;
+}
+
+console.log('🔐 Env check:', {
+  DEEPSEEK_API_KEY: maskKey(process.env.DEEPSEEK_API_KEY),
+  OPENAI_API_KEY: maskKey(process.env.OPENAI_API_KEY),
+  GEMINI_API_KEY: maskKey(process.env.GEMINI_API_KEY)
+});
+
 const app = express();
 const upload = multer();
+
+// Importante para despliegues detrás de proxy (Render, etc.):
+// permite que req.ip use X-Forwarded-For y que el rate limit no trate a todos como la misma IP.
+app.set('trust proxy', 1);
 
 // ============================================================================
 // CONFIGURAR AI CLIENT PARA EVALUACIÓN CRITERIAL
@@ -36,7 +55,7 @@ const aiClient = {
     // Configurar cliente según provider
     const config = {
       deepseek: {
-        baseURL: 'https://api.deepseek.com',
+        baseURL: 'https://api.deepseek.com/v1',
         apiKey: process.env.DEEPSEEK_API_KEY,
         model: 'deepseek-chat'
       },
@@ -106,7 +125,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(express.json({ limit: '4mb' }));
 performanceMiddleware(app);
@@ -158,6 +177,7 @@ app.use('/api/notes', notesRoutes);
 app.use('/api/web-search', webSearchRoutes);
 // OCR de imagen (para regiones/miniaturas)
 app.use('/api', ocrRoutes);
+app.use('/api', storageRoutes);
 
 // CORRECCIÓN: Montar ruta de assessment criterial
 app.use('/api/assessment', assessmentRoutes);

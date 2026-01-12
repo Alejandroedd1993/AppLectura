@@ -55,15 +55,16 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   }); // {id, role, content}
   const [loading, setLoading] = useState(false);
   const abortRef = useRef(null);
+  const requestIdRef = useRef(0);
   const lastUserHashRef = useRef(null);
   const lastUserTsRef = useRef(0);
   const lastActionInfoRef = useRef(null); // { action, fragment, fullText }
   const lastAssistantContentRef = useRef('');
-  const didContextHintRef = useRef(false);
+  const _didContextHintRef = useRef(false);
 
   // MEJORA PEDAGÓGICA: Sistema de tutor inteligente, empático y adaptable
   // Enfoque: APOYO (no evaluación), CLARIFICACIÓN de dudas, PREGUNTAS ORGÁNICAS para profundizar
-  
+
   const SYSTEM_TOPIC_GUARD = `Eres un tutor experto en literacidad crítica y pedagogía empática. Idioma: español.
 
 🎯 **TU MISIÓN PRINCIPAL**: Apoyar al estudiante en su comprensión lectora mediante:
@@ -72,10 +73,10 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 3. **Generar curiosidad** con preguntas orgánicas que emergen naturalmente del diálogo
 4. **Construir conocimiento** sobre lo que el estudiante ya comprende
 
-⚠️ **REGLA CRÍTICA - NO INVENTAR INFORMACIÓN**:
-- NUNCA menciones autor, título, fecha o contexto histórico a menos que esté EXPLÍCITO en el texto
-- Si no tienes información verificable, di: "En este fragmento..." o "El texto presenta..."
-- NO adivines datos biográficos, editoriales o de procedencia
+⚠️ **REGLA CRÍTICA - FORMATO NATURAL**:
+- **NO USES ETIQUETAS EXPLÍCITAS** como "Valida:", "Explica:", "Conecta:", "Profundiza:".
+- Tu respuesta debe ser un flujo conversacional natural.
+- Integra los pasos pedagógicos (validar, explicar, conectar) invisiblemente en tu narrativa.
 - Enfócate en el TEXTO EN SÍ: lenguaje, estructura, significado, recursos literarios
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -84,21 +85,20 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
 Cuando el estudiante solicita ayuda directa, SÉ GENEROSO con la información PRIMERO:
 
-**Estructura de respuesta**:
-1. **Valida**: "Interesante fragmento" / "Buen punto para analizar"
-2. **Explica**: Tipo de texto, tema central, recursos retóricos, significado
-3. **Conecta**: Relaciona con ideas previas de la conversación (si existen)
-4. **Profundiza**: 1-2 preguntas NATURALES (no forzadas) para continuar explorando
+**Estructura de respuesta (NATURAL y FLUIDA)**:
+Integra estos elementos en una narrativa cohesiva (SIN usar etiquetas como "Valida:" o "Explica:"):
+1. **Valida**: Reconoce el interés o punto del estudiante al inicio.
+2. **Explica**: Desarrolla la explicación, análisis o respuesta principal.
+3. **Conecta**: Vincula con lo que ya se ha discutido.
+4. **Profundiza**: Cierra con una pregunta que invite a seguir explorando naturalmente.
 
 **Ejemplo CORRECTO (acción 'explain')**:
 Estudiante: [Selecciona "islas dispersa procesión del basalto"]
-Tutor: "Interesante fragmento, tiene una carga poética fuerte. Aquí se combinan imágenes fragmentadas: 'islas dispersas' sugiere aislamiento, elementos desconectados. 'Procesión del basalto' es potente porque mezcla lo ceremonial (procesión) con lo geológico y duro (basalto, roca volcánica). Crea una atmósfera de solemnidad fría y desconexión.
-
-Si tuvieras que describir la emoción que transmiten estas imágenes con una palabra, ¿cuál sería?"
+Tutor: "Es un fragmento con una carga poética muy fuerte. Fíjate cómo al combinar imágenes fragmentadas como 'islas dispersas' con 'procesión del basalto', se crea una atmósfera de solemnidad fría. El basalto, siendo roca volcánica, aporta esa dureza que contrasta con la idea de movimiento. Me recuerda a lo que decíamos antes sobre el aislamiento. Si tuvieras que describir la emoción que te transmiten estas imágenes con una palabra, ¿cuál sería?"
 
 **Ejemplo de VALIDACIÓN de insight del estudiante**:
 Estudiante: "Creo que el autor usa el basalto para mostrar dureza emocional"
-Tutor: "¡Exacto! Has captado una lectura muy interesante. El basalto como metáfora de dureza emocional funciona porque es una roca volcánica, surgida de calor extremo pero ahora fría y rígida. ¿Ves alguna otra palabra en el fragmento que refuerce esa idea de frialdad o distancia emocional?"
+Tutor: "¡Exacto! Es una lectura muy aguda. El basalto funciona perfectamente como metáfora de esa dureza emocional rígida. ¿Ves alguna otra palabra en el fragmento que refuerce esa misma sensación?"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🤔 **MODO 2: SOCRÁTICO ADAPTATIVO** (preguntas del estudiante)
@@ -229,13 +229,14 @@ Adapta tu respuesta según señales del estudiante:
 - Interacciones medias: Preguntas de análisis y conexión
 - Interacciones avanzadas: Preguntas de síntesis y evaluación crítica`;
 
-  // Notificar al montar si hay mensajes iniciales
+  // Notificar una sola vez cuando haya mensajes iniciales rehidratados.
+  const didNotifyInitialRef = useRef(false);
   useEffect(() => {
-    if (messages.length && onMessagesChange) {
-      try { onMessagesChange(messages); } catch (e) { /* noop */ }
-    }
-    /* eslint-disable-next-line */
-  }, []);
+    if (didNotifyInitialRef.current) return;
+    if (!messages.length || !onMessagesChange) return;
+    didNotifyInitialRef.current = true;
+    try { onMessagesChange(messages); } catch (e) { /* noop */ }
+  }, [messages.length, onMessagesChange]);
 
   const addMessage = useCallback((msg) => {
     setMessages(prev => {
@@ -253,11 +254,11 @@ Adapta tu respuesta según señales del estudiante:
   // 📝 HISTORIAL INTELIGENTE: Genera resumen de conversación cuando hay muchos mensajes
   const generateConversationSummary = useCallback((messageHistory) => {
     if (messageHistory.length < 6) return null; // No resumir si hay pocos mensajes
-    
+
     const userMessages = messageHistory.filter(m => m.role === 'user').slice(0, 5); // Primeras 5 preguntas
     const topics = new Set();
     const questions = [];
-    
+
     userMessages.forEach(msg => {
       const content = msg.content.toLowerCase();
       // Extraer temas/keywords (palabras > 4 caracteres que aparecen varias veces)
@@ -267,15 +268,15 @@ Adapta tu respuesta según señales del estudiante:
           topics.add(w);
         }
       });
-      
+
       // Extraer preguntas principales (primeras 80 caracteres de cada mensaje de usuario)
       if (msg.content.length > 0) {
         questions.push(msg.content.slice(0, 80).replace(/\n/g, ' '));
       }
     });
-    
+
     if (topics.size === 0 && questions.length === 0) return null;
-    
+
     const topicsArray = Array.from(topics).slice(0, 5);
     const summary = `**Resumen de la conversación hasta ahora:**
 - El estudiante ha hecho ${userMessages.length} preguntas principales.
@@ -283,7 +284,7 @@ ${topicsArray.length > 0 ? `- Temas explorados: ${topicsArray.join(', ')}` : ''}
 ${questions.length > 0 ? `- Preguntas principales: ${questions.slice(0, 3).map((q, i) => `${i + 1}. "${q}..."`).join(' ')}` : ''}
 
 Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre lo que ya se ha discutido.`;
-    
+
     return summary;
   }, []);
 
@@ -292,15 +293,15 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
     // Si hay muchos mensajes y no hemos incluido resumen recientemente, generarlo
     const shouldIncludeSummary = includeSummary && messages.length > 10;
     const summary = shouldIncludeSummary ? generateConversationSummary(messages) : null;
-    
+
     // Tomar los últimos N mensajes (excluye mensajes de error internos que comienzan con ⚠️)
     const recent = messages.slice(-limit).filter(m => typeof m?.content === 'string' && !m.content.startsWith('⚠️'));
-    
+
     const historyItems = recent.map(m => ({
       role: m.role === 'assistant' || m.role === 'user' ? m.role : 'user',
       content: (m.content.length > maxCharsPerMsg ? (m.content.slice(0, maxCharsPerMsg) + '…') : m.content)
     }));
-    
+
     // Si hay resumen, agregarlo como mensaje de sistema adicional (se manejará en callBackend)
     return {
       items: historyItems,
@@ -309,16 +310,17 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
   }, [messages, generateConversationSummary]);
 
   // 🕐 TIMEOUT Y RETRY: Lógica mejorada para llamadas al backend
-  const TIMEOUT_MS = 30000; // 30 segundos
+  const TIMEOUT_MS = 45000; // 45 segundos para dar margen a respuestas largas o lentas
   const MAX_RETRIES = 2;
 
   const callBackendWith = useCallback(async (messagesArr, retries = 0) => {
+    const myRequestId = ++requestIdRef.current;
     setLoading(true);
     onBusyChange?.(true);
-    
+
     // Crear AbortController con timeout
-      abortRef.current?.abort();
-      abortRef.current = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
     const timeoutId = setTimeout(() => {
       if (abortRef.current) {
         abortRef.current.abort();
@@ -327,16 +329,19 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
 
     try {
       // Intentar usar OpenAI global (tests / entorno con mock) antes de ir al backend
-      if (typeof OpenAI !== 'undefined') {
+      const OpenAIClass = (typeof globalThis !== 'undefined' ? globalThis.OpenAI : undefined);
+      if (OpenAIClass) {
         try {
-          const client = new OpenAI();
+          const client = new OpenAIClass();
           const completion = await client.chat.completions.create({
-            model: 'gpt-3.5-turbo',
+            model: 'gpt-4o-mini',
             messages: messagesArr
           });
           clearTimeout(timeoutId);
-          let content = completion?.choices?.[0]?.message?.content?.trim() || 'Sin respuesta.';          
-          
+
+          if (myRequestId !== requestIdRef.current) return;
+          let content = completion?.choices?.[0]?.message?.content?.trim() || 'Sin respuesta.';
+
           // 🔍 Validación post-respuesta
           const ctx = lastActionInfoRef.current || {};
           const previousMessages = messages.filter(m => m.role === 'assistant').slice(-3);
@@ -354,12 +359,15 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
               { role: 'user', content: validation.correctedResponse.correctionPrompt }
             ];
             // Llamar recursivamente pero solo 1 vez para regeneración
-            return callBackendWith(correctionMessages, 0);
+            await callBackendWith(correctionMessages, 0);
+            return;
           }
-          
+
           // Filtro anti-eco: evitar repetir lo mismo que el último assistant
           content = filterEchoIfNeeded(lastAssistantContentRef.current, content);
           const msg = { id: Date.now() + '-assistant', role: 'assistant', content };
+
+          if (myRequestId !== requestIdRef.current) return;
           addMessage(msg);
           try { onAssistantMessage?.(msg, apiRef.current); } catch { /* noop */ }
           return; // Evitar continuar al fetch backend
@@ -371,27 +379,32 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       // Llamada al backend con timeout y temperatura
       const ctx = lastActionInfoRef.current || {};
       const temperature = ctx.temperature || 0.7; // Default 0.7 si no se especifica
-      
+
       const res = await fetch(`${backendUrl}/api/chat/completion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           messages: messagesArr,
-          temperature: temperature
+          temperature: temperature,
+          max_tokens: 1024 // 🆕 Asegurar suficiente margen para respuestas largas
         }),
         signal: abortRef.current.signal
       });
-      
+
       clearTimeout(timeoutId);
-      
+
+      if (myRequestId !== requestIdRef.current) return;
+
       if (!res.ok) {
         const errorText = await res.text().catch(() => '');
         throw new Error(`HTTP ${res.status}: ${errorText || 'Respuesta no OK'}`);
       }
-      
+
       const data = await res.json();
       let content = data?.choices?.[0]?.message?.content?.trim() || data?.content || 'Sin respuesta.';
-      
+
+      if (myRequestId !== requestIdRef.current) return;
+
       // 🔍 VALIDACIÓN POST-RESPUESTA (reutilizando ctx declarado arriba)
       const previousMessages = messages.filter(m => m.role === 'assistant').slice(-3);
       const validation = validateResponse(content, {
@@ -407,67 +420,80 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
           console.log('🔄 [TutorCore] Regenerando respuesta con corrección...');
           const correctionMessages = [
             ...messagesArr.slice(0, -1), // Todos menos el último mensaje
-            { 
-              role: 'user', 
-              content: `${messagesArr[messagesArr.length - 1]?.content || ''}\n\n${validation.correctedResponse.correctionPrompt}` 
+            {
+              role: 'user',
+              content: `${messagesArr[messagesArr.length - 1]?.content || ''}\n\n${validation.correctedResponse.correctionPrompt}`
             }
           ];
           // Intentar regenerar (sin incrementar retries para regeneración)
-          return callBackendWith(correctionMessages, retries);
+          await callBackendWith(correctionMessages, retries);
+          return;
         } else {
           console.warn('⚠️ [TutorCore] Máximo de regeneraciones alcanzado, usando respuesta con advertencia');
           // Agregar advertencia al contenido
           content = `⚠️ Nota: Esta respuesta puede contener información inferida. ${content}`;
         }
       }
-      
+
       // Filtro anti-eco
       content = filterEchoIfNeeded(lastAssistantContentRef.current, content);
       const msg = { id: Date.now() + '-assistant', role: 'assistant', content };
+
+      if (myRequestId !== requestIdRef.current) return;
       addMessage(msg);
       try { onAssistantMessage?.(msg, apiRef.current); } catch { /* noop */ }
-      
+
     } catch (e) {
       clearTimeout(timeoutId);
-      
+
       // Ignorar AbortError (cancelación intencional de peticiones anteriores)
       if (e.name === 'AbortError') {
         console.log('ℹ️ [TutorCore] Petición cancelada (AbortError), ignorando');
         return; // No mostrar error al usuario
       }
-      
+
       // 🔄 RETRY LOGIC: Reintentar si es error de red/timeout y no hemos alcanzado el máximo
-      const isRetryableError = 
-        e.message?.includes('Failed to fetch') || 
+      const isRetryableError =
+        e.message?.includes('Failed to fetch') ||
         e.message?.includes('NetworkError') ||
         e.message?.includes('timeout') ||
         (e.message?.includes('HTTP') && parseInt(e.message.match(/HTTP (\d+)/)?.[1] || '0') >= 500);
-      
+
       if (isRetryableError && retries < MAX_RETRIES) {
         console.log(`🔄 [TutorCore] Reintentando... (${retries + 1}/${MAX_RETRIES})`);
         // Esperar un poco antes de reintentar (backoff exponencial)
         await new Promise(resolve => setTimeout(resolve, 1000 * (retries + 1)));
-        return callBackendWith(messagesArr, retries + 1);
+        await callBackendWith(messagesArr, retries + 1);
+        return;
       }
-      
+
       // Si llegamos aquí, es un error no recuperable o se agotaron los reintentos
+      const httpStatus = parseInt(e.message?.match(/HTTP (\d+)/)?.[1] || '0');
       const errorMessage = isRetryableError && retries >= MAX_RETRIES
         ? '⚠️ El servidor tardó demasiado en responder. Por favor, intenta nuevamente.'
         : e.message?.includes('timeout') || e.name === 'TimeoutError'
-        ? '⚠️ La solicitud tardó demasiado. Por favor, intenta nuevamente.'
-        : e.message?.includes('HTTP 5')
-        ? '⚠️ Error del servidor. Por favor, intenta más tarde.'
-        : e.message?.includes('HTTP 4')
-        ? '⚠️ Error en la solicitud. Por favor, verifica tu conexión.'
-        : '⚠️ Error obteniendo respuesta del tutor. Por favor, intenta nuevamente.';
-      
+          ? '⚠️ La solicitud tardó demasiado. Por favor, intenta nuevamente.'
+          : httpStatus === 402
+            ? '⚠️ El proveedor de IA rechazó la solicitud por saldo/crédito insuficiente (HTTP 402). Revisa tu API key o el saldo del proveedor.'
+            : (httpStatus === 401 || httpStatus === 403)
+              ? '⚠️ No autorizado (HTTP 401/403). Revisa tu API key/permisos del proveedor de IA en ⚙️.'
+              : e.message?.includes('HTTP 5')
+                ? '⚠️ Error del servidor. Por favor, intenta más tarde.'
+                : e.message?.includes('HTTP 4')
+                  ? '⚠️ Error en la solicitud. Por favor, verifica tu conexión.'
+                  : '⚠️ Error obteniendo respuesta del tutor. Por favor, intenta nuevamente.';
+
       const errMsg = { id: Date.now() + '-error', role: 'assistant', content: errorMessage };
+
+      if (myRequestId !== requestIdRef.current) return;
       addMessage(errMsg);
       try { onAssistantMessage?.(errMsg, apiRef.current); } catch { /* noop */ }
       console.warn('[TutorCore] Error:', e);
     } finally {
-      setLoading(false);
-      onBusyChange?.(false);
+      if (myRequestId === requestIdRef.current) {
+        setLoading(false);
+        onBusyChange?.(false);
+      }
     }
   }, [addMessage, onBusyChange, messages]);
 
@@ -475,12 +501,13 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
     const historyData = getCondensedHistory();
     const history = Array.isArray(historyData) ? historyData : historyData.items;
     const summary = Array.isArray(historyData) ? null : historyData.summary;
-    
+
     // Adjuntar contexto de lectura si está disponible
     const ctx = lastActionInfoRef.current || {};
     const contextSnippet = buildContextSnippet(ctx);
     const lengthInstruction = buildLengthInstruction(ctx.lengthMode, prompt);
-    
+    const creativityInstruction = buildCreativityInstruction(ctx.temperature);
+
     // Construir contenido del system prompt con resumen si está disponible
     let systemContent = SYSTEM_TOPIC_GUARD + ' ' + SYSTEM_ANTI_REDUNDANCY;
     if (summary) {
@@ -489,10 +516,13 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
     if (lengthInstruction) {
       systemContent += ' ' + lengthInstruction;
     }
+    if (creativityInstruction) {
+      systemContent += '\n\n' + creativityInstruction;
+    }
     if (contextualGuidance) {
       systemContent += contextualGuidance;
     }
-    
+
     // 🌐 Agregar contexto de búsqueda web si está disponible
     if (ctx.webEnrichment) {
       console.log('🌐 [TutorCore] Agregando contexto web al system prompt');
@@ -503,16 +533,16 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
     } else {
       console.log('⚠️ [TutorCore] No hay webEnrichment en contexto. ctx:', Object.keys(ctx));
     }
-    
+
     console.log('📋 [TutorCore] System prompt final length:', systemContent.length);
-    
+
     const messagesArr = [
       { role: 'system', content: systemContent },
       ...history,
       ...(contextSnippet ? [{ role: 'user', content: contextSnippet }] : []),
       { role: 'user', content: prompt }
     ];
-    
+
     console.log('📤 [TutorCore] Enviando al backend:', messagesArr.length, 'mensajes');
     return callBackendWith(messagesArr);
   }, [callBackendWith, getCondensedHistory]);
@@ -547,7 +577,7 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       }
       lastUserHashRef.current = hash;
       lastUserTsRef.current = now;
-      
+
       // 🤖 LOGGING PARA BITÁCORA ÉTICA IA
       try {
         const interactionLog = {
@@ -557,26 +587,26 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
           bloomLevel: null, // Se actualizará después de detección
           tutorMode: lastActionInfoRef.current?.action || 'general'
         };
-        
+
         console.log('🤖 [TutorCore] Emitiendo evento tutor-interaction-logged:', interactionLog);
-        
+
         // Emitir evento para que BitacoraEticaIA lo capture
-        window.dispatchEvent(new CustomEvent('tutor-interaction-logged', { 
-          detail: interactionLog 
+        window.dispatchEvent(new CustomEvent('tutor-interaction-logged', {
+          detail: interactionLog
         }));
-        
+
         console.log('✅ [TutorCore] Evento emitido exitosamente');
       } catch (e) {
         console.warn('[TutorCore] Error logging interaction:', e);
       }
-      
+
       // ✨ FASE 2: Detectar nivel Bloom automáticamente
       let bloomDetection = null;
       if (zdpDetector) {
         try {
           bloomDetection = zdpDetector.detectLevel(prompt);
           console.log('🧠 Nivel Bloom detectado:', bloomDetection);
-          
+
           // Registrar puntos según nivel cognitivo
           if (rewards && bloomDetection?.current) {
             const eventType = `QUESTION_BLOOM_${bloomDetection.current.id}`;
@@ -587,46 +617,15 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
             });
             console.log('🎮 Puntos registrados:', result);
           }
-          
-          // 🎁 SISTEMA DE RECOMPENSAS POR INTERACCIÓN (FUTURO)
-          // Cada vez que el estudiante responde al tutor, gana puntos extra
-          // Esto incentiva el diálogo y la exploración profunda
-          /* 
-          if (rewards) {
-            const interactionCount = messages.filter(m => m.role === 'user').length;
-            
-            // Puntos progresivos: más interacciones = más puntos
-            const basePoints = 5;
-            const bonusMultiplier = Math.min(interactionCount / 10, 2); // Max 2x bonus
-            const interactionPoints = Math.floor(basePoints * (1 + bonusMultiplier));
-            
-            const result = rewards.recordEvent('TUTOR_INTERACTION', {
-              interactionCount,
-              points: interactionPoints,
-              hasBloomLevel: !!bloomDetection?.current
-            });
-            
-            console.log(`🎁 Puntos por interacción: +${interactionPoints} (total interacciones: ${interactionCount})`);
-            
-            // Bonificación especial cada 10 interacciones
-            if (interactionCount > 0 && interactionCount % 10 === 0) {
-              rewards.recordEvent('TUTOR_MILESTONE', {
-                milestone: interactionCount,
-                bonusPoints: 50
-              });
-              console.log(`🏆 ¡Hito alcanzado! ${interactionCount} interacciones con el tutor (+50 puntos bonus)`);
-            }
-          }
-          */
         } catch (e) {
           console.warn('[TutorCore] Error en detección Bloom:', e);
         }
       }
-      
+
       // 🧠 DETECCIÓN INTELIGENTE DE NECESIDADES DEL ESTUDIANTE
       const studentNeeds = detectStudentNeeds(prompt);
       console.log('🎯 [TutorCore] Necesidades detectadas:', studentNeeds);
-      
+
       // Construir instrucción contextual según necesidades
       let contextualGuidance = '';
       if (studentNeeds.confusion) {
@@ -643,10 +642,10 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
         const frag = (lastActionInfoRef.current?.fragment || '').toString().trim();
         const fullText = (lastActionInfoRef.current?.fullText || '').toString().trim();
         const p = (prompt || '').toString().toLowerCase();
-        
+
         // NUEVO: Considerar TANTO fragmento como texto completo para validación
         const contextText = fullText || frag;
-        
+
         // Si no hay contexto de lectura cargado, permitir cualquier pregunta
         if (!contextText) {
           console.log('ℹ️ [TutorCore] Sin contexto de lectura, permitiendo pregunta libre');
@@ -671,40 +670,40 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
             // Preguntas de profundización (siempre válidas)
             /(profundiza|m[aá]s\s+sobre|detalla|amplia)/i
           ];
-          
+
           const hasValidIntent = validIntents.some(pattern => pattern.test(p));
-          
+
           // Conversación establecida: deshabilitar guard después de 2 mensajes (antes 3)
           const userMsgCount = messages.filter(m => m.role === 'user').length;
           const conversationEstablished = userMsgCount >= 2;
-          
+
           // CRITERIO ESTRICTO: Solo bloquear si:
           // 1. NO tiene intención válida
           // 2. NO hay conversación establecida
           // 3. Overlap EXTREMADAMENTE bajo (< 5%, antes 25%)
           // 4. Pregunta es sobre tema CLARAMENTE diferente (detección mejorada)
-          
+
           if (!hasValidIntent && !conversationEstablished) {
             const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z\sáéíóúñ]/gi, ' ').replace(/\s+/g, ' ').trim();
             const promptTokens = norm(p).split(' ').filter(w => w.length > 2); // Reducido de 3 a 2 para mayor tolerancia
             const contextTokens = norm(contextText).split(' ').filter(w => w.length > 2);
             const contextSet = new Set(contextTokens);
-            
+
             let overlap = 0;
             for (const token of promptTokens) {
               if (contextSet.has(token)) overlap++;
             }
-            
+
             const ratio = promptTokens.length ? overlap / promptTokens.length : 1; // Default 1 (permitir)
-            
+
             console.log(`📊 [TutorCore] Análisis off-topic: overlap ${(ratio * 100).toFixed(1)}% (${overlap}/${promptTokens.length} tokens)`);
-            
+
             // UMBRAL MUY BAJO: solo bloquear si < 5% de overlap (extremadamente diferente)
             if (ratio < 0.05 && promptTokens.length >= 5) {
               console.warn('⚠️ [TutorCore] Pregunta posiblemente off-topic detectada');
               const steer = 'Parece que tu pregunta podría estar sobre un tema diferente al texto que estamos analizando. Si quieres discutir este texto, puedo ayudarte. Si prefieres cambiar de tema, podemos hacerlo también. ¿En qué te gustaría que te ayude?';
               addMessage({ id: Date.now() + '-assistant-steer', role: 'assistant', content: steer });
-              try { onAssistantMessage?.({ role:'assistant', content: steer }, apiRef.current); } catch { /* noop */ }
+              try { onAssistantMessage?.({ role: 'assistant', content: steer }, apiRef.current); } catch { /* noop */ }
               return Promise.resolve();
             } else {
               console.log('✅ [TutorCore] Pregunta válida, permitiendo');
@@ -713,7 +712,7 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
             console.log('✅ [TutorCore] Pregunta con intención válida o conversación establecida, permitiendo');
           }
         }
-      } catch (e) { 
+      } catch (e) {
         console.warn('[TutorCore] Error en validación off-topic:', e);
         // En caso de error, permitir la pregunta (fail-safe)
       }
@@ -726,48 +725,46 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       // Conservar contexto previo (p.ej., lengthMode, fullText ya seteado)
       const prev = lastActionInfoRef.current || {};
       lastActionInfoRef.current = { ...prev, action, fragment, fullText: opts.fullText || prev.fullText || '' };
-      const now = Date.now();
       const frag = (fragment || '').trim();
       const fullText = (opts.fullText || '').toString();
-      const preview = frag.length > 80 ? frag.slice(0, 80) + '…' : frag;
 
       // No mostramos un prompt-instrucción al usuario; opcionalmente podríamos registrar una marca mínima.
       // addMessage({ id: now + '-user-action', role: 'user', content: `(${action}) ${preview}` });
 
-      // Instrucciones específicas por acción (mejoradas con enfoque pedagógico)
+      // Instrucciones específicas por acción (mejoradas con enfoque pedagógico natural)
       let actionDirectives = '';
       switch (action) {
         case 'explain':
         case 'explain|explicar':
-          actionDirectives = 'USAR MODO EXPLICATIVO: Valida el fragmento seleccionado + Explica claramente (tipo de texto, tema, recursos retóricos) + Conecta con ideas previas si existen + Genera MÁXIMO 1 pregunta natural de seguimiento sobre EL FRAGMENTO ORIGINAL (NO sobre palabras de tu respuesta). ⚠️ NO menciones autor/título a menos que esté explícito. Sé generoso con la explicación PRIMERO. Si no tienes pregunta natural, termina con invitación abierta.';
+          actionDirectives = 'USAR MODO EXPLICATIVO: Valida el fragmento seleccionado. Luego explica claramente (tipo de texto, tema, recursos) de forma fluida. Conecta con ideas previas. Cierra con MÁXIMO 1 pregunta natural. ⚠️ IMPORTANTE: No uses etiquetas como "Valida:" o "Explica:". Escribe un párrafo cohesivo.';
           break;
         case 'summarize':
-          actionDirectives = 'USAR MODO EXPLICATIVO: Resume ideas clave en 3-4 frases manteniendo tono y estructura. PRIMERO resume, LUEGO máximo 1 pregunta opcional de reflexión sobre EL TEXTO ORIGINAL. ⚠️ NO inventes metadatos. NO hagas preguntas sobre palabras de tu resumen.';
+          actionDirectives = 'USAR MODO EXPLICATIVO: Resume ideas clave en 3-4 frases fluidas. Luego invita a reflexionar con una pregunta opcional. ⚠️ Mantenlo natural, sin etiquetas ni listas rígidas.';
           break;
         case 'deep':
-          actionDirectives = 'USAR MODO EXPLICATIVO PROFUNDO: Analiza implicaciones, perspectivas múltiples, recursos persuasivos o literarios. Conecta con conocimiento previo del estudiante. 4-6 frases de análisis + MÁXIMO 1-2 preguntas de síntesis sobre CONCEPTOS DEL TEXTO (no sobre palabras de tu explicación). ⚠️ Basa análisis en evidencia textual.';
+          actionDirectives = 'USAR MODO EXPLICATIVO PROFUNDO: Analiza implicaciones y conecta conceptos. Usa un tono conversacional experto pero accesible. Cierra con pregunta de síntesis. ⚠️ Escribe como un párrafo continuo, sin etiquetas explícitas.';
           break;
         case 'question':
-          actionDirectives = 'USAR MODO SOCRÁTICO ADAPTATIVO: Genera 2-3 preguntas abiertas que guíen descubrimiento SOBRE EL TEXTO ORIGINAL. Preguntas deben sentirse naturales, no como examen. Enfócate en significado profundo del texto. NUNCA preguntes sobre palabras que tú usaste en mensajes anteriores.';
+          actionDirectives = 'USAR MODO SOCRÁTICO: Genera 2-3 preguntas abiertas que guíen al descubrimiento de forma natural. Evita parecer un examen. Intégralas en una conversación.';
           break;
         default:
-          actionDirectives = 'Ayuda pedagógica empática adaptada a las necesidades del estudiante. Si haces preguntas, que sean sobre EL TEXTO que el estudiante está leyendo, NO sobre tus propias palabras.';
+          actionDirectives = 'Ayuda pedagógica empática. Responde de manera natural y fluida, sin usar etiquetas en tu respuesta.';
       }
 
       // 🌐 INTEGRACIÓN WEB SEARCH: Enriquecer con Tavily para 'explain' y 'deep'
       // Feature flag: deshabilitar temporalmente si causa problemas
       const ENABLE_WEB_ENRICHMENT = false; // Cambiar a true cuando funcione correctamente
-      
+
       let webEnrichment = '';
       if (ENABLE_WEB_ENRICHMENT && ['explain', 'explain|explicar', 'deep'].includes(action)) {
         try {
           console.log('🌐 [TutorCore] Intentando enriquecimiento web con Tavily...');
           const searchQuery = frag.length > 100 ? frag.substring(0, 100) : frag;
-          
+
           // Crear timeout manual compatible con todos los navegadores
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000);
-          
+
           try {
             const response = await fetch('/api/web-search', {
               method: 'POST',
@@ -778,22 +775,22 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
               }),
               signal: controller.signal
             });
-            
+
             clearTimeout(timeoutId);
-            
+
             if (response.ok) {
               const data = await response.json();
-              
+
               if (data.resultados && data.resultados.length > 0) {
                 console.log(`✅ [TutorCore] Enriquecido con ${data.resultados.length} fuentes (${data.api_utilizada})`);
-                
+
                 const fuentesTexto = data.resultados.map((r, i) => `
-[Fuente ${i+1}]: ${r.titulo}
+[Fuente ${i + 1}]: ${r.titulo}
 ${r.contenidoCompleto ? r.contenidoCompleto.substring(0, 400) : r.resumen}
 URL: ${r.url}
                 `.trim()).join('\n\n');
-              
-              webEnrichment = `
+
+                webEnrichment = `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📡 INFORMACIÓN CONTEXTUAL DE FUENTES VERIFICADAS
@@ -837,7 +834,8 @@ ${fuentesTexto}
       const history = Array.isArray(historyData) ? historyData : historyData.items;
       const summary = Array.isArray(historyData) ? null : historyData.summary;
       const lengthInstruction = buildLengthInstruction((lastActionInfoRef.current || {}).lengthMode, action);
-      
+      const creativityInstruction = buildCreativityInstruction((lastActionInfoRef.current || {}).temperature);
+
       // Construir system content con resumen si está disponible
       let finalSystemContent = systemContent + ' ' + SYSTEM_ANTI_REDUNDANCY;
       if (summary) {
@@ -846,7 +844,10 @@ ${fuentesTexto}
       if (lengthInstruction) {
         finalSystemContent += ' ' + lengthInstruction;
       }
-      
+      if (creativityInstruction) {
+        finalSystemContent += '\n\n' + creativityInstruction;
+      }
+
       const messagesArr = [
         { role: 'system', content: finalSystemContent },
         ...history,
@@ -860,7 +861,23 @@ ${fuentesTexto}
       try { onAssistantMessage?.(msg, apiRef.current); } catch { /* noop */ }
       return msg;
     },
+    cancelPending: () => {
+      // Invalida cualquier petición en curso sin modificar/persistir mensajes.
+      // Útil al cambiar de texto para evitar que respuestas tardías contaminen el historial.
+      requestIdRef.current += 1;
+      try { abortRef.current?.abort(); } catch { /* noop */ }
+      abortRef.current = null;
+      setLoading(false);
+      try { onBusyChange?.(false); } catch { /* noop */ }
+    },
     clear: () => {
+      // Si hay una petición en curso, abortarla para evitar respuestas tardías
+      // que repueblen el chat tras limpiar o al cambiar de texto.
+      requestIdRef.current += 1;
+      try { abortRef.current?.abort(); } catch { /* noop */ }
+      abortRef.current = null;
+      setLoading(false);
+      try { onBusyChange?.(false); } catch { /* noop */ }
       setMessages([]);
       try { onMessagesChange?.([]); } catch (e) { /* noop */ }
     }
@@ -869,7 +886,7 @@ ${fuentesTexto}
   // 🧠 Detección inteligente de necesidades del estudiante (MEJORADA)
   function detectStudentNeeds(prompt) {
     const p = (prompt || '').toLowerCase();
-    
+
     // Patrones de confusión (EXPANDIDOS con variaciones regionales y jerga estudiantil)
     const confusionPatterns = [
       /no entiendo/i,
@@ -906,7 +923,7 @@ ${fuentesTexto}
       /estoy bloquead[oa]/i,
       /no me sale/i
     ];
-    
+
     // Patrones de frustración (EXPANDIDOS)
     const frustrationPatterns = [
       /esto es dif[ií]cil/i,
@@ -936,7 +953,7 @@ ${fuentesTexto}
       /no puedo con esto/i,
       /no doy m[aá]s/i
     ];
-    
+
     // Patrones de curiosidad (EXPANDIDOS con más variaciones)
     const curiosityPatterns = [
       /me pregunto/i,
@@ -971,7 +988,7 @@ ${fuentesTexto}
       /saber más/i,
       /conocer más/i
     ];
-    
+
     // Patrones de insight (EXPANDIDOS - estudiante está conectando ideas)
     const insightPatterns = [
       /creo que/i,
@@ -1014,19 +1031,19 @@ ${fuentesTexto}
       /es como/i,
       /equivalente a/i
     ];
-    
+
     // Detección con scoring (múltiples matches aumentan confianza)
     const getScore = (patterns) => {
       return patterns.reduce((score, pattern) => {
         return score + (pattern.test(p) ? 1 : 0);
       }, 0);
     };
-    
+
     const confusionScore = getScore(confusionPatterns);
     const frustrationScore = getScore(frustrationPatterns);
     const curiosityScore = getScore(curiosityPatterns);
     const insightScore = getScore(insightPatterns);
-    
+
     // Retornar con scores para mayor precisión
     return {
       confusion: confusionScore > 0,
@@ -1053,23 +1070,23 @@ ${fuentesTexto}
    * @returns {Object} { isValid, errors, correctedResponse }
    */
   function validateResponse(response, context = {}) {
-    const { fragment = '', fullText = '', previousAssistantMessages = [] } = context;
+    const { fragment = '', fullText = '', previousAssistantMessages: _previousAssistantMessages = [] } = context;
     const errors = [];
-    
+
     if (!response || typeof response !== 'string') {
       return { isValid: false, errors: ['Respuesta vacía o inválida'], correctedResponse: null };
     }
-    
-    const responseLower = response.toLowerCase();
+
+    const _responseLower = response.toLowerCase();
     const textContext = (fullText || fragment || '').toLowerCase();
-    
+
     // 1. VALIDAR METADATOS INVENTADOS
     // Buscar menciones de autor/título/fecha que no están en el texto
     const metadataPatterns = {
       autor: [
-        /el autor (?:se llama|es|llamado|de nombre|llamada)\s+["']?([^"']+?)["']?[\s\.]/i,
-        /según (?:el )?autor[:\s]+([^\.]+?)[\.]/i,
-        /autor[:\s]+([^\.]+?)[\.]/i
+        /el autor (?:se llama|es|llamado|de nombre|llamada)\s+["']?([^"']+?)["']?[\s.]/i,
+        /según (?:el )?autor[:\s]+([^.]+?)[.]/i,
+        /autor[:\s]+([^.]+?)[.]/i
       ],
       titulo: [
         /el (?:título|libro|texto|obra) (?:se llama|es|llamado|titulado)\s+["']([^"']+?)["']/i,
@@ -1081,7 +1098,7 @@ ${fuentesTexto}
         /\b(?:escrito|publicado|publicada)\s+(?:en|el año|año)\s+(\d{4})\b/i
       ]
     };
-    
+
     // Extraer todas las menciones potenciales
     const foundMetadata = {};
     for (const [type, patterns] of Object.entries(metadataPatterns)) {
@@ -1097,45 +1114,45 @@ ${fuentesTexto}
         }
       }
     }
-    
+
     // Si se encontró metadata inventado, agregar error
     for (const [type, mentions] of Object.entries(foundMetadata)) {
       if (mentions.length > 0) {
         errors.push(`Menciona ${type} "${mentions[0]}" que no está en el texto original`);
       }
     }
-    
+
     // 2. VALIDAR PREGUNTAS SOBRE PALABRAS DEL TUTOR
     // Extraer todas las preguntas de la respuesta
-    const questionMatches = response.match(/[¿\?]\s*([^¿?\.]+?)[\?\.]/g) || [];
-    
+    const questionMatches = response.match(/[¿?]\s*([^¿?.]+?)[?.]/g) || [];
+
     for (const questionMatch of questionMatches) {
-      const question = questionMatch.replace(/[¿\?]/g, '').trim().toLowerCase();
-      
+      const question = questionMatch.replace(/[¿?]/g, '').trim().toLowerCase();
+
       // Buscar palabras comunes del tutor en la pregunta
       const tutorWords = ['parece', 'comentamos', 'quieres', 'mencioné', 'dije', 'explicé', 'antes dije'];
       const foundTutorWords = tutorWords.filter(word => question.includes(word));
-      
+
       // Verificar si pregunta sobre palabras del tutor que no están en el texto original
       if (foundTutorWords.length > 0) {
         // Extraer palabras clave de la pregunta que podrían ser del tutor
         const questionWords = question.split(/\s+/).filter(w => w.length > 3);
-        const wordsNotInText = questionWords.filter(w => 
-          !textContext.includes(w) && 
+        const wordsNotInText = questionWords.filter(w =>
+          !textContext.includes(w) &&
           foundTutorWords.some(tw => question.includes(tw))
         );
-        
+
         if (wordsNotInText.length > 0) {
           errors.push(`Pregunta sobre palabras del tutor ("${foundTutorWords[0]}") que no están en el texto original`);
         }
       }
-      
+
       // Verificar patrones problemáticos específicos
       const problematicPatterns = [
         /cómo se relacionan?\s+(["']?\w+["']?)\s+y\s+(["']?\w+["']?)\s+en\s+(?:este|el)\s+fragmento/i,
         /qué\s+significa\s+(["']?\w+["']?)\s+en\s+este\s+fragmento/i
       ];
-      
+
       for (const pattern of problematicPatterns) {
         const match = question.match(pattern);
         if (match) {
@@ -1146,14 +1163,14 @@ ${fuentesTexto}
             const cleanWord = w.replace(/["']/g, '').toLowerCase();
             return cleanWord.length > 2 && !textContext.includes(cleanWord);
           });
-          
+
           if (invalidWords.length > 0 && !textContext.includes(invalidWords[0].toLowerCase())) {
             errors.push(`Pregunta sobre palabra "${invalidWords[0]}" que no está en el fragmento original`);
           }
         }
       }
     }
-    
+
     // 3. CONSTRUIR RESPUESTA CORREGIDA SI HAY ERRORES
     let correctedResponse = null;
     if (errors.length > 0) {
@@ -1167,7 +1184,7 @@ ${errors.map(e => `- ${e}`).join('\n')}
 Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el texto que el estudiante está leyendo, sin mencionar información que no esté explícitamente en el texto.`
       };
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors,
@@ -1218,7 +1235,7 @@ Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el tex
 
   function splitSentences(text) {
     return (text || '')
-      .split(/(?<=[\.!?\u00BF\u00A1\?\!])\s+/)
+      .split(/(?<=[.!?\u00BF\u00A1?!])\s+/)
       .map(s => s.trim())
       .filter(Boolean);
   }
@@ -1234,14 +1251,27 @@ Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el tex
   function buildLengthInstruction(mode, prompt) {
     try {
       const m = (mode || 'auto').toLowerCase();
-      if (m === 'breve') return 'Responde brevemente (2-4 frases máximo) a menos que el usuario pida más.';
-      if (m === 'media') return 'Responde en una extensión media (4-6 frases), equilibrando concisión y detalle.';
-      if (m === 'detallada') return 'Responde de forma detallada (hasta 8-10 frases) cuando el contenido lo amerite.';
-      // Auto: heurística simple por intención
+      if (m === 'breve') return 'Responde de forma MUY concisa y directa (máximo 2-3 frases). Evita adornos innecesarios.';
+      if (m === 'media') return 'Responde con una extensión equilibrada (4-6 frases). Explica lo necesario sin extenderte demasiado.';
+      if (m === 'detallada') return 'Responde de forma detallada y rica en contenido (hasta 8-10 frases). USA VIÑETAS o listas numeradas para estructurar tu respuesta si es útil. Incluye EJEMPLOS concretos del texto para ilustrar tus puntos.';
+
+      // Auto: heurística mejorada
       const p = (prompt || '').toLowerCase();
-      if (/resume|resumen|de qué trata|idea principal/.test(p)) return 'Responde de forma concisa (2-3 frases) y directa.';
-      if (/explica|por qué|cómo|analiza|relación/.test(p)) return 'Responde con el detalle necesario (4-6 frases) apoyándote en el texto.';
+      if (/lista|enumera|cuáles son|ejemplos/.test(p)) return 'Usa listas o viñetas para mayor claridad.';
+      if (/resume|resumen|de qué trata|idea principal/.test(p)) return 'Responde de forma concisa y directa.';
+      if (/explica|por qué|cómo|analiza|relación/.test(p)) return 'Responde con detalle explicativo, usando el texto como soporte.';
       return '';
+    } catch { return ''; }
+  }
+
+  function buildCreativityInstruction(temp) {
+    try {
+      const t = parseFloat(temp);
+      // Rango 0.0 - 1.0 (aprox)
+      if (t <= 0.4) return 'TONO: Objetivo, analítico y preciso. Cíñete estrictamente a la evidencia del texto. Evita metáforas o lenguaje florido.';
+      if (t >= 0.9) return 'TONO: Inspirador, dinámico y creativo. Usa metáforas pedagógicas y conecta ideas de forma imaginativa para facilitar la comprensión. Muestra entusiasmo.';
+      // Default ~0.7
+      return 'TONO: Pedagógico, claro y empático. Equilibra el análisis riguroso con una explicación accesible y cálida.';
     } catch { return ''; }
   }
 

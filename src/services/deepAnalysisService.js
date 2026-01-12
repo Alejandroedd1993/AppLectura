@@ -112,7 +112,7 @@ async function realizarAnalisisProfundoIA(texto, contextoBasico, provider, apiKe
     
     const data = await chatCompletion({
       provider,
-      model: provider === 'deepseek' ? 'deepseek-chat' : 'gpt-3.5-turbo',
+      model: provider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini',
       apiKey,
       messages: [
         { role: 'system', content: promptProfundo }

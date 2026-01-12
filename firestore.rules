@@ -42,6 +42,20 @@ service cloud.firestore {
       return isDocente() && 
              get(/databases/$(database)/documents/users/$(estudianteUid)).data.docenteAsignado == request.auth.uid;
     }
+
+    function isCourseTeacherForProgress(courseId, estudianteUid) {
+      return isDocente() &&
+             courseId != null &&
+             exists(/databases/$(database)/documents/courses/$(courseId)/students/$(estudianteUid)) &&
+             get(/databases/$(database)/documents/courses/$(courseId)).data.docenteUid == request.auth.uid;
+    }
+
+    function isCourseOwner(courseId) {
+      return isDocente() &&
+             get(/databases/$(database)/documents/courses/$(courseId)).data.docenteUid == request.auth.uid;
+    }
+
+    // (helpers eliminados si no se usan para evitar warnings de lint)
     
     // ========================================
     // COLECCIÓN: USERS
@@ -75,6 +89,17 @@ service cloud.firestore {
         // Eliminar: Solo el dueño (para limpieza de sesiones antiguas)
         allow delete: if isOwner(userId);
       }
+
+      // ========================================
+      // SUBCOLECCIÓN: DRAFT_BACKUPS (write-only airbag)
+      // ========================================
+
+      match /draftBackups/{docId} {
+        // Leer/Escribir: Solo el dueño (aunque la app actual lo use write-only)
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
     }
     
     // ========================================
@@ -83,10 +108,11 @@ service cloud.firestore {
     
     match /textos/{textoId} {
       // Leer: 
-      // - Docente: solo sus propios textos
-      // - Estudiante: solo textos asignados a él
-      allow read: if isDocente() && resource.data.docenteUid == request.auth.uid ||
-                     isEstudiante() && request.auth.uid in resource.data.asignadoA;
+      // - Cualquier usuario autenticado puede leer textos
+      // - La lógica de acceso por curso se maneja a nivel de aplicación
+      // - Esto es necesario porque los estudiantes acceden a textos via cursos,
+      //   no via asignación directa, y el campo `asignadoA` es legacy
+      allow read: if isAuthenticated();
       
       // Crear: Solo docentes
       allow create: if isDocente() && 
@@ -107,15 +133,48 @@ service cloud.firestore {
       // Leer:
       // - El propio estudiante
       // - Su docente asignado
-      allow read: if isOwner(studentId) || isDocenteOf(studentId);
+      // - Docente del curso
+      allow read: if isAuthenticated() && (
+                    request.auth.uid == studentId || 
+                    isDocenteOf(studentId) || 
+                    (resource.data.sourceCourseId != null && isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
+                  );
       
-      // Escribir:
-      // - El propio estudiante puede crear/actualizar su progreso
-      allow create, update: if isOwner(studentId) &&
-                               request.resource.data.estudianteUid == studentId;
+      // 🔓 SIMPLIFICADO: Permitir a cualquier usuario autenticado escribir su propio progreso
+      // La validación de curso se hace a nivel de aplicación
+      allow create: if isAuthenticated() && request.auth.uid == studentId;
       
-      // Eliminar: Solo el docente (para resetear progreso)
-      allow delete: if isDocenteOf(studentId);
+      // Actualizar: 
+      // - El propio estudiante
+      // - 🆕 El docente del curso (para resetear artefactos/oportunidades)
+      allow update: if isAuthenticated() && (
+                      request.auth.uid == studentId ||
+                      isDocenteOf(studentId) ||
+                      (resource.data.sourceCourseId != null && isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
+                    );
+      
+      // Eliminar: Solo el docente (para resetear progreso completo)
+      allow delete: if isDocenteOf(studentId) || 
+                      (resource.data.sourceCourseId != null && isCourseTeacherForProgress(resource.data.sourceCourseId, studentId));
+    }
+
+    // ========================================
+    // SUBCOLECCIÓN: NOTIFICATIONS (notificaciones para estudiantes)
+    // ========================================
+    
+    match /students/{studentId}/notifications/{notifId} {
+      // Leer: Solo el estudiante dueño
+      allow read: if isOwner(studentId);
+      
+      // Crear: Docentes autenticados pueden crear notificaciones para estudiantes
+      allow create: if isDocente();
+      
+      // Actualizar: Solo el estudiante (para marcar como leída)
+      allow update: if isOwner(studentId);
+      
+      // Eliminar: El estudiante o el docente que la creó
+      allow delete: if isOwner(studentId) || 
+                      (isDocente() && resource.data.docenteUid == request.auth.uid);
     }
     
     // ========================================
@@ -170,6 +229,63 @@ service cloud.firestore {
       
       // Eliminar: Solo el dueño (al cerrar sesión)
       allow delete: if isOwner(userId);
+    }
+
+    // ========================================
+    // COLECCIÓN: COURSES (cursos tipo classroom)
+    // ========================================
+
+    match /courses/{courseId} {
+      // Leer: Solo usuarios autenticados (evita exposición pública)
+      allow read: if isAuthenticated();
+
+      // Crear: Solo docentes para sí mismos
+      allow create: if isDocente() && request.resource.data.docenteUid == request.auth.uid;
+
+      // Actualizar/Eliminar: Solo docente dueño
+      allow update, delete: if isCourseOwner(courseId);
+
+      match /students/{studentId} {
+        // Leer: Docente dueño o el mismo estudiante
+        allow read: if isCourseOwner(courseId) || isOwner(studentId);
+
+        // Crear: El propio estudiante al unirse al curso
+        allow create: if isOwner(studentId) &&
+                        request.resource.data.estudianteUid == request.auth.uid &&
+                        (
+                          // Respetar autoApprove: si está desactivado, solo puede quedar en pending
+                          (get(/databases/$(database)/documents/courses/$(courseId)).data.autoApprove == false && request.resource.data.estado == 'pending') ||
+                          (get(/databases/$(database)/documents/courses/$(courseId)).data.autoApprove != false && request.resource.data.estado == 'active')
+                        );
+
+        // Actualizar: Docente dueño o el estudiante para campos limitados
+        allow update: if isCourseOwner(courseId) ||
+                        (isOwner(studentId) &&
+                          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ultimoAcceso']));
+
+        // Eliminar: Solo docente dueño (baja del curso)
+        allow delete: if isCourseOwner(courseId) || isOwner(studentId);
+      }
+    }
+
+    // ========================================
+    // COLECCIÓN: COURSE_CODES (mapear código -> curso)
+    // ========================================
+
+    match /courseCodes/{code} {
+      // Leer: Solo usuarios autenticados (unirse a curso requiere sesión)
+      allow read: if isAuthenticated();
+
+      // Crear: Solo docente dueño del código
+      allow create: if isDocente() && request.resource.data.docenteUid == request.auth.uid;
+
+      // Actualizar/Eliminar: Solo docente dueño
+      allow update, delete: if isDocente() && (
+        // caso normal
+        (resource.data.docenteUid == request.auth.uid) ||
+        // compatibilidad legacy: si el code apunta a un courseId y el docente es dueño del curso
+        (resource.data.courseId != null && isCourseOwner(resource.data.courseId))
+      );
     }
     
     // ========================================

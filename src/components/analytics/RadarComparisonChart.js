@@ -140,7 +140,10 @@ const RadarComparisonChart = ({ rubricProgress = {}, theme }) => {
   const chartData = useMemo(() => {
     const data = [];
     
-    Object.entries(rubricProgress).forEach(([rubricId, rubricData]) => {
+    // Ordenar por rubricId para mantener orden consistente
+    const sortedEntries = Object.entries(rubricProgress).sort((a, b) => a[0].localeCompare(b[0]));
+    
+    sortedEntries.forEach(([rubricId, rubricData]) => {
       if (rubricId.startsWith('rubrica') && rubricData?.average !== undefined) {
         data.push({
           rubric: rubricId,

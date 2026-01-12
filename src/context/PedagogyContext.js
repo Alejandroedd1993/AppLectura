@@ -1,16 +1,16 @@
 import React, { createContext, useMemo, useState, useCallback, useContext } from 'react';
+import { generateSocraticQuestions } from '../pedagogy/questions/socratic';
 
 // Usa require para interoperar con módulos CommonJS en /src/pedagogy
 const { RUBRIC } = require('../pedagogy/rubrics/criticalLiteracyRubric');
 const { buildTutorPrompt, buildEvaluatorPrompt } = require('../pedagogy/prompts/templates');
-const { generateSocraticQuestions } = require('../pedagogy/questions/socratic');
-const { scheduleNext } = require('../pedagogy/spaced/scheduler');
-const { createProgressionEngine } = require('../pedagogy/progression/progressionEngine');
+import { scheduleNext } from '../pedagogy/spaced/scheduler';
+import { createProgressionEngine } from '../pedagogy/progression/progressionEngine';
 
 // ✨ NUEVO: Sistema de andamiaje pedagógico (ZDP + ACD)
-const { ZDPDetector } = require('../pedagogy/tutor/zdpDetector');
-const { ACDAnalyzer } = require('../pedagogy/discourse/acdAnalyzer');
-const { RewardsEngine } = require('../pedagogy/rewards/rewardsEngine');
+import { ZDPDetector } from '../pedagogy/tutor/zdpDetector';
+import { ACDAnalyzer } from '../pedagogy/discourse/acdAnalyzer';
+import { RewardsEngine } from '../pedagogy/rewards/rewardsEngine';
 
 export const PedagogyContext = createContext(null);
 
@@ -71,6 +71,11 @@ export function usePedagogy() {
   return ctx;
 }
 
+// Variante tolerante (permite renderizar pantallas sin provider pedagógico)
+export function usePedagogyMaybe() {
+  return useContext(PedagogyContext);
+}
+
 // Hook específico para progresión
 export function useProgression() {
   const { progression } = usePedagogy();
@@ -91,6 +96,6 @@ export function useACDAnalyzer() {
 
 // ✨ NUEVO: Hook para Rewards Engine
 export function useRewards() {
-  const { rewards } = usePedagogy();
-  return rewards;
+  const ctx = usePedagogyMaybe();
+  return ctx?.rewards || null;
 }

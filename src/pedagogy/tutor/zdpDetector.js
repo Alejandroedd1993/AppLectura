@@ -18,7 +18,7 @@
 /**
  * Niveles de Bloom adaptados a Literacidad Crítica
  */
-const BLOOM_LEVELS = [
+export const BLOOM_LEVELS = [
   {
     id: 1,
     name: 'Recordar',
@@ -100,7 +100,7 @@ const BLOOM_LEVELS = [
 /**
  * Clase principal del detector ZDP
  */
-class ZDPDetector {
+export class ZDPDetector {
   constructor() {
     this.levels = BLOOM_LEVELS;
     this.history = []; // Historial de detecciones para progresión
@@ -173,7 +173,7 @@ class ZDPDetector {
    * @returns {string} Pregunta socrática
    */
   generateZDPQuestion(detection, originalQuestion) {
-    const { current, zdp, shouldScaffold } = detection;
+    const { current: _current, zdp, shouldScaffold } = detection;
 
     if (!shouldScaffold) {
       // Ya está en nivel máximo
@@ -375,7 +375,7 @@ ${this.generateZDPQuestion(detection, userQuestion)}
   /**
    * Respuesta para estudiante en nivel máximo
    */
-  _generateMaxLevelResponse(question) {
+  _generateMaxLevelResponse(_question) {
     const responses = [
       `Excelente pregunta de nivel crítico. Continuemos profundizando en las implicaciones de poder.`,
       `Muy buen análisis. ¿Qué otras dimensiones de esta problemática podríamos explorar?`,
@@ -401,13 +401,10 @@ ${this.generateZDPQuestion(detection, userQuestion)}
   }
 }
 
-// Exportar clase y constantes
-module.exports = { 
-  ZDPDetector, 
-  BLOOM_LEVELS 
-};
+const exported = { ZDPDetector, BLOOM_LEVELS };
 
-// Para uso en React (ESM)
+export default exported;
+
 if (typeof window !== 'undefined') {
   window.ZDPDetector = ZDPDetector;
 }

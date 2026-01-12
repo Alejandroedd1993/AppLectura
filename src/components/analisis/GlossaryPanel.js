@@ -196,7 +196,7 @@ const LoadingState = styled.div`
 `;
 
 // Helper para colores de categorías
-function getCategoryColor(category, theme) {
+function getCategoryColor(category, _theme) {
   const colors = {
     'Concepto': '#8b5cf6',
     'Técnico': '#0ea5e9',

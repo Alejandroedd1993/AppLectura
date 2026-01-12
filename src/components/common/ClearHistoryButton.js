@@ -21,18 +21,21 @@ const ClearHistoryButton = ({ theme }) => {
     try {
       const result = clearAllHistory();
       if (result.success) {
-        // Cerrar modal después de un breve delay para mostrar éxito
+        console.log(`🧹 Limpieza completada: ${result.removedCount} elementos eliminados`);
+        // Mostrar éxito brevemente y luego recargar la página
         setTimeout(() => {
           setShowConfirm(false);
           setIsClearing(false);
-        }, 1000);
+          // 🆕 Recargar la página para asegurar estado limpio
+          window.location.reload();
+        }, 1500);
       } else {
-        alert('Error al limpiar el historial: ' + result.message);
+        alert('Error al limpiar: ' + result.message);
         setIsClearing(false);
       }
     } catch (error) {
-      console.error('Error al limpiar historial:', error);
-      alert('Error inesperado al limpiar el historial');
+      console.error('Error al limpiar:', error);
+      alert('Error inesperado al limpiar');
       setIsClearing(false);
     }
   };
@@ -68,25 +71,28 @@ const ClearHistoryButton = ({ theme }) => {
               onClick={(e) => e.stopPropagation()}
             >
               <ModalHeader theme={theme}>
-                <WarningIcon>⚠️</WarningIcon>
-                <ModalTitle theme={theme}>Eliminar Historial</ModalTitle>
+                <WarningIcon>🧹</WarningIcon>
+                <ModalTitle theme={theme}>Limpieza Total de Datos</ModalTitle>
               </ModalHeader>
 
               <ModalBody theme={theme}>
                 <WarningText theme={theme}>
-                  ¿Estás seguro de que quieres eliminar todo el historial?
+                  <strong>¿Ves progreso de otro curso?</strong> Esta herramienta soluciona ese problema limpiando todos los datos guardados localmente.
                 </WarningText>
                 <DetailsList theme={theme}>
-                  <DetailItem>• Conversaciones con el tutor</DetailItem>
-                  <DetailItem>• Resultados de actividades</DetailItem>
-                  <DetailItem>• Resaltados y anotaciones</DetailItem>
-                  <DetailItem>• Progreso de rúbricas</DetailItem>
-                  <DetailItem>• Citas guardadas</DetailItem>
-                  <DetailItem>• Caché de análisis</DetailItem>
+                  <DetailItem>🗑️ Sesiones y progreso de lecturas</DetailItem>
+                  <DetailItem>🗑️ Borradores de artefactos (ACD, Mapa, Resumen, etc.)</DetailItem>
+                  <DetailItem>🗑️ Conversaciones con el tutor</DetailItem>
+                  <DetailItem>🗑️ Progreso de rúbricas y evaluaciones</DetailItem>
+                  <DetailItem>🗑️ Resaltados, anotaciones y citas</DetailItem>
+                  <DetailItem>🗑️ Caché de análisis de textos</DetailItem>
                 </DetailsList>
                 <PreservedInfo theme={theme}>
-                  ✅ Se conservarán: Modo oscuro, tamaño del tutor, temperatura, y otras preferencias
+                  ✅ <strong>Se conservarán:</strong> Modo oscuro, API key, preferencias del tutor
                 </PreservedInfo>
+                <TipInfo theme={theme}>
+                  💡 <strong>Tip:</strong> Después de limpiar, recarga la página y vuelve a entrar a tu curso
+                </TipInfo>
               </ModalBody>
 
               <ModalFooter theme={theme}>
@@ -102,7 +108,7 @@ const ClearHistoryButton = ({ theme }) => {
                   onClick={handleConfirm}
                   disabled={isClearing}
                 >
-                  {isClearing ? 'Eliminando...' : '🗑️ Eliminar Todo'}
+                  {isClearing ? '🧹 Limpiando...' : '🧹 Limpiar Todo'}
                 </ConfirmButton>
               </ModalFooter>
             </ModalContent>
@@ -220,6 +226,16 @@ const PreservedInfo = styled.div`
   padding: 12px;
   border-radius: 8px;
   border-left: 3px solid ${props => props.theme?.success || '#009688'};
+  margin-top: 12px;
+`;
+
+const TipInfo = styled.div`
+  font-size: 0.85rem;
+  color: ${props => props.theme?.warning || '#f59e0b'};
+  background: ${props => props.theme?.warning || '#f59e0b'}15;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 3px solid ${props => props.theme?.warning || '#f59e0b'};
   margin-top: 12px;
 `;
 

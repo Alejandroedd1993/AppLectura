@@ -1,11 +1,13 @@
 // src/components/evaluacion/HintsSystem.js
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 
+const getTheme = (props) => props.$theme || props.theme || {};
+
 const HintsContainer = styled.div`
-  background: ${props => props.theme.infoBg};
-  border: 1px solid ${props => props.theme.info};
+  background: ${props => getTheme(props).infoBg};
+  border: 1px solid ${props => getTheme(props).info};
   border-radius: 8px;
   padding: 1rem;
   margin: 1rem 0;
@@ -20,7 +22,7 @@ const HintsHeader = styled.div`
 
 const HintsTitle = styled.h4`
   margin: 0;
-  color: ${props => props.theme.text};
+  color: ${props => getTheme(props).text};
   font-size: 0.9rem;
   display: flex;
   align-items: center;
@@ -29,7 +31,7 @@ const HintsTitle = styled.h4`
 
 const HintsCounter = styled.div`
   font-size: 0.8rem;
-  color: ${props => props.theme.textMuted};
+  color: ${props => getTheme(props).textMuted};
   display: flex;
   align-items: center;
   gap: 0.25rem;
@@ -42,17 +44,17 @@ const HintsList = styled.div`
 `;
 
 const HintCard = styled(motion.div)`
-  background: ${props => props.theme.surface};
-  border-left: 3px solid ${props => props.theme.info};
+  background: ${props => getTheme(props).surface};
+  border-left: 3px solid ${props => getTheme(props).info};
   padding: 0.75rem;
   border-radius: 4px;
   font-size: 0.85rem;
   line-height: 1.5;
-  color: ${props => props.theme.text};
+  color: ${props => getTheme(props).text};
 `;
 
 const HintButton = styled(motion.button)`
-  background: ${props => props.theme.info};
+  background: ${props => getTheme(props).info};
   color: white;
   border: none;
   border-radius: 6px;
@@ -66,12 +68,12 @@ const HintButton = styled(motion.button)`
   transition: all 0.2s ease;
   
   &:hover:not(:disabled) {
-    background: ${props => props.theme.infoDark || props.theme.info};
+    background: ${props => getTheme(props).infoDark || getTheme(props).info};
     transform: translateY(-1px);
   }
   
   &:disabled {
-    background: ${props => props.theme.border};
+    background: ${props => getTheme(props).border};
     cursor: not-allowed;
     opacity: 0.6;
   }
@@ -80,15 +82,15 @@ const HintButton = styled(motion.button)`
 const NoHintsMessage = styled.div`
   text-align: center;
   padding: 1rem;
-  color: ${props => props.theme.textMuted};
+  color: ${props => getTheme(props).textMuted};
   font-size: 0.85rem;
   font-style: italic;
 `;
 
 const WarningMessage = styled.div`
-  background: ${props => props.theme.warningBg || '#fff3cd'};
-  color: ${props => props.theme.warning || '#856404'};
-  border: 1px solid ${props => props.theme.warning || '#ffc107'};
+  background: ${props => getTheme(props).warningBg || '#fff3cd'};
+  color: ${props => getTheme(props).warning || '#856404'};
+  border: 1px solid ${props => getTheme(props).warning || '#ffc107'};
   border-radius: 6px;
   padding: 0.75rem;
   margin-top: 0.75rem;
@@ -108,9 +110,17 @@ const HintsSystem = ({
   theme 
 }) => {
   const [revealedHints, setRevealedHints] = useState([]);
+
+  const themeOverrides = useMemo(() => {
+    if (!theme || typeof theme !== 'object') return null;
+    // Si el theme que nos pasan no tiene tokens de info, NO lo usamos para no romper estilos.
+    if (!theme.info && !theme.infoBg) return null;
+    return theme;
+  }, [theme]);
   
   const hasHints = hints && hints.length > 0;
-  const remainingHints = maxHints - revealedHints.length;
+  const totalHints = Math.min(maxHints, hints.length);
+  const remainingHints = Math.max(0, totalHints - revealedHints.length);
   const canRevealMore = remainingHints > 0 && revealedHints.length < hints.length;
   
   const handleRevealHint = () => {
@@ -127,9 +137,9 @@ const HintsSystem = ({
   
   if (!hasHints) {
     return (
-      <HintsContainer theme={theme}>
-        <HintsTitle theme={theme}>💡 Hints de Apoyo</HintsTitle>
-        <NoHintsMessage theme={theme}>
+      <HintsContainer $theme={themeOverrides}>
+        <HintsTitle $theme={themeOverrides}>💡 Hints de Apoyo</HintsTitle>
+        <NoHintsMessage $theme={themeOverrides}>
           No hay hints disponibles para esta pregunta
         </NoHintsMessage>
       </HintsContainer>
@@ -137,13 +147,13 @@ const HintsSystem = ({
   }
   
   return (
-    <HintsContainer theme={theme}>
+    <HintsContainer $theme={themeOverrides}>
       <HintsHeader>
-        <HintsTitle theme={theme}>
+        <HintsTitle $theme={themeOverrides}>
           💡 Hints de Apoyo
         </HintsTitle>
-        <HintsCounter theme={theme}>
-          <span>{revealedHints.length}/{Math.min(maxHints, hints.length)}</span>
+        <HintsCounter $theme={themeOverrides}>
+          <span>{remainingHints}/{totalHints}</span>
           <span>disponibles</span>
         </HintsCounter>
       </HintsHeader>
@@ -154,7 +164,7 @@ const HintsSystem = ({
             {revealedHints.map((hint, index) => (
               <HintCard
                 key={index}
-                theme={theme}
+                $theme={themeOverrides}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
@@ -170,7 +180,7 @@ const HintsSystem = ({
       {canRevealMore ? (
         <>
           <HintButton
-            theme={theme}
+            $theme={themeOverrides}
             onClick={handleRevealHint}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -180,13 +190,13 @@ const HintsSystem = ({
           </HintButton>
           
           {revealedHints.length === 0 && (
-            <WarningMessage theme={theme}>
+            <WarningMessage $theme={themeOverrides}>
               ⚠️ Intenta responder primero sin hints para desarrollar tu pensamiento crítico
             </WarningMessage>
           )}
         </>
       ) : (
-        <NoHintsMessage theme={theme}>
+        <NoHintsMessage $theme={themeOverrides}>
           {revealedHints.length >= maxHints 
             ? '✅ Has usado todos los hints disponibles'
             : '✅ Has revelado todos los hints'}

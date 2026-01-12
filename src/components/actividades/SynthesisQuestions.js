@@ -213,14 +213,14 @@ const CompletionText = styled.p`
   line-height: 1.6;
 `;
 
-const SynthesisQuestions = ({ questions = [], onComplete, theme }) => {
+const SynthesisQuestions = ({ questions = [], onComplete, theme, initialAnswers }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [answers, setAnswers] = useState(initialAnswers || {});
   const [showCompletion, setShowCompletion] = useState(false);
 
   const currentQuestion = questions[currentIndex];
   const currentAnswer = answers[currentIndex] || '';
-  
+
   const wordCount = useMemo(() => {
     return currentAnswer.trim().split(/\s+/).filter(Boolean).length;
   }, [currentAnswer]);
@@ -247,7 +247,7 @@ const SynthesisQuestions = ({ questions = [], onComplete, theme }) => {
 
   const handleNext = useCallback(() => {
     if (!validation.valid) return;
-    
+
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else {
@@ -290,12 +290,12 @@ const SynthesisQuestions = ({ questions = [], onComplete, theme }) => {
           <CompletionTitle>
             ✅ ¡Preparación completada!
           </CompletionTitle>
-          
+
           <CompletionText theme={theme}>
-            Has respondido las preguntas de síntesis. <br/>
+            Has respondido las preguntas de síntesis. <br />
             <strong>Ahora estás listo para crear tus artefactos académicos formales.</strong>
           </CompletionText>
-          
+
           <ActionButton
             $variant="primary"
             onClick={handleFinish}
@@ -409,7 +409,7 @@ const SynthesisQuestions = ({ questions = [], onComplete, theme }) => {
                 ← Anterior
               </ActionButton>
             )}
-            
+
             <ActionButton
               $variant="primary"
               onClick={handleNext}

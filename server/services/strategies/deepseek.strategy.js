@@ -1,33 +1,97 @@
 
-// Estrategia DeepSeek: aquí podrías llamar a la API real si cuentas con clave en el backend.
-// De momento, devolvemos un JSON estructurado mínimo como placeholder válido.
+import { settings } from '../../config/settings.js';
 
-export async function deepseekStrategy(prompt) {
-  // TODO: Integrar cliente real de DeepSeek cuando se habilite.
-  // Simular análisis a partir del prompt (recorte simple para demo)
-  const resumen = prompt.length > 400 ? prompt.slice(0, 400) + '…' : prompt;
-  return JSON.stringify({
-    resumen,
-    ideasPrincipales: [
-      "Síntesis inicial del texto a partir del análisis automático",
-      "Aspectos clave identificados a nivel superficial"
-    ],
-    analisisEstilistico: {
-      tono: "informativo",
-      sentimiento: "neutral",
-      estilo: "estándar",
-      publicoObjetivo: "general"
-    },
-    preguntasReflexion: [
-      "¿Qué intención principal parece tener el autor en este fragmento?",
-      "¿Qué evidencia textual respalda la idea central?",
-      "¿Cómo conectarías este contenido con otros conocimientos?"
-    ],
-    vocabulario: [
-      { palabra: "análisis", definicion: "Se menciona en contexto de evaluación del texto" },
-      { palabra: "texto", definicion: "Elemento bajo estudio en el análisis" }
-    ],
-    complejidad: "intermedio",
-    temas: ["Análisis general", "Contenido", "Evidencia"]
-  });
+function parseAllowedModelsCsv(csv) {
+  if (typeof csv !== 'string') return [];
+  return csv
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function pickAllowedModel(requested, allowed, fallback) {
+  const list = Array.isArray(allowed) ? allowed : [];
+  if (requested && list.includes(requested)) return requested;
+  if (list.length) return list[0];
+  return fallback;
+}
+
+/**
+ * Estrategia de análisis de texto utilizando la API de DeepSeek (OpenAI-compatible).
+ * @param {string} prompt - Prompt para enviar al modelo.
+ * @param {{ system?: string, max_tokens?: number, temperature?: number }} [options]
+ * @returns {Promise<string>} Contenido de respuesta (texto), normalmente JSON.
+ */
+export async function deepseekStrategy(prompt, options = {}) {
+  if (!process.env.DEEPSEEK_API_KEY) {
+    throw new Error('DEEPSEEK_API_KEY no configurada');
+  }
+
+  const baseUrl = String(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/+$/, '');
+  const url = `${baseUrl}/chat/completions`;
+
+  const allowedModels = (() => {
+    const fromEnv = parseAllowedModelsCsv(process.env.DEEPSEEK_ALLOWED_MODELS);
+    return fromEnv.length ? fromEnv : ['deepseek-chat'];
+  })();
+
+  const requestedModel = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+  const model = pickAllowedModel(requestedModel, allowedModels, 'deepseek-chat');
+
+  const capFromEnv = Number.parseInt(process.env.ANALYSIS_DEEPSEEK_MAX_TOKENS_CAP || '', 10);
+  const maxTokensCap = Number.isFinite(capFromEnv)
+    ? Math.max(1, Math.min(capFromEnv, 4096))
+    : 2048;
+
+  const overrideMaxTokens = Number.parseInt(String(options?.max_tokens ?? ''), 10);
+  const max_tokens = Number.isFinite(overrideMaxTokens)
+    ? Math.max(1, Math.min(overrideMaxTokens, maxTokensCap))
+    : maxTokensCap;
+
+  const temperature = typeof options?.temperature === 'number' ? options.temperature : 0.3;
+
+  const messages = options?.system
+    ? [{ role: 'system', content: String(options.system) }, { role: 'user', content: prompt }]
+    : [
+        { role: 'system', content: 'Responde estrictamente en JSON válido con la estructura solicitada.' },
+        { role: 'user', content: prompt },
+      ];
+
+  const timeoutMs = settings.deepseek?.timeout || 90000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Error de DeepSeek API: ${response.status} ${response.statusText}${text ? ` - ${text}` : ''}`);
+    }
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Respuesta vacía de DeepSeek API');
+    return content;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Timeout en análisis con DeepSeek');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }

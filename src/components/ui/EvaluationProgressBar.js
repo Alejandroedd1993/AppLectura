@@ -8,7 +8,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import styled, { keyframes, css } from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 // Pasos típicos de evaluación dual (definidos fuera del componente para evitar recreaciones)
 const DEFAULT_STEPS = [

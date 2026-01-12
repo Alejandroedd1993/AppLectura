@@ -1,20 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { checkUnsaveDrafts } from '../../utils/checkUnsaveDrafts';
+import { AppContext } from '../../context/AppContext';
 
 /**
  * Componente de advertencia para borradores sin evaluar
  * Se muestra cuando hay borradores que se perderán al cambiar de sesión
+ * 🆕 FASE 4 FIX: Ahora también considera activitiesProgress para detectar artefactos ya entregados
  */
 const DraftWarning = ({ theme }) => {
+  const { currentTextoId, rubricProgress, activitiesProgress } = useContext(AppContext);
   const [hasDrafts, setHasDrafts] = useState(false);
   const [details, setDetails] = useState([]);
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
     const checkDrafts = () => {
-      const result = checkUnsaveDrafts();
+      // 🆕 FASE 4 FIX: Pasar activitiesProgress para verificar artefactos ya entregados
+      const result = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress);
       setHasDrafts(result.hasDrafts);
       setDetails(result.details);
       
@@ -33,26 +37,33 @@ const DraftWarning = ({ theme }) => {
     // Escuchar cambios en sessionStorage y localStorage
     const handleStorageChange = (e) => {
       // Re-verificar inmediatamente cuando cambie algo relevante
-      if (e.key === 'rubricProgress' || e.key?.includes('_draft') || e.key?.includes('ACD_') || e.key?.includes('Actores_') || e.key?.includes('Argumentativa_')) {
+      if (e.key?.includes('_draft') || e.key?.includes('ACD_') || e.key?.includes('Actores_') || e.key?.includes('Argumentativa_')) {
         checkDrafts();
       }
     };
     
-    // Escuchar evento personalizado cuando se evalúa exitosamente
+    // Escuchar eventos personalizados cuando se evalúa exitosamente
+    // - `artifact-evaluated`: emitido desde AppContext.updateRubricScore
+    // - `evaluation-complete`: compatibilidad con emisores legacy
+    // - `artifact-submitted`: 🆕 cuando se entrega un artefacto al docente
     const handleEvaluationComplete = () => {
-      console.log('✅ [DraftWarning] Evaluación completada, re-verificando borradores...');
+      console.log('✅ [DraftWarning] Evaluación/entrega completada, re-verificando borradores...');
       checkDrafts();
     };
     
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('artifact-evaluated', handleEvaluationComplete);
     window.addEventListener('evaluation-complete', handleEvaluationComplete);
+    window.addEventListener('artifact-submitted', handleEvaluationComplete);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('artifact-evaluated', handleEvaluationComplete);
       window.removeEventListener('evaluation-complete', handleEvaluationComplete);
+      window.removeEventListener('artifact-submitted', handleEvaluationComplete);
     };
-  }, []);
+  }, [currentTextoId, rubricProgress]);
 
   if (!hasDrafts || !isVisible) return null;
 

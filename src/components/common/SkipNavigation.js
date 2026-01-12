@@ -33,8 +33,6 @@ const SkipLinksContainer = styled.div`
 const SkipNavigation = ({ links = [], theme }) => {
   const defaultLinks = [
     { href: '#main-content', label: 'Saltar al contenido principal' },
-    { href: '#dashboard-rubricas', label: 'Saltar al dashboard de rúbricas' },
-    { href: '#pregunta-actual', label: 'Saltar a la pregunta actual' },
     ...links
   ];
 

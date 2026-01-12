@@ -151,7 +151,7 @@
 
 ```dotenv
 # Claves de API para los servicios de IA
-OPENAI_API_KEY=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
+OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 GEMINI_API_KEY=
 
 # Claves de API para búsqueda web (opcional)

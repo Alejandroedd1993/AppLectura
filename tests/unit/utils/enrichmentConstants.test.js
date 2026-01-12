@@ -14,4 +14,25 @@ describe('enrichmentConstants', () => {
     expect(prompt).toMatch(/Resumen: Resumen A/);
     expect(prompt).toMatch(/URL: https:\/\/c/);
   });
+  
+  test('buildEnrichmentPrompt incluye citaciones automáticas cuando se solicita', () => {
+    const results = [
+      { title: 'Fuente 1', url: 'https://ejemplo1.com', snippet: 'Texto 1' },
+      { title: 'Fuente 2', url: 'https://ejemplo2.com', snippet: 'Texto 2' }
+    ];
+    const prompt = buildEnrichmentPrompt(results, true);
+    expect(prompt).toMatch(/📚 Fuentes consultadas:/);
+    expect(prompt).toMatch(/\[1\] Fuente 1: https:\/\/ejemplo1\.com/);
+    expect(prompt).toMatch(/\[2\] Fuente 2: https:\/\/ejemplo2\.com/);
+    expect(prompt).toMatch(/IMPORTANTE: Al citar información/);
+  });
+  
+  test('buildEnrichmentPrompt sin citaciones cuando includeCitations=false', () => {
+    const results = [
+      { title: 'Test', url: 'https://test.com', snippet: 'Content' }
+    ];
+    const prompt = buildEnrichmentPrompt(results, false);
+    expect(prompt).not.toMatch(/📚 Fuentes consultadas:/);
+    expect(prompt).not.toMatch(/IMPORTANTE: Al citar información/);
+  });
 });

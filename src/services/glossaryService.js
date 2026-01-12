@@ -116,7 +116,7 @@ export async function generateGlossary(fullText, _minComplexity = 5) {
 /**
  * Genera glosario básico sin IA (fallback) - AHORA CON DEFINICIONES IA
  */
-async function generateFallbackGlossary(text) {
+async function _generateFallbackGlossary(text) {
   console.log('🔄 Generando glosario fallback con definiciones IA...');
   
   // Lista COMPLETA de palabras obvias/comunes a excluir

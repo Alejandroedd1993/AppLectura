@@ -78,7 +78,7 @@ export default function useFollowUpQuestion(options = {}) {
           const freq = {};
           for (const t of tokens) freq[t] = (freq[t]||0) + 1;
           // Aplicar umbral mínimo de frecuencia (>=2 si el texto es algo largo)
-          const entries = Object.entries(freq).filter(([w,c]) => c >= (tokens.length > 20 ? 2 : 1));
+          const entries = Object.entries(freq).filter(([_w, c]) => c >= (tokens.length > 20 ? 2 : 1));
           return entries.sort((a,b)=>b[1]-a[1]).slice(0,5).map(([w])=>w);
         } catch { return []; }
       };

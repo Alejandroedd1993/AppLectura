@@ -2,6 +2,7 @@
 import React from 'react';
 import { render as rtlRender } from '@testing-library/react';
 import { AppContext } from '../src/context/AppContext';
+import { AuthProvider } from '../src/context/AuthContext';
 
 // Mock del contexto con valores por defecto
 const defaultContextValue = {
@@ -30,9 +31,11 @@ function render(ui, { contextValue = {}, ...renderOptions } = {}) {
   
   function Wrapper({ children }) {
     return (
-      <AppContext.Provider value={mergedContextValue}>
-        {children}
-      </AppContext.Provider>
+      <AuthProvider>
+        <AppContext.Provider value={mergedContextValue}>
+          {children}
+        </AppContext.Provider>
+      </AuthProvider>
     );
   }
 

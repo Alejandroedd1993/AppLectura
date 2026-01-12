@@ -266,7 +266,7 @@ export const themeUtils = {
   /**
    * Valida si un color tiene suficiente contraste (WCAG AA)
    */
-  hasGoodContrast: (foreground, background) => {
+  hasGoodContrast: (_foreground, _background) => {
     // Implementación simplificada - ver accessibility.js para full implementation
     return true; // TODO: integrate with accessibility.js
   },

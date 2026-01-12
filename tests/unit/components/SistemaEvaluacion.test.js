@@ -99,33 +99,24 @@ describe('SistemaEvaluacion', () => {
     test('debe renderizar el componente correctamente', () => {
       renderWithPedagogy(<SistemaEvaluacion {...mockProps} />, { contextValue });
       
-      // Actualizado para coincidir con el nuevo título
-      expect(screen.getByText(/Evaluación Criterial Integral/i)).toBeInTheDocument();
-      expect(screen.getByText(/Evalúa tu literacidad crítica en las 5 dimensiones/i)).toBeInTheDocument();
+      expect(screen.getByText(/Ensayo Integrador \(Evaluación Final\)/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/evaluación IA dual/i).length).toBeGreaterThan(0);
     });
 
-    test('debe mostrar las dimensiones de evaluación disponibles', () => {
+    test('debe renderizar la sección de Ensayo Integrador', () => {
       renderWithPedagogy(<SistemaEvaluacion {...mockProps} />, { contextValue });
-      
-      // Verificamos que los botones de selección de dimensión estén presentes
-      expect(screen.getByRole('button', { name: /Seleccionar dimensión: Comprensión Analítica/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Seleccionar dimensión: Análisis Ideológico-Discursivo/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Seleccionar dimensión: Contextualización Socio-Histórica/i })).toBeInTheDocument();
+
+      expect(screen.getByRole('region', { name: /^Ensayo Integrador$/i })).toBeInTheDocument();
+      expect(screen.getByText(/Ensayo Integrador \(Sumativo\)/i)).toBeInTheDocument();
     });
 
-    test('debe mostrar el dashboard de progreso vacío inicialmente', () => {
+    test('debe mostrar opciones de dimensión del Ensayo Integrador', () => {
       renderWithPedagogy(<SistemaEvaluacion {...mockProps} />, { contextValue });
-      
-      expect(screen.getByText(/Aún no has realizado evaluaciones/i)).toBeInTheDocument();
-    });
-  });
 
-  describe('Selección de dimensión', () => {
-    test('debe permitir seleccionar una dimensión', () => {
-      renderWithPedagogy(<SistemaEvaluacion {...mockProps} />, { contextValue });
-      
-      const dimensionButton = screen.getByRole('button', { name: /Seleccionar dimensión: Comprensión Analítica/i });
-      expect(dimensionButton).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Comprensión Analítica/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Análisis ideológico-discursivo/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Contextualización socio-histórica/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Argumentación y contraargumento/i })).toBeInTheDocument();
     });
   });
 

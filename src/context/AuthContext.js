@@ -3,11 +3,13 @@
  * Maneja el estado del usuario autenticado, su rol y datos de Firestore
  */
 
-import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { auth } from '../firebase/config';
 import { getUserData } from '../firebase/auth';
 import logger from '../utils/logger';
+import { LEGACY_KEYS, storagePrefixesToClear } from '../utils/storageKeys.js';
+import { setCurrentUser as setSessionManagerUser, syncPendingSessions } from '../services/sessionManager';
 
 export const AuthContext = createContext();
 
@@ -17,26 +19,66 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true); // Estado de carga inicial
   const [error, setError] = useState(null);
   const [previousUserId, setPreviousUserId] = useState(null); // Para detectar cambios de usuario
+  const lastUserIdRef = useRef(null);
 
   // Función para limpiar datos locales del usuario (debe estar antes del useEffect)
-  const clearLocalUserData = () => {
+  const clearLocalUserData = ({ mode = 'full' } = {}) => {
     logger.debug('🧹 [AuthContext] Limpiando datos locales del usuario...');
-    
+
+    // En logout normal queremos preservar el progreso local del usuario.
+    // Solo limpiamos datos sensibles/no deterministas para evitar contaminación.
+    const isLogout = mode === 'logout';
+
+    if (isLogout) {
+      const sensitiveKeys = [
+        // API keys (legacy + BYOK)
+        'openai_api_key',
+        'user_openai_api_key',
+        // Flags/colas transitorias
+        '__restoring_session__'
+      ];
+
+      sensitiveKeys.forEach((key) => {
+        try {
+          localStorage.removeItem(key);
+        } catch (err) {
+          logger.warn(`⚠️ No se pudo eliminar ${key}:`, err);
+        }
+      });
+
+      // sessionStorage es por pestaña/origen; conviene limpiar para evitar contaminación de borradores.
+      try {
+        sessionStorage.clear();
+      } catch (err) {
+        logger.warn('⚠️ No se pudo limpiar sessionStorage:', err);
+      }
+
+      logger.log('✅ [AuthContext] Logout: datos sensibles limpiados (progreso preservado)');
+      return;
+    }
+
     // Lista de keys que deben limpiarse al cambiar de usuario
     const keysToRemove = [
-      'applectura_sessions',
-      'applectura_current_session',
+      LEGACY_KEYS.APPLECTURA_SESSIONS,
+      LEGACY_KEYS.APPLECTURA_CURRENT_SESSION,
+      // API keys (legacy + BYOK)
+      'openai_api_key',
+      'user_openai_api_key',
       'rubricProgress',
       'savedCitations',
       'activitiesProgress',
+      LEGACY_KEYS.REWARDS_STATE,
       'annotations_migrated_v1',
       'analysisCache',
       'analysis_cache_stats',
       'analysis_cache_metrics',
       'studyItems_cache',
-      'annotations_cache'
+      'annotations_cache',
+      // Flags/colas relacionadas a sesiones/sync
+      '__restoring_session__',
+      LEGACY_KEYS.APPLECTURA_PENDING_SYNCS
     ];
-    
+
     keysToRemove.forEach(key => {
       try {
         localStorage.removeItem(key);
@@ -44,9 +86,11 @@ export function AuthProvider({ children }) {
         logger.warn(`⚠️ No se pudo eliminar ${key}:`, err);
       }
     });
-    
+
     // También limpiar keys que empiecen con ciertos prefijos
-    const prefixesToClear = ['activity_', 'session_', 'artifact_'];
+    const prefixesToClear = [
+      ...storagePrefixesToClear()
+    ];
     Object.keys(localStorage).forEach(key => {
       if (prefixesToClear.some(prefix => key.startsWith(prefix))) {
         try {
@@ -56,58 +100,79 @@ export function AuthProvider({ children }) {
         }
       }
     });
-    
+
+    // sessionStorage es por pestaña/origen, pero en logout/cambio de usuario
+    // conviene limpiar para evitar contaminación de borradores/artefactos.
+    try {
+      sessionStorage.clear();
+    } catch (err) {
+      logger.warn('⚠️ No se pudo limpiar sessionStorage:', err);
+    }
+
     logger.log('✅ [AuthContext] Datos locales limpiados');
   };
 
   // Escuchar cambios en el estado de autenticación
   useEffect(() => {
     logger.debug('🔐 [AuthContext] Inicializando listener de autenticación...');
-    
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       logger.debug('🔐 [AuthContext] Estado de auth cambió:', user ? user.email : 'No autenticado');
-      
+
       try {
         if (user) {
-          // Detectar cambio de usuario y limpiar localStorage
-          if (previousUserId && previousUserId !== user.uid) {
+          // Configurar SessionManager para scoping (local + cloud)
+          setSessionManagerUser(user.uid);
+
+          // Detectar cambio de usuario (incluso si hubo logout intermedio)
+          if (lastUserIdRef.current && lastUserIdRef.current !== user.uid) {
             logger.warn('🔄 [AuthContext] Cambio de usuario detectado, limpiando datos locales...');
-            clearLocalUserData();
+            clearLocalUserData({ mode: 'full' });
           }
-          
+
+          lastUserIdRef.current = user.uid;
+
           setPreviousUserId(user.uid);
-          
+
+          // Mejor esfuerzo: sincronizar pendientes al iniciar sesión
+          try {
+            syncPendingSessions();
+          } catch (e) {
+            logger.warn('⚠️ [AuthContext] No se pudo iniciar syncPendingSessions:', e);
+          }
+
           // Usuario autenticado: cargar datos de Firestore
           const data = await getUserData(user.uid);
-          
+
           setCurrentUser(user);
           setUserData(data);
-          
+
           logger.log('✅ [AuthContext] Usuario cargado:', {
             uid: user.uid,
             email: user.email,
             role: data.role,
             nombre: data.nombre
           });
-          
+
         } else {
-          // No hay usuario autenticado - limpiar datos locales
+          // No hay usuario autenticado - preservar progreso local, limpiar solo datos sensibles
+          setSessionManagerUser(null);
           if (previousUserId) {
-            logger.debug('🧹 [AuthContext] Usuario cerró sesión, limpiando datos locales...');
-            clearLocalUserData();
+            logger.debug('🧹 [AuthContext] Usuario cerró sesión, limpiando datos sensibles...');
+            clearLocalUserData({ mode: 'logout' });
           }
-          
+
           setPreviousUserId(null);
           setCurrentUser(null);
           setUserData(null);
-          
+
           logger.debug('ℹ️ [AuthContext] No hay usuario autenticado');
         }
-        
+
       } catch (err) {
         logger.error('❌ [AuthContext] Error cargando datos de usuario:', err);
         setError(err.message);
-        
+
         // Si hay error cargando datos, cerrar sesión
         setCurrentUser(null);
         setUserData(null);
@@ -126,7 +191,7 @@ export function AuthProvider({ children }) {
   // Función para refrescar datos del usuario (útil después de actualizaciones)
   const refreshUserData = useCallback(async () => {
     if (!currentUser) return;
-    
+
     try {
       logger.debug('🔄 [AuthContext] Refrescando datos de usuario...');
       const data = await getUserData(currentUser.uid);
@@ -142,10 +207,10 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(async () => {
     try {
       logger.debug('🔐 [AuthContext] Cerrando sesión...');
-      
-      // Limpiar datos locales antes de cerrar sesión
-      clearLocalUserData();
-      
+
+      // Logout: preservar progreso local; limpiar solo datos sensibles
+      clearLocalUserData({ mode: 'logout' });
+
       await firebaseSignOut(auth);
       logger.log('✅ [AuthContext] Sesión cerrada correctamente');
     } catch (err) {
@@ -180,11 +245,11 @@ export function AuthProvider({ children }) {
 // Hook personalizado para usar el contexto
 export function useAuth() {
   const context = useContext(AuthContext);
-  
+
   if (context === undefined) {
     throw new Error('useAuth debe usarse dentro de un AuthProvider');
   }
-  
+
   return context;
 }
 

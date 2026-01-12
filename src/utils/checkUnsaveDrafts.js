@@ -2,39 +2,62 @@
  * Utilidad para detectar borradores sin evaluar en artefactos
  */
 
+import { getDraftKey } from '../services/sessionManager';
+
 /**
  * Verifica si hay borradores sin evaluar en los artefactos
+ * 🆕 FASE 1 FIX: Ahora usa claves namespaced por textoId
+ * 🆕 FASE 3 FIX: Acepta rubricProgress como parámetro (desde React context)
+ * 🆕 FASE 4 FIX: Ahora también verifica activitiesProgress para detectar artefactos ya entregados
+ * @param {string|null} textoId - ID del texto para namespace de claves
+ * @param {object} rubricProgress - Objeto con progreso de rúbricas (desde AppContext)
+ * @param {object} activitiesProgress - Objeto con progreso de actividades (desde AppContext)
  * @returns {object} - { hasDrafts: boolean, details: array }
  */
-export function checkUnsaveDrafts() {
+export function checkUnsaveDrafts(textoId = null, rubricProgress = {}, activitiesProgress = {}) {
   const details = [];
   let hasDrafts = false;
 
-  // Obtener rubricProgress para verificar evaluaciones
-  let rubricProgress = {};
-  try {
-    const saved = localStorage.getItem('rubricProgress');
-    if (saved) {
-      rubricProgress = JSON.parse(saved);
-    }
-  } catch (e) {
-    console.warn('Error leyendo rubricProgress:', e);
-  }
+  // 🆕 Helper para generar claves namespaced
+  const key = (base) => getDraftKey(base, textoId);
+
+  // 🆕 FASE 3 FIX: rubricProgress ahora viene como parámetro desde React context
+  // Ya no leemos de localStorage (la clave 'rubricProgress' nunca existía allí)
 
   // Helper: Verificar si una rúbrica tiene evaluación reciente (últimos 5 minutos)
   const hasRecentEvaluation = (rubricId) => {
-    const rubrica = rubricProgress[rubricId];
+    const rubrica = rubricProgress?.[rubricId];
     if (!rubrica || !rubrica.scores || rubrica.scores.length === 0) return false;
-    
+
     const lastEvaluation = rubrica.scores[rubrica.scores.length - 1];
     const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-    
+
     return lastEvaluation.timestamp && lastEvaluation.timestamp > fiveMinutesAgo;
   };
 
-  // Resumen Académico
-  const resumenDraft = sessionStorage.getItem('resumenAcademico_draft');
-  if (resumenDraft && resumenDraft.trim().length > 0 && !hasRecentEvaluation('rubrica1')) {
+  // 🆕 FASE 4 FIX: Helper para verificar si un artefacto ya fue entregado (submitted)
+  const isArtifactSubmitted = (artifactName) => {
+    // Buscar en activitiesProgress del texto actual
+    const textProgress = textoId ? activitiesProgress?.[textoId] : null;
+    if (textProgress?.artifacts?.[artifactName]?.submitted) {
+      return true;
+    }
+    
+    // También verificar en todas las entradas de activitiesProgress (por si el textoId no coincide exactamente)
+    for (const docId of Object.keys(activitiesProgress || {})) {
+      const docProgress = activitiesProgress[docId];
+      if (docProgress?.artifacts?.[artifactName]?.submitted) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
+  // Resumen Académico - 🆕 Usa clave namespaced
+  const resumenDraft = sessionStorage.getItem(key('resumenAcademico_draft'));
+  // 🆕 FASE 4: También verificar si ya fue entregado
+  if (resumenDraft && resumenDraft.trim().length > 0 && !hasRecentEvaluation('rubrica1') && !isArtifactSubmitted('resumenAcademico')) {
     hasDrafts = true;
     details.push({
       artefacto: 'Resumen Académico con Citas',
@@ -43,14 +66,15 @@ export function checkUnsaveDrafts() {
     });
   }
 
-  // Tabla ACD
+  // Tabla ACD - 🆕 Usa claves namespaced
   const tablaACD = {
-    marco: sessionStorage.getItem('tablaACD_marcoIdeologico'),
-    estrategias: sessionStorage.getItem('tablaACD_estrategiasRetoricas'),
-    presentes: sessionStorage.getItem('tablaACD_vocesPresentes'),
-    silenciadas: sessionStorage.getItem('tablaACD_vocesSilenciadas')
+    marco: sessionStorage.getItem(key('tablaACD_marcoIdeologico')),
+    estrategias: sessionStorage.getItem(key('tablaACD_estrategiasRetoricas')),
+    presentes: sessionStorage.getItem(key('tablaACD_vocesPresentes')),
+    silenciadas: sessionStorage.getItem(key('tablaACD_vocesSilenciadas'))
   };
-  if ((tablaACD.marco || tablaACD.estrategias || tablaACD.presentes || tablaACD.silenciadas) && !hasRecentEvaluation('rubrica2')) {
+  // 🆕 FASE 4: También verificar si ya fue entregado
+  if ((tablaACD.marco || tablaACD.estrategias || tablaACD.presentes || tablaACD.silenciadas) && !hasRecentEvaluation('rubrica2') && !isArtifactSubmitted('tablaACD')) {
     const hasContent = Object.values(tablaACD).some(v => v && v.trim().length > 0);
     if (hasContent) {
       hasDrafts = true;
@@ -62,14 +86,15 @@ export function checkUnsaveDrafts() {
     }
   }
 
-  // Mapa de Actores
+  // Mapa de Actores - 🆕 Usa claves namespaced
   const mapaActores = {
-    actores: sessionStorage.getItem('mapaActores_actores'),
-    contexto: sessionStorage.getItem('mapaActores_contextoHistorico'),
-    conexiones: sessionStorage.getItem('mapaActores_conexiones'),
-    consecuencias: sessionStorage.getItem('mapaActores_consecuencias')
+    actores: sessionStorage.getItem(key('mapaActores_actores')),
+    contexto: sessionStorage.getItem(key('mapaActores_contextoHistorico')),
+    conexiones: sessionStorage.getItem(key('mapaActores_conexiones')),
+    consecuencias: sessionStorage.getItem(key('mapaActores_consecuencias'))
   };
-  if ((mapaActores.actores || mapaActores.contexto || mapaActores.conexiones || mapaActores.consecuencias) && !hasRecentEvaluation('rubrica3')) {
+  // 🆕 FASE 4: También verificar si ya fue entregado
+  if ((mapaActores.actores || mapaActores.contexto || mapaActores.conexiones || mapaActores.consecuencias) && !hasRecentEvaluation('rubrica3') && !isArtifactSubmitted('mapaActores')) {
     const hasContent = Object.values(mapaActores).some(v => v && v.trim().length > 0);
     if (hasContent) {
       hasDrafts = true;
@@ -81,14 +106,15 @@ export function checkUnsaveDrafts() {
     }
   }
 
-  // Respuesta Argumentativa
+  // Respuesta Argumentativa - 🆕 Usa claves namespaced
   const respuestaArg = {
-    tesis: sessionStorage.getItem('respuestaArgumentativa_tesis'),
-    evidencias: sessionStorage.getItem('respuestaArgumentativa_evidencias'),
-    contra: sessionStorage.getItem('respuestaArgumentativa_contraargumento'),
-    refutacion: sessionStorage.getItem('respuestaArgumentativa_refutacion')
+    tesis: sessionStorage.getItem(key('respuestaArgumentativa_tesis')),
+    evidencias: sessionStorage.getItem(key('respuestaArgumentativa_evidencias')),
+    contra: sessionStorage.getItem(key('respuestaArgumentativa_contraargumento')),
+    refutacion: sessionStorage.getItem(key('respuestaArgumentativa_refutacion'))
   };
-  if ((respuestaArg.tesis || respuestaArg.evidencias || respuestaArg.contra || respuestaArg.refutacion) && !hasRecentEvaluation('rubrica4')) {
+  // 🆕 FASE 4: También verificar si ya fue entregado
+  if ((respuestaArg.tesis || respuestaArg.evidencias || respuestaArg.contra || respuestaArg.refutacion) && !hasRecentEvaluation('rubrica4') && !isArtifactSubmitted('respuestaArgumentativa')) {
     const hasContent = Object.values(respuestaArg).some(v => v && v.trim().length > 0);
     if (hasContent) {
       hasDrafts = true;
@@ -105,14 +131,16 @@ export function checkUnsaveDrafts() {
 
 /**
  * Obtiene un mensaje de advertencia formateado
+ * 🆕 FASE 3 FIX: Acepta rubricProgress como parámetro
+ * 🆕 FASE 4 FIX: Acepta activitiesProgress como parámetro
  */
-export function getWarningMessage() {
-  const { hasDrafts, details } = checkUnsaveDrafts();
-  
+export function getWarningMessage(textoId = null, rubricProgress = {}, activitiesProgress = {}) {
+  const { hasDrafts, details } = checkUnsaveDrafts(textoId, rubricProgress, activitiesProgress);
+
   if (!hasDrafts) return null;
 
   const artefactosList = details.map(d => `• ${d.artefacto}`).join('\n');
-  
+
   return `⚠️ ADVERTENCIA: Cambio de Sesión
 
 Tienes borradores sin evaluar en los siguientes artefactos:

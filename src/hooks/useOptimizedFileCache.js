@@ -134,11 +134,13 @@ const useOptimizedFileCache = () => {
    * OPTIMIZADO: Guardar archivo en caché con compresión inteligente
    */
   const guardarEnCache = useCallback((fileName, fileSize, data) => {
+    let cacheKey;
+    let compressedData;
     try {
-      const cacheKey = `${CACHE_CONFIG.PREFIX}${generateTextHash(fileName + fileSize)}`;
+      cacheKey = `${CACHE_CONFIG.PREFIX}${generateTextHash(fileName + fileSize)}`;
       
       // Comprimir texto si es necesario
-      const compressedData = {
+      compressedData = {
         ...data,
         content: compressText(data.content || ''),
         timestamp: Date.now()
@@ -163,6 +165,7 @@ const useOptimizedFileCache = () => {
         limpiarCacheAntiguo();
         // Intentar guardar de nuevo
         try {
+          if (!cacheKey || !compressedData) return false;
           localStorage.setItem(cacheKey, JSON.stringify(compressedData));
           updateStatsDebounced();
           return true;

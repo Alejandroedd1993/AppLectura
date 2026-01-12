@@ -24,6 +24,16 @@ export const analysisSchema = z.object({
   })).default([]),
   complejidad: z.string().default('intermedio'),
   temas: z.array(z.string()).default([]),
+
+  // Metadatos opcionales de estrategia (p.ej., debate-lite)
+  meta: z.object({
+    estrategia: z.string().optional(),
+    modo: z.string().optional(),
+    fuentes: z.object({
+      openai: z.any().nullable().optional(),
+      deepseek: z.any().nullable().optional(),
+    }).optional(),
+  }).optional(),
 });
 
 // Esquema para notas de estudio

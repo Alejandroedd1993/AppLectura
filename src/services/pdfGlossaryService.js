@@ -224,7 +224,7 @@ export function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectura') {
  * @param {Array} glossary - Array de términos
  * @returns {Blob} - Blob del PDF para preview
  */
-export function generateGlossaryPDFBlob(glossary) {
+export function generateGlossaryPDFBlob(_glossary) {
   // Similar a downloadGlossaryAsPDF pero retorna blob en vez de descargar
   // Útil para preview antes de descargar
   try {

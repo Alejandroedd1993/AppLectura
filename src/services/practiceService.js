@@ -349,7 +349,7 @@ export const recommendNextPractice = (rubricProgress) => {
 /**
  * Encuentra las dimensiones más débiles para un nivel
  */
-const findWeakestDimensions = (rubricProgress, targetDifficulty) => {
+const findWeakestDimensions = (rubricProgress, _targetDifficulty) => {
   const dimensionScores = [];
   
   for (let i = 1; i <= 5; i++) {

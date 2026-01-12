@@ -12,7 +12,11 @@
  * - Expiración: 7 días por defecto
  */
 
-const CACHE_PREFIX = 'analysis_cache_';
+// Nota: este módulo se usa para caché "simple" de análisis (p.ej. useTextAnalysis).
+// AppContext también usa claves que empiezan por "analysis_cache_" (por ejemplo
+// "analysis_cache_tid_*"), así que necesitamos aislar nuestras entradas para no
+// podarlas/borrarlas accidentalmente.
+const CACHE_PREFIX = 'analysis_cache_text_';
 const CACHE_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
 const MAX_CACHE_ENTRIES = 50; // Límite de análisis guardados
 const CACHE_VERSION = 'v2'; // Incrementar si cambia estructura
@@ -51,9 +55,17 @@ export function getCachedAnalysis(textHash) {
       return null;
     }
     
-    // Validar estructura de datos
-    if (!data.analysis || !data.questions || !Array.isArray(data.questions)) {
+    // Validar estructura de datos (modo tolerante):
+    // - Soportar análisis "completo" { analysis, questions: [] }
+    // - Soportar análisis "simple" (objeto arbitrario)
+    if (!data || typeof data !== 'object') {
       console.warn('⚠️ Caché corrupto, eliminando...');
+      localStorage.removeItem(cacheKey);
+      return null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'questions') && !Array.isArray(data.questions)) {
+      console.warn('⚠️ Caché inválido (questions no es array), eliminando...');
       localStorage.removeItem(cacheKey);
       return null;
     }
@@ -79,8 +91,8 @@ export function setCachedAnalysis(textHash, data) {
   if (!textHash || !data) return false;
 
   try {
-    // Validar datos antes de guardar
-    if (!data.analysis || !data.questions || !Array.isArray(data.questions)) {
+    // Validación tolerante: sólo rechazamos valores no serializables o no-objeto.
+    if (typeof data !== 'object') {
       console.warn('⚠️ Datos inválidos, no se guardarán en caché');
       return false;
     }
@@ -372,7 +384,7 @@ export function checkStorageSpace() {
     // Calcular espacio usado
     let totalUsed = 0;
     for (let key in localStorage) {
-      if (localStorage.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(localStorage, key)) {
         totalUsed += localStorage.getItem(key).length * 2; // UTF-16
       }
     }

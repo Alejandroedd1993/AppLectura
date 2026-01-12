@@ -3,6 +3,7 @@ import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import ReadingWorkspace from '../../src/components/ReadingWorkspace';
 import { AppContext } from '../../src/context/AppContext';
 import * as readerPrompts from '../../src/utils/readerActionPrompts';
+import { AuthProvider } from '../../src/context/AuthContext';
 
 // Mock web search hook para aislar prueba
 jest.mock('../../src/hooks/useWebSearchTutor', () => () => ({
@@ -12,14 +13,18 @@ jest.mock('../../src/hooks/useWebSearchTutor', () => () => ({
 }));
 
 // Espía sobre buildPromptFromAction para confirmar uso
-const spyBuild = jest.spyOn(readerPrompts, 'buildPromptFromAction');
+let spyBuild;
 
 function Wrapper({ children }) {
   const value = {
     texto: 'Este es un texto educativo para probar acciones.\nSegundo párrafo con más contenido contextual.',
     setTexto: () => {}
   };
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AuthProvider>
+      <AppContext.Provider value={value}>{children}</AppContext.Provider>
+    </AuthProvider>
+  );
 }
 
 /**
@@ -31,6 +36,7 @@ function Wrapper({ children }) {
 
 describe('ReadingWorkspace acciones contextualizadas', () => {
   test('emite tutor-external-prompt al disparar reader-action', async () => {
+    spyBuild = jest.spyOn(readerPrompts, 'buildPromptFromAction');
     const received = [];
     const handler = (e) => received.push(e.detail?.prompt);
     window.addEventListener('tutor-external-prompt', handler);
@@ -52,5 +58,6 @@ describe('ReadingWorkspace acciones contextualizadas', () => {
     expect(received[0]).toMatch(/texto educativo/);
 
     window.removeEventListener('tutor-external-prompt', handler);
+    spyBuild.mockRestore();
   });
 });

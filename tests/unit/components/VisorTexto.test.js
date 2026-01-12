@@ -174,9 +174,16 @@ describe('VisorTexto', () => {
   describe('Selección de texto', () => {
     test('debe manejar selección de texto básica', () => {
       const mockOnTextoSeleccionado = jest.fn();
-      const mockSelection = window.getSelection();
-      mockSelection.toString.mockReturnValue('texto seleccionado');
-      mockSelection.anchorNode = document.createElement('div');
+      const mockSelection = {
+        isCollapsed: false,
+        anchorNode: null,
+        focusNode: null,
+        toString: jest.fn(() => 'texto seleccionado'),
+        getRangeAt: () => ({ getBoundingClientRect: () => ({ left: 10, top: 10, width: 20, height: 10 }) }),
+        removeAllRanges: () => {}
+      };
+      const originalGetSelection = window.getSelection;
+      window.getSelection = () => mockSelection;
       
       const contextValue = {
         texto: 'Este es un texto de prueba para seleccionar',
@@ -191,17 +198,31 @@ describe('VisorTexto', () => {
       // Verificar que el componente se renderice correctamente
       expect(container.firstChild).toBeInTheDocument();
       
-      // Simular selección de texto
-      const visorContainer = container.firstChild;
-      fireEvent.mouseUp(visorContainer);
+      // Simular selección de texto dentro del visor
+      const firstParagraph = container.querySelector('[data-parrafo="0"]') || container.querySelector('[data-parrafo]');
+      expect(firstParagraph).toBeTruthy();
+      mockSelection.anchorNode = firstParagraph.firstChild;
+      mockSelection.focusNode = firstParagraph.firstChild;
+      fireEvent.mouseUp(firstParagraph);
+
+      // restaurar
+      window.getSelection = originalGetSelection;
       
       // Verificar que se maneja la selección (si el componente implementa esta funcionalidad)
       expect(mockSelection.toString).toHaveBeenCalled();
     });
 
     test('debe ignorar selecciones muy cortas', () => {
-      const mockSelection = window.getSelection();
-      mockSelection.toString.mockReturnValue('ab'); // Muy corto
+      const mockSelection = {
+        isCollapsed: false,
+        anchorNode: null,
+        focusNode: null,
+        toString: jest.fn(() => 'ab'), // Muy corto
+        getRangeAt: () => ({ getBoundingClientRect: () => ({ left: 10, top: 10, width: 20, height: 10 }) }),
+        removeAllRanges: () => {}
+      };
+      const originalGetSelection = window.getSelection;
+      window.getSelection = () => mockSelection;
       
       const contextValue = {
         texto: 'Este es un texto de prueba',
@@ -209,9 +230,15 @@ describe('VisorTexto', () => {
       };
       
       const { container } = renderWithContext(<VisorTexto />, { contextValue });
-      
-      const visorContainer = container.firstChild;
-      fireEvent.mouseUp(visorContainer);
+
+      const firstParagraph = container.querySelector('[data-parrafo="0"]') || container.querySelector('[data-parrafo]');
+      expect(firstParagraph).toBeTruthy();
+      mockSelection.anchorNode = firstParagraph.firstChild;
+      mockSelection.focusNode = firstParagraph.firstChild;
+      fireEvent.mouseUp(firstParagraph);
+
+      // restaurar
+      window.getSelection = originalGetSelection;
       
       // Verificar que se maneja correctamente
       expect(mockSelection.toString).toHaveBeenCalled();
