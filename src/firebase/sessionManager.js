@@ -1,8 +1,28 @@
 /**
- * 🔐 Session Manager - Control de sesiones únicas por usuario
+ * 🔐 LOGIN SESSION MANAGER (firebase/sessionManager.js)
+ * =====================================================
  * 
- * Garantiza que solo haya una sesión activa por usuario,
- * cerrando automáticamente sesiones en otros dispositivos.
+ * PROPÓSITO: Control de AUTENTICACIÓN y sesión única por usuario.
+ * 
+ * ⚠️ NO CONFUNDIR CON: services/sessionManager.js (sesiones de TRABAJO/progreso)
+ * 
+ * FUNCIONALIDADES:
+ * - Garantiza UNA SOLA sesión activa por usuario (cierra otras pestañas/instancias del navegador)
+ * - Heartbeat cada 30s para detectar sesiones abandonadas
+ * - Listener en tiempo real para detectar conflictos de sesión
+ * - Auto-logout cuando otra sesión toma el control
+ * 
+ * USO TÍPICO:
+ * - App.js: createActiveSession() al hacer login
+ * - useSessionMaintenance.js: startSessionHeartbeat(), subscribeToSessionConflicts()
+ * 
+ * IMPACTO EN FIREBASE:
+ * - Heartbeat escribe en Firestore cada 30s por usuario activo
+ * - Con 40 estudiantes = ~80 escrituras/minuto = ~4,800/hora
+ * - Considerar aumentar intervalo a 60-90s si costos son problema
+ * 
+ * @module firebase/sessionManager
+ * @see services/sessionManager.js para sesión de TRABAJO (progreso, borradores)
  */
 
 import { db } from './config';

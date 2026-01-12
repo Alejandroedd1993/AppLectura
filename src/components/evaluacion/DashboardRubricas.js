@@ -179,12 +179,27 @@ const RUBRICAS_INFO = {
 export default function DashboardRubricas({ theme, onSelectRubric }) {
   const { rubricProgress } = useContext(AppContext);
 
+  const getSummativeScore = (summative) => {
+    const n = Number(summative?.score);
+    if (summative?.status !== 'graded') return 0;
+    if (!Number.isFinite(n)) return 0;
+    return n > 0 ? n : 0;
+  };
+
   // Calcular promedio global y dimensiones evaluadas
   const { promedioGlobal, dimensionesEvaluadas } = useMemo(() => {
-    const rubricasConDatos = Object.values(rubricProgress || {}).filter(r => r.average > 0);
+    const rubricasConDatos = Object.values(rubricProgress || {}).filter(r => {
+      const summativeScore = getSummativeScore(r?.summative);
+      const displayAvg = (r?.average || 0) > 0 ? r.average : summativeScore;
+      return displayAvg > 0;
+    });
     if (rubricasConDatos.length === 0) return { promedioGlobal: 0, dimensionesEvaluadas: 0 };
     
-    const suma = rubricasConDatos.reduce((sum, r) => sum + r.average, 0);
+    const suma = rubricasConDatos.reduce((sum, r) => {
+      const summativeScore = getSummativeScore(r?.summative);
+      const displayAvg = (r?.average || 0) > 0 ? r.average : summativeScore;
+      return sum + displayAvg;
+    }, 0);
     const promedio = Math.round((suma / rubricasConDatos.length) * 10) / 10;
     
     return { 
@@ -195,7 +210,11 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
 
   // Verificar si hay algún dato
   const hayDatos = useMemo(() => {
-    return Object.values(rubricProgress || {}).some(r => r && r.scores && r.scores.length > 0);
+    return Object.values(rubricProgress || {}).some(r => {
+      const formativeCount = r?.scores?.length || 0;
+      const hasSummative = getSummativeScore(r?.summative) > 0;
+      return formativeCount > 0 || hasSummative;
+    });
   }, [rubricProgress]);
 
   if (!hayDatos) {
@@ -223,12 +242,15 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
       <RubricsGrid>
         {Object.entries(RUBRICAS_INFO).map(([rubricId, info]) => {
           const data = rubricProgress[rubricId] || { scores: [], average: 0 };
-          const intentos = data.scores.length;
+          const summativeScore = getSummativeScore(data?.summative);
+          const hasSummative = summativeScore > 0;
+          const intentos = (data?.scores?.length || 0) + (hasSummative ? 1 : 0);
+          const displayAvg = data.average > 0 ? data.average : (hasSummative ? summativeScore : 0);
           
           return (
             <RubricCard
               key={rubricId}
-              $average={data.average}
+              $average={displayAvg}
               theme={theme}
               onClick={() => onSelectRubric?.(rubricId)}
               initial={{ opacity: 0, y: 20 }}
@@ -239,14 +261,14 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
             >
               <RubricIcon>{info.icono}</RubricIcon>
               <RubricName theme={theme}>{info.nombre}</RubricName>
-              <RubricScore $average={data.average} theme={theme}>
-                {data.average > 0 ? `${data.average}/10` : '—'}
+              <RubricScore $average={displayAvg} theme={theme}>
+                {displayAvg > 0 ? `${displayAvg}/10` : '—'}
               </RubricScore>
               <RubricLabel theme={theme}>
-                {data.average === 0 ? 'Sin evaluar' : 
-                 data.average >= 8.6 ? 'Experto' :
-                 data.average >= 5.6 ? 'Competente' :
-                 data.average >= 2.6 ? 'Aprendiz' : 'Novato'}
+                {displayAvg === 0 ? 'Sin evaluar' : 
+                 displayAvg >= 8.6 ? 'Experto' :
+                 displayAvg >= 5.6 ? 'Competente' :
+                 displayAvg >= 2.6 ? 'Aprendiz' : 'Novato'}
               </RubricLabel>
               {intentos > 0 && (
                 <RubricAttempts theme={theme}>

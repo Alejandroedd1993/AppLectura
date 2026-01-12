@@ -4,23 +4,38 @@
  */
 import { fetchWithTimeout } from '../../src/utils/netUtils';
 
-global.fetch = jest.fn().mockImplementation(() => new Promise(() => {})); // never resolves
-
 describe('fetchWithTimeout', () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => {
+    jest.useFakeTimers();
+    // Mock fetch que nunca resuelve para probar timeout
+    global.fetch = jest.fn(() => new Promise(() => {}));
+  });
+  
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
 
   test('aborta por timeout', async () => {
-    const start = Date.now();
     const p = fetchWithTimeout('/api/dummy', {}, 1000);
+    
+    // Avanzar el tiempo para disparar el timeout
     jest.advanceTimersByTime(1200);
-    await expect(p).rejects.toThrow();
+    
+    // Esperar a que se rechace
+    await expect(p).rejects.toThrow(/Aborted/);
   });
 
   test('respeta AbortController externo', async () => {
     const controller = new AbortController();
     const p = fetchWithTimeout('/api/dummy', { signal: controller.signal }, 5000);
+    
+    // Abortar manualmente
     controller.abort();
-    await expect(p).rejects.toThrow();
+    
+    // Avanzar timers para procesar el evento
+    jest.advanceTimersByTime(0);
+    
+    await expect(p).rejects.toThrow(/Aborted/);
   });
 });

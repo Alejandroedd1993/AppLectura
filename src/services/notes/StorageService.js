@@ -37,6 +37,27 @@ class StorageService {
     };
   }
 
+  resolveUserKey(baseKey, userId = null) {
+    if (!userId) return baseKey;
+    return `${baseKey}:${userId}`;
+  }
+
+  migrateLegacyKeyIfNeeded(baseKey, userId = null) {
+    if (!userId) return;
+
+    const scopedKey = this.resolveUserKey(baseKey, userId);
+    try {
+      if (!localStorage.getItem(scopedKey) && localStorage.getItem(baseKey)) {
+        const legacyRaw = localStorage.getItem(baseKey);
+        localStorage.setItem(scopedKey, legacyRaw);
+        localStorage.removeItem(baseKey);
+        console.log(`[StorageService] Migrada clave legacy ${baseKey} -> ${scopedKey}`);
+      }
+    } catch (e) {
+      console.warn('[StorageService] No se pudo migrar clave legacy:', e);
+    }
+  }
+
   /**
    * Genera un ID único para un texto basado en su contenido
    * @param {string} texto - Texto a procesar
@@ -55,8 +76,9 @@ class StorageService {
       hash = hash & hash; // Convertir a entero de 32 bits
     }
     
-    const timestamp = Date.now();
-    return `texto_${Math.abs(hash)}_${timestamp}`;
+    // ⚠️ IMPORTANTE: debe ser estable para poder cargar/guardar de forma consistente.
+    // (Si falta textoId, este ID es solo fallback legacy.)
+    return `texto_${Math.abs(hash)}`;
   }
 
   /**
@@ -163,13 +185,14 @@ class StorageService {
    * @param {Object} progreso - Datos de progreso (notas, cronograma, etc.)
    * @returns {boolean} True si se guardó exitosamente
    */
-  guardarProgresoNotas(texto, progreso) {
-    const idTexto = this.generarIdTexto(texto);
-    const progresoActual = this.cargarTodoProgreso();
+  guardarProgresoNotas(texto, progreso, textoId = null, userId = null) {
+    const idTexto = textoId || this.generarIdTexto(texto);
+    const progresoActual = this.cargarTodoProgreso(userId);
     
     progresoActual[idTexto] = {
       ...progreso,
       idTexto,
+      textoId: textoId || idTexto,
       textoHash: this.generarHashTexto(texto),
       ultimaActualizacion: Date.now(),
       version: '1.0.0'
@@ -178,7 +201,8 @@ class StorageService {
     // Limpiar entradas antiguas si hay demasiadas
     this.cleanOldEntries(progresoActual);
     
-    return this.saveData(this.keys.NOTAS_PROGRESO, progresoActual);
+    const storageKey = this.resolveUserKey(this.keys.NOTAS_PROGRESO, userId);
+    return this.saveData(storageKey, progresoActual);
   }
 
   /**
@@ -186,9 +210,9 @@ class StorageService {
    * @param {string} texto - Texto original
    * @returns {Object|null} Progreso cargado o null si no existe
    */
-  cargarProgresoNotas(texto) {
-    const idTexto = this.generarIdTexto(texto);
-    const todoProgreso = this.cargarTodoProgreso();
+  cargarProgresoNotas(texto, textoId = null, userId = null) {
+    const idTexto = textoId || this.generarIdTexto(texto);
+    const todoProgreso = this.cargarTodoProgreso(userId);
     
     if (todoProgreso[idTexto]) {
       console.log(`[StorageService] Progreso cargado para texto: ${idTexto}`);
@@ -202,6 +226,23 @@ class StorageService {
     
     if (entradaPorHash) {
       console.log(`[StorageService] Progreso encontrado por hash: ${hashTexto}`);
+
+      // 🧩 FASE 5: si ahora tenemos textoId estable, migrar la entrada (sin perder legacy)
+      if (textoId && !todoProgreso[textoId]) {
+        try {
+          todoProgreso[textoId] = {
+            ...entradaPorHash,
+            idTexto: textoId,
+            textoId
+          };
+          this.cleanOldEntries(todoProgreso);
+          const storageKey = this.resolveUserKey(this.keys.NOTAS_PROGRESO, userId);
+          this.saveData(storageKey, todoProgreso);
+          return todoProgreso[textoId];
+        } catch (e) {
+          console.warn('[StorageService] No se pudo migrar progreso a textoId:', e);
+        }
+      }
       return entradaPorHash;
     }
     
@@ -212,8 +253,10 @@ class StorageService {
    * Carga todo el progreso guardado
    * @returns {Object} Objeto con todo el progreso
    */
-  cargarTodoProgreso() {
-    return this.loadData(this.keys.NOTAS_PROGRESO) || {};
+  cargarTodoProgreso(userId = null) {
+    this.migrateLegacyKeyIfNeeded(this.keys.NOTAS_PROGRESO, userId);
+    const storageKey = this.resolveUserKey(this.keys.NOTAS_PROGRESO, userId);
+    return this.loadData(storageKey) || {};
   }
 
   /**
@@ -239,22 +282,25 @@ class StorageService {
    * @param {Object} config - Configuración a guardar
    * @returns {boolean} True si se guardó exitosamente
    */
-  guardarConfiguracion(config) {
+  guardarConfiguracion(config, userId = null) {
     const configCompleta = {
       ...this.defaultConfig,
       ...config,
       ultimaModificacion: Date.now()
     };
-    
-    return this.saveData(this.keys.CONFIGURACION, configCompleta);
+
+    const storageKey = this.resolveUserKey(this.keys.CONFIGURACION, userId);
+    return this.saveData(storageKey, configCompleta);
   }
 
   /**
    * Carga la configuración del usuario
    * @returns {Object} Configuración cargada
    */
-  cargarConfiguracion() {
-    const config = this.loadData(this.keys.CONFIGURACION);
+  cargarConfiguracion(userId = null) {
+    this.migrateLegacyKeyIfNeeded(this.keys.CONFIGURACION, userId);
+    const storageKey = this.resolveUserKey(this.keys.CONFIGURACION, userId);
+    const config = this.loadData(storageKey);
     return config ? { ...this.defaultConfig, ...config } : this.defaultConfig;
   }
 
@@ -263,23 +309,26 @@ class StorageService {
    * @param {Object} stats - Estadísticas a guardar
    * @returns {boolean} True si se guardó exitosamente
    */
-  guardarEstadisticas(stats) {
-    const estadisticasActuales = this.cargarEstadisticas();
+  guardarEstadisticas(stats, userId = null) {
+    const estadisticasActuales = this.cargarEstadisticas(userId);
     const estadisticasActualizadas = {
       ...estadisticasActuales,
       ...stats,
       ultimaActualizacion: Date.now()
     };
-    
-    return this.saveData(this.keys.ESTADISTICAS, estadisticasActualizadas);
+
+    const storageKey = this.resolveUserKey(this.keys.ESTADISTICAS, userId);
+    return this.saveData(storageKey, estadisticasActualizadas);
   }
 
   /**
    * Carga estadísticas de uso
    * @returns {Object} Estadísticas cargadas
    */
-  cargarEstadisticas() {
-    return this.loadData(this.keys.ESTADISTICAS) || {
+  cargarEstadisticas(userId = null) {
+    this.migrateLegacyKeyIfNeeded(this.keys.ESTADISTICAS, userId);
+    const storageKey = this.resolveUserKey(this.keys.ESTADISTICAS, userId);
+    return this.loadData(storageKey) || {
       textosAnalizados: 0,
       notasGeneradas: 0,
       repasosCompletados: 0,
@@ -321,8 +370,10 @@ class StorageService {
   /**
    * Limpia cache temporal antiguo
    */
-  cleanOldCache() {
-    const cache = this.loadData(this.keys.CACHE_TEMPORAL) || {};
+  cleanOldCache(userId = null) {
+    this.migrateLegacyKeyIfNeeded(this.keys.CACHE_TEMPORAL, userId);
+    const storageKey = this.resolveUserKey(this.keys.CACHE_TEMPORAL, userId);
+    const cache = this.loadData(storageKey) || {};
     const ahora = Date.now();
     let limpiezas = 0;
     
@@ -335,7 +386,7 @@ class StorageService {
     });
     
     if (limpiezas > 0) {
-      this.saveData(this.keys.CACHE_TEMPORAL, cache);
+      this.saveData(storageKey, cache);
       console.log(`[StorageService] Limpiadas ${limpiezas} entradas de cache antiguas`);
     }
     
@@ -357,7 +408,7 @@ class StorageService {
 
     try {
       for (let key in localStorage) {
-        if (localStorage.hasOwnProperty(key)) {
+        if (Object.prototype.hasOwnProperty.call(localStorage, key)) {
           const item = localStorage.getItem(key);
           const size = item ? item.length : 0;
           totalSize += size;
@@ -392,11 +443,11 @@ class StorageService {
    * Exporta todos los datos de notas de estudio
    * @returns {Object} Datos exportados
    */
-  exportarTodosDatos() {
+  exportarTodosDatos(userId = null) {
     return {
-      progreso: this.cargarTodoProgreso(),
-      configuracion: this.cargarConfiguracion(),
-      estadisticas: this.cargarEstadisticas(),
+      progreso: this.cargarTodoProgreso(userId),
+      configuracion: this.cargarConfiguracion(userId),
+      estadisticas: this.cargarEstadisticas(userId),
       exportado: new Date().toISOString(),
       version: '1.0.0'
     };
@@ -407,22 +458,25 @@ class StorageService {
    * @param {Object} datos - Datos a importar
    * @returns {boolean} True si se importó exitosamente
    */
-  importarDatos(datos) {
+  importarDatos(datos, userId = null) {
     try {
       let importados = 0;
       
       if (datos.progreso) {
-        this.saveData(this.keys.NOTAS_PROGRESO, datos.progreso);
+        const storageKey = this.resolveUserKey(this.keys.NOTAS_PROGRESO, userId);
+        this.saveData(storageKey, datos.progreso);
         importados++;
       }
       
       if (datos.configuracion) {
-        this.saveData(this.keys.CONFIGURACION, datos.configuracion);
+        const storageKey = this.resolveUserKey(this.keys.CONFIGURACION, userId);
+        this.saveData(storageKey, datos.configuracion);
         importados++;
       }
       
       if (datos.estadisticas) {
-        this.saveData(this.keys.ESTADISTICAS, datos.estadisticas);
+        const storageKey = this.resolveUserKey(this.keys.ESTADISTICAS, userId);
+        this.saveData(storageKey, datos.estadisticas);
         importados++;
       }
       
@@ -439,10 +493,11 @@ class StorageService {
    * Limpia todos los datos de notas de estudio
    * @returns {number} Número de elementos eliminados
    */
-  limpiarTodosDatos() {
+  limpiarTodosDatos(userId = null) {
     let eliminados = 0;
-    
-    Object.values(this.keys).forEach(key => {
+
+    Object.values(this.keys).forEach(baseKey => {
+      const key = this.resolveUserKey(baseKey, userId);
       if (localStorage.getItem(key)) {
         localStorage.removeItem(key);
         eliminados++;

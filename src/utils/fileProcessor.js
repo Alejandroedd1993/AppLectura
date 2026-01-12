@@ -12,12 +12,9 @@
 
 import mammoth from 'mammoth';
 import { checkBackendAvailability, processPdfWithBackend } from './backendUtils';
-import { analyzeTextStructure, needsStructuralAnalysis } from '../services/textStructureService';
 
 // Configurar el worker de PDF.js para que se cargue localmente
 // pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-
-const BATCH_SIZE = 5; // Procesar 5 páginas de PDF a la vez para optimizar memoria
 
 /**
  * Procesa un archivo .txt y devuelve su contenido como texto.
@@ -55,9 +52,6 @@ async function procesarDocx(file) {
  * @returns {Promise<string>} El contenido del archivo.
  */
 async function procesarPdf(file, onProgress) {
-  const formData = new FormData();
-  formData.append('pdfFile', file);
-
   try {
     // Verificar backend y usar util centralizado
     const online = await checkBackendAvailability();
@@ -107,7 +101,7 @@ Este es contenido simulado ya que el servidor backend no está disponible.
  * @returns {Promise<string|Object>} El texto extraído o un objeto con texto + estructura.
  */
 export const procesarArchivo = async (file, options = {}) => {
-  const { onProgress, analyzeStructure = true } = options;
+  const { onProgress, analyzeStructure: _analyzeStructure = true } = options;
   const fileName = file.name.toLowerCase();
   const fileType = file.type;
 

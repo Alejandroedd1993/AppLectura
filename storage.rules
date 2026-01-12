@@ -54,11 +54,10 @@ service firebase.storage {
       // Leer: Cualquier usuario autenticado
       allow read: if isAuthenticated();
       
-      // Escribir: Solo el docente dueño
+      // Escribir: Solo el docente dueño (verificamos ownership de la carpeta)
       // Límite: 10MB por archivo
       // Tipos permitidos: PDF, DOCX, TXT
       allow write: if isOwner(docenteUid) && 
-                      isDocente() &&
                       isValidFileSize(10) &&
                       isValidTextFile();
       

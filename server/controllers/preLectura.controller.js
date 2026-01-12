@@ -1,9 +1,199 @@
 /**
- * Controlador para análisis de Pre-lectura con RAG
- * Orquesta análisis académico completo con enriquecimiento web
+ * Controlador para análisis de Pre-lectura.
+ * Orquesta análisis académico completo con enriquecimiento web opcional (hoy deshabilitado por flag).
  */
 
 import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import crypto from 'crypto';
+import { searchWebSources } from './webSearch.controller.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DEBUG_LOG_PATH = path.join(__dirname, '..', 'debug_analysis.log');
+
+function parseBooleanEnv(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+}
+
+function buildWebDecisionMetadata(searchDecision) {
+  if (!searchDecision || typeof searchDecision !== 'object') {
+    return {
+      web_decision_needs_web: false,
+      web_decision_confidence: 0,
+      web_decision_reasons: [],
+      web_decision_threshold: null,
+      web_decision_classroom_mode: false,
+      web_decision_min_indicators: null,
+      web_decision_only_weak_signal: null,
+      web_decision_indicators_matched: 0
+    };
+  }
+
+  return {
+    web_decision_needs_web: !!searchDecision.needsWeb,
+    web_decision_confidence:
+      typeof searchDecision.confidence === 'number' && Number.isFinite(searchDecision.confidence)
+        ? searchDecision.confidence
+        : 0,
+    web_decision_reasons: Array.isArray(searchDecision.reasons) ? searchDecision.reasons : [],
+    web_decision_threshold:
+      typeof searchDecision.threshold === 'number' && Number.isFinite(searchDecision.threshold)
+        ? searchDecision.threshold
+        : null,
+    web_decision_classroom_mode: !!searchDecision.classroomMode,
+    web_decision_min_indicators:
+      typeof searchDecision.minIndicators === 'number' && Number.isFinite(searchDecision.minIndicators)
+        ? searchDecision.minIndicators
+        : null,
+    web_decision_only_weak_signal:
+      typeof searchDecision.onlyWeakSignal === 'boolean' ? searchDecision.onlyWeakSignal : null,
+    web_decision_indicators_matched:
+      typeof searchDecision.matches === 'number' && Number.isFinite(searchDecision.matches)
+        ? searchDecision.matches
+        : (Array.isArray(searchDecision.reasons) ? searchDecision.reasons.length : 0)
+  };
+}
+
+// Caché simple in-memory para resultados de web enrichment (reduce coste/latencia).
+// Nota: se reinicia al reiniciar el servidor y no persiste entre procesos.
+const PRELECTURA_WEB_CACHE = new Map();
+
+function logToDebug(message, data = null) {
+  if (process.env.DEBUG_PRELECTURA_LOG !== 'true') return;
+
+  const timestamp = new Date().toISOString();
+  const dataStr = data ? `\nData: ${JSON.stringify(data, null, 2)}` : '';
+  const logEntry = `[${timestamp}] ${message}${dataStr}\n${'-'.repeat(50)}\n`;
+
+  try {
+    fs.appendFile(DEBUG_LOG_PATH, logEntry, (err) => {
+      if (err) console.error('Error writing to debug log:', err);
+    });
+  } catch (e) {
+    console.error('Error writing to debug log:', e);
+  }
+}
+
+/**
+ * Intenta reparar JSON truncado o malformado
+ */
+/**
+ * Intenta reparar JSON truncado o malformado
+ * Robustez mejorada para JSONs cortados
+ */
+function tryRepairJSON(jsonString) {
+  let repaired = jsonString.trim();
+
+  // Remover markdown si existe
+  if (repaired.startsWith('```json')) {
+    repaired = repaired.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
+  }
+  if (repaired.startsWith('```')) {
+    repaired = repaired.replace(/```\n?/g, '').replace(/```\n?$/g, '');
+  }
+
+  repaired = repaired.trim();
+
+  // Limpieza agresiva de caracteres finales inválidos antes de intentar reparar
+  // A veces el truncamiento deja basura al final
+  if (repaired.length > 0 && !['}', ']'].includes(repaired[repaired.length - 1])) {
+    // Buscar el último cierre válido y cortar ahí si parece muy roto
+    const lastCloseBrace = repaired.lastIndexOf('}');
+    const lastCloseBracket = repaired.lastIndexOf(']');
+    const cutoff = Math.max(lastCloseBrace, lastCloseBracket);
+
+    // Solo si está muy cerca del final (truncamiento evidente)
+    if (cutoff > repaired.length - 100 && cutoff > 0) {
+      // Intento conservador: no cortar, mejor añadir lo que falta
+    }
+  }
+
+  // Intentar parsear directamente primero
+  try {
+    return JSON.parse(repaired);
+  } catch (e) {
+    console.log('🔧 [JSON Repair] Intento de reparación estándar...');
+  }
+
+  // ESTRATEGIA DE REPARACIÓN DE PILA (STACK-BASED)
+  // Mucho más robusta para JSON truncados
+  const stack = [];
+  let inString = false;
+  let escape = false;
+  let finalRepaired = '';
+
+  for (let i = 0; i < repaired.length; i++) {
+    const char = repaired[i];
+
+    finalRepaired += char;
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+    } else if (!inString) {
+      if (char === '{') stack.push('}');
+      else if (char === '[') stack.push(']');
+      else if (char === '}') {
+        if (stack.length > 0 && stack[stack.length - 1] === '}') stack.pop();
+      }
+      else if (char === ']') {
+        if (stack.length > 0 && stack[stack.length - 1] === ']') stack.pop();
+      }
+    }
+  }
+
+  // Si terminó dentro de un string, cerrarlo
+  if (inString) {
+    finalRepaired += '"';
+  }
+
+  // Limpiar trailing commas que hayan podido quedar al final antes de cerrar
+  // Ejemplo: {"a": 1, 
+  finalRepaired = finalRepaired.replace(/,\s*$/, '');
+
+  // Cerrar todas las estructuras abiertas en orden inverso
+  while (stack.length > 0) {
+    const closer = stack.pop();
+    finalRepaired += closer;
+  }
+
+  console.log('🔧 [JSON Repair] Resultado intentado (últimos 50 chars):', finalRepaired.slice(-50));
+
+  try {
+    return JSON.parse(finalRepaired);
+  } catch (e) {
+    console.log('❌ [JSON Repair] Falló reparación por pila, intentando método fallback...');
+    // Fallback: intentar regex básica por si acaso
+    try {
+      // Cerrar arrays y objetos abiertos (método simple)
+      const openBrackets = (finalRepaired.match(/\[/g) || []).length;
+      const closeBrackets = (finalRepaired.match(/\]/g) || []).length;
+      const openBraces = (finalRepaired.match(/\{/g) || []).length;
+      const closeBraces = (finalRepaired.match(/\}/g) || []).length;
+
+      for (let i = 0; i < openBrackets - closeBrackets; i++) finalRepaired += ']';
+      for (let i = 0; i < openBraces - closeBraces; i++) finalRepaired += '}';
+
+      return JSON.parse(finalRepaired);
+    } catch (e2) {
+      console.error('❌ [JSON Repair] Falló reparación definitiva:', e2.message);
+      return null; // Imposible reparar
+    }
+  }
+}
 
 /**
  * Endpoint: POST /api/analysis/prelecture
@@ -18,14 +208,62 @@ import axios from 'axios';
 export async function analyzePreLecture(req, res) {
   const startTime = Date.now();
   let responseSent = false; // Flag para evitar doble respuesta
-  
-  // Aumentar timeout a 120 segundos
-  req.setTimeout(120000);
-  res.setTimeout(120000);
-  
+  let searchDecision = null;
+
+  // Timeout para textos largos/modelos lentos (parametrizable por env)
+  const prelecturaTimeoutMsRaw = Number(process.env.PRELECTURA_TIMEOUT_MS);
+  const prelecturaTimeoutMs = Number.isFinite(prelecturaTimeoutMsRaw) && prelecturaTimeoutMsRaw > 0
+    ? Math.floor(prelecturaTimeoutMsRaw)
+    : 300000;
+  req.setTimeout(prelecturaTimeoutMs);
+  res.setTimeout(prelecturaTimeoutMs);
+
+  // 🛡️ TIMEOUT DE SEGURIDAD: Forzar respuesta si el análisis tarda demasiado
+  // Esto evita que el frontend se quede esperando indefinidamente si algo se cuelga
+  let safetyTimeout = null;
+  const clearSafetyTimeout = () => {
+    if (safetyTimeout) {
+      clearTimeout(safetyTimeout);
+      safetyTimeout = null;
+    }
+  };
+
+  const markResponseSent = () => {
+    responseSent = true;
+    clearSafetyTimeout();
+  };
+
+  // Si ya se envió una respuesta (o el cliente cerró), cancelar timeout
+  res.once('finish', markResponseSent);
+  res.once('close', markResponseSent);
+
+  const safetyTimeoutMsRaw = Number(process.env.PRELECTURA_SAFETY_TIMEOUT_MS);
+  const safetyTimeoutMs = Number.isFinite(safetyTimeoutMsRaw) && safetyTimeoutMsRaw > 0
+    ? Math.floor(safetyTimeoutMsRaw)
+    : 295000;
+
+  safetyTimeout = setTimeout(() => {
+    if (!responseSent && !res.headersSent) {
+      console.error(`⏰ [PreLectura] Safety timeout triggered (${safetyTimeoutMs}ms) - Forzando fallback`);
+      responseSent = true;
+
+      const safeText = (req.body && typeof req.body.text === 'string') ? req.body.text : '';
+      const safeMetadata = (req.body && typeof req.body.metadata === 'object' && req.body.metadata) ? req.body.metadata : {};
+      const decision = safeText ? detectWebSearchNeed(safeText, safeMetadata) : null;
+
+      const analysis = createFallbackAnalysis(
+        safeText,
+        Date.now() - startTime,
+        'El análisis excedió el tiempo límite de seguridad',
+        decision
+      );
+      res.status(200).json(analysis);
+    }
+  }, safetyTimeoutMs);
+
   try {
     const { text, metadata = {} } = req.body;
-    
+
     if (!text || typeof text !== 'string' || text.trim().length < 100) {
       return res.status(400).json({
         error: 'Texto inválido o muy corto (mínimo 100 caracteres)'
@@ -38,19 +276,25 @@ export async function analyzePreLecture(req, res) {
     // ============================================================
     // FASE 1: DETECCIÓN DE NECESIDAD DE BÚSQUEDA WEB
     // ============================================================
-    const searchDecision = detectWebSearchNeed(text, metadata);
+    searchDecision = detectWebSearchNeed(text, metadata);
     console.log(`🔍 [PreLectura] Búsqueda web: ${searchDecision.needsWeb ? 'SÍ' : 'NO'} (${(searchDecision.confidence * 100).toFixed(1)}%)`);
 
     let webContext = null;
     let webEnriched = false;
 
     // ============================================================
-    // FASE 2: ENRIQUECIMIENTO RAG (si es necesario)
+    // FASE 2: ENRIQUECIMIENTO WEB (si es necesario)
     // ============================================================
-    // TEMPORALMENTE DESHABILITADO hasta obtener API key válida de Tavily
-    const ENABLE_WEB_SEARCH = false;
-    
-    if (ENABLE_WEB_SEARCH && searchDecision.needsWeb && process.env.TAVILY_API_KEY) {
+    // Controlado por env var para poder activar/desactivar sin cambiar código.
+    // Default: deshabilitado.
+    const ENABLE_WEB_SEARCH = (() => {
+      const raw = String(process.env.ENABLE_WEB_SEARCH || '').trim().toLowerCase();
+      return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+    })();
+
+    const hasAnyWebProvider = !!(process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.BING_SEARCH_API_KEY);
+
+    if (ENABLE_WEB_SEARCH && searchDecision.needsWeb && hasAnyWebProvider) {
       try {
         console.log('🌐 [PreLectura] Ejecutando búsquedas web...');
         webContext = await performWebSearch(text, searchDecision);
@@ -60,7 +304,14 @@ export async function analyzePreLecture(req, res) {
         console.warn('⚠️ [PreLectura] Error en búsqueda web, continuando sin RAG:', webError.message);
       }
     } else {
-      console.log('ℹ️ [PreLectura] Búsqueda web deshabilitada (análisis offline)');
+      const why = !ENABLE_WEB_SEARCH
+        ? 'ENABLE_WEB_SEARCH desactivado'
+        : !searchDecision.needsWeb
+          ? 'no se detectó necesidad de contexto web'
+          : !hasAnyWebProvider
+            ? 'faltan API keys (TAVILY_API_KEY/SERPER_API_KEY/BING_SEARCH_API_KEY)'
+            : 'condición no cumplida';
+      console.log(`ℹ️ [PreLectura] Sin búsqueda web (offline): ${why}`);
     }
 
     // ============================================================
@@ -70,27 +321,54 @@ export async function analyzePreLecture(req, res) {
     console.log(`📝 [PreLectura] Prompt construido: ${prompt.length} caracteres`);
 
     // ============================================================
-    // FASE 4: ANÁLISIS CON IA (DeepSeek)
+    // FASE 4: ANÁLISIS CON IA (DeepSeek) + Figuras (OpenAI) PARALELO
     // ============================================================
-    console.log('🤖 [PreLectura] Llamando a DeepSeek...');
-    const aiResponse = await callDeepSeekAnalysis(prompt);
-    
+    console.log('🤖 [PreLectura] Iniciando análisis PARALELO (DeepSeek + OpenAI)...');
+
+    // 🚀 Lógica paralela: DeepSeek (Análisis principal) + OpenAI (Figuras retóricas)
+    // Esto ahorra el tiempo de la llamada más rápida (generalmente OpenAI)
+
+    const deepSeekPromise = callDeepSeekAnalysis(prompt);
+
+    // Solo llamar a OpenAI si necesitamos figuras retóricas (opcional, pero mejora calidad)
+    // Pasamos el texto COMPLETO original para buscar figuras
+    const openAiPromise = detectAndExtractFigurasRetoricas(text);
+
+    const [aiResponse, figurasRetoricas] = await Promise.all([
+      deepSeekPromise,
+      openAiPromise
+    ]);
+
+    logToDebug('🤖 AI Response received', { preview: aiResponse.substring(0, 500) + '...' });
+    if (figurasRetoricas && figurasRetoricas.length > 0) {
+      logToDebug('🎨 Figures extracted', { count: figurasRetoricas.length });
+    }
+
     // ============================================================
     // FASE 5: ESTRUCTURACIÓN FINAL
     // ============================================================
     console.log('🔧 [PreLectura] Iniciando estructuración final...');
     let analysis;
     try {
-      analysis = await parseAndStructureAnalysis(aiResponse, webContext, webEnriched, startTime, text);
+      // Pasamos las figuras ya obtenidas para evitar llamar de nuevo
+      analysis = await parseAndStructureAnalysis(aiResponse, webContext, webEnriched, startTime, text, figurasRetoricas, searchDecision);
       console.log('✅ [PreLectura] Estructuración completada');
+      logToDebug('✅ Analysis parsed successfully');
     } catch (parseError) {
       console.error('❌ [PreLectura] Error en parseAndStructureAnalysis:', parseError.message);
-      console.error('❌ Stack:', parseError.stack);
-      throw parseError;
+      logToDebug('❌ Error parsing analysis', { error: parseError.message, stack: parseError.stack, aiResponse });
+
+      // 🆕 FALLBACK: Si el parsing falla, crear análisis básico
+      console.log('🔧 [PreLectura] Generando análisis fallback por error de parsing...');
+      analysis = createFallbackAnalysis(text, Date.now() - startTime, `Error parseando respuesta IA: ${parseError.message}`, searchDecision);
+      analysis._parseError = parseError.message;
     }
-    
+
     console.log(`✅ [PreLectura] Análisis completo en ${Date.now() - startTime}ms`);
-    
+
+    // Limpiar timeout de seguridad
+    clearSafetyTimeout();
+
     if (!responseSent) {
       responseSent = true;
       res.json(analysis);
@@ -98,16 +376,21 @@ export async function analyzePreLecture(req, res) {
 
   } catch (error) {
     console.error('❌ [PreLectura Controller] Error:', error);
-    
+    logToDebug('❌ GeneralControllerError', { message: error.message, stack: error.stack });
+
+    // Limpiar timeout de seguridad
+    clearSafetyTimeout();
+
     // Solo enviar respuesta si no se ha enviado ya
     if (!responseSent) {
       responseSent = true;
-      // Análisis fallback básico
-      res.status(500).json({
-        error: 'Error en análisis',
-        message: error.message,
-        fallback: createFallbackAnalysis(req.body.text, Date.now() - startTime)
-      });
+      const analysis = createFallbackAnalysis(
+        req.body.text,
+        Date.now() - startTime,
+        error?.message || 'Error en análisis',
+        typeof searchDecision !== 'undefined' ? searchDecision : null
+      );
+      res.status(200).json(analysis);
     }
   }
 }
@@ -116,6 +399,8 @@ export async function analyzePreLecture(req, res) {
  * Detecta si el texto requiere búsqueda web
  */
 function detectWebSearchNeed(text, metadata) {
+  const classroomMode = parseBooleanEnv(process.env.PRELECTURA_WEB_CLASSROOM_MODE);
+
   const indicators = {
     recent_dates: /202[3-5]|2024|2025/gi.test(text),
     statistics: /\d+%|\d+\.\d+%/g.test(text),
@@ -124,33 +409,135 @@ function detectWebSearchNeed(text, metadata) {
     current_events: /(crisis|reforma|elecciones|pandemia)/gi.test(text)
   };
 
-  const score = Object.values(indicators).filter(Boolean).length / Object.keys(indicators).length;
-  const needsWeb = score >= 0.4; // 40% threshold
+  const reasons = Object.entries(indicators)
+    .filter(([_, value]) => value)
+    .map(([key]) => key);
+
+  // Señales ponderadas: país/ubicación es una señal débil por sí sola.
+  const weights = {
+    recent_dates: 1,
+    statistics: 1,
+    locations: 0.25,
+    news_genre: 1,
+    current_events: 1
+  };
+
+  const maxWeight = Object.keys(indicators).reduce((sum, key) => sum + (weights[key] ?? 1), 0);
+  const weightedScore = Object.keys(indicators).reduce((sum, key) => {
+    if (!indicators[key]) return sum;
+    return sum + (weights[key] ?? 1);
+  }, 0) / maxWeight;
+
+  const matches = reasons.length;
+
+  // Nunca disparar solo por “locations” (beneficioso para modo aula y reduce coste).
+  const onlyWeakSignal = reasons.length === 1 && reasons[0] === 'locations';
+
+  // En “modo aula”, evitamos falsos positivos exigiendo más señales.
+  const minIndicators = classroomMode ? 2 : 1;
+
+  const thresholdRaw = Number(process.env.PRELECTURA_WEB_SCORE_THRESHOLD);
+  const threshold = Number.isFinite(thresholdRaw)
+    ? Math.min(1, Math.max(0, thresholdRaw))
+    : (classroomMode ? 0.7 : 0.4); // defaults más conservadores en aula
+
+  const needsWeb = !onlyWeakSignal && weightedScore >= threshold && matches >= minIndicators;
 
   return {
     needsWeb,
-    confidence: score,
-    reasons: Object.entries(indicators).filter(([_, value]) => value).map(([key]) => key)
+    confidence: weightedScore,
+    reasons,
+    threshold,
+    classroomMode,
+    minIndicators,
+    onlyWeakSignal,
+    matches
   };
 }
 
 /**
- * Ejecuta búsquedas web con Tavily
+ * Ejecuta búsquedas web (prioridad: Tavily → Serper → Bing) vía `searchWebSources`.
  */
 async function performWebSearch(text, searchDecision) {
+  const classroomMode = parseBooleanEnv(process.env.PRELECTURA_WEB_CLASSROOM_MODE);
+
   const queries = generateSearchQueries(text, searchDecision.reasons);
-  const searchPromises = queries.slice(0, 3).map(query => 
-    searchTavily(query)
+
+  const maxQueriesRaw = Number(process.env.PRELECTURA_WEB_MAX_QUERIES);
+  const maxQueries = Number.isFinite(maxQueriesRaw)
+    ? Math.max(0, Math.floor(maxQueriesRaw))
+    : (classroomMode ? 1 : 3);
+
+  const perQueryRaw = Number(process.env.PRELECTURA_WEB_RESULTS_PER_QUERY);
+  const resultsPerQuery = Number.isFinite(perQueryRaw)
+    ? Math.max(1, Math.floor(perQueryRaw))
+    : (classroomMode ? 2 : 3);
+
+  const maxSourcesRaw = Number(process.env.PRELECTURA_WEB_MAX_SOURCES);
+  const maxSources = Number.isFinite(maxSourcesRaw)
+    ? Math.max(1, Math.floor(maxSourcesRaw))
+    : (classroomMode ? 4 : 8);
+
+  const maxFindingsRaw = Number(process.env.PRELECTURA_WEB_MAX_FINDINGS);
+  const maxFindings = Number.isFinite(maxFindingsRaw)
+    ? Math.max(1, Math.floor(maxFindingsRaw))
+    : (classroomMode ? 3 : 5);
+
+  // Cache TTL (ms). 0 desactiva caché.
+  const cacheTtlRaw = Number(process.env.PRELECTURA_WEB_CACHE_TTL_MS);
+  const cacheTtlMs = Number.isFinite(cacheTtlRaw) ? Math.max(0, Math.floor(cacheTtlRaw)) : 300000;
+
+  const cacheMaxRaw = Number(process.env.PRELECTURA_WEB_CACHE_MAX_ENTRIES);
+  const cacheMaxEntries = Number.isFinite(cacheMaxRaw) ? Math.max(0, Math.floor(cacheMaxRaw)) : 200;
+
+  const cacheKeyPayload = {
+    queries: queries.slice(0, maxQueries),
+    resultsPerQuery,
+    maxSources,
+    maxFindings,
+    reasons: searchDecision?.reasons || [],
+    classroomMode
+  };
+
+  const cacheKey = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(cacheKeyPayload))
+    .digest('hex');
+
+  if (cacheTtlMs > 0) {
+    const cached = PRELECTURA_WEB_CACHE.get(cacheKey);
+    if (cached && typeof cached.expiresAt === 'number' && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+    if (cached) {
+      PRELECTURA_WEB_CACHE.delete(cacheKey);
+    }
+  }
+
+  const searchPromises = queries.slice(0, maxQueries).map((query) =>
+    searchWebSources(query, resultsPerQuery)
   );
 
   const results = await Promise.all(searchPromises);
   const allSources = results.flat();
 
-  return {
-    sources: allSources.slice(0, 8),
-    key_findings: extractKeyFindings(allSources).slice(0, 5),
+  const webContext = {
+    sources: allSources.slice(0, maxSources),
+    key_findings: extractKeyFindings(allSources).slice(0, maxFindings),
     categories: ['context', 'statistics', 'news']
   };
+
+  if (cacheTtlMs > 0 && cacheMaxEntries > 0) {
+    // Evitar crecimiento sin control: si excede, expulsar el más antiguo.
+    while (PRELECTURA_WEB_CACHE.size >= cacheMaxEntries) {
+      const oldestKey = PRELECTURA_WEB_CACHE.keys().next().value;
+      if (!oldestKey) break;
+      PRELECTURA_WEB_CACHE.delete(oldestKey);
+    }
+    PRELECTURA_WEB_CACHE.set(cacheKey, { expiresAt: Date.now() + cacheTtlMs, value: webContext });
+  }
+
+  return webContext;
 }
 
 /**
@@ -158,60 +545,69 @@ async function performWebSearch(text, searchDecision) {
  */
 function generateSearchQueries(text, reasons) {
   const queries = [];
-  const textPreview = text.substring(0, 200);
+
+  // PRIVACIDAD: No copiamos frases del texto al proveedor web.
+  // En su lugar, detectamos temas genéricos (whitelist) + país + año, para evitar exfiltrar PII.
+  const KNOWN_LOCATIONS = ['Ecuador', 'Colombia', 'Perú', 'Argentina', 'Chile'];
+  const locationMatch = text.match(/\b(Ecuador|Colombia|Perú|Argentina|Chile)\b/i);
+  const location = locationMatch ? locationMatch[0] : null;
+
+  const year = new Date().getFullYear();
+
+  const TOPIC_WHITELIST = [
+    'pobreza',
+    'desigualdad',
+    'educación',
+    'salud',
+    'empleo',
+    'inflación',
+    'violencia',
+    'migración',
+    'corrupción',
+    'elecciones',
+    'reforma',
+    'pandemia',
+    'medio ambiente',
+    'cambio climático',
+    'derechos humanos'
+  ];
+
+  const lower = text.toLowerCase();
+  const foundTopics = TOPIC_WHITELIST
+    .filter((topic) => lower.includes(topic.toLowerCase()))
+    .slice(0, 4);
+
+  const topicPart = foundTopics.length > 0 ? foundTopics.join(' ') : 'contexto social';
+  const placePart = location ? `${location}` : '';
 
   if (reasons.includes('recent_dates') || reasons.includes('current_events')) {
-    queries.push(`${textPreview.split(' ').slice(0, 5).join(' ')} noticias 2024 2025`);
+    queries.push(`${topicPart} ${placePart} noticias ${year} ${year - 1}`.trim());
   }
 
   if (reasons.includes('statistics')) {
-    queries.push(`${textPreview.split(' ').slice(0, 5).join(' ')} estadísticas datos oficiales`);
+    queries.push(`${topicPart} ${placePart} estadísticas datos oficiales ${year}`.trim());
   }
 
-  if (reasons.includes('locations')) {
-    const match = text.match(/(Ecuador|Colombia|Perú|Argentina|Chile)/i);
-    if (match) {
-      queries.push(`${match[0]} contexto actual ${new Date().getFullYear()}`);
-    }
+  if (reasons.includes('locations') && location) {
+    queries.push(`${location} contexto actual indicadores ${year}`.trim());
   }
 
-  return queries.length > 0 ? queries : [`${textPreview.split(' ').slice(0, 10).join(' ')}`];
+  // Fallback genérico si no hay razones suficientes
+  if (queries.length === 0) {
+    queries.push(`${topicPart} ${placePart} contexto y datos oficiales ${year}`.trim());
+  }
+
+  // De-duplicar y limitar longitud
+  return Array.from(new Set(queries))
+    .map((q) => q.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 5);
 }
 
 /**
  * Busca en Tavily AI
  */
-async function searchTavily(query) {
-  try {
-    const response = await axios.post(
-      'https://api.tavily.com/search',
-      {
-        query,
-        search_depth: 'basic',
-        max_results: 3
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        params: {
-          api_key: process.env.TAVILY_API_KEY
-        },
-        timeout: 10000
-      }
-    );
-
-    return (response.data.results || []).map(r => ({
-      title: r.title,
-      url: r.url,
-      snippet: r.content?.substring(0, 200) || '',
-      score: r.score || 0.5
-    }));
-  } catch (error) {
-    console.warn('⚠️ Tavily search failed:', error.message);
-    return [];
-  }
-}
+// Nota: la lógica de proveedores Tavily/Serper/Bing se centraliza en webSearch.controller.js
 
 /**
  * Extrae hallazgos clave de las fuentes
@@ -227,12 +623,17 @@ function extractKeyFindings(sources) {
  * Construye el prompt unificado para IA
  */
 function buildUnifiedPrompt(text, webContext, webEnriched) {
+  const maxChars = Number.parseInt(process.env.PRELECTURA_MAX_TEXT_CHARS || '18000', 10);
+  const safeText = (Number.isFinite(maxChars) && maxChars > 0 && text.length > maxChars)
+    ? `${text.slice(0, maxChars)}\n\n[NOTA: Texto truncado para el análisis. Longitud original: ${text.length} caracteres]`
+    : text;
+
   let prompt = `Eres un experto en análisis de textos académicos con formación en pedagogía crítica y literacidad crítica. 
 Analiza el siguiente texto siguiendo un modelo académico estructurado de 4 fases, enfocado en comprensión analítica, 
 argumentación crítica y análisis ideológico-discursivo.
 
 TEXTO A ANALIZAR:
-${text}
+${safeText}
 
 `;
 
@@ -314,7 +715,19 @@ Responde con este JSON exacto (sin markdown, sin \`\`\`json):
   "critical": {
     "resumen": "resumen conciso del contenido esencial (2-3 oraciones)",
     "temas_principales": ["tema 1", "tema 2", "tema 3"],
-    "contexto_critico": "análisis crítico basado en literacidad crítica: identifica voces representadas, voces silenciadas, marco ideológico, relaciones de poder implícitas",
+    "contexto_critico": {
+      "voces_representadas": ["voz 1", "voz 2"],
+      "voces_silenciadas": ["voz 1"],
+      "ideologia_subyacente": "marco ideológico o supuestos subyacentes (si aplica)",
+      "marcadores_criticos": {
+        "poder": "cómo se expresa el poder (si aplica)",
+        "sesgos": "posibles sesgos/dispositivos retóricos (si aplica)"
+      },
+      "contraste_web": {
+        "texto_actualizado": "si hay contexto web, resume qué cambia o se actualiza; si no, null",
+        "datos_verificados": "si hay verificación de datos, resume; si no, null"
+      }
+    },
     "mcqQuestions": [
       {
         "nivel": 1,
@@ -325,11 +738,27 @@ Responde con este JSON exacto (sin markdown, sin \`\`\`json):
         "explicacion": "Explicación de por qué esta es la respuesta correcta con referencia al texto"
       },
       {
+        "nivel": 1,
+        "tipo_bloom": "comprension",
+        "pregunta": "Segunda pregunta de comprensión literal específica del texto",
+        "opciones": ["Opción A", "Opción B", "Opción C", "Opción D"],
+        "respuesta_correcta": 1,
+        "explicacion": "Explicación con evidencia textual"
+      },
+      {
         "nivel": 2,
         "tipo_bloom": "analisis",
         "pregunta": "Pregunta de análisis inferencial",
         "opciones": ["Opción A", "Opción B", "Opción C", "Opción D"],
-        "respuesta_correcta": 1,
+        "respuesta_correcta": 2,
+        "explicacion": "Explicación con evidencia textual"
+      },
+      {
+        "nivel": 2,
+        "tipo_bloom": "analisis",
+        "pregunta": "Segunda pregunta de análisis inferencial",
+        "opciones": ["Opción A", "Opción B", "Opción C", "Opción D"],
+        "respuesta_correcta": 3,
         "explicacion": "Explicación con evidencia textual"
       },
       {
@@ -337,7 +766,7 @@ Responde con este JSON exacto (sin markdown, sin \`\`\`json):
         "tipo_bloom": "evaluacion",
         "pregunta": "Pregunta de pensamiento crítico",
         "opciones": ["Opción A", "Opción B", "Opción C", "Opción D"],
-        "respuesta_correcta": 2,
+        "respuesta_correcta": 0,
         "explicacion": "Explicación con análisis crítico"
       }
     ],
@@ -384,9 +813,9 @@ INSTRUCCIONES CRÍTICAS:
 - Identifica actos de habla: afirmaciones, preguntas, órdenes, exhortaciones
 
 **PARA "contexto_critico":**
-- Aplica principios de literacidad crítica: ¿qué voces están representadas? ¿cuáles ausentes?
-- ¿Qué relaciones de poder se reproducen en el discurso?
-- ¿Qué marco ideológico subyacente se puede identificar?
+- Devuelve un OBJETO (no un string) con: voces_representadas, voces_silenciadas, ideologia_subyacente
+- Aplica literacidad crítica: voces presentes/ausentes, relaciones de poder, sesgos o supuestos
+- Si no hay evidencia suficiente, usa arrays vacíos y nulls en lugar de inventar
 
 **PARA "mcqQuestions":**
 - Genera EXACTAMENTE 5 preguntas de opción múltiple basadas EN ESTE TEXTO ESPECÍFICO
@@ -426,10 +855,32 @@ async function callDeepSeekAnalysis(prompt) {
     throw new Error('DEEPSEEK_API_KEY no configurada');
   }
 
+  const deepseekMaxTokensRaw = Number(process.env.PRELECTURA_DEEPSEEK_MAX_TOKENS);
+  const deepseekMaxTokens = Number.isFinite(deepseekMaxTokensRaw) && deepseekMaxTokensRaw > 0
+    ? Math.min(Math.floor(deepseekMaxTokensRaw), 8000)
+    : 8000;
+
+  const deepseekTimeoutMsRaw = Number(process.env.PRELECTURA_DEEPSEEK_TIMEOUT_MS);
+  const deepseekTimeoutMs = Number.isFinite(deepseekTimeoutMsRaw) && deepseekTimeoutMsRaw > 0
+    ? Math.floor(deepseekTimeoutMsRaw)
+    : 300000;
+
+  const requestedModel = process.env.PRELECTURA_DEEPSEEK_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+  const allowedModels = parseAllowedModelsCsv(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
+  const selectedModel = pickAllowedModel({
+    requested: requestedModel,
+    allowed: allowedModels,
+    fallback: 'deepseek-chat'
+  });
+
+  if (requestedModel && String(requestedModel).trim() !== selectedModel) {
+    console.warn(`⚠️ [PreLectura] Modelo DeepSeek no permitido: ${requestedModel}. Usando: ${selectedModel}`);
+  }
+
   const response = await axios.post(
     `${baseURL}/chat/completions`,
     {
-      model: 'deepseek-chat',
+      model: selectedModel,
       messages: [
         {
           role: 'system',
@@ -441,14 +892,14 @@ async function callDeepSeekAnalysis(prompt) {
         }
       ],
       temperature: 0.3,
-      max_tokens: 3000
+      max_tokens: deepseekMaxTokens
     },
     {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: 120000 // 120 segundos (textos largos requieren más tiempo)
+      timeout: deepseekTimeoutMs
     }
   );
 
@@ -473,15 +924,37 @@ async function detectAndExtractFigurasRetoricas(textoOriginal) {
   console.log(`🔍 [DEBUG] API Key configurada: ${apiKey ? 'SÍ' : 'NO'}`);
 
   try {
+    const openaiFigurasMaxTokensRaw = Number(process.env.PRELECTURA_OPENAI_FIGURES_MAX_TOKENS);
+    const openaiFigurasMaxTokens = Number.isFinite(openaiFigurasMaxTokensRaw) && openaiFigurasMaxTokensRaw > 0
+      ? Math.min(Math.floor(openaiFigurasMaxTokensRaw), 3500)
+      : 3500;
+
+    const openaiFigurasTimeoutMsRaw = Number(process.env.PRELECTURA_OPENAI_FIGURES_TIMEOUT_MS);
+    const openaiFigurasTimeoutMs = Number.isFinite(openaiFigurasTimeoutMsRaw) && openaiFigurasTimeoutMsRaw > 0
+      ? Math.floor(openaiFigurasTimeoutMsRaw)
+      : 40000;
+
+    const requestedModel = process.env.PRELECTURA_OPENAI_FIGURES_MODEL || 'gpt-4o-mini';
+    const allowedModels = parseAllowedModelsCsv(process.env.OPENAI_ALLOWED_MODELS, 'gpt-4o-mini');
+    const selectedModel = pickAllowedModel({
+      requested: requestedModel,
+      allowed: allowedModels,
+      fallback: 'gpt-4o-mini'
+    });
+
+    if (requestedModel && String(requestedModel).trim() !== selectedModel) {
+      console.warn(`⚠️ [PreLectura] Modelo OpenAI figuras no permitido: ${requestedModel}. Usando: ${selectedModel}`);
+    }
+
     // Detectar tipo de texto para ajustar la búsqueda
     const textoPreview = textoOriginal.substring(0, 1000).toLowerCase();
     const esLiterario = /(poesía|poema|verso|verso|narrativa|cuento|novela|literario)/i.test(textoOriginal) ||
-                       /(metáfora|símil|comparación|figura)/i.test(textoOriginal) ||
-                       textoOriginal.split(/\n/).length > 30; // Muchas líneas = posiblemente poético
-    
+      /(metáfora|símil|comparación|figura)/i.test(textoOriginal) ||
+      textoOriginal.split(/\n/).length > 30; // Muchas líneas = posiblemente poético
+
     const esAcademico = /(estudio|investigación|análisis|teoría|metodología|hipótesis|conclusión|referencias|bibliografía)/i.test(textoOriginal) ||
-                       textoOriginal.length > 2000; // Textos largos suelen ser académicos
-    
+      textoOriginal.length > 2000; // Textos largos suelen ser académicos
+
     const esArgumentativo = /(por tanto|sin embargo|no obstante|además|porque|debido a|por lo tanto)/i.test(textoOriginal);
 
     const prompt = `Eres un experto en retórica y análisis literario con formación universitaria en lingüística y literatura.
@@ -599,7 +1072,7 @@ NOTAS SOBRE CAMPOS:
     const response = await axios.post(
       `${baseURL}/chat/completions`,
       {
-        model: 'gpt-3.5-turbo',
+        model: selectedModel,
         messages: [
           {
             role: 'system',
@@ -633,20 +1106,20 @@ Si no encuentras figuras retóricas REALES e INEQUÍVOCAS, retorna un array vac�
           }
         ],
         temperature: 0.1, // Baja temperatura para mayor precisión y evitar inventar figuras
-        max_tokens: 3500 // Aumentado para permitir lista más larga de figuras
+        max_tokens: openaiFigurasMaxTokens
       },
       {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
-        timeout: 40000
+        timeout: openaiFigurasTimeoutMs
       }
     );
 
     let content = response.data.choices[0].message.content.trim();
     console.log('🔍 [DEBUG] Respuesta de OpenAI recibida, longitud:', content.length);
-    
+
     // Limpiar markdown si existe
     if (content.startsWith('```json')) {
       content = content.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
@@ -657,19 +1130,19 @@ Si no encuentras figuras retóricas REALES e INEQUÍVOCAS, retorna un array vac�
 
     const result = JSON.parse(content);
     const figuras = result.figuras_retoricas || [];
-    
+
     console.log(`✅ [OpenAI] Detectadas ${figuras.length} figuras retóricas inicialmente`);
-    
+
     // 🔍 VALIDACIÓN POST-DETECCIÓN: Verificar que los ejemplos existen en el texto
     const figurasValidadas = validateRhetoricalFigures(figuras, textoOriginal);
-    
+
     console.log(`✅ [Validación] ${figurasValidadas.length} figuras validadas (${figuras.length - figurasValidadas.length} eliminadas por no existir en el texto)`);
-    
+
     // Log de muestra para verificar
     if (figurasValidadas.length > 0) {
       console.log(`   Ejemplo válido: ${figurasValidadas[0].tipo} → "${figurasValidadas[0].ejemplo.substring(0, 50)}..."`);
     }
-    
+
     return figurasValidadas;
 
   } catch (error) {
@@ -691,6 +1164,30 @@ function normalizeText(text) {
     .replace(/[.,;:!?¡¿()\[\]{}""''—–\-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function parseAllowedModelsCsv(envValue, fallbackCsv) {
+  const raw = String(envValue || '').trim();
+  const csv = raw || String(fallbackCsv || '').trim();
+  return new Set(
+    csv
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+  );
+}
+
+function pickAllowedModel({ requested, allowed, fallback }) {
+  const requestedModel = String(requested || '').trim();
+  const fallbackModel = String(fallback || '').trim();
+
+  if (allowed && allowed.size > 0) {
+    if (requestedModel && allowed.has(requestedModel)) return requestedModel;
+    if (fallbackModel && allowed.has(fallbackModel)) return fallbackModel;
+    return Array.from(allowed)[0];
+  }
+
+  return requestedModel || fallbackModel;
 }
 
 /**
@@ -715,7 +1212,7 @@ function validateRhetoricalFigures(figuras, textoOriginal) {
     }
 
     const ejemplo = (figura.ejemplo || '').trim();
-    
+
     // Si no tiene ejemplo pero tiene alta confianza, aceptar
     if (!ejemplo) {
       const confidence = figura.confidence || 0;
@@ -735,7 +1232,7 @@ function validateRhetoricalFigures(figuras, textoOriginal) {
         const fragmento = textoOriginal.slice(figura.start, figura.end);
         const fragmentoNorm = normalizeText(fragmento);
         const ejemploNorm = normalizeText(ejemplo);
-        
+
         if (fragmentoNorm.includes(ejemploNorm) || ejemploNorm.includes(fragmentoNorm)) {
           validated.push(figura);
           console.log(`✅ [Validación] Figura válida por offsets: ${figura.tipo} [${figura.start}-${figura.end}]`);
@@ -745,7 +1242,7 @@ function validateRhetoricalFigures(figuras, textoOriginal) {
         console.log(`⚠️ [Validación] Error con offsets en figura: ${figura.tipo}, intentando otros métodos`);
       }
     }
-    
+
     // Si ya se validó por offset, continuar con la siguiente figura
     if (validatedByOffset) continue;
 
@@ -764,7 +1261,7 @@ function validateRhetoricalFigures(figuras, textoOriginal) {
       continue;
     }
 
-    const palabrasEncontradas = palabrasEjemplo.filter(palabra => 
+    const palabrasEncontradas = palabrasEjemplo.filter(palabra =>
       textoNorm.includes(palabra)
     );
     const ratio = palabrasEncontradas.length / palabrasEjemplo.length;
@@ -787,37 +1284,66 @@ function validateRhetoricalFigures(figuras, textoOriginal) {
 /**
  * Parsea y estructura el análisis
  */
-async function parseAndStructureAnalysis(aiResponse, webContext, webEnriched, startTime, textoOriginal) {
+/**
+ * Parsea y estructura el análisis
+ * Ahora acepta figurasRetoricas externas para evitar re-cálculo
+ */
+async function parseAndStructureAnalysis(aiResponse, webContext, webEnriched, startTime, textoOriginal, figurasRetoricasExternas = [], searchDecision = null) {
   console.log('🔧 [parseAndStructureAnalysis] INICIANDO...');
   console.log('🔧 [DEBUG] textoOriginal length:', textoOriginal?.length || 'undefined');
-  
-  // Limpiar respuesta (remover markdown si existe)
-  let cleaned = aiResponse.trim();
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
+
+  const normalizeWebSources = (sources) => {
+    if (!Array.isArray(sources)) return [];
+    return sources
+      .filter(Boolean)
+      .map((source) => {
+        if (typeof source === 'string') {
+          // Compat: si solo llega una URL
+          return { title: source, url: source, snippet: '' };
+        }
+        if (!source || typeof source !== 'object') return null;
+        const title = String(source.title ?? source.titulo ?? source.name ?? '').trim();
+        const url = String(source.url ?? source.link ?? source.href ?? '').trim();
+        const snippet = String(source.snippet ?? source.resumen ?? source.description ?? '').trim();
+        // Si no hay URL, no aportamos una fuente utilizable
+        if (!url) return null;
+        return {
+          title: title || url,
+          url,
+          snippet
+        };
+      })
+      .filter(Boolean);
+  };
+
+  // Intentar parsear con reparación automática
+  const parsed = tryRepairJSON(aiResponse);
+
+  if (!parsed) {
+    throw new Error('No se pudo parsear ni reparar la respuesta de IA');
   }
 
-  const parsed = JSON.parse(cleaned);
+  console.log('✅ [parseAndStructureAnalysis] JSON parseado correctamente');
 
   // ============================================================
-  // DETECCIÓN Y EXTRACCIÓN COMPLETA DE FIGURAS RETÓRICAS CON OPENAI
-  // OpenAI hace TODO: detectar + extraer fragmentos del texto original
+  // INTEGRACIÓN DE FIGURAS RETÓRICAS
+  // Usar las recibidas externamente (paralelo) o buscarlas si no existen
   // ============================================================
   let linguisticsEnriched = parsed.linguistics || {};
-  
-  // Reemplazar completamente las figuras retóricas con detección de OpenAI
-  console.log('🎨 [Figuras Retóricas] Detectando y extrayendo con OpenAI...');
-  const figurasConEjemplos = await detectAndExtractFigurasRetoricas(textoOriginal);
-  
-  console.log('🔍 [DEBUG] Resultado de OpenAI:', JSON.stringify(figurasConEjemplos, null, 2));
-  
+  let figurasConEjemplos = figurasRetoricasExternas;
+
+  if (!figurasConEjemplos) {
+    // Fallback por compatibilidad: llamar si no se pasó
+    console.log('🎨 [Figuras Retóricas] No se recibieron externamente, detectando ahora...');
+    figurasConEjemplos = await detectAndExtractFigurasRetoricas(textoOriginal);
+  }
+
   if (figurasConEjemplos && figurasConEjemplos.length > 0) {
     linguisticsEnriched.figuras_retoricas = figurasConEjemplos;
-    console.log(`✅ [Figuras Retóricas] ${figurasConEjemplos.length} figuras detectadas y extraídas correctamente`);
+    console.log(`✅ [Figuras Retóricas] ${figurasConEjemplos.length} figuras integradas al análisis`);
   } else {
     // Si OpenAI falla o no encuentra, mantener lo que DeepSeek detectó (si existe)
     console.log('⚠️ [Figuras Retóricas] OpenAI no detectó figuras, manteniendo resultado de DeepSeek');
-    console.log('🔍 [DEBUG] Figuras de DeepSeek:', linguisticsEnriched.figuras_retoricas);
     if (!linguisticsEnriched.figuras_retoricas) {
       linguisticsEnriched.figuras_retoricas = [];
     }
@@ -825,7 +1351,42 @@ async function parseAndStructureAnalysis(aiResponse, webContext, webEnriched, st
 
   // 🆕 Extraer y estructurar critical con MCQ y Synthesis Questions
   const criticalData = parsed.critical || {};
-  
+
+  // Normalizar contexto_critico: la UI espera un objeto (voces_representadas/voces_silenciadas/ideologia_subyacente/...)
+  // Compat: si el modelo devuelve string, lo envolvemos.
+  if (typeof criticalData.contexto_critico === 'string') {
+    criticalData.contexto_critico = {
+      descripcion: criticalData.contexto_critico,
+      voces_representadas: [],
+      voces_silenciadas: [],
+      ideologia_subyacente: null,
+      marcadores_criticos: {},
+      contraste_web: null
+    };
+  } else if (!criticalData.contexto_critico || typeof criticalData.contexto_critico !== 'object') {
+    criticalData.contexto_critico = {
+      voces_representadas: [],
+      voces_silenciadas: [],
+      ideologia_subyacente: null,
+      marcadores_criticos: {},
+      contraste_web: null
+    };
+  } else {
+    if (!Array.isArray(criticalData.contexto_critico.voces_representadas)) criticalData.contexto_critico.voces_representadas = [];
+    if (!Array.isArray(criticalData.contexto_critico.voces_silenciadas)) criticalData.contexto_critico.voces_silenciadas = [];
+    if (criticalData.contexto_critico.marcadores_criticos == null || typeof criticalData.contexto_critico.marcadores_criticos !== 'object') {
+      criticalData.contexto_critico.marcadores_criticos = {};
+    }
+  }
+
+  // Normalizar nivel_complejidad para badges de UI (Básico/Intermedio/Avanzado)
+  if (typeof linguisticsEnriched.nivel_complejidad === 'string') {
+    const lc = linguisticsEnriched.nivel_complejidad.trim().toLowerCase();
+    if (lc === 'basico' || lc === 'básico') linguisticsEnriched.nivel_complejidad = 'Básico';
+    else if (lc === 'intermedio') linguisticsEnriched.nivel_complejidad = 'Intermedio';
+    else if (lc === 'avanzado') linguisticsEnriched.nivel_complejidad = 'Avanzado';
+  }
+
   // Validar y estructurar mcqQuestions
   if (!criticalData.mcqQuestions || !Array.isArray(criticalData.mcqQuestions)) {
     console.log('⚠️ [parseAndStructureAnalysis] mcqQuestions no encontrado, inicializando como []');
@@ -849,7 +1410,7 @@ async function parseAndStructureAnalysis(aiResponse, webContext, webEnriched, st
     }).filter(q => q !== null);
     console.log(`✅ [parseAndStructureAnalysis] ${criticalData.mcqQuestions.length} MCQ validadas`);
   }
-  
+
   // Validar y estructurar synthesisQuestions
   if (!criticalData.synthesisQuestions || !Array.isArray(criticalData.synthesisQuestions)) {
     console.log('⚠️ [parseAndStructureAnalysis] synthesisQuestions no encontrado, inicializando como []');
@@ -872,13 +1433,23 @@ async function parseAndStructureAnalysis(aiResponse, webContext, webEnriched, st
     console.log(`✅ [parseAndStructureAnalysis] ${criticalData.synthesisQuestions.length} preguntas síntesis validadas`);
   }
 
+  const normalizedWebSources = webEnriched && webContext ? normalizeWebSources(webContext.sources) : [];
+
   return {
     prelecture: {
       metadata: parsed.metadata || {},
       argumentation: parsed.argumentation || {},
       linguistics: linguisticsEnriched,
-      web_sources: webEnriched && webContext ? webContext.sources : [],
-      web_summary: webEnriched && webContext ? webContext.key_findings : []
+      web_sources: normalizedWebSources,
+      // Contrato estable: siempre string (la UI puede renderizarlo directamente)
+      web_summary: (() => {
+        if (!webEnriched || !webContext) return '';
+        const keyFindings = webContext.key_findings;
+        if (!keyFindings) return '';
+        if (Array.isArray(keyFindings)) return keyFindings.filter(Boolean).join(' ');
+        if (typeof keyFindings === 'string') return keyFindings;
+        return '';
+      })()
     },
     critical: criticalData,
     metadata: {
@@ -886,7 +1457,8 @@ async function parseAndStructureAnalysis(aiResponse, webContext, webEnriched, st
       analysis_timestamp: new Date().toISOString(),
       processing_time_ms: Date.now() - startTime,
       web_enriched: webEnriched,
-      web_sources_count: webEnriched && webContext ? webContext.sources.length : 0,
+      web_sources_count: normalizedWebSources.length,
+      ...buildWebDecisionMetadata(searchDecision),
       provider: 'deepseek',
       version: '3.0-rag-backend'
     }
@@ -896,7 +1468,7 @@ async function parseAndStructureAnalysis(aiResponse, webContext, webEnriched, st
 /**
  * Crea análisis fallback en caso de error
  */
-function createFallbackAnalysis(text, processingTime) {
+function createFallbackAnalysis(text, processingTime, errorMessage = null, searchDecision = null) {
   return {
     prelecture: {
       metadata: {
@@ -915,17 +1487,27 @@ function createFallbackAnalysis(text, processingTime) {
       linguistics: {
         tipo_estructura: 'No identificado',
         registro_linguistico: 'No identificado',
-        nivel_complejidad: 'intermedio',
+        nivel_complejidad: 'Intermedio',
         coherencia_cohesion: 'No evaluado',
         figuras_retoricas: []
       },
       web_sources: [],
-      web_summary: []
+      web_summary: ''
     },
     critical: {
-      resumen: 'Análisis no disponible temporalmente',
+      resumen: 'Análisis no disponible temporalmente. Por favor, intenta de nuevo.',
       temas_principales: [],
-      contexto_critico: 'Error en procesamiento'
+      contexto_critico: {
+        descripcion: 'Error en procesamiento',
+        factores: [],
+        voces_representadas: [],
+        voces_silenciadas: [],
+        ideologia_subyacente: null,
+        marcadores_criticos: {},
+        contraste_web: null
+      },
+      mcqQuestions: [],
+      synthesisQuestions: []
     },
     metadata: {
       document_id: `doc_fallback_${Date.now()}`,
@@ -933,8 +1515,13 @@ function createFallbackAnalysis(text, processingTime) {
       processing_time_ms: processingTime,
       web_enriched: false,
       web_sources_count: 0,
+      ...buildWebDecisionMetadata(searchDecision),
       provider: 'fallback',
-      version: '3.0-fallback'
-    }
+      version: '3.0-fallback',
+      error: true,
+      errorMessage: errorMessage || 'Error en análisis'
+    },
+    _isFallback: true,
+    _errorMessage: errorMessage || 'Error en análisis'
   };
 }

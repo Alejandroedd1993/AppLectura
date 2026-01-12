@@ -234,6 +234,11 @@ const ARTEFACTO_CONFIG = {
     name: 'Respuesta Argumentativa',
     icon: '💭',
     color: '#E91E63'
+  },
+  rubrica5: {
+    name: 'Bitácora Ética IA',
+    icon: '🤖',
+    color: '#9C27B0'
   }
 };
 
@@ -252,48 +257,55 @@ export default function ProgressStats({ rubricProgress }) {
     let totalCompleted = 0;
     let totalScore = 0;
     let totalAttempts = 0;
+    let dimensionesEvaluadas = 0;
     
     Object.entries(ARTEFACTO_CONFIG).forEach(([rubricId, config]) => {
       const data = rubricProgress[rubricId];
+      const formativeScores = data?.scores || [];
+      const hasFormative = formativeScores.length > 0;
+      const summative = data?.summative;
+      const summativeScoreNum = Number(summative?.score);
+      const hasSummative =
+        summative &&
+        summative.status === 'graded' &&
+        Number.isFinite(summativeScoreNum) &&
+        summativeScoreNum > 0;
+      const hasAny = hasFormative || hasSummative;
       
-      if (data && data.scores && data.scores.length > 0) {
-        const lastScore = data.scores[data.scores.length - 1];
-        const highestScore = Math.max(...data.scores.map(s => s.score));
-        const attempts = data.scores.length;
-        
-        const nivel = lastScore.nivel || Math.ceil(lastScore.score / 2.5);
-        const isCompleted = nivel >= 3; // Nivel 3+ considerado completado
-        
-        artefactos.push({
-          rubricId,
-          ...config,
-          lastScore: lastScore.score,
-          highestScore,
-          nivel,
-          attempts,
-          isCompleted,
-          lastAttempt: lastScore.timestamp
-        });
-        
+      const lastFormative = hasFormative ? formativeScores[formativeScores.length - 1] : null;
+      const formativeHighestScore = hasFormative ? Math.max(...formativeScores.map(s => s.score)) : 0;
+      const formativeAttempts = formativeScores.length;
+
+      const scoreForNivel = lastFormative?.score ?? (hasSummative ? summativeScoreNum : 0);
+      const nivel = lastFormative?.nivel ?? summative?.nivel ?? (scoreForNivel > 0 ? Math.ceil(scoreForNivel / 2.5) : 0);
+      const isCompleted = scoreForNivel > 0 && nivel >= 3; // Nivel 3+ considerado completado
+
+      artefactos.push({
+        rubricId,
+        ...config,
+        hasFormative,
+        formativeLastScore: lastFormative?.score ?? 0,
+        formativeHighestScore,
+        formativeAttempts,
+        formativeLastAttempt: lastFormative?.timestamp ?? null,
+        hasSummative,
+        summativeScore: hasSummative ? summativeScoreNum : 0,
+        summativeNivel: hasSummative ? (summative.nivel ?? Math.ceil(summative.score / 2.5)) : 0,
+        summativeTimestamp: hasSummative ? (summative.timestamp ?? summative.gradedAt ?? null) : null,
+        nivel,
+        isCompleted
+      });
+
+      if (hasAny) {
+        dimensionesEvaluadas++;
         if (isCompleted) totalCompleted++;
-        totalScore += lastScore.score;
-        totalAttempts += attempts;
-      } else {
-        artefactos.push({
-          rubricId,
-          ...config,
-          lastScore: 0,
-          highestScore: 0,
-          nivel: 0,
-          attempts: 0,
-          isCompleted: false,
-          lastAttempt: null
-        });
+        totalScore += (lastFormative?.score ?? (hasSummative ? summativeScoreNum : 0));
+        totalAttempts += formativeAttempts + (hasSummative ? 1 : 0);
       }
     });
     
-    const overallProgress = (totalCompleted / 4) * 100;
-    const averageScore = totalAttempts > 0 ? totalScore / artefactos.filter(a => a.attempts > 0).length : 0;
+    const overallProgress = (totalCompleted / 5) * 100;
+    const averageScore = dimensionesEvaluadas > 0 ? totalScore / dimensionesEvaluadas : 0;
     
     return {
       artefactos,
@@ -343,7 +355,7 @@ export default function ProgressStats({ rubricProgress }) {
             </div>
           </div>
           <div className="stats">
-            <span>✅ {stats.totalCompleted}/4 dimensiones completadas</span>
+            <span>✅ {stats.totalCompleted}/5 dimensiones completadas</span>
             <span>📊 Promedio: {stats.averageScore}/10</span>
             <span>🔄 {stats.totalAttempts} intentos totales</span>
           </div>
@@ -375,42 +387,60 @@ export default function ProgressStats({ rubricProgress }) {
             </ArtefactoHeader>
             
             <ArtefactoStats>
-              {artefacto.attempts > 0 ? (
+              {artefacto.hasFormative || artefacto.hasSummative ? (
                 <>
-                  <div className="stat-row">
-                    <span className="stat-label">Última puntuación:</span>
-                    <span className="stat-value highlight">{artefacto.lastScore.toFixed(1)}/10</span>
-                  </div>
-                  
-                  <div className="stat-row">
-                    <span className="stat-label">Puntuación más alta:</span>
-                    <span className="stat-value">{artefacto.highestScore.toFixed(1)}/10</span>
-                  </div>
-                  
-                  <div className="stat-row">
-                    <span className="stat-label">Nivel alcanzado:</span>
-                    <span 
-                      className="nivel-badge" 
-                      style={{
-                        background: `${NIVEL_CONFIG[artefacto.nivel].color}20`,
-                        color: NIVEL_CONFIG[artefacto.nivel].color,
-                        border: `1px solid ${NIVEL_CONFIG[artefacto.nivel].color}`
-                      }}
-                    >
-                      Nivel {artefacto.nivel} - {NIVEL_CONFIG[artefacto.nivel].label}
-                    </span>
-                  </div>
-                  
+                  {artefacto.hasFormative ? (
+                    <>
+                      <div className="stat-row">
+                        <span className="stat-label">Última puntuación:</span>
+                        <span className="stat-value highlight">{artefacto.formativeLastScore.toFixed(1)}/10</span>
+                      </div>
+
+                      <div className="stat-row">
+                        <span className="stat-label">Puntuación más alta:</span>
+                        <span className="stat-value">{artefacto.formativeHighestScore.toFixed(1)}/10</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="stat-row">
+                      <span className="stat-label">Artefactos:</span>
+                      <span className="stat-value">Sin intentos</span>
+                    </div>
+                  )}
+
+                  {artefacto.nivel > 0 && (
+                    <div className="stat-row">
+                      <span className="stat-label">Nivel alcanzado:</span>
+                      <span
+                        className="nivel-badge"
+                        style={{
+                          background: `${NIVEL_CONFIG[artefacto.nivel].color}20`,
+                          color: NIVEL_CONFIG[artefacto.nivel].color,
+                          border: `1px solid ${NIVEL_CONFIG[artefacto.nivel].color}`
+                        }}
+                      >
+                        Nivel {artefacto.nivel} - {NIVEL_CONFIG[artefacto.nivel].label}
+                      </span>
+                    </div>
+                  )}
+
+                  {artefacto.hasSummative && (
+                    <div className="stat-row">
+                      <span className="stat-label">Ensayo (sumativo):</span>
+                      <span className="stat-value highlight">{artefacto.summativeScore.toFixed(1)}/10</span>
+                    </div>
+                  )}
+
                   <div className="stat-row">
                     <span className="stat-label">Intentos:</span>
-                    <span className="stat-value">{artefacto.attempts}</span>
+                    <span className="stat-value">{artefacto.formativeAttempts + (artefacto.hasSummative ? 1 : 0)}</span>
                   </div>
-                  
-                  {artefacto.lastAttempt && (
+
+                  {artefacto.formativeLastAttempt && (
                     <div className="stat-row">
                       <span className="stat-label">Último intento:</span>
                       <span className="stat-value" style={{ fontSize: '0.75rem' }}>
-                        {new Date(artefacto.lastAttempt).toLocaleDateString('es-ES', {
+                        {new Date(artefacto.formativeLastAttempt).toLocaleDateString('es-ES', {
                           day: '2-digit',
                           month: 'short',
                           hour: '2-digit',

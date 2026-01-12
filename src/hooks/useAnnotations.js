@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { AnnotationsService } from '../services/annotations.service';
+import { useRewards } from '../context/PedagogyContext';
 
 /**
  * useAnnotations
@@ -15,7 +16,7 @@ export function useAnnotations(texto, options = {}) {
   const { shadow = true, onChange } = options;
   const storageKey = useMemo(() => AnnotationsService.computeKeyFromText(texto || ''), [texto]);
   const [annotations, setAnnotations] = useState([]);
-  const mountedRef = useRef(false);
+  const rewards = useRewards();
 
   useEffect(() => {
     if (!storageKey) return;
@@ -31,15 +32,35 @@ export function useAnnotations(texto, options = {}) {
 
   const isHighlighted = useCallback((paragraphIndex) => highlights.some(h => h.paragraphIndex === paragraphIndex), [highlights]);
 
-  const toggleHighlight = useCallback((paragraphIndex, source='manual') => {
+  const toggleHighlight = useCallback((paragraphIndex, source = 'manual') => {
     if (!storageKey) return { active: false };
-    return AnnotationsService.toggleHighlight(storageKey, paragraphIndex, source);
-  }, [storageKey]);
+    const result = AnnotationsService.toggleHighlight(storageKey, paragraphIndex, source);
+
+    // 🎮 Registrar recompensa si se activó resaltado
+    if (result.active && rewards) {
+      rewards.recordEvent('ANNOTATION_CREATED', {
+        paragraphIndex,
+        resourceId: storageKey
+      });
+    }
+
+    return result;
+  }, [storageKey, rewards]);
 
   const addNote = useCallback((note) => {
     if (!storageKey) return null;
-    return AnnotationsService.addNote(storageKey, note);
-  }, [storageKey]);
+    const result = AnnotationsService.addNote(storageKey, note);
+
+    // 🎮 Registrar recompensa
+    if (result && rewards) {
+      rewards.recordEvent('NOTE_CREATED', {
+        noteId: result.id,
+        resourceId: storageKey
+      });
+    }
+
+    return result;
+  }, [storageKey, rewards]);
 
   const updateAnnotation = useCallback((id, patch) => {
     if (!storageKey) return null;

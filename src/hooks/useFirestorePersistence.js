@@ -30,10 +30,62 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
     enabled = true, 
     onRehydrate = null, 
     autoSave = true, 
-    debounceMs = 2000 
+    debounceMs = 2000,
+    backupMerge = true
   } = options;
 
   const { currentUser, isEstudiante } = useAuth();
+
+  const backupTtlMs = (() => {
+    try {
+      const envDays = process?.env?.REACT_APP_FIRESTORE_BACKUP_TTL_DAYS;
+      const fromEnv = envDays !== undefined && envDays !== null ? Number(envDays) : null;
+      const fromStorageRaw = localStorage.getItem('FIRESTORE_BACKUP_TTL_DAYS');
+      const fromStorage = fromStorageRaw !== undefined && fromStorageRaw !== null ? Number(fromStorageRaw) : null;
+      const days = (Number.isFinite(fromEnv) && fromEnv > 0) ? fromEnv
+        : (Number.isFinite(fromStorage) && fromStorage > 0) ? fromStorage
+          : 7;
+      return Math.round(days * 24 * 60 * 60 * 1000);
+    } catch {
+      return 7 * 24 * 60 * 60 * 1000;
+    }
+  })();
+
+  const getBackupTimestampMs = (backup) => {
+    try {
+      if (!backup || typeof backup !== 'object') return null;
+      const meta = backup.__firestoreBackupMeta;
+      const ts = meta?.updatedAt ?? meta?.createdAt;
+      if (Number.isFinite(ts) && ts > 0) return ts;
+
+      const lastSync = backup.lastSync;
+      if (typeof lastSync === 'string' && lastSync.trim()) {
+        const parsed = Date.parse(lastSync);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const stampBackupMeta = (backup) => {
+    if (!backup || typeof backup !== 'object') return backup;
+    return {
+      ...backup,
+      __firestoreBackupMeta: {
+        ...(backup.__firestoreBackupMeta && typeof backup.__firestoreBackupMeta === 'object' ? backup.__firestoreBackupMeta : {}),
+        updatedAt: Date.now(),
+        version: 1
+      }
+    };
+  };
+
+  const isBackupExpired = (backup) => {
+    const ts = getBackupTimestampMs(backup);
+    if (!ts) return false;
+    return Date.now() - ts > backupTtlMs;
+  };
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -43,6 +95,19 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
   const dataRef = useRef(data);
   const saveTimeoutRef = useRef(null);
   const hasRehydratedRef = useRef(false);
+
+  // Resetear estado de rehidratación al cambiar usuario o documento.
+  // Esto es crítico para apps multi-lectura: cada textoId requiere rehidratación propia.
+  useEffect(() => {
+    hasRehydratedRef.current = false;
+    setSynced(false);
+    setError(null);
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+  }, [currentUser?.uid, textoId, enabled, isEstudiante]);
 
   // Actualizar ref cuando cambian los datos
   useEffect(() => {
@@ -81,8 +146,19 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
         const localKey = `firestore_backup_${currentUser.uid}_${textoId}`;
         const localData = localStorage.getItem(localKey);
         if (localData && onRehydrate) {
-          console.log('📦 [FirestorePersistence] Rehidratando desde localStorage backup');
-          onRehydrate(JSON.parse(localData));
+          const parsed = JSON.parse(localData);
+          if (parsed && typeof parsed === 'object') {
+            if (isBackupExpired(parsed)) {
+              try { localStorage.removeItem(localKey); } catch { /* ignore */ }
+            } else {
+              const stamped = getBackupTimestampMs(parsed) ? parsed : stampBackupMeta(parsed);
+              if (stamped !== parsed) {
+                try { localStorage.setItem(localKey, JSON.stringify(stamped)); } catch { /* ignore */ }
+              }
+              console.log('📦 [FirestorePersistence] Rehidratando desde localStorage backup');
+              onRehydrate(stamped);
+            }
+          }
         }
       } catch (localErr) {
         console.error('❌ [FirestorePersistence] Error con localStorage backup:', localErr);
@@ -116,7 +192,40 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
       // Backup en localStorage
       try {
         const localKey = `firestore_backup_${currentUser.uid}_${textoId}`;
-        localStorage.setItem(localKey, JSON.stringify(payload));
+        if (!backupMerge || !payload || typeof payload !== 'object') {
+          localStorage.setItem(localKey, JSON.stringify(stampBackupMeta(payload)));
+        } else {
+          let prev = null;
+          try {
+            const prevRaw = localStorage.getItem(localKey);
+            prev = prevRaw ? JSON.parse(prevRaw) : null;
+          } catch {
+            prev = null;
+          }
+
+          const base = prev && typeof prev === 'object' ? prev : {};
+          const next = { ...base, ...payload };
+
+          if (payload.rubricProgress && typeof payload.rubricProgress === 'object') {
+            next.rubricProgress = {
+              ...(base.rubricProgress && typeof base.rubricProgress === 'object' ? base.rubricProgress : {}),
+              ...payload.rubricProgress
+            };
+          }
+
+          if (payload.activitiesProgress && typeof payload.activitiesProgress === 'object') {
+            next.activitiesProgress = {
+              ...(base.activitiesProgress && typeof base.activitiesProgress === 'object' ? base.activitiesProgress : {}),
+              ...payload.activitiesProgress
+            };
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, 'savedCitations')) {
+            next.savedCitations = payload.savedCitations;
+          }
+
+          localStorage.setItem(localKey, JSON.stringify(stampBackupMeta(next)));
+        }
       } catch (localErr) {
         console.warn('⚠️ [FirestorePersistence] No se pudo guardar backup local:', localErr);
       }
@@ -132,11 +241,32 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
     }
   }, [currentUser, textoId, enabled, isEstudiante]);
 
+  // 🛡️ Flush al cambiar de textoId / usuario o desmontar:
+  // si hay un autosave pendiente, lo ejecutamos inmediatamente para evitar perder cambios.
+  // Nota: este efecto NO depende de `data`, así evitamos flush en cada cambio.
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+
+        if (autoSave && enabled && currentUser && textoId && isEstudiante && hasRehydratedRef.current) {
+          try {
+            // best-effort (no await en cleanup)
+            save(dataRef.current);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    };
+  }, [currentUser?.uid, textoId, enabled, isEstudiante, autoSave, save]);
+
   /**
    * Guardado automático con debounce
    */
   useEffect(() => {
-    if (!autoSave || !enabled) return;
+    if (!autoSave || !enabled || !currentUser || !textoId || !isEstudiante) return;
     
     // Limpiar timeout anterior
     if (saveTimeoutRef.current) {
@@ -166,7 +296,9 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
   }, [rehydrate]);
 
   /**
-   * Listener en tiempo real (opcional, para ver cambios de otros dispositivos)
+   * Listener en tiempo real (opcional)
+   * Nota: la app mantiene UNA sola sesión activa por usuario; este listener es para reflejar cambios remotos
+   * (p.ej., restauración/rehidratación o cambios desde otra pestaña) y no implica soporte multi-dispositivo.
    */
   useEffect(() => {
     if (!currentUser || !textoId || !enabled || !isEstudiante) return;

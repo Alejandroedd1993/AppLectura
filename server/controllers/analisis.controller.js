@@ -70,6 +70,18 @@ export async function analizarTexto(req, res) {
   } catch (error) {
     console.error(`Error en análisis con ${api}:`, error.message);
 
+    // Degradación controlada: si se solicita Gemini pero no hay API key, devolver análisis básico
+    // (evita 500 y mantiene la UX funcional)
+    if (api === 'gemini' && String(error?.message || '').toLowerCase().includes('api key de gemini no configurada')) {
+      try {
+        const textoTruncado = texto.slice(0, 4000) + (texto.length > 4000 ? '...' : '');
+        const fallback = analizarTextoBasico(textoTruncado);
+        return res.json(fallback);
+      } catch (fallbackErr) {
+        // si incluso el fallback falla, continuar con la ruta estándar de error
+      }
+    }
+
     if (error.message.includes('Timeout')) {
       return res.status(504).json({
         error: 'Timeout',

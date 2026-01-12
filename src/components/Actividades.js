@@ -5,7 +5,7 @@
  * OPTIMIZACIÓN: Lazy loading de artefactos para reducir bundle inicial
  */
 
-import React, { useState, useContext, useCallback, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useContext, useCallback, lazy, Suspense } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../context/AppContext';
@@ -19,13 +19,15 @@ import EstimatedTimeBadge from './ui/EstimatedTimeBadge';
 import PreguntasPersonalizadas from './actividades/PreguntasPersonalizadas';
 import ProgressStats from './actividades/ProgressStats';
 import ExportProgressButton from './actividades/ExportProgressButton';
+import ModoPracticaGuiada from './actividades/ModoPracticaGuiada';
+import AnalyticsPanel from './evaluacion/AnalyticsPanel';
 
 // ✅ LAZY: Artefactos pesados (solo cargan cuando se necesitan)
 const ResumenAcademico = lazy(() => import('./artefactos/ResumenAcademico'));
 const TablaACD = lazy(() => import('./artefactos/TablaACD'));
 const MapaActores = lazy(() => import('./artefactos/MapaActores'));
 const RespuestaArgumentativa = lazy(() => import('./artefactos/RespuestaArgumentativa'));
-const BitacoraEticaIA = lazy(() => import('./BitacoraEticaIA'));
+const BitacoraEticaIA = lazy(() => import('./artefactos/BitacoraEticaIA'));
 
 const Container = styled.div`
   padding: 1.5rem;
@@ -299,105 +301,109 @@ const LoadingText = styled.p`
 `;
 
 export default function Actividades() {
-  const { 
-    texto, 
-    completeAnalysis, 
-    modoOscuro, 
-    rubricProgress, 
-    clearRubricProgress, 
+  const {
+    texto,
+    completeAnalysis,
+    modoOscuro,
+    rubricProgress,
+    clearRubricProgress: _clearRubricProgress,
     resetAllProgress,
     activitiesProgress,
-    markPreparationProgress 
+    markPreparationProgress,
+    currentTextoId,
+    getCitations,
+    globalTutorInteractions
   } = useContext(AppContext);
   // ✅ CORREGIDO: Iniciar con 'preparacion' según orden pedagógico
   const [activeSection, setActiveSection] = useState('preparacion');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  
+
   // Obtener documentId del análisis
   const documentId = completeAnalysis?.metadata?.document_id || null;
-  
+  const lectureId = currentTextoId || documentId || null;
+
   // 🔎 Estado de preparación (MCQ + Síntesis completados)
   // Usar activitiesProgress del contexto en lugar de localStorage
-  const preparacionCompletada = documentId 
-    ? activitiesProgress?.[documentId]?.preparation?.completed || false
+  const preparacionCompletada = lectureId
+    ? activitiesProgress?.[lectureId]?.preparation?.completed || false
     : false;
-  
+
   // Log para debugging
   React.useEffect(() => {
-    if (documentId) {
+    if (lectureId) {
       if (preparacionCompletada) {
-        console.log('✅ [Actividades] Preparación completada para documento:', documentId);
+        console.log('✅ [Actividades] Preparación completada para documento:', lectureId);
       } else {
-        console.log('🆕 [Actividades] Preparación pendiente para documento:', documentId);
+        console.log('🆕 [Actividades] Preparación pendiente para documento:', lectureId);
       }
     }
-  }, [documentId, preparacionCompletada]);
-  
-  // 🔄 LISTENER: Reaccionar a cambios de sincronización desde otros dispositivos
+  }, [lectureId, preparacionCompletada]);
+
+  // 🔄 LISTENER: Reaccionar a cambios de sincronización desde Firestore (nube / otra pestaña)
   React.useEffect(() => {
     const handleProgressUpdate = () => {
-      console.log('🔔 [Actividades] Progreso actualizado desde otro dispositivo, recalculando...');
+      console.log('🔔 [Actividades] Progreso actualizado desde Firestore, recalculando...');
       // El estado se actualizará automáticamente porque activitiesProgress viene del contexto
       // que ya está siendo actualizado por el listener de AppContext
     };
-    
+
     // Escuchar evento custom cuando AppContext sincroniza desde Firestore
     window.addEventListener('progress-synced-from-cloud', handleProgressUpdate);
-    
+
     return () => window.removeEventListener('progress-synced-from-cloud', handleProgressUpdate);
   }, []);
-  
+
   // 🔒 Redirigir a preparación si se intenta acceder a artefactos sin completarla
   React.useEffect(() => {
-    const artefactosSections = ['resumen', 'tabla-acd', 'mapa-actores', 'respuesta', 'bitacora'];
+    const artefactosSections = ['resumen', 'tabla-acd', 'mapa-actores', 'respuesta-argumentativa', 'bitacora-etica'];
     if (!preparacionCompletada && artefactosSections.includes(activeSection)) {
       console.log('🚫 [Actividades] Acceso denegado a artefacto sin preparación, redirigiendo...');
       setActiveSection('preparacion');
     }
   }, [preparacionCompletada, activeSection]);
-  
+
   // 🆕 Escuchar evento de completación de ejercicios
   React.useEffect(() => {
     const handleExercisesCompleted = () => {
       console.log('✅ [Actividades] Preparación completada, desbloqueando artefactos');
-      if (documentId && markPreparationProgress) {
-        markPreparationProgress(documentId, { completed: true });
+      if (lectureId && markPreparationProgress) {
+        markPreparationProgress(lectureId, { completed: true });
       }
     };
-    
+
     window.addEventListener('exercises-completed', handleExercisesCompleted);
     return () => window.removeEventListener('exercises-completed', handleExercisesCompleted);
-  }, [documentId, markPreparationProgress]);
-  
+  }, [lectureId, markPreparationProgress]);
+
   // 🆕 Función para calcular estado de cada artefacto
   const getArtefactoStatus = useCallback((rubricId) => {
     const data = rubricProgress?.[rubricId];
-    
+
     if (!data || !data.scores || data.scores.length === 0) {
       return { status: 'empty', icon: '', label: '', color: '' };
     }
-    
+
     const lastScore = data.scores[data.scores.length - 1].score;
-    
+
     if (lastScore >= 8.6) {
-      return { 
-        status: 'excellent', 
-        icon: '🌟', 
-        label: lastScore.toFixed(1), 
+      return {
+        status: 'excellent',
+        icon: '🌟',
+        label: lastScore.toFixed(1),
         color: '#10b981' // verde brillante
       };
     } else if (lastScore >= 5.6) {
-      return { 
-        status: 'good', 
-        icon: '✅', 
-        label: lastScore.toFixed(1), 
+      return {
+        status: 'good',
+        icon: '✅',
+        label: lastScore.toFixed(1),
         color: '#4CAF50' // verde
       };
     } else {
-      return { 
-        status: 'needs-work', 
-        icon: '⏳', 
-        label: lastScore.toFixed(1), 
+      return {
+        status: 'needs-work',
+        icon: '⏳',
+        label: lastScore.toFixed(1),
         color: '#FF9800' // naranja
       };
     }
@@ -456,7 +462,7 @@ export default function Actividades() {
       const status = getArtefactoStatus(rubricId);
       return status.icon !== '';
     }).length;
-  
+
   const progresoGeneral = Math.round((artefactosCompletados / 5) * 100);
 
   return (
@@ -466,9 +472,9 @@ export default function Actividades() {
           <span>📝</span>
           Actividades de Literacidad Crítica
           {artefactosCompletados > 0 && (
-            <span style={{ 
-              fontSize: '0.85rem', 
-              fontWeight: 500, 
+            <span style={{
+              fontSize: '0.85rem',
+              fontWeight: 500,
               marginLeft: '0.75rem',
               color: theme.success,
               opacity: 0.9
@@ -496,8 +502,8 @@ export default function Actividades() {
       {/* Navegación por pestañas - ORDEN PEDAGÓGICO ÓPTIMO */}
       <TabsContainer>
         {/* 1️⃣ PRIMERO: Preparación obligatoria */}
-        <Tab 
-          $active={activeSection === 'preparacion'} 
+        <Tab
+          $active={activeSection === 'preparacion'}
           onClick={() => setActiveSection('preparacion')}
           theme={theme}
         >
@@ -505,14 +511,24 @@ export default function Actividades() {
           Preparación
           {preparacionCompletada && ' ✅'}
         </Tab>
-        
+
+        {/* 🎮 Práctica guiada (sin bloqueo) */}
+        <Tab
+          $active={activeSection === 'practica'}
+          onClick={() => setActiveSection('practica')}
+          theme={theme}
+        >
+          <span>🎮</span>
+          Práctica
+        </Tab>
+
         {/* 2️⃣-6️⃣ LUEGO: Artefactos de las 5 rúbricas (bloqueados hasta completar preparación) */}
-        <Tab 
-          $active={activeSection === 'resumen'} 
+        <Tab
+          $active={activeSection === 'resumen'}
           onClick={() => preparacionCompletada && setActiveSection('resumen')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{ 
+          style={{
             opacity: preparacionCompletada ? 1 : 0.5,
             cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
           }}
@@ -527,12 +543,12 @@ export default function Actividades() {
             </StatusBadge>
           )}
         </Tab>
-        <Tab 
-          $active={activeSection === 'tabla-acd'} 
+        <Tab
+          $active={activeSection === 'tabla-acd'}
           onClick={() => preparacionCompletada && setActiveSection('tabla-acd')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{ 
+          style={{
             opacity: preparacionCompletada ? 1 : 0.5,
             cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
           }}
@@ -540,19 +556,19 @@ export default function Actividades() {
           <span>🔍</span>
           Análisis del Discurso
           <EstimatedTimeBadge minutes={18} theme={theme} compact />
-          {!preparacionCompletada && ' 🔒'}}
+          {!preparacionCompletada && ' 🔒'}
           {getArtefactoStatus('rubrica2').icon && preparacionCompletada && (
             <StatusBadge $status={getArtefactoStatus('rubrica2').status} $color={getArtefactoStatus('rubrica2').color}>
               {getArtefactoStatus('rubrica2').icon} {getArtefactoStatus('rubrica2').label}
             </StatusBadge>
           )}
         </Tab>
-        <Tab 
-          $active={activeSection === 'mapa-actores'} 
+        <Tab
+          $active={activeSection === 'mapa-actores'}
           onClick={() => preparacionCompletada && setActiveSection('mapa-actores')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{ 
+          style={{
             opacity: preparacionCompletada ? 1 : 0.5,
             cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
           }}
@@ -560,19 +576,19 @@ export default function Actividades() {
           <span>🗺️</span>
           Mapa de Actores
           <EstimatedTimeBadge minutes={12} theme={theme} compact />
-          {!preparacionCompletada && ' 🔒'}}
+          {!preparacionCompletada && ' 🔒'}
           {getArtefactoStatus('rubrica3').icon && preparacionCompletada && (
             <StatusBadge $status={getArtefactoStatus('rubrica3').status} $color={getArtefactoStatus('rubrica3').color}>
               {getArtefactoStatus('rubrica3').icon} {getArtefactoStatus('rubrica3').label}
             </StatusBadge>
           )}
         </Tab>
-        <Tab 
-          $active={activeSection === 'respuesta-argumentativa'} 
+        <Tab
+          $active={activeSection === 'respuesta-argumentativa'}
           onClick={() => preparacionCompletada && setActiveSection('respuesta-argumentativa')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{ 
+          style={{
             opacity: preparacionCompletada ? 1 : 0.5,
             cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
           }}
@@ -580,19 +596,19 @@ export default function Actividades() {
           <span>💭</span>
           Respuesta Argumentativa
           <EstimatedTimeBadge minutes={20} theme={theme} compact />
-          {!preparacionCompletada && ' 🔒'}}
+          {!preparacionCompletada && ' 🔒'}
           {getArtefactoStatus('rubrica4').icon && preparacionCompletada && (
             <StatusBadge $status={getArtefactoStatus('rubrica4').status} $color={getArtefactoStatus('rubrica4').color}>
               {getArtefactoStatus('rubrica4').icon} {getArtefactoStatus('rubrica4').label}
             </StatusBadge>
           )}
         </Tab>
-        <Tab 
-          $active={activeSection === 'bitacora-etica'} 
+        <Tab
+          $active={activeSection === 'bitacora-etica'}
           onClick={() => preparacionCompletada && setActiveSection('bitacora-etica')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{ 
+          style={{
             opacity: preparacionCompletada ? 1 : 0.5,
             cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
           }}
@@ -600,17 +616,17 @@ export default function Actividades() {
           <span>🤖</span>
           Bitácora Ética IA
           <EstimatedTimeBadge minutes={10} theme={theme} compact />
-          {!preparacionCompletada && ' 🔒'}}
+          {!preparacionCompletada && ' 🔒'}
           {getArtefactoStatus('rubrica5').icon && preparacionCompletada && (
             <StatusBadge $status={getArtefactoStatus('rubrica5').status} $color={getArtefactoStatus('rubrica5').color}>
               {getArtefactoStatus('rubrica5').icon} {getArtefactoStatus('rubrica5').label}
             </StatusBadge>
           )}
         </Tab>
-        
+
         {/* 7️⃣ DESPUÉS: Metacognición y progreso */}
-        <Tab 
-          $active={activeSection === 'progreso'} 
+        <Tab
+          $active={activeSection === 'progreso'}
           onClick={() => setActiveSection('progreso')}
           theme={theme}
         >
@@ -635,15 +651,15 @@ export default function Actividades() {
                 <LoadingText theme={theme}>📚 Cargando Resumen Académico...</LoadingText>
               </LoadingFallback>
             }>
-              <ErrorBoundary 
-                theme={theme} 
+              <ErrorBoundary
+                theme={theme}
                 componentName="Resumen Académico"
                 onReset={() => console.log('🔄 Reseteando Resumen Académico')}
               >
                 <ResumenAcademico theme={theme} />
               </ErrorBoundary>
             </Suspense>
-            
+
             {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso */}
             <NextStepCard
               icon="🔍"
@@ -671,15 +687,15 @@ export default function Actividades() {
                 <LoadingText theme={theme}>🔍 Cargando Tabla ACD...</LoadingText>
               </LoadingFallback>
             }>
-              <ErrorBoundary 
-                theme={theme} 
+              <ErrorBoundary
+                theme={theme}
                 componentName="Tabla ACD"
                 onReset={() => console.log('🔄 Reseteando Tabla ACD')}
               >
                 <TablaACD theme={theme} />
               </ErrorBoundary>
             </Suspense>
-            
+
             {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso */}
             <NextStepCard
               icon="🗺️"
@@ -707,15 +723,15 @@ export default function Actividades() {
                 <LoadingText theme={theme}>🗺️ Cargando Mapa de Actores...</LoadingText>
               </LoadingFallback>
             }>
-              <ErrorBoundary 
-                theme={theme} 
+              <ErrorBoundary
+                theme={theme}
                 componentName="Mapa de Actores"
                 onReset={() => console.log('🔄 Reseteando Mapa de Actores')}
               >
                 <MapaActores theme={theme} />
               </ErrorBoundary>
             </Suspense>
-            
+
             {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso */}
             <NextStepCard
               icon="💭"
@@ -743,15 +759,15 @@ export default function Actividades() {
                 <LoadingText theme={theme}>💭 Cargando Respuesta Argumentativa...</LoadingText>
               </LoadingFallback>
             }>
-              <ErrorBoundary 
-                theme={theme} 
+              <ErrorBoundary
+                theme={theme}
                 componentName="Respuesta Argumentativa"
                 onReset={() => console.log('🔄 Reseteando Respuesta Argumentativa')}
               >
                 <RespuestaArgumentativa theme={theme} />
               </ErrorBoundary>
             </Suspense>
-            
+
             {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso */}
             <NextStepCard
               icon="🤖"
@@ -779,15 +795,15 @@ export default function Actividades() {
                 <LoadingText theme={theme}>🤖 Cargando Bitácora Ética IA...</LoadingText>
               </LoadingFallback>
             }>
-              <ErrorBoundary 
-                theme={theme} 
+              <ErrorBoundary
+                theme={theme}
                 componentName="Bitácora Ética IA"
                 onReset={() => console.log('🔄 Reseteando Bitácora Ética')}
               >
                 <BitacoraEticaIA />
               </ErrorBoundary>
             </Suspense>
-            
+
             {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso según flujo pedagógico */}
             <NextStepCard
               icon="�"
@@ -800,7 +816,7 @@ export default function Actividades() {
             />
           </motion.div>
         )}
-        
+
         {activeSection === 'preparacion' && (
           <motion.div
             key="preparacion"
@@ -810,7 +826,7 @@ export default function Actividades() {
             transition={{ duration: 0.3 }}
           >
             <PreguntasPersonalizadas theme={theme} />
-            
+
             {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso (solo si completó preparación) */}
             {preparacionCompletada && (
               <NextStepCard
@@ -823,6 +839,18 @@ export default function Actividades() {
                 variant="primary"
               />
             )}
+          </motion.div>
+        )}
+
+        {activeSection === 'practica' && (
+          <motion.div
+            key="practica"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            <ModoPracticaGuiada theme={theme} rubricProgress={rubricProgress} />
           </motion.div>
         )}
 
@@ -851,7 +879,7 @@ export default function Actividades() {
                       'rubrica4': 'respuesta-argumentativa',
                       'rubrica5': 'bitacora-etica'
                     };
-                    
+
                     const targetSection = rubricToSection[rubricId];
                     if (targetSection) {
                       console.log(`📍 Navegando a artefacto: ${targetSection}`);
@@ -859,16 +887,16 @@ export default function Actividades() {
                     }
                   }}
                 />
-                
+
                 {/* 💡 Ayuda para el usuario */}
-                <p style={{ 
-                  marginTop: '1rem', 
+                <p style={{
+                  marginTop: '1rem',
                   padding: '0.75rem 1rem',
                   background: theme.primary + '10',
                   border: `1px solid ${theme.primary}40`,
                   borderRadius: '8px',
-                  color: theme.textSecondary, 
-                  fontSize: '0.85rem', 
+                  color: theme.textSecondary,
+                  fontSize: '0.85rem',
                   lineHeight: 1.5,
                   display: 'flex',
                   alignItems: 'center',
@@ -879,19 +907,9 @@ export default function Actividades() {
                     <strong>Tip:</strong> Haz clic en cualquier tarjeta de rúbrica para ir directamente al artefacto correspondiente y revisarlo o mejorarlo.
                   </span>
                 </p>
-                
-                {/* 🆕 Botones de gestión de progreso */}
-                <ProgressActionsBar theme={theme}>
-                  <ResetButton
-                    $variant="danger"
-                    onClick={() => setShowResetConfirm(true)}
-                    disabled={!rubricProgress || Object.values(rubricProgress).every(r => r.scores.length === 0)}
-                    title="Resetear todo el progreso"
-                  >
-                    <span>🗑️</span>
-                    Resetear Todo el Progreso
-                  </ResetButton>
-                </ProgressActionsBar>
+
+                {/* 📈 Gráficas de progreso (dashboard analítico) */}
+                <AnalyticsPanel rubricProgress={rubricProgress} theme={theme} />
               </Section>
 
               <Section theme={theme}>
@@ -899,19 +917,19 @@ export default function Actividades() {
                   <span>📊</span>
                   Mi Progreso Detallado
                 </SectionTitle>
-                
+
                 {/* Panel de Estadísticas de Progreso */}
                 <ProgressStats rubricProgress={rubricProgress} />
-                
+
                 {/* Botones de Exportación */}
-                <div style={{ 
+                <div style={{
                   marginTop: '1.5rem',
                   padding: '1.25rem',
                   background: theme.surface,
                   border: `1px solid ${theme.border}`,
                   borderRadius: '12px'
                 }}>
-                  <h4 style={{ 
+                  <h4 style={{
                     margin: '0 0 0.75rem 0',
                     fontSize: '1.1rem',
                     color: theme.textPrimary,
@@ -922,7 +940,7 @@ export default function Actividades() {
                     <span>📥</span>
                     Exportar Datos de Progreso
                   </h4>
-                  <p style={{ 
+                  <p style={{
                     margin: '0 0 1rem 0',
                     color: theme.textSecondary,
                     fontSize: '0.9rem',
@@ -930,7 +948,7 @@ export default function Actividades() {
                   }}>
                     Descarga tu progreso completo en formato estructurado:
                   </p>
-                  <ul style={{ 
+                  <ul style={{
                     margin: '0 0 1rem 1.5rem',
                     color: theme.textSecondary,
                     fontSize: '0.85rem',
@@ -939,7 +957,7 @@ export default function Actividades() {
                     <li><strong>CSV:</strong> Ideal para Excel, análisis estadístico y gráficos. Cada fila es una evaluación con fecha, puntuación y nivel.</li>
                     <li><strong>JSON:</strong> Formato estructurado con resumen general, historial completo y criterios detallados por artefacto.</li>
                   </ul>
-                  <p style={{ 
+                  <p style={{
                     margin: '0 0 1rem 0',
                     color: theme.textSecondary,
                     fontSize: '0.8rem',
@@ -947,18 +965,39 @@ export default function Actividades() {
                   }}>
                     💡 Útil para portafolios académicos, seguimiento docente o análisis de progreso personal.
                   </p>
-                  <ExportProgressButton 
+                  <ExportProgressButton
                     rubricProgress={rubricProgress}
                     documentId={documentId}
                     studentName="estudiante"
+                    tutorInteractions={globalTutorInteractions}
+                    savedCitations={getCitations ? getCitations(lectureId) : []}
+                    lectureId={lectureId}
                   />
                 </div>
+
+                {/* 🆕 Botón crítico: al final */}
+                <ProgressActionsBar theme={theme}>
+                  <ResetButton
+                    $variant="danger"
+                    onClick={() => setShowResetConfirm(true)}
+                    disabled={!rubricProgress || Object.values(rubricProgress).every(r => {
+                      const formativeCount = r?.scores?.length || 0;
+                      const summativeScore = Number(r?.summative?.score);
+                      const hasSummative = r?.summative?.status === 'graded' && Number.isFinite(summativeScore) && summativeScore > 0;
+                      return formativeCount === 0 && !hasSummative;
+                    })}
+                    title="Resetear todo el progreso"
+                  >
+                    <span>🗑️</span>
+                    Resetear Todo el Progreso
+                  </ResetButton>
+                </ProgressActionsBar>
               </Section>
             </Wrapper>
           </motion.div>
         )}
       </AnimatePresence>
-      
+
       {/* 🆕 Diálogo de confirmación de reseteo */}
       {showResetConfirm && (
         <ConfirmDialog onClick={() => setShowResetConfirm(false)}>
@@ -968,13 +1007,13 @@ export default function Actividades() {
               ¿Resetear todo el progreso?
             </ConfirmTitle>
             <ConfirmText theme={theme}>
-              Esta acción eliminará <strong>todas las evaluaciones y puntuaciones</strong> de las 5 rúbricas de literacidad crítica. 
+              Esta acción eliminará <strong>todas las evaluaciones y puntuaciones</strong> de las 5 rúbricas de literacidad crítica.
               Los artefactos creados (textos, tablas, mapas, etc.) <strong>no se borrarán</strong>, pero sus puntuaciones sí.
               <br /><br />
               Esta acción <strong>no se puede deshacer</strong>.
             </ConfirmText>
             <ConfirmActions>
-              <ResetButtonSecondary 
+              <ResetButtonSecondary
                 onClick={() => setShowResetConfirm(false)}
                 theme={theme}
               >

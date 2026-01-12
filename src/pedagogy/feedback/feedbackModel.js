@@ -5,9 +5,7 @@
 
 import { RUBRIC, normalizeDimensionInput, summarizeEvaluation } from '../rubrics/criticalLiteracyRubric.js';
 // Reutilizamos scheduler para derivar items de repaso a partir del feedback (aprendizaje espaciado)
-// scheduler es CommonJS, usamos require para interoperar.
-// eslint-disable-next-line
-const { createStudyItem } = require('../spaced/scheduler');
+import { createStudyItem } from '../spaced/scheduler';
 
 export const FEEDBACK_MODEL_VERSION = 1;
 

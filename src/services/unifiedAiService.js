@@ -3,9 +3,10 @@
 
 import { fetchWithTimeout } from '../utils/netUtils';
 import { getBackendUrl } from '../utils/backendUtils';
+import { CHAT_TIMEOUT_MS, NETWORK_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 const defaultModels = {
-  openai: 'gpt-3.5-turbo',
+  openai: 'gpt-4o-mini',
   deepseek: 'deepseek-chat',
   gemini: 'gemini-pro'
 };
@@ -31,7 +32,7 @@ export async function chatCompletion({
   temperature = 0.7,
   max_tokens = 800,
   signal,
-  timeoutMs = 45000  // Aumentado a 45s para llamadas complejas (antes 30s)
+  timeoutMs = CHAT_TIMEOUT_MS  // 🆕 A5 FIX: Usar constante unificada
 }) {
   const url = `${getBackendUrl()}/api/chat/completion`;
   const payload = {
@@ -67,7 +68,7 @@ export async function chatCompletion({
  * @param {Number} [opts.timeoutMs=20000]
  * @returns {Promise<Object>} JSON de análisis
  */
-export async function analyzeText({ texto, api = 'deepseek', extra = {}, signal, timeoutMs = 20000 }) {
+export async function analyzeText({ texto, api = 'deepseek', extra = {}, signal, timeoutMs = NETWORK_TIMEOUT_MS }) {  // 🆕 A5 FIX
   const url = `${getBackendUrl()}/api/analysis/text`;
   const res = await fetchWithTimeout(url, {
     method: 'POST',
@@ -92,21 +93,21 @@ export function extractContent(json) {
   if (json?.choices?.[0]?.message?.content) {
     return json.choices[0].message.content;
   }
-  
+
   // Formato simplificado del backend (retorna directamente { content: "..." })
   if (json?.content) {
     return json.content;
   }
-  
+
   // Otros formatos posibles
   if (json?.message) {
     return json.message;
   }
-  
+
   if (json?.result) {
     return json.result;
   }
-  
+
   return undefined;
 }
 
@@ -126,7 +127,7 @@ export function parseJSONFromContent(content) {
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) {
-      try { return JSON.parse(match[0]); } catch {}
+      try { return JSON.parse(match[0]); } catch { }
     }
     return null;
   }

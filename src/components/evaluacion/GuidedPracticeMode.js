@@ -2,7 +2,6 @@
 import React, { useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import HintsSystem from './HintsSystem';
 import {
   DIFFICULTY_LEVELS,
   generatePracticePlan,
@@ -354,9 +353,12 @@ const GuidedPracticeMode = ({
   }, [selectedDimension, selectedDifficulty]);
   
   const handleStartPractice = () => {
+    const difficulty = selectedDifficulty || currentLevel.id;
     if (onStartPractice) {
       onStartPractice({
-        difficulty: selectedDifficulty || currentLevel.id,
+        practiceId: `${selectedDimension || 'no-dim'}:${difficulty}:${Date.now()}`,
+        dimension: selectedDimension || null,
+        difficulty,
         hints: availableHints,
         level: selectedDifficulty ? DIFFICULTY_LEVELS[selectedDifficulty.toUpperCase()] : currentLevel
       });

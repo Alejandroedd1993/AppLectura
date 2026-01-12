@@ -10,16 +10,16 @@
  */
 export function simpleHash(obj) {
   if (!obj) return '0';
-  
+
   const str = JSON.stringify(obj, Object.keys(obj).sort());
   let hash = 0;
-  
+
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
     hash = hash & hash; // Convert to 32bit integer
   }
-  
+
   return Math.abs(hash).toString(16);
 }
 
@@ -30,12 +30,12 @@ export function simpleHash(obj) {
  */
 export function getSessionContentHash(session) {
   if (!session) return '0';
-  
+
   // Extraer solo datos relevantes (sin timestamps)
   const contentData = {
     text: session.text?.content?.substring(0, 10000) || '', // Primeros 10KB
     analysisId: session.completeAnalysis?.metadata?.document_id || null,
-    rubricScores: session.rubricProgress ? 
+    rubricScores: session.rubricProgress ?
       Object.keys(session.rubricProgress).reduce((acc, key) => {
         acc[key] = session.rubricProgress[key].scores?.length || 0;
         return acc;
@@ -51,7 +51,7 @@ export function getSessionContentHash(session) {
         return acc;
       }, {}) : {}
   };
-  
+
   return simpleHash(contentData);
 }
 
@@ -63,21 +63,21 @@ export function getSessionContentHash(session) {
  */
 export function compareSessionContent(session1, session2) {
   const differences = [];
-  
+
   // Comparar texto
   const text1 = session1.text?.content || '';
   const text2 = session2.text?.content || '';
   if (text1 !== text2) {
     differences.push('text_content');
   }
-  
+
   // Comparar análisis
   const analysis1Id = session1.completeAnalysis?.metadata?.document_id;
   const analysis2Id = session2.completeAnalysis?.metadata?.document_id;
   if (analysis1Id !== analysis2Id) {
     differences.push('analysis');
   }
-  
+
   // Comparar progreso de rúbricas
   const rubric1Keys = Object.keys(session1.rubricProgress || {}).sort();
   const rubric2Keys = Object.keys(session2.rubricProgress || {}).sort();
@@ -93,7 +93,7 @@ export function compareSessionContent(session1, session2) {
       }
     }
   }
-  
+
   // Comparar actividades
   const act1Keys = Object.keys(session1.activitiesProgress || {}).sort();
   const act2Keys = Object.keys(session2.activitiesProgress || {}).sort();
@@ -108,7 +108,7 @@ export function compareSessionContent(session1, session2) {
       }
     }
   }
-  
+
   // Comparar citas
   const cit1Keys = Object.keys(session1.savedCitations || {}).sort();
   const cit2Keys = Object.keys(session2.savedCitations || {}).sort();
@@ -123,7 +123,7 @@ export function compareSessionContent(session1, session2) {
       }
     }
   }
-  
+
   return {
     isDifferent: differences.length > 0,
     differences
@@ -138,44 +138,46 @@ export function compareSessionContent(session1, session2) {
  */
 export function mergeSessionsWithConflictResolution(local, cloud) {
   const comparison = compareSessionContent(local, cloud);
-  
+
   if (!comparison.isDifferent) {
     // Sin diferencias, usar la más reciente
     const localTime = new Date(local.lastModified || local.createdAt).getTime();
     const cloudTime = new Date(cloud.lastModified || cloud.createdAt).getTime();
-    
+
     return localTime > cloudTime ? local : cloud;
   }
-  
+
   // Hay diferencias, estrategia de merge campo por campo
   console.log('⚠️ [SessionHash] Conflicto detectado, mergeando:', comparison.differences);
-  
+
   const merged = {
     ...cloud, // Base: versión cloud
     id: local.id,
-    localSessionId: local.id
+    localSessionId: local.id,
+    // 🆕 CRÍTICO: Preservar sourceCourseId si existe en cualquiera de las versiones
+    sourceCourseId: local.sourceCourseId || cloud.sourceCourseId || null
   };
-  
+
   // Preferir timestamps más recientes
   const localTime = new Date(local.lastModified || local.createdAt).getTime();
   const cloudTime = new Date(cloud.lastModified || cloud.createdAt).getTime();
-  
+
   if (localTime > cloudTime) {
     merged.lastModified = local.lastModified;
   }
-  
+
   // MERGE DE TEXTO: Preferir el más largo (asumiendo que es más completo)
   if (comparison.differences.includes('text_content')) {
     const localLen = local.text?.content?.length || 0;
     const cloudLen = cloud.text?.content?.length || 0;
     merged.text = localLen > cloudLen ? local.text : cloud.text;
   }
-  
+
   // MERGE DE ANÁLISIS: Preferir el que existe
   if (comparison.differences.includes('analysis')) {
     merged.completeAnalysis = local.completeAnalysis || cloud.completeAnalysis;
   }
-  
+
   // MERGE DE RÚBRICAS: Combinar scores (union)
   if (comparison.differences.some(d => d.startsWith('rubric'))) {
     merged.rubricProgress = {};
@@ -183,23 +185,23 @@ export function mergeSessionsWithConflictResolution(local, cloud) {
       ...Object.keys(local.rubricProgress || {}),
       ...Object.keys(cloud.rubricProgress || {})
     ]);
-    
+
     allRubricKeys.forEach(rubricId => {
       const localScores = local.rubricProgress?.[rubricId]?.scores || [];
       const cloudScores = cloud.rubricProgress?.[rubricId]?.scores || [];
-      
+
       // Combinar scores por timestamp (deduplicar)
       const allScores = [...localScores, ...cloudScores];
       const uniqueScores = allScores.filter((score, index, self) =>
         index === self.findIndex(s => s.timestamp === score.timestamp)
       ).sort((a, b) => a.timestamp - b.timestamp);
-      
+
       // Recalcular promedio
       const recentScores = uniqueScores.slice(-3);
       const average = recentScores.length > 0
         ? recentScores.reduce((sum, s) => sum + s.score, 0) / recentScores.length
         : 0;
-      
+
       merged.rubricProgress[rubricId] = {
         scores: uniqueScores,
         average: Math.round(average * 10) / 10,
@@ -211,7 +213,7 @@ export function mergeSessionsWithConflictResolution(local, cloud) {
       };
     });
   }
-  
+
   // MERGE DE ACTIVIDADES: Preferir "completado" si alguna versión lo tiene
   if (comparison.differences.some(d => d.startsWith('activity'))) {
     merged.activitiesProgress = {};
@@ -219,11 +221,11 @@ export function mergeSessionsWithConflictResolution(local, cloud) {
       ...Object.keys(local.activitiesProgress || {}),
       ...Object.keys(cloud.activitiesProgress || {})
     ]);
-    
+
     allDocIds.forEach(docId => {
       const localPrep = local.activitiesProgress?.[docId]?.preparation;
       const cloudPrep = cloud.activitiesProgress?.[docId]?.preparation;
-      
+
       merged.activitiesProgress[docId] = {
         preparation: {
           mcqPassed: localPrep?.mcqPassed || cloudPrep?.mcqPassed || false,
@@ -238,7 +240,7 @@ export function mergeSessionsWithConflictResolution(local, cloud) {
       };
     });
   }
-  
+
   // MERGE DE CITAS: Union
   if (comparison.differences.some(d => d.startsWith('citations'))) {
     merged.savedCitations = {};
@@ -246,24 +248,30 @@ export function mergeSessionsWithConflictResolution(local, cloud) {
       ...Object.keys(local.savedCitations || {}),
       ...Object.keys(cloud.savedCitations || {})
     ]);
-    
+
     allCitDocIds.forEach(docId => {
       const localCits = local.savedCitations?.[docId] || [];
       const cloudCits = cloud.savedCitations?.[docId] || [];
-      
+
       // Combinar y deduplicar por ID
       const allCits = [...localCits, ...cloudCits];
       const uniqueCits = allCits.filter((cit, index, self) =>
         index === self.findIndex(c => c.id === cit.id)
       );
-      
+
       merged.savedCitations[docId] = uniqueCits;
     });
   }
-  
+
+  // 🆕 FASE 4: rewardsState NO se mergea a nivel de sesiones (es global)
+
   // Marcar como merged
   merged.syncStatus = 'merged';
   merged.mergedAt = Date.now();
-  
+
+  // 🆕 CRÍTICO: Asegurar que currentTextoId también se preserve
+  merged.currentTextoId = local.currentTextoId || local.text?.metadata?.id ||
+    cloud.currentTextoId || cloud.text?.metadata?.id || null;
+
   return merged;
 }

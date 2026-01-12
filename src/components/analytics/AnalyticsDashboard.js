@@ -12,10 +12,9 @@
 
 import React, { useState, useMemo } from 'react';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  LineChart, Line, BarChart, Bar, 
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
+  BarChart, Bar, 
+  XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Area, AreaChart 
 } from 'recharts';
 

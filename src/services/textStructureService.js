@@ -17,10 +17,10 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001'
 export async function analyzeTextStructure(text, options = {}) {
   const {
     maxLength = 15000, // REDUCIDO: Limitar a 15K para análisis rápido
-    detectSections = true,
-    detectEmphasis = true,
-    detectLists = true,
-    language = 'es',
+    detectSections: _detectSections = true,
+    detectEmphasis: _detectEmphasis = true,
+    detectLists: _detectLists = true,
+    language: _language = 'es',
     timeout = 30000 // 30 segundos timeout
   } = options;
 

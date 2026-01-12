@@ -4,16 +4,14 @@ import styled from 'styled-components';
 
 // Componentes y utilidades
 import { AppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { lightTheme, darkTheme } from '../styles/theme';
-import { validarArchivo, extraerMetadatosBasicos } from '../utils/validarArchivo';
-import { estimarTiemposProcesamiento } from '../utils/textUtils';
 import { procesarArchivo } from '../utils/fileProcessor';
-import useOptimizedFileCache from '../hooks/useOptimizedFileCache';
 import { checkBackendAvailability, processPdfWithBackend } from '../utils/backendUtils';
 import { checkUnsaveDrafts, getWarningMessage } from '../utils/checkUnsaveDrafts';
+import { hashText } from '../utils/netUtils';
 
 // Componentes de UI
-import FileDropZone from '../components/FileDropZone';
 import AlertMessage from '../components/AlertMessage';
 import SessionsHistory from './common/SessionsHistory';
 
@@ -215,13 +213,13 @@ const StatusItem = styled.div`
 `;
 
 function CargaTexto() {
-  const { 
-    setTexto, 
-    texto, 
-    loading, 
-    setLoading, 
-    error, 
-    setError, 
+  const {
+    setTexto,
+    texto,
+    loading,
+    setLoading,
+    error,
+    setError,
     modoOscuro,
     archivoActual,
     setArchivoActual,
@@ -230,65 +228,63 @@ function CargaTexto() {
     analyzeDocument,
     setCompleteAnalysis,
     // NUEVO: Función para crear sesiones
-    createSession
+    createSession: _createSession,
+    currentTextoId,
+    rubricProgress,
+    activitiesProgress, // 🆕 FASE 4: Para verificar artefactos ya entregados
+    switchLecture
   } = useContext(AppContext);
-  
+
+  const { isDocente } = useAuth();
+
   const theme = modoOscuro ? darkTheme : lightTheme;
-  
+
   // Estados locales
   const [archivoSeleccionado, setArchivoSeleccionado] = useState(null);
   const [archivoFuente, setArchivoFuente] = useState(null); // File original para generar ObjectURL
   const [textoIngresado, setTextoIngresado] = useState('');
   const [isDragActive, setIsDragActive] = useState(false);
   const [procesando, setProcesando] = useState(false);
-  
-  // Hook para caché de archivos OPTIMIZADO
-  const { 
-    obtenerDeCache, 
-    guardarEnCache, 
-    limpiarCache, 
-    cacheStats 
-  } = useOptimizedFileCache();
 
   // Manejar selección de archivo
   const handleFileSelect = useCallback(async (file) => {
     console.log('🔍 Iniciando procesamiento de archivo:', file.name, file.type, file.size);
     setError('');
     setProcesando(true);
-    
+
     try {
       // Validar archivo básico
       if (!file) {
         throw new Error('No se seleccionó ningún archivo');
       }
-      
+
       if (file.size > 10 * 1024 * 1024) { // 10MB
         throw new Error('El archivo es demasiado grande (máximo 10MB)');
       }
-      
+
       const fileName = file.name.toLowerCase();
-      const isValidType = fileName.endsWith('.txt') || 
-                         fileName.endsWith('.pdf') || 
-                         fileName.endsWith('.docx') ||
-                         file.type === 'text/plain' ||
-                         file.type === 'application/pdf' ||
-                         file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      
+      const isValidType = fileName.endsWith('.txt') ||
+        fileName.endsWith('.pdf') ||
+        fileName.endsWith('.docx') ||
+        file.type === 'text/plain' ||
+        file.type === 'application/pdf' ||
+        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
       if (!isValidType) {
         throw new Error('Formato de archivo no soportado. Use TXT, PDF o DOCX');
       }
-      
+
       console.log('📋 Validación básica completada');
-      
+
       let contenido = '';
-      
+
       // Procesar según el tipo de archivo
       if (fileName.endsWith('.txt') || file.type === 'text/plain') {
         console.log('📝 Procesando archivo TXT...');
         contenido = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target.result);
-          reader.onerror = (e) => reject(new Error('Error al leer el archivo'));
+          reader.onerror = () => reject(new Error('Error al leer el archivo'));
           reader.readAsText(file);
         });
       } else if (fileName.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
@@ -305,7 +301,7 @@ function CargaTexto() {
         console.log('📕 Procesando archivo PDF...');
         // Verificar si el backend está disponible
         const isBackendAvailable = await checkBackendAvailability();
-        
+
         if (!isBackendAvailable) {
           console.warn('🔄 Backend no disponible, usando procesamiento con fallback');
           // En lugar de lanzar un error, usar el procesador con fallback
@@ -315,7 +311,7 @@ function CargaTexto() {
               console.log('📊 Progreso:', progress.message || progress);
             }
           });
-          
+
           // result puede ser string o { text, structure, hasStructure }
           if (typeof result === 'object' && result.text) {
             contenido = result.text;
@@ -332,7 +328,7 @@ function CargaTexto() {
             if (!pdfText || pdfText.trim().length === 0) {
               throw new Error('No se pudo extraer texto del PDF. El archivo puede estar vacío o contener solo imágenes.');
             }
-            
+
             // Analizar estructura del texto extraído
             console.log('🤖 Analizando estructura del PDF con IA...');
             const result = await procesarArchivo(file, {
@@ -341,7 +337,7 @@ function CargaTexto() {
                 console.log('📊 Progreso:', progress.message || progress);
               }
             });
-            
+
             if (typeof result === 'object' && result.text) {
               contenido = result.text;
               if (result.hasStructure && result.structure) {
@@ -360,7 +356,7 @@ function CargaTexto() {
                 console.log('📊 Progreso:', progress.message || progress);
               }
             });
-            
+
             if (typeof result === 'object' && result.text) {
               contenido = result.text;
               if (result.hasStructure && result.structure) {
@@ -375,13 +371,13 @@ function CargaTexto() {
       } else {
         throw new Error('Formato no soportado. Use archivos TXT, DOCX o PDF.');
       }
-      
+
       if (!contenido || contenido.trim().length === 0) {
         throw new Error('El archivo está vacío o no se pudo leer el contenido');
       }
-      
+
       console.log('� Contenido extraído:', contenido.length, 'caracteres');
-      
+
       // Crear metadatos básicos
       const words = contenido.split(/\s+/).filter(word => word.length > 0).length;
       const metadatos = {
@@ -389,9 +385,9 @@ function CargaTexto() {
         caracteres: contenido.length,
         tiempoLectura: Math.ceil(words / 200)
       };
-      
+
       console.log('📊 Metadatos calculados:', metadatos);
-      
+
       const fileData = {
         name: file.name,
         size: file.size,
@@ -399,11 +395,11 @@ function CargaTexto() {
         contenido: contenido,
         metadatos: metadatos
       };
-      
+
       console.log('✅ Archivo procesado exitosamente, estableciendo en estado');
       setArchivoSeleccionado(fileData);
       setArchivoFuente(file);
-      
+
     } catch (err) {
       console.error('❌ Error procesando archivo:', err);
       setError(err.message || 'Error al procesar el archivo');
@@ -416,7 +412,7 @@ function CargaTexto() {
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setIsDragActive(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
     console.log('📂 Archivos dropeados:', files.length, files);
     if (files.length > 0) {
@@ -438,19 +434,19 @@ function CargaTexto() {
   // Manejar envío
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    
-    // 🆕 Verificar si hay borradores sin evaluar antes de cargar nuevo texto
-    const { hasDrafts } = checkUnsaveDrafts();
+
+    // 🆕 Verificar si hay borradores sin evaluar antes de cargar nuevo texto (FASE 4: también considera activitiesProgress)
+    const { hasDrafts } = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress);
     if (hasDrafts && texto) {
-      const warningMessage = getWarningMessage();
+      const warningMessage = getWarningMessage(currentTextoId, rubricProgress, activitiesProgress);
       const confirmed = window.confirm(warningMessage);
-      
+
       if (!confirmed) {
         console.log('❌ [CargaTexto] Carga cancelada por el usuario');
         return;
       }
     }
-    
+
     console.log('handleSubmit ejecutado - Estado:', {
       archivoSeleccionado: !!archivoSeleccionado,
       contenidoArchivo: !!archivoSeleccionado?.contenido,
@@ -459,13 +455,13 @@ function CargaTexto() {
       loading,
       error
     });
-    
+
     setError('');
     setLoading(true);
 
     try {
       let contenidoFinal = '';
-      
+
       if (archivoSeleccionado?.contenido) {
         contenidoFinal = archivoSeleccionado.contenido;
         console.log('Usando contenido del archivo');
@@ -477,31 +473,49 @@ function CargaTexto() {
       }
 
       console.log('Estableciendo texto en contexto:', contenidoFinal.substring(0, 100) + '...');
-      setTexto(contenidoFinal);
-      
-      // IMPORTANTE: Limpiar análisis anterior antes de empezar uno nuevo
-      console.log('🧹 [CargaTexto] Limpiando análisis anterior...');
-      if (setCompleteAnalysis && typeof setCompleteAnalysis === 'function') {
-        setCompleteAnalysis(null);
+
+      // 🆕 FIX CRÍTICO: Asegurar nuevo textoId por carga para evitar reutilizar cache/lectura anterior
+      const sampleForId = contenidoFinal.length > 12000
+        ? (contenidoFinal.slice(0, 6000) + contenidoFinal.slice(-6000) + String(contenidoFinal.length))
+        : (contenidoFinal + String(contenidoFinal.length));
+      const newTextoId = `texto_${hashText(sampleForId)}_${contenidoFinal.length}`;
+
+      const derivedFileName = archivoFuente?.name || archivoSeleccionado?.name || null;
+      const derivedFileType = archivoFuente?.type || archivoSeleccionado?.type || null;
+
+      if (switchLecture && typeof switchLecture === 'function') {
+        console.log('🔁 [CargaTexto] switchLecture() con nuevo textoId:', newTextoId);
+        switchLecture({
+          id: newTextoId,
+          courseId: null,
+          content: contenidoFinal,
+          fileName: derivedFileName,
+          fileType: derivedFileType,
+          fileURL: null
+        });
+      } else {
+        // Fallback conservador
+        console.warn('⚠️ [CargaTexto] switchLecture no disponible; usando setters legacy');
+        setTexto(contenidoFinal);
       }
-      
+
       // NUEVO: Trigger automático de análisis completo (Pre-lectura + Análisis Crítico con RAG)
       console.log('🚀 [CargaTexto] Iniciando análisis automático del documento...');
       console.log('🔍 [CargaTexto] analyzeDocument disponible:', !!analyzeDocument);
       console.log('🔍 [CargaTexto] Tipo de analyzeDocument:', typeof analyzeDocument);
       console.log('🔍 [CargaTexto] Longitud del texto:', contenidoFinal.length);
-      
+
       if (analyzeDocument && typeof analyzeDocument === 'function') {
         // Ejecutar análisis en background (no bloqueante)
         console.log('✅ [CargaTexto] Llamando a analyzeDocument()...');
-        analyzeDocument(contenidoFinal)
+        analyzeDocument(contenidoFinal, newTextoId)
           .then(() => {
             console.log('✅ [CargaTexto] analyzeDocument completado exitosamente');
             // Cambiar a pestaña DESPUÉS de que el análisis complete
             setTimeout(() => {
               console.log('📖 [CargaTexto] Cambiando a pestaña de Lectura Guiada...');
-              window.dispatchEvent(new CustomEvent('app-change-tab', { 
-                detail: { tabId: 'lectura-guiada' } 
+              window.dispatchEvent(new CustomEvent('app-change-tab', {
+                detail: { tabId: 'lectura-guiada' }
               }));
             }, 500);
           })
@@ -513,7 +527,7 @@ function CargaTexto() {
       } else {
         console.warn('⚠️ [CargaTexto] analyzeDocument NO está disponible o no es función');
       }
-      
+
       // Guardar referencia del archivo original (especialmente PDF) para vista "Original"
       try {
         const previousObjectUrl = (archivoActual && typeof archivoActual === 'object') ? archivoActual.objectUrl : null;
@@ -544,21 +558,21 @@ function CargaTexto() {
         console.warn('No se pudo asignar archivoActual:', eSetFile);
         setArchivoActual(null);
       }
-      
+
       // Limpiar formulario (mantener archivoActual en contexto para visor)
       setArchivoSeleccionado(null);
       setArchivoFuente(null);
       setTextoIngresado('');
-      
+
       console.log('Análisis completado exitosamente');
-      
+
     } catch (err) {
       console.error('Error en handleSubmit:', err.message);
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [archivoSeleccionado, textoIngresado, setTexto, setLoading, setError]);
+  }, [archivoSeleccionado, textoIngresado, setTexto, setLoading, setError, analyzeDocument, switchLecture, currentTextoId, rubricProgress, texto, archivoFuente, setArchivoActual, archivoActual, setCompleteAnalysis, setTextStructure]);
 
   // Quitar archivo seleccionado
   const removeFile = useCallback(() => {
@@ -571,11 +585,11 @@ function CargaTexto() {
   const stats = React.useMemo(() => {
     const content = archivoSeleccionado?.contenido || textoIngresado;
     if (!content) return null;
-    
+
     const words = content.split(/\s+/).length;
     const chars = content.length;
     const readingTime = Math.ceil(words / 200); // ~200 palabras por minuto
-    
+
     return { words, chars, readingTime };
   }, [archivoSeleccionado?.contenido, textoIngresado]);
 
@@ -666,7 +680,7 @@ function CargaTexto() {
               onChange={(e) => setTextoIngresado(e.target.value)}
               disabled={loading || procesando}
             />
-            
+
           </>
         )}
 
@@ -729,8 +743,12 @@ function CargaTexto() {
         </StatusSection>
       )}
 
-      {/* Historial de Sesiones */}
-      <SessionsHistory theme={modoOscuro ? darkTheme : lightTheme} />
+
+      {/* Historial de Sesiones - Solo visible para docentes */}
+      {/* Para estudiantes, el historial está integrado en "Mis Cursos" */}
+      {isDocente && (
+        <SessionsHistory theme={modoOscuro ? darkTheme : lightTheme} />
+      )}
     </CargaContainer>
   );
 }

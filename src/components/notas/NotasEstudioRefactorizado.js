@@ -23,7 +23,7 @@ import * as tokens from '../../styles/designTokens';
  */
 const NotasEstudio = () => {
   // Contexto global
-  const { texto, modoOscuro, completeAnalysis, notasAutoGeneradas } = useContext(AppContext);
+  const { texto, modoOscuro, completeAnalysis, notasAutoGeneradas, currentTextoId } = useContext(AppContext);
   
   // Hook personalizado para gestión de estado (ahora con análisis completo)
   const {
@@ -40,7 +40,7 @@ const NotasEstudio = () => {
     setNivelAcademico, // 🆕 FASE 3
     marcarRepasoCompletado,
     regenerarNotas
-  } = useNotasEstudio(texto, completeAnalysis); // ✅ Pasar análisis completo
+  } = useNotasEstudio(texto, completeAnalysis, currentTextoId); // ✅ Pasar análisis completo + textoId
 
   // Estado local para la visibilidad del panel
   const [mostrarConfiguracion, setMostrarConfiguracion] = useState(false);
@@ -48,7 +48,7 @@ const NotasEstudio = () => {
   const [mostrarNotificacion, setMostrarNotificacion] = useState(false);
 
   // Hook de study items (mismo texto) para mostrar conteo rápido
-  const { dueItems, items } = useStudyItems(texto);
+  const { dueItems, items } = useStudyItems(texto, currentTextoId);
 
   // 🆕 FASE 2: Detectar cuando hay análisis disponible y notas no generadas
   useEffect(() => {
@@ -355,7 +355,7 @@ const NotasEstudio = () => {
       {mostrarPractice && (
         <div style={{ marginBottom: '24px' }}>
           {items?.length ? (
-            <PanelStudyItems texto={texto} theme={theme} />
+            <PanelStudyItems texto={texto} textoId={currentTextoId} theme={theme} />
           ) : (
             <div style={{
               border: `1px dashed ${theme.border}`,

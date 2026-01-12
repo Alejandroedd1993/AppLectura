@@ -1,4 +1,4 @@
-import React, { useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useContext, useState, useCallback, useEffect } from 'react';
 import { buildReadingWorkspaceContext } from '../utils/contextBuilders';
 import styled from 'styled-components';
 import { AppContext } from '../context/AppContext';
@@ -8,7 +8,6 @@ import WebEnrichmentButton from './chat/WebEnrichmentButton';
 import useNotesWorkspaceAdapter from '../hooks/useNotesWorkspaceAdapter';
 import NotesPanelDock from './notes/NotesPanelDock';
 import useReaderActions from '../hooks/useReaderActions';
-import { estimarTiempoLectura } from '../utils/textAnalysisMetrics';
 // FASE 2: Integración pedagógica migrada de LecturaInteractiva
 import { PedagogyContext } from '../context/PedagogyContext';
 import BloomLevelIndicator from './bloom/BloomLevelIndicator';
@@ -77,7 +76,7 @@ const ContentArea = styled.div`
   padding-bottom: 80px; /* Espacio para PromptBar fijo más compacto */
 `;
 
-const NotesPanel = styled.div`
+const _NotesPanel = styled.div`
   position: fixed;
   top: 60px;
   right: 20px;
@@ -93,7 +92,7 @@ const NotesPanel = styled.div`
   overflow: hidden;
 `;
 
-const NotesHeader = styled.div`
+const _NotesHeader = styled.div`
   padding: .55rem .75rem;
   background: ${p => p.theme?.primary || '#2563eb'};
   color: #fff;
@@ -103,7 +102,7 @@ const NotesHeader = styled.div`
   justify-content: space-between;
 `;
 
-const NotesList = styled.div`
+const _NotesList = styled.div`
   flex: 1;
   overflow-y: auto;
   padding: .6rem .65rem .75rem;
@@ -113,7 +112,7 @@ const NotesList = styled.div`
   background: ${p => p.theme?.background || '#f8f9fb'};
 `;
 
-const NoteItem = styled.div`
+const _NoteItem = styled.div`
   background: ${p => p.theme?.surface || '#fff'};
   border: 1px solid ${p => p.theme?.border || '#ddd'};
   border-radius: 8px;
@@ -123,14 +122,14 @@ const NoteItem = styled.div`
   position: relative;
 `;
 
-const NoteActions = styled.div`
+const _NoteActions = styled.div`
   display: flex;
   gap: .35rem;
   margin-top: .4rem;
 `;
 
 // Usar prefijo $ para evitar pasar prop no estándar al DOM
-const SmallBtn = styled.button`
+const _SmallBtn = styled.button`
   background: ${p => p.$danger ? (p.theme?.danger || '#b91c1c') : (p.theme?.primary || '#2563eb')};
   color: #fff;
   border: none;
@@ -141,14 +140,14 @@ const SmallBtn = styled.button`
   &:hover { opacity:.85; }
 `;
 
-const EmptyNote = styled.div`
+const _EmptyNote = styled.div`
   font-size: .6rem;
   opacity: .7;
   text-align: center;
   padding: .75rem 0 .5rem;
 `;
 
-const NewNoteForm = styled.form`
+const _NewNoteForm = styled.form`
   padding: .45rem .55rem .55rem;
   border-top: 1px solid ${p => p.theme?.border || '#ddd'};
   background: ${p => p.theme?.surface || '#fff'};
@@ -157,7 +156,7 @@ const NewNoteForm = styled.form`
   gap: .4rem;
 `;
 
-const NoteInput = styled.textarea`
+const _NoteInput = styled.textarea`
   resize: vertical;
   min-height: 52px;
   max-height: 140px;
@@ -225,8 +224,8 @@ const SendBtn = styled.button`
   &:disabled { opacity:.55; cursor:not-allowed; transform: scale(1); }
 `;
 
-export default function ReadingWorkspace({ enableWeb = true, followUps = true }) {
-  const { texto, setTexto, modoOscuro } = useContext(AppContext);
+export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followUps = true }) {
+  const { texto, setTexto: _setTexto, modoOscuro, currentTextoId, completeAnalysis } = useContext(AppContext);
   const isTestEnv = typeof process !== 'undefined' && process.env && process.env.JEST_WORKER_ID;
   // FASE 2: Detectar si hay provider pedagógico disponible
   const pedagogyMaybe = useContext(PedagogyContext);
@@ -236,7 +235,6 @@ export default function ReadingWorkspace({ enableWeb = true, followUps = true })
   const [prompt, setPrompt] = useState('');
   const [webSearchAvailable, setWebSearchAvailable] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [newNote, setNewNote] = useState('');
   const [tutorExpanded, setTutorExpanded] = useState(false);
   const [tutorWidth, setTutorWidth] = useState(420); // Ancho del tutor para ajustar espacio de lectura
   const [focusMode, setFocusMode] = useState(false); // Modo enfoque
@@ -244,6 +242,8 @@ export default function ReadingWorkspace({ enableWeb = true, followUps = true })
   const [tutorReady, setTutorReady] = useState(false);
   const promptInputRef = React.useRef(null); // ref para el textarea autoexpandible
   const hasText = !!(texto && texto.trim().length);
+  const documentId = completeAnalysis?.metadata?.document_id || null;
+  const lectureId = currentTextoId || documentId || null;
   const notesApi = useNotesWorkspaceAdapter(texto);
 
   // Verificar disponibilidad de búsqueda web en el backend
@@ -264,23 +264,36 @@ export default function ReadingWorkspace({ enableWeb = true, followUps = true })
       });
   }, []);
 
-  const stats = useMemo(() => {
-    if (!hasText) return null;
-    const palabras = texto.split(/\s+/).filter(Boolean);
-    const words = palabras.length;
-    const chars = texto.length;
-    const tiempoLecturaMin = estimarTiempoLectura(texto);
-    return { words, chars, tiempoLecturaMin };
-  }, [texto, hasText]);
-
   const enviarPromptDirecto = useCallback(() => {
     if (!prompt.trim()) return;
-    const ev = new CustomEvent('tutor-external-prompt', { detail: { prompt: prompt.trim(), fullText: texto } });
-    window.dispatchEvent(ev);
+    
+    console.log('📤 [ReadingWorkspace] enviarPromptDirecto - Enviando prompt:', prompt.trim());
+    
+    // Si el tutor no está visible, mostrarlo primero
+    if (!showTutor) {
+      console.log('📖 [ReadingWorkspace] Tutor cerrado, abriéndolo primero');
+      setShowTutor(true);
+      // Guardar prompt para enviarlo cuando el tutor esté listo
+      pendingPromptRef.current = { 
+        prompt: prompt.trim(),
+        fullText: texto 
+      };
+    } else {
+      // Tutor ya visible, enviar directamente
+      console.log('✅ [ReadingWorkspace] Tutor abierto, enviando evento inmediatamente');
+      const ev = new CustomEvent('tutor-external-prompt', { 
+        detail: { 
+          prompt: prompt.trim(), 
+          fullText: texto 
+        } 
+      });
+      window.dispatchEvent(ev);
+    }
+    
     setPrompt('');
-  }, [prompt]);
+  }, [prompt, showTutor, texto]);
 
-  const contextBuilder = useCallback((q) => buildReadingWorkspaceContext(texto), [texto]);
+  const contextBuilder = useCallback(() => buildReadingWorkspaceContext(texto), [texto]);
 
   // Integrar acciones contextuales del lector (reader-action)
   // Evitar duplicados: si el TutorDock está visible (showTutor=true), él ya escucha directamente 'reader-action'.
@@ -546,6 +559,7 @@ export default function ReadingWorkspace({ enableWeb = true, followUps = true })
                 query={prompt}
                 disabled={!webSearchAvailable || !prompt.trim()}
                 contextBuilder={contextBuilder}
+                rewardsResourceId={lectureId}
                 onEnriched={(enriched) => {
                   console.log('🌐 [ReadingWorkspace] Prompt enriquecido con web:', enriched.substring(0, 100));
                   
@@ -583,6 +597,7 @@ export default function ReadingWorkspace({ enableWeb = true, followUps = true })
             followUps={followUps} 
             expanded={tutorExpanded} 
             onToggleExpand={() => setTutorExpanded(v => !v)}
+            onClose={() => setShowTutor(false)}
           >
             {/* FASE 2: Paneles pedagógicos integrados en TutorDock */}
             {hasPedagogyProvider && (
@@ -594,7 +609,7 @@ export default function ReadingWorkspace({ enableWeb = true, followUps = true })
                   <BloomLevelIndicator compact={false} showTooltip={true} />
                 </div>
                 {/* Panel de Análisis Crítico del Discurso */}
-                <ACDAnalysisPanel text={texto} compact={false} />
+                <ACDAnalysisPanel text={texto} compact={false} rewardsResourceId={lectureId} />
               </>
             )}
           </TutorDock>

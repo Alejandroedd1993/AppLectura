@@ -299,7 +299,7 @@ const PointsEarned = styled(motion.div)`
   }
 `;
 
-export default function ACDAnalysisPanel({ text, compact = false }) {
+export default function ACDAnalysisPanel({ text, compact: _compact = false, rewardsResourceId }) {
   const acdAnalyzer = useACDAnalyzer();
   const rewards = useRewards();
   const [expanded, setExpanded] = useState(false);
@@ -323,23 +323,74 @@ export default function ACDAnalysisPanel({ text, compact = false }) {
       const result = await acdAnalyzer.analyze(text);
       setAnalysis(result);
       
-      // Registrar puntos por marcos identificados
-      if (rewards && result.ideologicalFrames && result.ideologicalFrames.length > 0) {
+      // Registrar puntos por análisis ACD (dedupe: una vez por texto)
+      if (rewards) {
+        const toSafeKey = (value) => (value || '')
+          .toString()
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '_')
+          .replace(/[^a-z0-9_\-:]/g, '')
+          .slice(0, 120);
+
         let totalPoints = 0;
-        
-        result.ideologicalFrames.forEach(frame => {
-          const eventResult = rewards.recordEvent('ACD_FRAME_IDENTIFIED', {
-            frame: frame.name,
-            density: frame.density,
-            examples: frame.examples.length
+
+        // Marcos ideológicos: una vez por texto y por marco
+        if (result.ideologicalFrames && result.ideologicalFrames.length > 0) {
+          result.ideologicalFrames.forEach(frame => {
+            const safeFrameName = toSafeKey(frame?.name) || 'unknown';
+            const resourceId = rewardsResourceId
+              ? `${rewardsResourceId}:acd_frame:${safeFrameName}`
+              : undefined;
+
+            const eventResult = rewards.recordEvent('ACD_FRAME_IDENTIFIED', {
+              frame: frame.name,
+              density: frame.density,
+              examples: frame.examples.length,
+              resourceId
+            });
+            totalPoints += eventResult.totalEarned || 0;
           });
-          totalPoints += eventResult.earnedPoints;
-        });
-        
-        setPointsEarned(totalPoints);
-        
-        // Auto-limpiar mensaje de puntos después de 5 segundos
-        setTimeout(() => setPointsEarned(0), 5000);
+        }
+
+        // Estrategias retóricas: una vez por texto y por estrategia
+        if (result.rhetoricalStrategies && result.rhetoricalStrategies.length > 0) {
+          result.rhetoricalStrategies.forEach(strategy => {
+            const safeStrategyName = toSafeKey(strategy?.name) || 'unknown';
+            const resourceId = rewardsResourceId
+              ? `${rewardsResourceId}:acd_strategy:${safeStrategyName}`
+              : undefined;
+
+            const eventResult = rewards.recordEvent('ACD_STRATEGY_IDENTIFIED', {
+              strategy: strategy.name,
+              occurrences: strategy.occurrences,
+              examples: Array.isArray(strategy.examples) ? strategy.examples.length : 0,
+              resourceId
+            });
+            totalPoints += eventResult.totalEarned || 0;
+          });
+        }
+
+        // Poder: una vez por texto (si se detecta algo)
+        const detectedPower = result.powerRelations?.detected || {};
+        const detectedTypes = Object.keys(detectedPower);
+        if (detectedTypes.length > 0) {
+          const resourceId = rewardsResourceId
+            ? `${rewardsResourceId}:acd_power`
+            : undefined;
+
+          const eventResult = rewards.recordEvent('ACD_POWER_ANALYSIS', {
+            detectedTypes,
+            resourceId
+          });
+          totalPoints += eventResult.totalEarned || 0;
+        }
+
+        if (totalPoints > 0) {
+          setPointsEarned(totalPoints);
+          // Auto-limpiar mensaje de puntos después de 5 segundos
+          setTimeout(() => setPointsEarned(0), 5000);
+        }
       }
       
       console.log('🔍 Análisis ACD completado:', result);
@@ -407,7 +458,7 @@ export default function ACDAnalysisPanel({ text, compact = false }) {
                 exit={{ opacity: 0, scale: 0.8 }}
               >
                 <span className="icon">🎉</span>
-                <span>+{pointsEarned} pts por identificar marcos ideológicos</span>
+                <span>+{pointsEarned} pts por análisis ACD</span>
               </PointsEarned>
             )}
             

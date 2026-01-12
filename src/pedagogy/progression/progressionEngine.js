@@ -1,7 +1,7 @@
 // Sistema de progresión de Literacidad Crítica
 // Gestiona el desbloqueo secuencial y criterios mínimos por dimensión.
 
-const SEQUENCE = [
+export const SEQUENCE = [
   'comprensionAnalitica',
   'acd',
   'contextualizacion',
@@ -9,7 +9,7 @@ const SEQUENCE = [
 ];
 
 // Criterios por dimensión: puntaje mínimo (1-10) y evidencia mínima (nº citas)
-const CRITERIA = {
+export const CRITERIA = {
   comprensionAnalitica: { minScore: 6, minEvidence: 2, minAttempts: 1 },
   acd: { minScore: 6.5, minEvidence: 2, minAttempts: 1 },
   contextualizacion: { minScore: 7, minEvidence: 2, minAttempts: 1 },
@@ -86,7 +86,7 @@ function snapshot(state) {
 }
 
 // API principal
-function createProgressionEngine(storageProvider = (typeof window !== 'undefined' ? window.localStorage : null)) {
+export function createProgressionEngine(storageProvider = (typeof window !== 'undefined' ? window.localStorage : null)) {
   let state = loadState(storageProvider);
 
   function recordEvaluation({ dimension, score, evidenceCount = 0 }) {
@@ -150,4 +150,8 @@ function createProgressionEngine(storageProvider = (typeof window !== 'undefined
   };
 }
 
-module.exports = { createProgressionEngine, CRITERIA, SEQUENCE };
+export default {
+  createProgressionEngine,
+  CRITERIA,
+  SEQUENCE
+};

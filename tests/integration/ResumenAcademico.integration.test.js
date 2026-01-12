@@ -59,7 +59,10 @@ global.DataTransfer = MockDataTransfer;
 
 describe('ResumenAcademico Integration Tests', () => {
   const mockContextValue = {
-    texto: 'Este es un texto de prueba. "Cita textual importante". Contenido adicional para análisis.',
+    texto:
+      'Este es un texto de prueba. "Primera cita importante". ' +
+      'Contenido adicional para análisis. "Segunda cita relevante". ' +
+      'Más contenido para asegurar coincidencias.',
     completeAnalysis: {
       metadata: { document_id: 'test-doc-123' }
     },
@@ -76,6 +79,7 @@ describe('ResumenAcademico Integration Tests', () => {
     rewards: {
       awardBadge: jest.fn(),
       checkAchievements: jest.fn(),
+      recordEvent: jest.fn(),
       getBadges: jest.fn(() => [])
     },
     progression: {
@@ -97,6 +101,14 @@ describe('ResumenAcademico Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Si Jest está configurado con resetMocks, re-aplicar implementaciones en cada test
+    mockContextValue.getCitations.mockImplementation(() => [
+      { id: '1', texto: 'Cita guardada 1', timestamp: Date.now() },
+      { id: '2', texto: 'Cita guardada 2', timestamp: Date.now() }
+    ]);
+    mockContextValue.deleteCitation.mockImplementation(() => {});
+
     localStorage.clear();
     sessionStorage.clear();
   });
@@ -106,7 +118,7 @@ describe('ResumenAcademico Integration Tests', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
       expect(screen.getByText(/Resumen Académico con Citas/i)).toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i)).toBeInTheDocument();
     });
 
     it('debe mostrar mensaje cuando no hay texto cargado', () => {
@@ -119,7 +131,7 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe mostrar guía pedagógica colapsable', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      expect(screen.getByText(/¿Cómo hacer un resumen académico\?/i)).toBeInTheDocument();
+      expect(screen.getByText(/¿Cómo escribir un buen resumen académico\?/i)).toBeInTheDocument();
     });
   });
 
@@ -127,41 +139,46 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe validar palabras mínimas (50)', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
 
       // Texto muy corto
       fireEvent.change(textarea, { target: { value: 'Texto muy corto' } });
 
-      expect(screen.getByText(/0 palabras/i)).toBeInTheDocument();
+      // Debe mostrar error de longitud mínima
+      expect(screen.getByText(/al menos 100 caracteres/i)).toBeInTheDocument();
     });
 
     it('debe validar citas mínimas (2)', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
 
       // Texto con solo 1 cita
-      const textoConUnaCita = 'Este es un resumen académico. "Una cita". ' + 'Más texto '.repeat(20);
+      const textoConUnaCita = 'Este es un resumen académico. "Una cita suficientemente larga". ' + 'Más texto '.repeat(20);
       fireEvent.change(textarea, { target: { value: textoConUnaCita } });
 
-      expect(screen.getByText(/1 citas/i)).toBeInTheDocument();
+      expect(screen.getByText((content, el) => {
+        return el?.tagName?.toLowerCase() === 'span' && /\b1\s*citas?\b/i.test(content);
+      })).toBeInTheDocument();
     });
 
     it('debe mostrar validación exitosa con texto válido', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
 
       // Texto válido con 2 citas y >50 palabras
       const textoValido = 
-        'Este es un resumen académico completo. "Primera cita textual importante". ' +
+        'Este es un resumen académico completo. "Primera cita importante". ' +
         'Análisis profundo del contenido. "Segunda cita relevante". ' +
         'Más contenido de análisis crítico del texto presentado en el documento original. '.repeat(5);
 
       fireEvent.change(textarea, { target: { value: textoValido } });
 
       // Debe mostrar contadores válidos
-      expect(screen.getByText(/2 citas/i)).toBeInTheDocument();
+      expect(screen.getByText((content, el) => {
+        return el?.tagName?.toLowerCase() === 'span' && /\b2\s*citas\b/i.test(content);
+      })).toBeInTheDocument();
     });
   });
 
@@ -169,7 +186,7 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe mostrar panel de citas al hacer click', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const citasButton = screen.getByText(/Mis Citas \(2\)/i);
+      const citasButton = screen.getByRole('button', { name: /Mis Citas/i });
       fireEvent.click(citasButton);
 
       expect(screen.getByText('Cita guardada 1')).toBeInTheDocument();
@@ -179,14 +196,14 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe insertar cita en el resumen', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
 
       // Abrir panel de citas
-      const citasButton = screen.getByText(/Mis Citas/i);
+      const citasButton = screen.getByRole('button', { name: /Mis Citas/i });
       fireEvent.click(citasButton);
 
       // Insertar cita
-      const insertButtons = screen.getAllByText(/📌 Insertar/i);
+      const insertButtons = screen.getAllByRole('button', { name: /Insertar/i });
       fireEvent.click(insertButtons[0]);
 
       // Verificar que se insertó
@@ -197,10 +214,10 @@ describe('ResumenAcademico Integration Tests', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
       // Abrir panel de citas
-      fireEvent.click(screen.getByText(/Mis Citas/i));
+      fireEvent.click(screen.getByRole('button', { name: /Mis Citas/i }));
 
       // Eliminar primera cita
-      const deleteButtons = screen.getAllByText('🗑️');
+      const deleteButtons = screen.getAllByTitle(/Eliminar cita guardada/i);
       fireEvent.click(deleteButtons[0]);
 
       expect(mockContextValue.deleteCitation).toHaveBeenCalledWith('test-doc-123', '1');
@@ -211,7 +228,7 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe permitir pegar hasta 40 palabras', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
       const shortText = 'Texto corto con menos de cuarenta palabras permitidas en el sistema.';
 
       const pasteEvent = new ClipboardEvent('paste', {
@@ -228,7 +245,7 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe bloquear pegado de más de 40 palabras', async () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
       const longText = 'palabra '.repeat(50); // 50 palabras
 
       const pasteEvent = new ClipboardEvent('paste', {
@@ -249,14 +266,14 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe deshabilitar botón cuando validación falla', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const evaluarButton = screen.getByText(/Solicitar Evaluación Criterial/i);
+      const evaluarButton = screen.getByRole('button', { name: /Solicitar Evaluación/i });
       expect(evaluarButton).toBeDisabled();
     });
 
     it('debe habilitar botón con resumen válido', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
       const textoValido = 
         'Resumen válido con análisis. "Primera cita importante". ' +
         'Más análisis profundo. "Segunda cita relevante". ' +
@@ -264,7 +281,7 @@ describe('ResumenAcademico Integration Tests', () => {
 
       fireEvent.change(textarea, { target: { value: textoValido } });
 
-      const evaluarButton = screen.getByText(/Solicitar Evaluación Criterial/i);
+      const evaluarButton = screen.getByRole('button', { name: /Solicitar Evaluación/i });
       expect(evaluarButton).not.toBeDisabled();
     });
 
@@ -279,15 +296,15 @@ describe('ResumenAcademico Integration Tests', () => {
 
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
       const textoValido = 
-        'Resumen académico completo. "Cita uno del texto". ' +
-        'Análisis crítico profundo. "Cita dos relevante". ' +
+        'Resumen académico completo. "Primera cita importante". ' +
+        'Análisis crítico profundo. "Segunda cita relevante". ' +
         'Más contenido analítico de calidad. '.repeat(10);
 
       fireEvent.change(textarea, { target: { value: textoValido } });
 
-      const evaluarButton = screen.getByText(/Solicitar Evaluación Criterial/i);
+      const evaluarButton = screen.getByRole('button', { name: /Solicitar Evaluación/i });
       fireEvent.click(evaluarButton);
 
       await waitFor(() => {
@@ -305,13 +322,13 @@ describe('ResumenAcademico Integration Tests', () => {
 
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
       const textoValido = 
-        'Resumen completo. "Cita 1". Análisis. "Cita 2". ' + 'Contenido. '.repeat(15);
+        'Resumen completo. "Primera cita importante". Análisis. "Segunda cita relevante". ' + 'Contenido. '.repeat(15);
 
       fireEvent.change(textarea, { target: { value: textoValido } });
 
-      const evaluarButton = screen.getByText(/Solicitar Evaluación Criterial/i);
+      const evaluarButton = screen.getByRole('button', { name: /Solicitar Evaluación/i });
       fireEvent.click(evaluarButton);
 
       // Debe mostrar indicador de carga
@@ -325,7 +342,7 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe mostrar límite restante en tooltip', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const evaluarButton = screen.getByText(/Solicitar Evaluación Criterial/i);
+      const evaluarButton = screen.getByRole('button', { name: /Solicitar Evaluación/i });
       
       // Debe tener tooltip con límite (atributo title)
       expect(evaluarButton).toHaveAttribute('title');
@@ -352,29 +369,34 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe guardar borrador en sessionStorage', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
       const borradorTexto = 'Mi borrador de resumen';
 
       fireEvent.change(textarea, { target: { value: borradorTexto } });
 
       // Debe guardar en sessionStorage
-      const saved = sessionStorage.getItem('resumenAcademico_draft');
-      expect(saved).toBe(borradorTexto);
+      const expectedKey = 'test-doc-123_resumenAcademico_draft';
+      return waitFor(() => {
+        expect(sessionStorage.getItem(expectedKey)).toBe(borradorTexto);
+      });
     });
 
     it('debe recuperar borrador desde sessionStorage', () => {
       const borradorGuardado = 'Borrador previo recuperado';
-      sessionStorage.setItem('resumenAcademico_draft', borradorGuardado);
+      const expectedKey = 'test-doc-123_resumenAcademico_draft';
+      sessionStorage.setItem(expectedKey, borradorGuardado);
 
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
-      expect(textarea.value).toBe(borradorGuardado);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
+      return waitFor(() => {
+        expect(textarea.value).toBe(borradorGuardado);
+      });
     });
   });
 
-  describe('Nuevo intento', () => {
-    it('debe limpiar resumen y evaluación al hacer click en "Nuevo Intento"', async () => {
+  describe('Post-evaluación', () => {
+    it('debe mostrar "Seguir Editando" y limpiar borrador al evaluar', async () => {
       const mockEvaluacion = {
         scoreGlobal: 7,
         nivel: 3,
@@ -386,24 +408,23 @@ describe('ResumenAcademico Integration Tests', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
       // Escribir y evaluar
-      const textarea = screen.getByPlaceholderText(/Ejemplo: El autor argumenta/i);
+      const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
       const textoValido = 
-        'Resumen. "Cita 1". Análisis. "Cita 2". ' + 'Contenido. '.repeat(15);
+        'Resumen. "Primera cita importante". Análisis. "Segunda cita relevante". ' + 'Contenido. '.repeat(15);
 
       fireEvent.change(textarea, { target: { value: textoValido } });
-      fireEvent.click(screen.getByText(/Solicitar Evaluación Criterial/i));
+      fireEvent.click(screen.getByRole('button', { name: /Solicitar Evaluación/i }));
 
       // Esperar evaluación
       await waitFor(() => {
-        expect(screen.getByText(/Nuevo Intento/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Seguir Editando/i })).toBeInTheDocument();
       });
 
-      // Click en nuevo intento
-      fireEvent.click(screen.getByText(/Nuevo Intento/i));
-
-      // Debe limpiar
-      expect(textarea.value).toBe('');
-      expect(sessionStorage.getItem('resumenAcademico_draft')).toBeNull();
+      // Debe limpiar borrador en sessionStorage (scoped)
+      const expectedKey = 'test-doc-123_resumenAcademico_draft';
+      await waitFor(() => {
+        expect(sessionStorage.getItem(expectedKey)).toBeNull();
+      });
     });
   });
 

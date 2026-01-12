@@ -2,28 +2,30 @@
 import { renderHook, act } from '@testing-library/react';
 import useFileCache from '../../../src/hooks/useFileCache';
 
-// Mock de localStorage
-const mockLocalStorage = (() => {
-  let store = {};
+// Mock de localStorage simple
+const localStorageStore = { data: {} };
 
-  return {
-    getItem: jest.fn((key) => store[key] || null),
-    setItem: jest.fn((key, value) => {
-      store[key] = value.toString();
-    }),
-    removeItem: jest.fn((key) => {
-      delete store[key];
-    }),
-    clear: jest.fn(() => {
-      store = {};
-    }),
-    length: Object.keys(store).length,
-    key: jest.fn((index) => Object.keys(store)[index] || null),
-    // Helper para obtener el store actual
-    __getStore: () => store,
-    __setStore: (newStore) => { store = newStore; }
-  };
-})();
+const mockLocalStorage = {
+  getItem: jest.fn().mockImplementation((key) => {
+    return localStorageStore.data[key] !== undefined ? localStorageStore.data[key] : null;
+  }),
+  setItem: jest.fn().mockImplementation((key, value) => {
+    localStorageStore.data[key] = value.toString();
+  }),
+  removeItem: jest.fn().mockImplementation((key) => {
+    delete localStorageStore.data[key];
+  }),
+  clear: jest.fn().mockImplementation(() => {
+    localStorageStore.data = {};
+  }),
+  get length() {
+    return Object.keys(localStorageStore.data).length;
+  },
+  key: jest.fn().mockImplementation((index) => {
+    const keys = Object.keys(localStorageStore.data);
+    return keys[index] || null;
+  })
+};
 
 // Reemplazar localStorage global
 Object.defineProperty(window, 'localStorage', {
@@ -43,12 +45,30 @@ jest.mock('../../../src/utils/cache', () => ({
 }));
 
 describe('useFileCache', () => {
-  // Limpiar antes de cada test
   beforeEach(() => {
-    mockLocalStorage.clear();
-    jest.clearAllMocks();
-    // Resetear Date.now para tests consistentes
-    jest.spyOn(Date, 'now').mockReturnValue(1691308800000); // Fixed timestamp
+    // Limpiar solo los datos, no los mocks
+    localStorageStore.data = {};
+
+    // Reconfigurar implementaciones de localStorage (algunas pruebas las mutan)
+    mockLocalStorage.getItem.mockReset().mockImplementation((key) => {
+      return localStorageStore.data[key] !== undefined ? localStorageStore.data[key] : null;
+    });
+    mockLocalStorage.setItem.mockReset().mockImplementation((key, value) => {
+      localStorageStore.data[key] = value.toString();
+    });
+    mockLocalStorage.removeItem.mockReset().mockImplementation((key) => {
+      delete localStorageStore.data[key];
+    });
+    mockLocalStorage.clear.mockReset().mockImplementation(() => {
+      localStorageStore.data = {};
+    });
+    mockLocalStorage.key.mockReset().mockImplementation((index) => {
+      const keys = Object.keys(localStorageStore.data);
+      return keys[index] || null;
+    });
+    
+    // Reconfigurar Date.now
+    jest.spyOn(Date, 'now').mockReturnValue(1691308800000);
   });
 
   afterEach(() => {
@@ -94,13 +114,14 @@ describe('useFileCache', () => {
         lastModified: 1691308800000
       });
 
-      const testData = {
-        texto: 'contenido de prueba',
-        parrafos: ['contenido de prueba']
+      const testTexto = 'contenido de prueba';
+      const testStats = {
+        palabras: 3,
+        caracteres: 19
       };
 
       act(() => {
-        result.current.guardarEnCache(mockFile, testData);
+        result.current.guardarEnCache(mockFile, testTexto, testStats);
       });
 
       // Verificar que se llamó a localStorage.setItem
@@ -164,15 +185,19 @@ describe('useFileCache', () => {
         lastModified: 1691308800000
       });
 
-      const testData = {
-        texto: 'contenido de prueba',
-        parrafos: ['contenido de prueba']
+      const testTexto = 'contenido de prueba';
+      const testStats = {
+        palabras: 3,
+        caracteres: 19
       };
 
-      // Primero cachear el archivo
+      // Primero cachear el archivo con la firma correcta
+      let saveResult;
       act(() => {
-        result.current.guardarEnCache(mockFile, testData);
+        saveResult = result.current.guardarEnCache(mockFile, testTexto, testStats);
       });
+
+      expect(saveResult).toBe(true);
 
       // Luego intentar recuperarlo
       let cachedData;
@@ -182,8 +207,8 @@ describe('useFileCache', () => {
 
       expect(cachedData).toBeTruthy();
       if (cachedData) {
-        // El hook devuelve el objeto completo con metadata adicional
-        expect(cachedData.texto).toEqual(testData);
+        expect(cachedData.texto).toBe(testTexto);
+        expect(cachedData.stats).toEqual(testStats);
         expect(cachedData.metadata.nombreArchivo).toBe('test.txt');
       }
     });
@@ -210,16 +235,20 @@ describe('useFileCache', () => {
       const { result } = renderHook(() => useFileCache());
 
       // Simular algunas entradas en localStorage
-      mockLocalStorage.setItem('file_cache_test1', JSON.stringify({}));
-      mockLocalStorage.setItem('file_cache_test2', JSON.stringify({}));
-      mockLocalStorage.setItem('other_key', 'should remain');
+      act(() => {
+        mockLocalStorage.setItem('file_cache_test1', JSON.stringify({}));
+        mockLocalStorage.setItem('file_cache_test2', JSON.stringify({}));
+        mockLocalStorage.setItem('other_key', 'should remain');
+      });
 
+      // Limpiar la caché
       act(() => {
         result.current.limpiarCache();
       });
 
-      // No verificamos removeItem específicamente porque el hook puede usar
-      // diferentes estrategias de limpieza interna
+      // Verificar que las claves de caché fueron eliminadas
+      expect(mockLocalStorage.getItem('file_cache_test1')).toBeNull();
+      expect(mockLocalStorage.getItem('file_cache_test2')).toBeNull();
       
       // La clave que no es de caché debe permanecer
       expect(mockLocalStorage.getItem('other_key')).toBe('should remain');
@@ -234,10 +263,10 @@ describe('useFileCache', () => {
         lastModified: 1691308800000
       });
 
-      const testData = {
-        texto: 'contenido completo de integración',
-        parrafos: ['párrafo 1', 'párrafo 2'],
-        metadata: { palabras: 5 }
+      const testTexto = 'contenido completo de integración';
+      const testStats = {
+        palabras: 5,
+        parrafos: 2
       };
 
       // 1. Verificar que no está cacheado inicialmente
@@ -247,9 +276,9 @@ describe('useFileCache', () => {
       });
       expect(cachedData).toBeNull();
 
-      // 2. Cachear el archivo
+      // 2. Cachear el archivo con la firma correcta
       act(() => {
-        result.current.guardarEnCache(mockFile, testData);
+        result.current.guardarEnCache(mockFile, testTexto, testStats);
       });
 
       // 3. Recuperar el archivo cacheado
@@ -257,7 +286,8 @@ describe('useFileCache', () => {
         cachedData = result.current.obtenerDeCache(mockFile);
       });
       expect(cachedData).toBeTruthy();
-      expect(cachedData.texto).toEqual(testData);
+      expect(cachedData.texto).toBe(testTexto);
+      expect(cachedData.stats).toEqual(testStats);
 
       // 4. Limpiar caché
       act(() => {
@@ -297,7 +327,7 @@ describe('useFileCache', () => {
 
         expect(() => {
           act(() => {
-            result.current.guardarEnCache(mockFile, { texto: 'test' });
+            result.current.guardarEnCache(mockFile, 'test content', { palabras: 2 });
             result.current.obtenerDeCache(mockFile);
           });
         }).not.toThrow();
@@ -315,7 +345,7 @@ describe('useFileCache', () => {
 
       expect(() => {
         act(() => {
-          result.current.guardarEnCache(mockFile, { texto: 'test' });
+          result.current.guardarEnCache(mockFile, 'test content', { palabras: 2 });
         });
       }).not.toThrow();
 

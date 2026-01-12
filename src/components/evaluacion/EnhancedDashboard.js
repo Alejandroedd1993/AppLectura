@@ -1,7 +1,7 @@
 // src/components/evaluacion/EnhancedDashboard.js
 import React, { useState, useMemo } from 'react';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 const DashboardContainer = styled.div`
   background: ${props => props.theme.surface};

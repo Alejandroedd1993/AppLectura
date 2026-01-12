@@ -15,7 +15,7 @@
 /**
  * Marcos ideológicos con sus marcadores léxicos
  */
-const IDEOLOGICAL_FRAMES = {
+export const IDEOLOGICAL_FRAMES = {
   liberalism: {
     name: 'Liberalismo Clásico',
     markers: ['libertad', 'individuo', 'derechos', 'autonomía', 'elección', 'voluntad', 'ciudadano'],
@@ -84,7 +84,7 @@ const IDEOLOGICAL_FRAMES = {
 /**
  * Estrategias retóricas comunes
  */
-const RHETORICAL_STRATEGIES = [
+export const RHETORICAL_STRATEGIES = [
   {
     name: 'Hipérbole/Generalización',
     pattern: /\b(siempre|nunca|todos|nadie|absolutamente|totalmente|completamente|jamás|ningún|cualquier)\b/gi,
@@ -147,7 +147,7 @@ const RHETORICAL_STRATEGIES = [
 /**
  * Clase principal del analizador ACD
  */
-class ACDAnalyzer {
+export class ACDAnalyzer {
   constructor() {
     this.frames = IDEOLOGICAL_FRAMES;
     this.strategies = RHETORICAL_STRATEGIES;
@@ -184,7 +184,7 @@ class ACDAnalyzer {
    * @returns {Array} Marcos detectados ordenados por relevancia
    */
   detectIdeologicalFrames(text) {
-    const lowerText = text.toLowerCase();
+    const _lowerText = text.toLowerCase();
     const wordCount = text.split(/\s+/).length;
 
     const detected = Object.entries(this.frames).map(([key, frame]) => {
@@ -443,7 +443,7 @@ ${rhetoricalStrategies.slice(0, 3).map(s =>
   /**
    * Genera resumen ejecutivo del análisis
    */
-  _generateSummary(frames, strategies, power) {
+  _generateSummary(frames, strategies, _power) {
     if (frames.length === 0 && strategies.length === 0) {
       return 'No se detectaron marcadores ideológicos o retóricos significativos en este fragmento.';
     }
@@ -504,14 +504,14 @@ ${rhetoricalStrategies.slice(0, 3).map(s =>
   }
 }
 
-// Exportar
-module.exports = { 
-  ACDAnalyzer, 
-  IDEOLOGICAL_FRAMES, 
-  RHETORICAL_STRATEGIES 
+const exported = {
+  ACDAnalyzer,
+  IDEOLOGICAL_FRAMES,
+  RHETORICAL_STRATEGIES
 };
 
-// Para uso en React (ESM)
+export default exported;
+
 if (typeof window !== 'undefined') {
   window.ACDAnalyzer = ACDAnalyzer;
 }

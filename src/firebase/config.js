@@ -19,9 +19,15 @@ import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import logger from '../utils/logger';
 
 // Configuración de Firebase desde variables de entorno
+export const isConfigValid = 
+  process.env.REACT_APP_FIREBASE_API_KEY && 
+  process.env.REACT_APP_FIREBASE_API_KEY !== 'YOUR_API_KEY' &&
+  process.env.REACT_APP_FIREBASE_AUTH_DOMAIN &&
+  !process.env.REACT_APP_FIREBASE_AUTH_DOMAIN.includes('YOUR_PROJECT_ID');
+
 logger.debug('🔍 [Firebase Config] Verificando variables de entorno:', {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY ? '✅ Presente' : '❌ FALTANTE',
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN ? '✅ Presente' : '❌ FALTANTE',
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY && process.env.REACT_APP_FIREBASE_API_KEY !== 'YOUR_API_KEY' ? '✅ Presente' : '❌ FALTANTE O INVÁLIDO',
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN && !process.env.REACT_APP_FIREBASE_AUTH_DOMAIN.includes('YOUR_PROJECT_ID') ? '✅ Presente' : '❌ FALTANTE O INVÁLIDO',
   projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID ? '✅ Presente' : '❌ FALTANTE',
   storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET ? '✅ Presente' : '❌ FALTANTE',
   messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID ? '✅ Presente' : '❌ FALTANTE',
@@ -36,6 +42,13 @@ const firebaseConfig = {
   messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || 'YOUR_MESSAGING_SENDER_ID',
   appId: process.env.REACT_APP_FIREBASE_APP_ID || 'YOUR_APP_ID'
 };
+
+// Validar configuración crítica
+if (!isConfigValid) {
+  logger.error('❌ [Firebase Config] La configuración de Firebase no es válida. Verifica tu archivo .env');
+  // No lanzamos error aquí para permitir que la app cargue y muestre un mensaje amigable si es necesario,
+  // pero los servicios de Firebase fallarán.
+}
 
 // Inicializar Firebase
 let app;

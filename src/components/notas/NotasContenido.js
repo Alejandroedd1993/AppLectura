@@ -814,7 +814,7 @@ const NotasEnsayo = React.memo(({ notas, theme }) => (
  * Vista genérica (backend): resumen, notas, preguntas y tarjetas
  */
 const NotasGenericas = React.memo(({ data, theme }) => {
-  const Tarjeta = ({ card, idx }) => {
+  const Tarjeta = ({ card, idx: _idx }) => {
     const [show, setShow] = React.useState(false);
     const [isFlipping, setIsFlipping] = React.useState(false);
     

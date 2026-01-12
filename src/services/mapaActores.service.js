@@ -177,9 +177,10 @@ Formato de respuesta JSON:
  */
 async function evaluateWithDeepSeek(text, actores, conexiones, consecuencias, contextoHistorico) {
   const prompt = buildDeepSeekPrompt(text, actores, conexiones, consecuencias, contextoHistorico);
+  let response;
   
   try {
-    const response = await chatCompletion({
+    response = await chatCompletion({
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
       messages: [{ role: 'user', content: prompt }],
@@ -205,7 +206,11 @@ async function evaluateWithDeepSeek(text, actores, conexiones, consecuencias, co
     return parsed;
   } catch (error) {
     console.error('❌ Error en evaluación DeepSeek (MapaActores):', error);
-    console.error('📄 Contenido completo:', extractContent(response));
+    try {
+      if (response) console.error('📄 Contenido completo:', extractContent(response));
+    } catch {
+      // ignore
+    }
     
     // Estructura de fallback
     return {
@@ -226,9 +231,10 @@ async function evaluateWithDeepSeek(text, actores, conexiones, consecuencias, co
  */
 async function evaluateWithOpenAI(text, actores, conexiones, consecuencias, contextoHistorico, deepseekFeedback) {
   const prompt = buildOpenAIPrompt(text, actores, conexiones, consecuencias, contextoHistorico, deepseekFeedback);
+  let response;
   
   try {
-    const response = await chatCompletion({
+    response = await chatCompletion({
       provider: 'openai',
       model: OPENAI_MODEL,
       messages: [{ role: 'user', content: prompt }],
@@ -254,7 +260,11 @@ async function evaluateWithOpenAI(text, actores, conexiones, consecuencias, cont
     return parsed;
   } catch (error) {
     console.error('❌ Error en evaluación OpenAI (MapaActores):', error);
-    console.error('📄 Contenido completo:', extractContent(response));
+    try {
+      if (response) console.error('📄 Contenido completo:', extractContent(response));
+    } catch {
+      // ignore
+    }
     
     // Estructura de fallback
     return {

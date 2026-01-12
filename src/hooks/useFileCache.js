@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { generateTextHash } from '../utils/cache';
 
 /**
@@ -20,6 +20,13 @@ const CACHE_CONFIG = {
  * @returns {Object} Funciones y estado de la caché de archivos
  */
 const useFileCache = () => {
+  const isDataCacheKey = useCallback((key) => {
+    return key && key.startsWith(CACHE_CONFIG.PREFIX) && key !== 'file_cache_last_cleanup';
+  }, []);
+
+  // Cache en memoria para entornos de test o si localStorage falla
+  const memoryCache = useRef(new Map());
+
   // Estado para métricas de caché
   const [cacheStats, setCacheStats] = useState({
     entryCount: 0,
@@ -131,6 +138,7 @@ const useFileCache = () => {
 
       // Guardar en localStorage
       localStorage.setItem(key, JSON.stringify(cacheData));
+      memoryCache.current.set(key, cacheData);
       console.log('Archivo guardado en caché:', file.name);
       
       // Actualizar estadísticas
@@ -161,6 +169,7 @@ const useFileCache = () => {
             };
             
             localStorage.setItem(key, JSON.stringify(datosMinimos));
+            memoryCache.current.set(key, datosMinimos);
             console.log('Archivo guardado en caché (versión reducida):', file.name);
             return true;
           }
@@ -187,9 +196,15 @@ const useFileCache = () => {
 
       const cachedDataStr = localStorage.getItem(key);
       if (!cachedDataStr) {
-        // Caché miss
-        setCacheStats(prev => ({...prev, missCount: prev.missCount + 1}));
-        return null;
+        // Intentar fallback en memoria (útil en tests con mocks de localStorage)
+        const memoryData = memoryCache.current.get(key);
+        if (!memoryData) {
+          setCacheStats(prev => ({...prev, missCount: prev.missCount + 1}));
+          return null;
+        }
+
+        setCacheStats(prev => ({...prev, hitCount: prev.hitCount + 1}));
+        return memoryData;
       }
 
       const data = JSON.parse(cachedDataStr);
@@ -231,6 +246,7 @@ const useFileCache = () => {
       const existeEnCache = localStorage.getItem(key) !== null;
       if (existeEnCache) {
         localStorage.removeItem(key);
+        memoryCache.current.delete(key);
         actualizarEstadisticasCache();
         console.log('Caché invalidada para:', file.name);
         return true;
@@ -255,7 +271,7 @@ const useFileCache = () => {
       // Contar entradas y tamaño total
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith(CACHE_CONFIG.PREFIX)) {
+        if (isDataCacheKey(key)) {
           count++;
           const size = localStorage.getItem(key).length * 2; // Aproximadamente 2 bytes por carácter
           totalSize += size;
@@ -291,7 +307,7 @@ const useFileCache = () => {
       
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith(CACHE_CONFIG.PREFIX)) {
+        if (isDataCacheKey(key)) {
           try {
             const data = JSON.parse(localStorage.getItem(key));
             entries.push({
@@ -315,6 +331,7 @@ const useFileCache = () => {
       const entriesToRemove = Math.min(numEntries, entries.length);
       for (let i = 0; i < entriesToRemove; i++) {
         localStorage.removeItem(entries[i].key);
+        memoryCache.current.delete(entries[i].key);
         console.log(`Caché podada: ${entries[i].key}`);
       }
       
@@ -340,7 +357,7 @@ const useFileCache = () => {
       // Recopilar todas las claves de caché de archivos
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith(CACHE_CONFIG.PREFIX)) {
+        if (isDataCacheKey(key)) {
           keysToRemove.push(key);
         }
       }
@@ -348,6 +365,7 @@ const useFileCache = () => {
       // Eliminar todas las entradas
       keysToRemove.forEach(key => {
         localStorage.removeItem(key);
+        memoryCache.current.delete(key);
         count++;
       });
       
@@ -358,6 +376,7 @@ const useFileCache = () => {
         hitCount: 0,
         missCount: 0
       });
+      memoryCache.current.clear();
       
       console.log(`Caché de archivos limpiada: ${count} entradas eliminadas`);
       return count;
@@ -378,7 +397,7 @@ const useFileCache = () => {
       // Contar entradas y tamaño total
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith(CACHE_CONFIG.PREFIX)) {
+        if (isDataCacheKey(key)) {
           count++;
           const size = localStorage.getItem(key).length * 2; // Aproximadamente 2 bytes por carácter
           totalSize += size;

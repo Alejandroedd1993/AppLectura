@@ -3,10 +3,11 @@
  * Permite autenticación con Email/Password y Google SSO
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { loginWithEmail, loginWithGoogle, resetPassword } from '../../firebase/auth';
 import { useAuth } from '../../context/AuthContext';
+import { isConfigValid } from '../../firebase/config';
 
 const LoginContainer = styled.div`
   min-height: 100vh;
@@ -205,6 +206,14 @@ export default function Login() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   
+  useEffect(() => {
+    console.log('🔍 [Login] Config status:', { isConfigValid });
+    if (!isConfigValid) {
+      console.error('❌ [Login] Configuración de Firebase inválida');
+      setError('⚠️ Error Crítico: Faltan las credenciales de Firebase o son inválidas (placeholders). Verifica tu archivo .env (API Key y Auth Domain).');
+    }
+  }, []);
+  
   // Si ya está autenticado, no mostrar login
   if (authLoading) {
     return (
@@ -267,7 +276,19 @@ export default function Login() {
       
     } catch (err) {
       console.error('❌ [Login] Error en Google Sign-In:', err);
-      setError(err.message || 'Error al iniciar sesión con Google. Intenta de nuevo.');
+      
+      let msg = err.message;
+      
+      // Mensajes amigables para errores comunes
+      if (err.code === 'auth/internal-error') {
+        msg = 'Error de conexión con Google. Posibles causas: \n1. Bloqueo de red/firewall a servicios de Google (api.js).\n2. Auth Domain incorrecto en .env.\n3. API Key inválida.';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        msg = 'Inicio de sesión cancelado.';
+      } else if (err.code === 'auth/popup-blocked') {
+        msg = 'El navegador bloqueó la ventana emergente. Por favor permítela para iniciar sesión.';
+      }
+      
+      setError(msg || 'Error al iniciar sesión con Google. Intenta de nuevo.');
       setLoading(false); // Importante: resetear loading en error
     }
   };

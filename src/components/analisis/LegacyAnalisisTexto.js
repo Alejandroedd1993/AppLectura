@@ -110,6 +110,12 @@ const LegacyAnalisisTexto = ({ texto, onClose = () => {}, apiConfig = {}, theme 
       {analisis && (
         <div style={{ marginTop: 16 }}>
           <h3>Resultados del análisis</h3>
+          {analisis?.meta?.estrategia && (
+            <div style={{ margin: '6px 0 10px', color: '#666', fontSize: 13 }}>
+              Estrategia: <strong>{analisis.meta.estrategia}</strong>
+              {analisis?.meta?.modo ? <> · Modo: <strong>{analisis.meta.modo}</strong></> : null}
+            </div>
+          )}
           {/* Pestañas de Debate si meta.fuentes existe */}
           {analisis?.meta?.estrategia === 'debate' && (
             <div style={{ display:'flex', gap:8, margin:'8px 0' }} role="tablist" aria-label="Vistas de debate">

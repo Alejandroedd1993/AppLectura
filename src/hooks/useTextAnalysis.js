@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
-import { generateTextHash, getAnalysisFromCache, saveAnalysisToCache } from '../utils/cache';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { generateTextHash, getAnalysisFromCache, saveAnalysisToCache, runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
 import { fetchWithTimeout } from '../utils/netUtils';
 import { obtenerConfiguracionAPI } from '../utils/crypto';
 
@@ -13,6 +13,15 @@ export const useTextAnalysis = () => {
   const [error, setError] = useState('');
   const [progreso, setProgreso] = useState(0);
   const abortRef = useRef(null);
+
+  // Migración muy ligera para drenar la caché legacy (sin impacto perceptible).
+  useEffect(() => {
+    try {
+      runLegacyTextAnalysisCacheMigrationOnce({ limit: 5, dropExpired: true });
+    } catch {
+      // no-op
+    }
+  }, []);
 
   // Función para generar análisis básico localmente
   const generarAnalisisBasico = useCallback((textoEntrada) => {
@@ -188,7 +197,7 @@ export const useTextAnalysis = () => {
         } else {
           // Preparar prompt sencillo que pida JSON
           const prompt = `Devuelve un JSON con el siguiente esquema: {\n  "resumen": string,\n  "ideasPrincipales": string[],\n  "analisisEstilistico": { tono: string, sentimiento: string, estilo: string, publicoObjetivo: string },\n  "preguntasReflexion": string[],\n  "vocabulario": { palabra: string, definicion: string }[],\n  "complejidad": string,\n  "temas": string[]\n}. Extrae del texto: ${texto.slice(0, 4000)}`;
-          const model = 'gpt-3.5-turbo-1106';
+          const model = 'gpt-4o-mini';
           const resp = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {

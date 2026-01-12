@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import './styles/darkModeOverrides.css';
 import reportWebVitals from './reportWebVitals';
-import { AppContextProvider } from './context/AppContext'; // Contexto global para la aplicación
 import ErrorBoundary from './components/error/ErrorBoundary'; // Componente para manejar errores
 import './setupPdfWorker'; // Configurar worker de PDF.js
 
@@ -15,11 +14,9 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
-      <AppContextProvider>
-        <Suspense fallback={<div>Cargando aplicación...</div>}>
-          <App />
-        </Suspense>
-      </AppContextProvider>
+      <Suspense fallback={<div>Cargando aplicación...</div>}>
+        <App />
+      </Suspense>
     </ErrorBoundary>
   </React.StrictMode>
 );

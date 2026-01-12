@@ -211,6 +211,7 @@ export function sanitizeSession(session) {
       content: typeof session.text.content === 'string' ? session.text.content : '',
       fileName: session.text.fileName || 'texto_manual',
       fileType: session.text.fileType || 'text/plain',
+      fileURL: session.text.fileURL || null, // 🆕 CRÍTICO: Preservar URL del PDF para restauración
       metadata: isObject(session.text.metadata) ? session.text.metadata : {}
     };
   }
@@ -238,6 +239,36 @@ export function sanitizeSession(session) {
   if (session.settings && isObject(session.settings)) {
     sanitized.settings = session.settings;
   }
+  
+  // 🆕 CRÍTICO: Campos adicionales que se estaban perdiendo en sanitización
+  // IDs de curso y texto (críticos para aislamiento entre cursos)
+  if (session.sourceCourseId) {
+    sanitized.sourceCourseId = session.sourceCourseId;
+  }
+  
+  if (session.currentTextoId) {
+    sanitized.currentTextoId = session.currentTextoId;
+  }
+  
+  // Arrays de contenido del usuario
+  if (Array.isArray(session.tutorHistory)) {
+    sanitized.tutorHistory = session.tutorHistory;
+  }
+  
+  if (Array.isArray(session.highlights)) {
+    sanitized.highlights = session.highlights;
+  }
+  
+  if (Array.isArray(session.annotations)) {
+    sanitized.annotations = session.annotations;
+  }
+  
+  if (Array.isArray(session.notes)) {
+    sanitized.notes = session.notes;
+  }
+  
+  // 🆕 FASE 4: rewardsState NO pertenece a sesiones individuales (es global)
+  // Si existe en sesiones legacy, se ignora para evitar sobrescrituras.
   
   return sanitized;
 }

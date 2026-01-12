@@ -7,7 +7,7 @@ services:
     env: node
     region: oregon
     plan: starter  # $7/mes - Requerido para 40 alumnos (sin spin-down)
-    buildCommand: cd server && npm install
+    buildCommand: cd server && npm ci
     startCommand: cd server && node index.js
     envVars:
       - key: NODE_ENV
@@ -17,6 +17,8 @@ services:
       - key: OPENAI_API_KEY
         sync: false  # Configurar manualmente en Render Dashboard
       - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
         sync: false
       - key: TAVILY_API_KEY
         sync: false

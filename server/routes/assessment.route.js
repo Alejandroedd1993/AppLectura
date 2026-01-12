@@ -1,6 +1,6 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
 import { evaluateAnswer, evaluateComprehensive, bulkEvaluate } from '../controllers/assessment.controller.js';
+import { assessmentLimiter } from '../middleware/rateLimiters.js';
 
 const router = express.Router();
 
@@ -37,17 +37,6 @@ const validateAssessmentInput = (req, res, next) => {
   next();
 };
 
-// CORRECCIÓN: Rate limiting específico para evaluaciones
-const evaluationLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minuto
-  max: 10, // máximo 10 evaluaciones por minuto
-  message: {
-    error: 'Demasiadas evaluaciones. Intenta de nuevo en un minuto.',
-    retryAfter: 60
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 // Middleware de validación para evaluación comprehensiva
 const validateComprehensiveInput = (req, res, next) => {
@@ -75,8 +64,8 @@ const validateComprehensiveInput = (req, res, next) => {
 };
 
 // Rutas
-router.post('/evaluate', evaluationLimiter, validateAssessmentInput, evaluateAnswer);
-router.post('/evaluate-comprehensive', evaluationLimiter, validateComprehensiveInput, evaluateComprehensive);
-router.post('/bulk-evaluate', evaluationLimiter, bulkEvaluate);
+router.post('/evaluate', assessmentLimiter, validateAssessmentInput, evaluateAnswer);
+router.post('/evaluate-comprehensive', assessmentLimiter, validateComprehensiveInput, evaluateComprehensive);
+router.post('/bulk-evaluate', assessmentLimiter, bulkEvaluate);
 
 export default router;

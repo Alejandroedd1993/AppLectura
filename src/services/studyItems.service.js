@@ -20,9 +20,13 @@
  * }
  */
 
-// Scheduler (CommonJS) para reutilizar lógica SM-2
-// eslint-disable-next-line
-const { scheduleNext, getDueItems, updateStudyItem, validateQuality, createStudyItem } = require('../pedagogy/spaced/scheduler');
+// Scheduler (ESM) para reutilizar lógica SM-2
+import {
+  scheduleNext,
+  getDueItems,
+  updateStudyItem,
+  validateQuality
+} from '../pedagogy/spaced/scheduler';
 
 const SCHEMA_VERSION = 1;
 const PERSIST_DEBOUNCE_MS = 150;

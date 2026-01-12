@@ -1,5 +1,5 @@
 // src/services/retryWrapper.js
-import { createEvaluationError, ERROR_TYPES } from './evaluationErrors';
+import { createEvaluationError } from './evaluationErrors';
 
 /**
  * Configuración de reintentos

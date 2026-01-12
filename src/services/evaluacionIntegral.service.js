@@ -159,6 +159,115 @@ Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto d
   }
 }
 
+function extractJsonArray(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) return trimmed;
+
+  const start = trimmed.indexOf('[');
+  const end = trimmed.lastIndexOf(']');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return trimmed.slice(start, end + 1);
+}
+
+function normalizeHintsArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+/**
+ * Genera hints progresivos relacionados con una pregunta concreta.
+ * Objetivo: apoyo no evaluativo, sin revelar respuesta.
+ */
+async function generarHintsParaPregunta({
+  texto,
+  completeAnalysis,
+  dimension,
+  pregunta,
+  nivelDificultad = 'intermedio',
+  count = 5,
+  onProgress
+}) {
+  if (!texto || !pregunta || !dimension) {
+    return { hints: [], dimension };
+  }
+
+  if (onProgress) {
+    onProgress({ step: 'generating-hints', progress: 0 });
+  }
+
+  const validacion = validarPrerequisitos(dimension, completeAnalysis);
+  if (!validacion.valido) {
+    return { hints: [], dimension, needsPrerequisites: true, ...validacion };
+  }
+
+  const rubricaId = DIMENSION_MAP[dimension];
+  const rubricDimension = rubricaId ? getDimension(rubricaId) : null;
+  const contextoAnalisis = construirContextoAnalisis(completeAnalysis, dimension);
+
+  const safeCount = Math.max(3, Math.min(8, Number(count) || 5));
+  const prompt = `Eres un tutor claro y amable. Tu trabajo es dar pistas (hints) para ayudar a responder una pregunta, sin evaluar ni dar la respuesta.
+
+DIMENSIÓN: ${rubricDimension?.nombre || dimension}
+NIVEL: ${nivelDificultad}
+
+PREGUNTA:
+"""
+${pregunta}
+"""
+
+TEXTO (extracto):
+"""
+${texto.substring(0, 1200)}...
+"""
+
+${contextoAnalisis ? `CONTEXTO DE ANÁLISIS DISPONIBLE:\n${contextoAnalisis}` : ''}
+
+INSTRUCCIONES:
+- Genera ${safeCount} hints PROGRESIVOS (de más general a más específico).
+- Cada hint debe estar directamente relacionado con la pregunta: incluye al menos una palabra o frase corta tomada de la pregunta.
+- No reveles una respuesta completa ni redactes un párrafo final; solo pistas.
+- Si sugieres usar evidencia textual, indica qué tipo de fragmento buscar, sin inventar citas.
+
+Responde SOLO con un JSON válido: un array de strings.
+Ejemplo: ["hint 1", "hint 2", "hint 3"]`;
+
+  try {
+    const response = await chatCompletion({
+      provider: 'deepseek',
+      model: DEEPSEEK_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.4,
+      max_tokens: 450,
+      timeoutMs: 30000
+    });
+
+    const content = extractContent(response).trim();
+    const jsonCandidate = extractJsonArray(content) || content;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonCandidate);
+    } catch {
+      parsed = null;
+    }
+
+    const hints = normalizeHintsArray(parsed);
+
+    if (onProgress) {
+      onProgress({ step: 'completed', progress: 100 });
+    }
+
+    return { hints, dimension, dimensionLabel: rubricDimension?.nombre || dimension };
+  } catch (error) {
+    console.error('❌ Error generando hints:', error);
+    return { hints: [], dimension, error: error?.message || String(error) };
+  }
+}
+
 /**
  * Construye contexto del análisis según la dimensión
  */
@@ -406,7 +515,7 @@ Responde SOLO con JSON:
 /**
  * Evaluación con OpenAI (profundidad crítica)
  */
-async function evaluarConOpenAI({ texto, pregunta, respuesta, dimension, deepseekResult }) {
+async function evaluarConOpenAI({ texto: _texto, pregunta, respuesta, dimension, deepseekResult }) {
   const rubricaId = DIMENSION_MAP[dimension] || dimension;
   const rubricDimension = getDimension(rubricaId);
 
@@ -613,7 +722,7 @@ function sugerirArtefactos(evaluacion, rubricProgress) {
   return sugerencias.slice(0, 2); // Máximo 2 sugerencias
 }
 
-export { generarPregunta, evaluarRespuesta, sugerirArtefactos, validarPrerequisitos, DIMENSION_MAP };
+export { generarPregunta, generarHintsParaPregunta, evaluarRespuesta, sugerirArtefactos, validarPrerequisitos, DIMENSION_MAP };
 
 
 

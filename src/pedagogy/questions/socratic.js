@@ -33,7 +33,7 @@ function baseQuestions(dimension) {
   }
 }
 
-function generateSocraticQuestions({ dimension, anchors = [], max = 5 }) {
+export function generateSocraticQuestions({ dimension, anchors = [], max = 5 }) {
   const qs = baseQuestions(dimension);
   const questions = qs.slice(0, max).map((q, i) => {
     const a = anchors[i % Math.max(anchors.length, 1)];
@@ -47,10 +47,10 @@ function generateSocraticQuestions({ dimension, anchors = [], max = 5 }) {
 }
 
 // Heurística simple para evaluar complejidad de respuesta
-function assessResponseQuality(response = '') {
+export function assessResponseQuality(response = '') {
   const r = String(response || '');
   const lengthScore = Math.min(1, r.length / 180); // >180 chars se considera completo
-  const quoteScore = /(\"|"|“|”).+?(\"|"|“|”)/.test(r) ? 1 : 0; // cita
+  const quoteScore = /(["“”]).+?(["“”])/.test(r) ? 1 : 0; // cita
   const causalScore = /(porque|ya que|debido a|por lo tanto|aunque)/i.test(r) ? 1 : 0.5;
   const nuanceScore = /(sin embargo|no obstante|aunque)/i.test(r) ? 1 : 0.5;
   const raw = (lengthScore * 3 + quoteScore * 2 + causalScore * 2 + nuanceScore * 2) / 9 * 10;
@@ -59,4 +59,7 @@ function assessResponseQuality(response = '') {
   return { score, level };
 }
 
-module.exports = { generateSocraticQuestions, assessResponseQuality };
+export default {
+  generateSocraticQuestions,
+  assessResponseQuality
+};

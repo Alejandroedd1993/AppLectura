@@ -9,6 +9,62 @@ import {
 } from '../prompts/evaluationPrompts.js';
 import { normalizeDimensionInput } from '../../src/pedagogy/rubrics/criticalLiteracyRubric.js';
 
+const safeJsonParse = (value) => {
+  if (typeof value !== 'string') return { ok: true, data: value };
+  try {
+    return { ok: true, data: JSON.parse(value) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+};
+
+const normalizeScore = (value) => {
+  if (value === null || value === undefined) return null;
+  const num = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const normalizeCriterialEvaluationResponse = (raw, fallbackDimension) => {
+  const data = raw && typeof raw === 'object' ? raw : {};
+  const normalized = {
+    dimension: data.dimension || data.dimensión || data.category || fallbackDimension,
+    scoreGlobal: normalizeScore(data.scoreGlobal ?? data.score ?? data.puntuacion ?? data.puntaje),
+    nivel: normalizeScore(data.nivel ?? data.level),
+    criteriosEvaluados: data.criteriosEvaluados || data.criterios || data.criteria || [],
+    resumenDimension: data.resumenDimension || data.resumen || data.feedbackResumen || '',
+    siguientesPasos: data.siguientesPasos || data.nextSteps || [],
+    ...data
+  };
+
+  if (!Array.isArray(normalized.criteriosEvaluados)) {
+    normalized.criteriosEvaluados = [];
+  }
+  if (!Array.isArray(normalized.siguientesPasos)) {
+    normalized.siguientesPasos = [];
+  }
+
+  return normalized;
+};
+
+const normalizeComprehensiveEvaluationResponse = (raw) => {
+  const data = raw && typeof raw === 'object' ? raw : {};
+  const normalized = {
+    evaluaciones: data.evaluaciones || data.evaluations || [],
+    scoreTotal: normalizeScore(data.scoreTotal ?? data.score ?? data.puntuacionTotal),
+    nivelGeneral: normalizeScore(data.nivelGeneral ?? data.levelGeneral ?? data.nivel),
+    fortalezasGenerales: data.fortalezasGenerales || data.strengths || [],
+    areasDeDesarrollo: data.areasDeDesarrollo || data.areas || data.weaknesses || [],
+    recomendacionGeneral: data.recomendacionGeneral || data.recommendation || '',
+    ...data
+  };
+
+  if (!Array.isArray(normalized.evaluaciones)) normalized.evaluaciones = [];
+  if (!Array.isArray(normalized.fortalezasGenerales)) normalized.fortalezasGenerales = [];
+  if (!Array.isArray(normalized.areasDeDesarrollo)) normalized.areasDeDesarrollo = [];
+
+  return normalized;
+};
+
 /**
  * ✅ EVALUACIÓN CRITERIAL - Evalúa UNA dimensión con feedback estructurado por criterio
  * 
@@ -91,25 +147,31 @@ export async function evaluateAnswer(req, res) {
     });
 
     // Parsear respuesta
-    let data = response;
-    if (typeof response === 'string') {
-      try {
-        data = JSON.parse(response);
-      } catch (parseError) {
-        console.error('[assessment.evaluateAnswer] Error parseando JSON:', parseError);
-        return res.status(500).json({
-          error: 'Respuesta de IA no es JSON válido',
-          raw: response.slice(0, 500)
-        });
-      }
+    const parsed = safeJsonParse(response);
+    if (!parsed.ok) {
+      console.error('[assessment.evaluateAnswer] Error parseando JSON:', parsed.error);
+      return res.status(200).json({
+        valid: false,
+        degraded: true,
+        error: 'Respuesta de IA no es JSON válido',
+        raw: typeof response === 'string' ? response.slice(0, 500) : String(response).slice(0, 500),
+        dimension,
+        timestamp: new Date().toISOString()
+      });
     }
 
+    let data = normalizeCriterialEvaluationResponse(parsed.data, dimension);
+
     // Validar estructura de respuesta
-    if (!data.dimension || !data.scoreGlobal || !data.criteriosEvaluados) {
-      console.warn('[assessment.evaluateAnswer] Respuesta de IA incompleta:', data);
-      return res.status(500).json({
-        error: 'Evaluación incompleta',
-        details: 'La IA no generó todos los campos requeridos'
+    const hasCore = !!data.dimension && data.scoreGlobal != null && Array.isArray(data.criteriosEvaluados);
+    if (!hasCore) {
+      console.warn('[assessment.evaluateAnswer] Respuesta de IA incompleta (degraded):', data);
+      return res.status(200).json({
+        valid: false,
+        degraded: true,
+        message: 'Evaluación parcial: la IA no generó todos los campos requeridos',
+        ...data,
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -132,9 +194,12 @@ export async function evaluateAnswer(req, res) {
 
   } catch (err) {
     console.error('[assessment.evaluateAnswer] Error:', err);
-    return res.status(500).json({
+    return res.status(200).json({
+      valid: false,
+      degraded: true,
       error: 'Error al evaluar la respuesta',
-      message: err.message
+      message: err.message,
+      timestamp: new Date().toISOString()
     });
   }
 }
@@ -205,25 +270,29 @@ export async function evaluateComprehensive(req, res) {
     });
 
     // Parsear respuesta
-    let data = response;
-    if (typeof response === 'string') {
-      try {
-        data = JSON.parse(response);
-      } catch (parseError) {
-        console.error('[assessment.evaluateComprehensive] Error parseando JSON:', parseError);
-        return res.status(500).json({
-          error: 'Respuesta de IA no es JSON válido',
-          raw: response.slice(0, 500)
-        });
-      }
+    const parsed = safeJsonParse(response);
+    if (!parsed.ok) {
+      console.error('[assessment.evaluateComprehensive] Error parseando JSON:', parsed.error);
+      return res.status(200).json({
+        valid: false,
+        degraded: true,
+        error: 'Respuesta de IA no es JSON válido',
+        raw: typeof response === 'string' ? response.slice(0, 500) : String(response).slice(0, 500),
+        timestamp: new Date().toISOString()
+      });
     }
 
+    const data = normalizeComprehensiveEvaluationResponse(parsed.data);
+
     // Validar estructura de respuesta
-    if (!data.evaluaciones || !Array.isArray(data.evaluaciones) || data.evaluaciones.length < 4) {
-      console.warn('[assessment.evaluateComprehensive] Respuesta incompleta:', data);
-      return res.status(500).json({
-        error: 'Evaluación incompleta',
-        details: 'Se requieren al menos 4 dimensiones evaluadas'
+    if (!Array.isArray(data.evaluaciones) || data.evaluaciones.length < 4) {
+      console.warn('[assessment.evaluateComprehensive] Respuesta incompleta (degraded):', data);
+      return res.status(200).json({
+        valid: false,
+        degraded: true,
+        message: 'Evaluación parcial: se requieren al menos 4 dimensiones evaluadas',
+        ...data,
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -237,9 +306,12 @@ export async function evaluateComprehensive(req, res) {
 
   } catch (err) {
     console.error('[assessment.evaluateComprehensive] Error:', err);
-    return res.status(500).json({
+    return res.status(200).json({
+      valid: false,
+      degraded: true,
       error: 'Error en evaluación comprehensiva',
-      message: err.message
+      message: err.message,
+      timestamp: new Date().toISOString()
     });
   }
 }
@@ -294,13 +366,17 @@ export async function bulkEvaluate(req, res) {
       console.log(`📝 [assessment.bulkEvaluate] Procesando item ${i + 1}/${items.length}`);
 
       try {
+        // Sanitizar/limitar tamaños para controlar coste y evitar prompts excesivos
+        const safeTexto = typeof item?.texto === 'string' ? item.texto.slice(0, 10000) : item?.texto;
+        const safeRespuesta = typeof item?.respuesta === 'string' ? item.respuesta.slice(0, 5000) : item?.respuesta;
+
         // Normalizar dimensión
         const dimension = normalizeDimensionInput(item.dimension || 'comprensionAnalitica');
 
         // Validar item
         const validationErrors = validateCriterialEvaluationInput({
-          respuesta: item.respuesta,
-          texto: item.texto,
+          respuesta: safeRespuesta,
+          texto: safeTexto,
           dimensionKey: dimension
         });
 
@@ -314,8 +390,8 @@ export async function bulkEvaluate(req, res) {
 
         // Construir prompt
         const prompt = buildCriterialEvaluationPrompt({
-          respuesta: item.respuesta,
-          texto: item.texto,
+          respuesta: safeRespuesta,
+          texto: safeTexto,
           dimensionKey: dimension,
           idioma: item.idioma || 'es'
         });

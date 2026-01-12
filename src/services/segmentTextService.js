@@ -86,7 +86,9 @@ export function segmentText(raw, options = {}) {
   const paragraphs = [];
   let cursor = 0;
   finalParas.forEach((content, idx) => {
-    const indexInRaw = raw.indexOf(content.slice(0, 20)); // aproximación
+    // Buscar desde la posición del cursor para evitar encontrar ocurrencias anteriores repetidas
+    const indexInRaw = raw.indexOf(content.slice(0, 20), cursor); 
+    // Si no se encuentra (por normalización), usar cursor como fallback
     const startChar = indexInRaw > -1 ? indexInRaw : cursor;
     const endChar = startChar + content.length;
     cursor = endChar;

@@ -5,19 +5,16 @@ import { AppContext } from '../../context/AppContext';
 import { 
   getAllSessions,
   getAllSessionsMerged,
-  loadSession, 
   deleteSession, 
   deleteAllSessions,
-  setCurrentSession,
   getCurrentSessionId,
-  createSessionFromState,
-  updateCurrentSession,
+  syncPendingSessions,
   syncAllSessionsToCloud,
+  getPendingSyncs,
   getSyncStatus,
   getSessionsLimit
 } from '../../services/sessionManager';
 import { checkUnsaveDrafts, getWarningMessage } from '../../utils/checkUnsaveDrafts';
-import { lightTheme, darkTheme } from '../../styles/theme';
 import SessionCard from '../historial/SessionCard';
 import SessionFilters from '../historial/SessionFilters';
 
@@ -28,19 +25,23 @@ import SessionFilters from '../historial/SessionFilters';
 const SessionsHistory = ({ theme }) => {
   const { 
     texto, 
-    modoOscuro,
+    modoOscuro: _modoOscuro,
     restoreSession,
     createSession,
     updateCurrentSessionFromState,
-    currentUser
+    currentUser,
+    currentTextoId,
+    rubricProgress,
+    activitiesProgress // 🆕 FASE 4: Para verificar artefactos ya entregados
   } = useContext(AppContext);
   
   const [sessions, setSessions] = useState([]);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
+  const [_deletingId, setDeletingId] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sessionLimit, setSessionLimit] = useState(null);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   
   // 🆕 FASE 2: Estado de filtros
   const [filters, setFilters] = useState({
@@ -68,6 +69,9 @@ const SessionsHistory = ({ theme }) => {
   const loadSessions = useCallback(async () => {
     try {
       setLoading(true);
+
+      // Actualizar pendientes aunque falle el fetch de cloud
+      setPendingSyncCount(getPendingSyncs().length);
       
       // 🔥 Usar sesiones merged si hay usuario autenticado
       if (currentUser) {
@@ -110,6 +114,32 @@ const SessionsHistory = ({ theme }) => {
     }
   }, [currentUser]);
 
+  const handleSyncPendingNow = useCallback(async () => {
+    if (!currentUser) {
+      alert('Debes iniciar sesión para sincronizar con la nube');
+      return;
+    }
+
+    const pending = getPendingSyncs();
+    if (pending.length === 0) {
+      alert('✅ No hay sesiones pendientes por sincronizar');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const result = await syncPendingSessions();
+
+      alert(`✅ Sincronización de pendientes completada:\n${result.synced} sesiones sincronizadas\n${result.failed} fallidas`);
+      loadSessions();
+    } catch (error) {
+      console.error('❌ Error sincronizando pendientes:', error);
+      alert('Error sincronizando pendientes. Revisa la consola.');
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser, loadSessions]);
+
   const handleSessionClick = useCallback(async (session) => {
     console.log('🖱️ [SessionsHistory] Click en sesión:', {
       id: session.id,
@@ -123,10 +153,10 @@ const SessionsHistory = ({ theme }) => {
       return;
     }
     
-    // 🆕 Verificar si hay borradores sin evaluar
-    const { hasDrafts } = checkUnsaveDrafts();
+    // 🆕 Verificar si hay borradores sin evaluar (FASE 4: también considera activitiesProgress)
+    const { hasDrafts } = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress);
     if (hasDrafts) {
-      const warningMessage = getWarningMessage();
+      const warningMessage = getWarningMessage(currentTextoId, rubricProgress, activitiesProgress);
       const confirmed = window.confirm(warningMessage);
       
       if (!confirmed) {
@@ -151,7 +181,7 @@ const SessionsHistory = ({ theme }) => {
     } else {
       console.error('❌ [SessionsHistory] No se pudo restaurar la sesión');
     }
-  }, [restoreSession]);
+  }, [restoreSession, currentTextoId, rubricProgress]);
 
   const handleDeleteSession = useCallback(async (sessionId, e) => {
     e.stopPropagation();
@@ -383,26 +413,6 @@ const SessionsHistory = ({ theme }) => {
     }
   }, []);
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return 'Sin fecha';
-    const date = new Date(timestamp);
-    return date.toLocaleDateString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const getSessionPreview = (session) => {
-    if (session.text?.content) {
-      const preview = session.text.content.substring(0, 80);
-      return preview.length < session.text.content.length ? preview + '...' : preview;
-    }
-    return 'Sin texto';
-  };
-
   if (sessions.length === 0 && !texto) {
     return null; // No mostrar si no hay sesiones ni texto
   }
@@ -504,7 +514,19 @@ const SessionsHistory = ({ theme }) => {
               )}
 
               {/* 🔥 Botón de sincronización */}
-              {currentUser && syncStatus && syncStatus.localOnly > 0 && (
+              {currentUser && pendingSyncCount > 0 && (
+                <SyncButton
+                  theme={theme}
+                  onClick={handleSyncPendingNow}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  disabled={loading}
+                >
+                  🔄 Sincronizar pendientes {pendingSyncCount}
+                </SyncButton>
+              )}
+
+              {currentUser && syncStatus && (syncStatus.localOnly > 0 || syncStatus.needsSync > 0) && (
                 <SyncButton
                   theme={theme}
                   onClick={handleSyncAllToCloud}
@@ -512,7 +534,7 @@ const SessionsHistory = ({ theme }) => {
                   whileTap={{ scale: 0.99 }}
                   disabled={loading}
                 >
-                  ☁️ Sincronizar {syncStatus.localOnly}
+                  ☁️ Sincronizar {syncStatus.localOnly + syncStatus.needsSync}
                 </SyncButton>
               )}
 

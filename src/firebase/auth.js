@@ -10,9 +10,7 @@ import {
   GoogleAuthProvider,
   signOut,
   sendPasswordResetEmail,
-  updateProfile,
-  updateEmail,
-  updatePassword
+  updateProfile
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './config';
@@ -177,10 +175,13 @@ export async function loginWithGoogle(defaultRole = 'estudiante') {
     const errorMessages = {
       'auth/popup-closed-by-user': 'Popup cerrado. Intenta de nuevo',
       'auth/cancelled-popup-request': 'Operación cancelada',
-      'auth/popup-blocked': 'Popup bloqueado por el navegador. Permite popups para este sitio'
+      'auth/popup-blocked': 'Popup bloqueado por el navegador. Permite popups para este sitio',
+      'auth/internal-error': 'Error de configuración o red. Verifica tu conexión y las variables de entorno (API Key).'
     };
     
-    throw new Error(errorMessages[error.code] || error.message);
+    const customError = new Error(errorMessages[error.code] || error.message);
+    customError.code = error.code;
+    throw customError;
   }
 }
 

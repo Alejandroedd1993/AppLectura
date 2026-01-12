@@ -176,70 +176,53 @@ const ResultValue = styled.div`
   color: ${p => p.$success ? '#10b981' : p.theme.textPrimary};
 `;
 
-const ActionButton = styled.button`
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 0.75rem 2rem;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
-  }
-  
-  &:active {
-    transform: translateY(0);
-  }
-`;
-
 // ==============================================================================
 // COMPONENTE PRINCIPAL
 // ==============================================================================
 
 const PreguntasPersonalizadas = ({ theme }) => {
-  const { 
-    texto, 
-    completeAnalysis, 
-    setError,
+  const {
+    texto,
+    completeAnalysis,
     activitiesProgress,
-    markPreparationProgress
+    markPreparationProgress,
+    currentTextoId
   } = useContext(AppContext);
-  
+
   // Estado local
   const [activeTab, setActiveTab] = useState('mcq');
-  
+
   // Obtener datos del análisis primero
   const documentId = completeAnalysis?.metadata?.document_id || null;
+  const lectureId = currentTextoId || documentId || null;
   const mcqQuestions = completeAnalysis?.critical?.mcqQuestions || [];
   const synthesisQuestions = completeAnalysis?.critical?.synthesisQuestions || [];
-  
+
   // 🆕 Memoizar progreso del documento para evitar re-renders
-  const docProgress = useMemo(() => 
-    activitiesProgress?.[documentId]?.preparation || {},
-    [activitiesProgress, documentId]
+  const docProgress = useMemo(() =>
+    activitiesProgress?.[lectureId]?.preparation || {},
+    [activitiesProgress, lectureId]
   );
-  
+
   const [mcqCompleted, setMcqCompleted] = useState(false);
   const [mcqResults, setMcqResults] = useState(null);
   const [synthesisCompleted, setSynthesisCompleted] = useState(false);
   const [synthesisAnswers, setSynthesisAnswers] = useState(null);
-  
+
   // 🔄 Sincronizar estado local con contexto cuando cambia documentId o activitiesProgress
   useEffect(() => {
-    if (documentId && docProgress) {
+    if (lectureId && docProgress) {
       console.log('🔄 [PreguntasPersonalizadas] Sincronizando con contexto:', docProgress);
       setMcqCompleted(docProgress.mcqPassed || false);
       setMcqResults(docProgress.mcqResults || null);
       setSynthesisCompleted(docProgress.completed || false);
       setSynthesisAnswers(docProgress.synthesisAnswers || null);
-      
+
       if (docProgress.completed) {
         console.log('✅ [PreguntasPersonalizadas] Preparación COMPLETADA restaurada desde contexto');
+      } else if (docProgress.mcqPassed) {
+        console.log('✅ [PreguntasPersonalizadas] MCQ completado, activando síntesis');
+        setActiveTab('synthesis');
       }
     } else {
       // Resetear si no hay documento
@@ -247,38 +230,39 @@ const PreguntasPersonalizadas = ({ theme }) => {
       setMcqResults(null);
       setSynthesisCompleted(false);
       setSynthesisAnswers(null);
+      setActiveTab('mcq');
       console.log('🆕 [PreguntasPersonalizadas] Nueva preparación inicializada');
     }
-  }, [documentId, docProgress]);
+  }, [lectureId, docProgress]);
 
   // Handlers
   const handleMCQComplete = useCallback((results) => {
     console.log('✅ [EjerciciosGuiados] MCQ completado:', results);
     setMcqResults(results);
     setMcqCompleted(results.passed);
-    
+
     // 💾 Guardar resultados MCQ en context
-    if (documentId && markPreparationProgress) {
-      markPreparationProgress(documentId, {
+    if (lectureId && markPreparationProgress) {
+      markPreparationProgress(lectureId, {
         mcqPassed: results.passed,
         mcqResults: results
       });
       console.log('💾 [PreguntasPersonalizadas] Resultados MCQ guardados en contexto');
     }
-    
+
     if (results.passed) {
       setActiveTab('synthesis');
     }
-  }, [documentId, markPreparationProgress]);
+  }, [lectureId, markPreparationProgress]);
 
   const handleSynthesisComplete = useCallback((answers) => {
     console.log('✅ [EjerciciosGuiados] Síntesis completada, desbloqueando artefactos...');
     setSynthesisAnswers(answers);
     setSynthesisCompleted(true);
-    
+
     // 💾 Guardar preparación completada en context
-    if (documentId && markPreparationProgress) {
-      markPreparationProgress(documentId, {
+    if (lectureId && markPreparationProgress) {
+      markPreparationProgress(lectureId, {
         completed: true,
         mcqPassed: mcqResults?.passed || false,
         mcqResults,
@@ -286,12 +270,12 @@ const PreguntasPersonalizadas = ({ theme }) => {
       });
       console.log('💾 [PreguntasPersonalizadas] Preparación y respuestas guardadas en contexto');
     }
-    
+
     // Disparar evento para desbloquear artefactos
     window.dispatchEvent(new CustomEvent('exercises-completed', {
       detail: { mcqResults, synthesisAnswers: answers }
     }));
-  }, [documentId, markPreparationProgress, mcqResults]);
+  }, [lectureId, markPreparationProgress, mcqResults]);
 
   // Verificaciones de estado
   if (!texto) {
@@ -350,7 +334,7 @@ const PreguntasPersonalizadas = ({ theme }) => {
   if (synthesisCompleted) {
     const mcqScore = mcqResults ? `${mcqResults.correct}/${mcqResults.total}` : 'N/A';
     const mcqPercentage = mcqResults ? Math.round((mcqResults.correct / mcqResults.total) * 100) : 0;
-    
+
     return (
       <Container>
         <CompletionCard
@@ -390,14 +374,14 @@ const PreguntasPersonalizadas = ({ theme }) => {
           </ResultsGrid>
 
           <CompletionText theme={theme} style={{ marginTop: '1.5rem', fontSize: '0.95rem' }}>
-            💡 <strong>Siguiente paso:</strong> Ve a las pestañas de artefactos (Resumen Académico, Análisis del Discurso, etc.) 
+            💡 <strong>Siguiente paso:</strong> Ve a las pestañas de artefactos (Resumen Académico, Análisis del Discurso, etc.)
             para crear tus trabajos y recibir evaluación criterial con feedback dual de IA.
           </CompletionText>
 
           <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#3b82f615', borderRadius: '8px' }}>
             <div style={{ fontSize: '0.9rem', color: theme.textSecondary }}>
-              🔒 <strong>Nota:</strong> La preparación es un checkpoint único. 
-              Una vez completada, no necesitas volver a hacerla. 
+              🔒 <strong>Nota:</strong> La preparación es un checkpoint único.
+              Una vez completada, no necesitas volver a hacerla.
               Enfócate ahora en crear y mejorar tus artefactos académicos.
             </div>
           </div>
@@ -420,9 +404,9 @@ const PreguntasPersonalizadas = ({ theme }) => {
           <InfoContent>
             <InfoTitle theme={theme}>Preparación Obligatoria</InfoTitle>
             <InfoText theme={theme}>
-              Completa esta preparación para desbloquear los artefactos académicos formales. 
-              <strong> Paso 1:</strong> Autoevaluación rápida (5 MCQ) · 
-              <strong> Paso 2:</strong> Preguntas de síntesis (2 reflexiones) · 
+              Completa esta preparación para desbloquear los artefactos académicos formales.
+              <strong> Paso 1:</strong> Autoevaluación rápida (5 MCQ) ·
+              <strong> Paso 2:</strong> Preguntas de síntesis (2 reflexiones) ·
               <strong> Resultado:</strong> Acceso a los 5 artefactos evaluados
             </InfoText>
           </InfoContent>
@@ -439,7 +423,7 @@ const PreguntasPersonalizadas = ({ theme }) => {
           📋 Autoevaluación Rápida
           {mcqCompleted && ' ✅'}
         </Tab>
-        
+
         <Tab
           $active={activeTab === 'synthesis'}
           $locked={!mcqCompleted}
@@ -466,6 +450,7 @@ const PreguntasPersonalizadas = ({ theme }) => {
             <MCQExercise
               questions={mcqQuestions}
               onComplete={handleMCQComplete}
+              initialResults={mcqResults}
               theme={theme}
             />
           </motion.div>
@@ -482,6 +467,7 @@ const PreguntasPersonalizadas = ({ theme }) => {
             <SynthesisQuestions
               questions={synthesisQuestions}
               onComplete={handleSynthesisComplete}
+              initialAnswers={synthesisAnswers}
               theme={theme}
             />
           </motion.div>
@@ -500,7 +486,7 @@ const PreguntasPersonalizadas = ({ theme }) => {
           <InfoContent>
             <InfoTitle theme={theme}>✅ ¡Preparación completada exitosamente!</InfoTitle>
             <InfoText theme={theme}>
-              Has demostrado comprensión básica del texto y completado las reflexiones de síntesis. 
+              Has demostrado comprensión básica del texto y completado las reflexiones de síntesis.
               Los artefactos académicos ya están desbloqueados.
               <br /><br />
               <strong>Siguiente paso:</strong> Navega a las otras pestañas (Resumen Académico, Análisis del Discurso, Mapa de Actores, etc.) para crear tus producciones formales con evaluación criterial.

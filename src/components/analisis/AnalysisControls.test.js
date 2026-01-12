@@ -35,8 +35,8 @@ describe('AnalysisControls', () => {
   test('renderiza todos los controles correctamente', () => {
     render(<AnalysisControls {...defaultProps} />);
     
-    // Verifica que el selector de API esté presente
-    expect(screen.getByText('Proveedor de IA:')).toBeInTheDocument();
+    // Verifica que el indicador de análisis dual esté presente
+    expect(screen.getByText(/Análisis Inteligente Dual/i)).toBeInTheDocument();
     
     // Verifica que el botón de analizar esté presente y habilitado
     const analyzeButton = screen.getByRole('button', { name: /🚀 Analizar Texto/i });

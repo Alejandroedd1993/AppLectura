@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { fetchWithTimeout } from '../../utils/netUtils';
 import { NotesServices } from '../../services/notes';
 
@@ -18,7 +19,10 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001'
  * @param {Object} completeAnalysis - Análisis académico completo del texto (opcional)
  * @returns {Object} Estado y funciones para gestión de notas
  */
-const useNotasEstudio = (texto, completeAnalysis = null) => {
+const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
+  const { currentUser } = useAuth();
+  const userId = currentUser?.uid || 'guest';
+
   // Estados principales
   const [notas, setNotas] = useState(null);
   const [cronograma, setCronograma] = useState([]);
@@ -30,7 +34,22 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
   
   // 🆕 FASE 3: Nivel académico para personalización
   const [nivelAcademico, setNivelAcademico] = useState(() => {
-    return localStorage.getItem('nivel_academico') || 'pregrado';
+    const scopedKey = `nivel_academico:${userId}`;
+
+    const scoped = localStorage.getItem(scopedKey);
+    if (scoped) return scoped;
+
+    // Migración legacy (sin userId)
+    const legacy = localStorage.getItem('nivel_academico');
+    if (legacy) {
+      try {
+        localStorage.setItem(scopedKey, legacy);
+        localStorage.removeItem('nivel_academico');
+      } catch {}
+      return legacy;
+    }
+
+    return 'pregrado';
   });
   
   // Estados de UI
@@ -41,16 +60,38 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
   const [inicializado, setInicializado] = useState(false);
   const [idTextoActual, setIdTextoActual] = useState('');
 
+  // Rehidratar el nivel cuando cambia el usuario
+  useEffect(() => {
+    try {
+      const scopedKey = `nivel_academico:${userId}`;
+      const scoped = localStorage.getItem(scopedKey);
+      if (scoped) {
+        setNivelAcademico(scoped);
+        return;
+      }
+
+      const legacy = localStorage.getItem('nivel_academico');
+      if (legacy) {
+        localStorage.setItem(scopedKey, legacy);
+        localStorage.removeItem('nivel_academico');
+        setNivelAcademico(legacy);
+      }
+    } catch {}
+  }, [userId]);
+
   // 🆕 FASE 3: Guardar nivel académico en localStorage
   useEffect(() => {
-    localStorage.setItem('nivel_academico', nivelAcademico);
-  }, [nivelAcademico]);
+    try {
+      localStorage.setItem(`nivel_academico:${userId}`, nivelAcademico);
+    } catch {}
+  }, [nivelAcademico, userId]);
 
   /**
    * Genera ID único para el texto actual
    */
   const generarIdTexto = useCallback((textoParam) => {
     if (!textoParam) return '';
+    // Fallback legacy (si no hay textoId)
     return NotesServices.Storage.generarIdTexto(textoParam);
   }, []);
 
@@ -59,7 +100,7 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
    */
   const cargarConfiguracionInicial = useCallback(() => {
     try {
-      const config = NotesServices.Storage.cargarConfiguracion();
+      const config = NotesServices.Storage.cargarConfiguracion(userId);
       
       if (config.tipoTexto) setTipoTexto(config.tipoTexto);
       if (config.duracionEstudio) setDuracionEstudio(config.duracionEstudio);
@@ -68,7 +109,7 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
     } catch (error) {
       console.error('[useNotasEstudio] Error al cargar configuración inicial:', error);
     }
-  }, []);
+  }, [userId]);
 
   /**
    * Carga datos guardados para el texto actual
@@ -77,7 +118,7 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
     if (!textoParam) return;
 
     try {
-      const progreso = NotesServices.Storage.cargarProgresoNotas(textoParam);
+      const progreso = NotesServices.Storage.cargarProgresoNotas(textoParam, textoId, userId);
       
       if (progreso) {
         console.log('[useNotasEstudio] Datos guardados encontrados');
@@ -106,7 +147,7 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
     } catch (error) {
       console.error('[useNotasEstudio] Error al cargar datos guardados:', error);
     }
-  }, []);
+  }, [textoId, userId]);
 
   /**
    * Guarda el progreso actual en localStorage
@@ -124,7 +165,7 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
         ultimaActualizacion: Date.now()
       };
 
-      const guardado = NotesServices.Storage.guardarProgresoNotas(texto, progreso);
+      const guardado = NotesServices.Storage.guardarProgresoNotas(texto, progreso, textoId, userId);
       
       if (guardado) {
         console.log('[useNotasEstudio] Progreso guardado exitosamente');
@@ -134,12 +175,12 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
     } catch (error) {
       console.error('[useNotasEstudio] Error al guardar progreso:', error);
     }
-  }, [texto, notas, cronograma, tipoTexto, duracionEstudio, notasRepasadas]);
+  }, [texto, notas, cronograma, tipoTexto, duracionEstudio, notasRepasadas, textoId, userId]);
 
   /**
    * Genera notas de estudio usando OpenAI
    */
-  const generarNotas = useCallback(async (textoParam, tipoParam) => {
+  const _generarNotas = useCallback(async (textoParam, tipoParam) => {
     if (!textoParam) {
       throw new Error('No hay texto para analizar');
     }
@@ -263,24 +304,28 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
         throw new Error(msg || `HTTP ${res.status}`);
       }
     } catch (errBackend) {
-      console.warn('[useNotasEstudio] Backend no disponible, usando OpenAI directo:', errBackend?.message);
+      console.warn('[useNotasEstudio] Backend no disponible, evaluando fallback:', errBackend?.message);
     }
 
     // 2) OpenAI directo (con contexto enriquecido)
-    try {
-      let tipo = tipoDetectado;
-      
-      // Solo detectar tipo si no está en el análisis
-      if (!contextoEnriquecido?.genero && tipoParam === 'auto') {
-        tipo = await NotesServices.OpenAI.detectarTipoTexto(textoParam);
-        console.log(`[useNotasEstudio] Tipo detectado automáticamente: ${tipo}`);
-      } else if (contextoEnriquecido?.genero) {
-        console.log(`[useNotasEstudio] Usando tipo del análisis: ${tipo}`);
+    if (!NotesServices?.OpenAI?.hasUserApiKey?.()) {
+      console.log('[useNotasEstudio] OpenAI directo omitido: no hay API key BYOK configurada');
+    } else {
+      try {
+        let tipo = tipoDetectado;
+
+        // Solo detectar tipo si no está en el análisis
+        if (!contextoEnriquecido?.genero && tipoParam === 'auto') {
+          tipo = await NotesServices.OpenAI.detectarTipoTexto(textoParam);
+          console.log(`[useNotasEstudio] Tipo detectado automáticamente: ${tipo}`);
+        } else if (contextoEnriquecido?.genero) {
+          console.log(`[useNotasEstudio] Usando tipo del análisis: ${tipo}`);
+        }
+
+        return await NotesServices.OpenAI.generarNotasSegunTipo(textoParam, tipo);
+      } catch (errOpenAI) {
+        console.warn('[useNotasEstudio] OpenAI directo falló, usando fallback local:', errOpenAI?.message);
       }
-      
-      return await NotesServices.OpenAI.generarNotasSegunTipo(textoParam, tipo);
-    } catch (errOpenAI) {
-      console.warn('[useNotasEstudio] OpenAI directo falló, usando fallback local:', errOpenAI?.message);
     }
 
     // 3) Fallback local mejorado con contexto
@@ -381,18 +426,18 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
       guardarProgreso(notas, nuevoCronograma);
 
       // Actualizar estadísticas
-      const stats = NotesServices.Storage.cargarEstadisticas();
+      const stats = NotesServices.Storage.cargarEstadisticas(userId);
       NotesServices.Storage.guardarEstadisticas({
         ...stats,
         repasosCompletados: (stats.repasosCompletados || 0) + 1
-      });
+      }, userId);
 
       console.log(`[useNotasEstudio] Repaso ${indice + 1} marcado como completado`);
     } catch (error) {
       console.error('[useNotasEstudio] Error al marcar repaso completado:', error);
       setError('No se pudo marcar el repaso como completado');
     }
-  }, [cronograma, notasRepasadas, notas, guardarProgreso]);
+  }, [cronograma, notasRepasadas, notas, guardarProgreso, userId]);
 
   /**
    * Actualiza configuración y guarda en localStorage
@@ -405,12 +450,12 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
         ...nuevaConfig
       };
 
-      NotesServices.Storage.guardarConfiguracion(config);
+      NotesServices.Storage.guardarConfiguracion(config, userId);
       console.log('[useNotasEstudio] Configuración actualizada');
     } catch (error) {
       console.error('[useNotasEstudio] Error al actualizar configuración:', error);
     }
-  }, [tipoTexto, duracionEstudio]);
+  }, [tipoTexto, duracionEstudio, userId]);
 
   /**
    * Estadísticas del progreso calculadas
@@ -440,7 +485,8 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
   useEffect(() => {
     if (!texto || !inicializado) return;
 
-    const nuevoId = generarIdTexto(texto);
+    // 🆕 FASE 5: preferir textoId estable (por lectura) y caer a legacy solo si falta
+    const nuevoId = textoId || generarIdTexto(texto);
     
     // Solo procesar si es un texto diferente
     if (nuevoId !== idTextoActual) {
@@ -455,7 +501,7 @@ const useNotasEstudio = (texto, completeAnalysis = null) => {
       // Cargar datos guardados
       cargarDatosGuardados(texto);
     }
-  }, [texto, inicializado, idTextoActual, generarIdTexto, cargarDatosGuardados]);
+  }, [texto, textoId, inicializado, idTextoActual, generarIdTexto, cargarDatosGuardados]);
 
   // 🔒 DESHABILITADO: No generar notas automáticamente
   // Las notas solo se generan cuando:

@@ -1,15 +1,16 @@
 // src/components/artefactos/TablaACD.js
-import React, { useState, useContext, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useContext, useCallback, useEffect, useMemo, useRef } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
 import { useRewards } from '../../context/PedagogyContext';
 import { evaluateTablaACD } from '../../services/tablaACD.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
+import useRateLimit from '../../hooks/useRateLimit';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
-import { getDimension, scoreToLevelDescriptor } from '../../pedagogy/rubrics/criticalLiteracyRubric';
+import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
 
 // ============================================
@@ -233,7 +234,7 @@ const PrimaryButton = styled(Button)`
   }
 `;
 
-const SecondaryButton = styled(Button)`
+const _SecondaryButton = styled(Button)`
   background: ${props => props.theme.surface};
   color: ${props => props.theme.text};
   border: 1px solid ${props => props.theme.border};
@@ -265,7 +266,7 @@ const NivelGlobal = styled.div`
   padding: 0.5rem 1rem;
   border-radius: 20px;
   background: ${props => {
-    switch(props.$nivel) {
+    switch (props.$nivel) {
       case 1: return '#fee2e2';
       case 2: return '#fed7aa';
       case 3: return '#dcfce7';
@@ -274,7 +275,7 @@ const NivelGlobal = styled.div`
     }
   }};
   color: ${props => {
-    switch(props.$nivel) {
+    switch (props.$nivel) {
       case 1: return '#991b1b';
       case 2: return '#c2410c';
       case 3: return '#166534';
@@ -324,7 +325,7 @@ const CriterioNivel = styled.span`
   font-size: 0.8rem;
   font-weight: 600;
   background: ${props => {
-    switch(props.$nivel) {
+    switch (props.$nivel) {
       case 1: return '#fee2e2';
       case 2: return '#fed7aa';
       case 3: return '#dcfce7';
@@ -333,7 +334,7 @@ const CriterioNivel = styled.span`
     }
   }};
   color: ${props => {
-    switch(props.$nivel) {
+    switch (props.$nivel) {
       case 1: return '#991b1b';
       case 2: return '#c2410c';
       case 3: return '#166534';
@@ -627,60 +628,207 @@ const ShortcutsHint = styled.div`
   }
 `;
 
+// 🆕 Componentes para Historial de Versiones
+const HistoryRibbon = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: ${props => props.theme.surfaceAlt || '#f8f9fa'};
+  border-bottom: 1px solid ${props => props.theme.border || '#e0e0e0'};
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  border-radius: 8px 8px 0 0;
+  
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: ${props => props.theme.border || '#ccc'};
+    border-radius: 2px;
+  }
+`;
+
+const HistoryTitle = styled.div`
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: ${props => props.theme.textSecondary};
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+`;
+
+const HistoryBadge = styled.button`
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 20px;
+  border: 1px solid ${props => props.$active ? props.theme.primary : props.theme.border};
+  background: ${props => props.$active ? props.theme.primary : 'transparent'};
+  color: ${props => props.$active ? 'white' : props.theme.textSecondary};
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  
+  &:hover {
+    background: ${props => props.$active ? props.theme.primaryHover : props.theme.background};
+    border-color: ${props => props.theme.primary};
+  }
+  
+  span.score {
+    background: ${props => props.$active ? 'rgba(255,255,255,0.2)' : props.theme.surfaceAlt};
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+  }
+`;
+
+const RestoreBanner = styled(motion.div)`
+  background: ${props => props.theme.warning}15;
+  border: 1px solid ${props => props.theme.warning};
+  color: ${props => props.theme.warning};
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9rem;
+`;
+
+const RestoreButton = styled.button`
+  background: ${props => props.theme.warning};
+  color: white;
+  border: none;
+  padding: 0.4rem 1rem;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+`;
+
+
 // ============================================
 // COMPONENTE PRINCIPAL
 // ============================================
 
 export default function TablaACD({ theme }) {
-  const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation } = useContext(AppContext);
+  const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation, updateActivitiesProgress, sourceCourseId, currentTextoId, activitiesProgress } = useContext(AppContext);
   const rewards = useRewards(); // 🎮 Hook de recompensas
 
-  // Estados del formulario con recuperación de sessionStorage
-  const [marcoIdeologico, setMarcoIdeologico] = useState(() => 
-    sessionStorage.getItem('tablaACD_marcoIdeologico') || ''
-  );
-  const [estrategiasRetoricas, setEstrategiasRetoricas] = useState(() => 
-    sessionStorage.getItem('tablaACD_estrategiasRetoricas') || ''
-  );
-  const [vocesPresentes, setVocesPresentes] = useState(() => 
-    sessionStorage.getItem('tablaACD_vocesPresentes') || ''
-  );
-  const [vocesSilenciadas, setVocesSilenciadas] = useState(() => 
-    sessionStorage.getItem('tablaACD_vocesSilenciadas') || ''
-  );
+  // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
+  const resetProcessedRef = useRef(null);
+
+  // 🆕 FASE 1 FIX: Estados con carga dinámica por textoId
+  const [marcoIdeologico, setMarcoIdeologico] = useState('');
+  const [estrategiasRetoricas, setEstrategiasRetoricas] = useState('');
+  const [vocesPresentes, setVocesPresentes] = useState('');
+  const [vocesSilenciadas, setVocesSilenciadas] = useState('');
+
+  // 🆕 Efecto para cargar borradores cuando cambia el textoId
+  useEffect(() => {
+    if (!currentTextoId) return;
+
+    // Evitar contaminación visual entre documentos mientras se rehidrata
+    setMarcoIdeologico('');
+    setEstrategiasRetoricas('');
+    setVocesPresentes('');
+    setVocesSilenciadas('');
+
+    let cancelled = false;
+
+    import('../../services/sessionManager').then(({ getDraftKey }) => {
+      if (cancelled) return;
+      const getKey = (base) => getDraftKey(base, currentTextoId);
+
+      const readAndMigrateLegacy = (base) => {
+        const scopedKey = getKey(base);
+        const scoped = sessionStorage.getItem(scopedKey) || '';
+        if (scoped) return scoped;
+
+        const legacy = sessionStorage.getItem(base) || '';
+        if (legacy) {
+          sessionStorage.setItem(scopedKey, legacy);
+          sessionStorage.removeItem(base);
+          return legacy;
+        }
+        return '';
+      };
+
+      setMarcoIdeologico(readAndMigrateLegacy('tablaACD_marcoIdeologico'));
+      setEstrategiasRetoricas(readAndMigrateLegacy('tablaACD_estrategiasRetoricas'));
+      setVocesPresentes(readAndMigrateLegacy('tablaACD_vocesPresentes'));
+      setVocesSilenciadas(readAndMigrateLegacy('tablaACD_vocesSilenciadas'));
+
+      console.log('📂 [TablaACD] Borradores cargados para textoId:', currentTextoId);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTextoId]);
 
   // Estados de evaluación
   const [feedback, setFeedback] = useState(null);
   const [loading, setLoading] = useState(false);
   const [currentEvaluationStep, setCurrentEvaluationStep] = useState(null);
   const [showGuide, setShowGuide] = useState(true);
-  
+
   // 🆕 Estados para sistema de citas
   const [showCitasPanel, setShowCitasPanel] = useState(false);
   const [pasteError, setPasteError] = useState(null);
-  
+  const [evaluationAttempts, setEvaluationAttempts] = useState(0); // 🆕 Intentos (Max 3)
+  const [history, setHistory] = useState([]); // 🆕 Historial de versiones
+  const [viewingVersion, setViewingVersion] = useState(null); // 🆕 Versión en modo lectura
+  const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
+  const MAX_ATTEMPTS = 3; // 🆕 Límite de intentos
+
+  // 🆕 Rate limiting
+  const rateLimit = useRateLimit('evaluate_tabla_acd', {
+    cooldownMs: 5000,
+    maxPerHour: 10
+  });
+
   // 🆕 Keyboard shortcuts para productividad
   const [showSaveHint, setShowSaveHint] = useState(false);
-  
+
   useKeyboardShortcuts({
-    'ctrl+s': (e) => {
+    'ctrl+s': (_e) => {
       console.log('⌨️ Ctrl+S: Guardando borrador TablaACD...');
-      // Guardar manualmente en sessionStorage
-      sessionStorage.setItem('tablaACD_marcoIdeologico', marcoIdeologico);
-      sessionStorage.setItem('tablaACD_estrategiasRetoricas', estrategiasRetoricas);
-      sessionStorage.setItem('tablaACD_vocesPresentes', vocesPresentes);
-      sessionStorage.setItem('tablaACD_vocesSilenciadas', vocesSilenciadas);
+      if (!currentTextoId) return;
+
+      // Guardar manualmente en sessionStorage (namespaced por textoId)
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const getKey = (base) => getDraftKey(base, currentTextoId);
+        if (marcoIdeologico) sessionStorage.setItem(getKey('tablaACD_marcoIdeologico'), marcoIdeologico);
+        if (estrategiasRetoricas) sessionStorage.setItem(getKey('tablaACD_estrategiasRetoricas'), estrategiasRetoricas);
+        if (vocesPresentes) sessionStorage.setItem(getKey('tablaACD_vocesPresentes'), vocesPresentes);
+        if (vocesSilenciadas) sessionStorage.setItem(getKey('tablaACD_vocesSilenciadas'), vocesSilenciadas);
+      });
       // Feedback visual
       setShowSaveHint(true);
       setTimeout(() => setShowSaveHint(false), 2000);
     },
-    'ctrl+enter': (e) => {
+    'ctrl+enter': (_e) => {
       console.log('⌨️ Ctrl+Enter: Evaluando tabla ACD...');
-      if (!loading && isValid) {
-        handleSubmit();
+      if (!loading && isValid && rateLimit.canProceed && evaluationAttempts < MAX_ATTEMPTS && !isSubmitted && !viewingVersion) {
+        handleEvaluate();
       }
     },
-    'escape': (e) => {
+    'escape': (_e) => {
       console.log('⌨️ Esc: Cerrando paneles...');
       if (showCitasPanel) {
         setShowCitasPanel(false);
@@ -692,7 +840,7 @@ export default function TablaACD({ theme }) {
     enabled: true,
     excludeInputs: false
   });
-  
+
   // 🆕 Refs para guardar posición del cursor en cada textarea
   const marcoRef = React.useRef(null);
   const estrategiasRef = React.useRef(null);
@@ -708,9 +856,9 @@ export default function TablaACD({ theme }) {
   // Validación
   const isValid = useMemo(() => {
     return marcoIdeologico.trim().length >= 10 &&
-           estrategiasRetoricas.trim().length >= 20 &&
-           vocesPresentes.trim().length >= 3 &&
-           vocesSilenciadas.trim().length >= 3;
+      estrategiasRetoricas.trim().length >= 20 &&
+      vocesPresentes.trim().length >= 3 &&
+      vocesSilenciadas.trim().length >= 3;
   }, [marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas]);
 
   const validationMessage = useMemo(() => {
@@ -723,51 +871,89 @@ export default function TablaACD({ theme }) {
     return '✅ Análisis completo. Solicita evaluación criterial.';
   }, [marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas]);
 
-  // 🆕 Guardar respaldo en sessionStorage (auto-guardado)
+  // 🆕 FASE 1 FIX: Guardar respaldo en sessionStorage con claves namespaced
   useEffect(() => {
-    if (marcoIdeologico) sessionStorage.setItem('tablaACD_marcoIdeologico', marcoIdeologico);
-  }, [marcoIdeologico]);
+    if (!currentTextoId) return;
 
-  useEffect(() => {
-    if (estrategiasRetoricas) sessionStorage.setItem('tablaACD_estrategiasRetoricas', estrategiasRetoricas);
-  }, [estrategiasRetoricas]);
+    import('../../services/sessionManager').then(({ getDraftKey }) => {
+      const getKey = (base) => getDraftKey(base, currentTextoId);
 
-  useEffect(() => {
-    if (vocesPresentes) sessionStorage.setItem('tablaACD_vocesPresentes', vocesPresentes);
-  }, [vocesPresentes]);
+      if (marcoIdeologico) sessionStorage.setItem(getKey('tablaACD_marcoIdeologico'), marcoIdeologico);
+      if (estrategiasRetoricas) sessionStorage.setItem(getKey('tablaACD_estrategiasRetoricas'), estrategiasRetoricas);
+      if (vocesPresentes) sessionStorage.setItem(getKey('tablaACD_vocesPresentes'), vocesPresentes);
+      if (vocesSilenciadas) sessionStorage.setItem(getKey('tablaACD_vocesSilenciadas'), vocesSilenciadas);
 
+      console.log('💾 [TablaACD] Borradores guardados para textoId:', currentTextoId);
+    });
+  }, [marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, currentTextoId]);
+
+  // 🆕 Sincronización en la nube de borradores (debounced)
   useEffect(() => {
-    if (vocesSilenciadas) sessionStorage.setItem('tablaACD_vocesSilenciadas', vocesSilenciadas);
-  }, [vocesSilenciadas]);
+    if (!currentTextoId) return;
+
+    if (marcoIdeologico || estrategiasRetoricas || vocesPresentes || vocesSilenciadas) {
+      const timer = setTimeout(() => {
+        import('../../services/sessionManager').then(({ updateCurrentSession, captureArtifactsDrafts }) => {
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+        });
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, currentTextoId]);
 
   // 🆕 Escuchar restauración de sesión para actualizar estados desde sessionStorage
   useEffect(() => {
+    if (!currentTextoId) return;
+
     const handleSessionRestored = () => {
-      const restoredMarco = sessionStorage.getItem('tablaACD_marcoIdeologico') || '';
-      const restoredEstrategias = sessionStorage.getItem('tablaACD_estrategiasRetoricas') || '';
-      const restoredPresentes = sessionStorage.getItem('tablaACD_vocesPresentes') || '';
-      const restoredSilenciadas = sessionStorage.getItem('tablaACD_vocesSilenciadas') || '';
-      
-      if (restoredMarco !== marcoIdeologico) setMarcoIdeologico(restoredMarco);
-      if (restoredEstrategias !== estrategiasRetoricas) setEstrategiasRetoricas(restoredEstrategias);
-      if (restoredPresentes !== vocesPresentes) setVocesPresentes(restoredPresentes);
-      if (restoredSilenciadas !== vocesSilenciadas) setVocesSilenciadas(restoredSilenciadas);
-      
-      if (restoredMarco || restoredEstrategias || restoredPresentes || restoredSilenciadas) {
-        console.log('🔄 [TablaACD] Borradores restaurados desde sesión');
-      }
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const getKey = (base) => getDraftKey(base, currentTextoId);
+
+        const readAndMigrateLegacy = (base) => {
+          const scopedKey = getKey(base);
+          const scoped = sessionStorage.getItem(scopedKey) || '';
+          if (scoped) return scoped;
+
+          const legacy = sessionStorage.getItem(base) || '';
+          if (legacy) {
+            sessionStorage.setItem(scopedKey, legacy);
+            sessionStorage.removeItem(base);
+            return legacy;
+          }
+          return '';
+        };
+
+        const restoredMarco = readAndMigrateLegacy('tablaACD_marcoIdeologico');
+        const restoredEstrategias = readAndMigrateLegacy('tablaACD_estrategiasRetoricas');
+        const restoredPresentes = readAndMigrateLegacy('tablaACD_vocesPresentes');
+        const restoredSilenciadas = readAndMigrateLegacy('tablaACD_vocesSilenciadas');
+
+        if (restoredMarco !== marcoIdeologico) setMarcoIdeologico(restoredMarco);
+        if (restoredEstrategias !== estrategiasRetoricas) setEstrategiasRetoricas(restoredEstrategias);
+        if (restoredPresentes !== vocesPresentes) setVocesPresentes(restoredPresentes);
+        if (restoredSilenciadas !== vocesSilenciadas) setVocesSilenciadas(restoredSilenciadas);
+
+        if (restoredMarco || restoredEstrategias || restoredPresentes || restoredSilenciadas) {
+          console.log('🔄 [TablaACD] Borradores restaurados desde sesión');
+        }
+      });
     };
-    
+
     window.addEventListener('session-restored', handleSessionRestored);
     return () => window.removeEventListener('session-restored', handleSessionRestored);
-  }, [marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas]);
+  }, [marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, currentTextoId]);
 
   // Persistencia principal
   const documentId = completeAnalysis?.metadata?.document_id || null;
-  const persistenceKey = `tabla_acd_${documentId}`;
+  const lectureId = currentTextoId || documentId || null;
+  const rewardsResourceId = lectureId ? `${lectureId}:TablaACD` : null;
+  const persistenceKey = lectureId ? `tabla_acd_${lectureId}` : null;
 
-  useActivityPersistence(persistenceKey, {
-    enabled: documentId !== null,
+  // ✅ Estructura corregida: onRehydrate debe estar en options, NO dentro de studentAnswers
+  const persistence = useActivityPersistence(persistenceKey, {
+    enabled: !!persistenceKey,
+    courseId: sourceCourseId, // 🆕 Aislar datos por curso
+    legacyDocumentIds: (currentTextoId && documentId && lectureId && lectureId !== documentId) ? [`tabla_acd_${documentId}`] : [],
     studentAnswers: {
       marco_ideologico: marcoIdeologico,
       estrategias_retoricas: estrategiasRetoricas,
@@ -775,52 +961,333 @@ export default function TablaACD({ theme }) {
       voces_silenciadas: vocesSilenciadas
     },
     aiFeedbacks: { tabla_acd: feedback },
+    attempts: evaluationAttempts,
+    history: history,
+    submitted: isSubmitted,
     onRehydrate: (data) => {
       if (data.student_answers?.marco_ideologico) setMarcoIdeologico(data.student_answers.marco_ideologico);
       if (data.student_answers?.estrategias_retoricas) setEstrategiasRetoricas(data.student_answers.estrategias_retoricas);
       if (data.student_answers?.voces_presentes) setVocesPresentes(data.student_answers.voces_presentes);
       if (data.student_answers?.voces_silenciadas) setVocesSilenciadas(data.student_answers.voces_silenciadas);
       if (data.ai_feedbacks?.tabla_acd) setFeedback(data.ai_feedbacks.tabla_acd);
+
+      // 🆕 Rehidratar intentos
+      if (typeof data.attempts === 'number') {
+        setEvaluationAttempts(data.attempts);
+      }
+
+      // 🆕 Rehidratar historial
+      if (Array.isArray(data.history)) {
+        setHistory(data.history);
+      }
+
+      // 🆕 Rehidratar estado de entrega
+      if (data.submitted) {
+        setIsSubmitted(true);
+      }
     }
   });
 
+  // 🆕 CLOUD SYNC: Cargar history/drafts desde Firestore (activitiesProgress) - tiene prioridad sobre localStorage
+  // También detecta resets del docente y limpia el estado local
+  useEffect(() => {
+    if (!lectureId) return;
+
+    const findCloudArtifact = (artifactKey) => {
+      if (!activitiesProgress) return null;
+      // Estructura anidada (preferida)
+      const nested = activitiesProgress?.[lectureId]?.artifacts?.[artifactKey];
+      if (nested) return nested;
+
+      // Estructura directa
+      const direct = activitiesProgress?.artifacts?.[artifactKey];
+      if (direct) return direct;
+
+      // Buscar en cualquier key
+      if (typeof activitiesProgress === 'object') {
+        for (const key of Object.keys(activitiesProgress)) {
+          const candidate = activitiesProgress?.[key]?.artifacts?.[artifactKey];
+          if (candidate) return candidate;
+        }
+      }
+      return null;
+    };
+
+    const cloudData = findCloudArtifact('tablaACD');
+    
+    // 🔄 DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
+    // Convertir resetAt a timestamp en milisegundos (puede ser string ISO, Firestore Timestamp, o número)
+    const rawResetAt = cloudData?.resetAt;
+    let resetTimestamp = 0;
+    if (rawResetAt) {
+      if (rawResetAt.seconds) {
+        // Firestore Timestamp
+        resetTimestamp = rawResetAt.seconds * 1000;
+      } else if (typeof rawResetAt === 'string') {
+        // ISO string
+        resetTimestamp = new Date(rawResetAt).getTime();
+      } else if (typeof rawResetAt === 'number') {
+        // Ya es timestamp (verificar si es segundos o milisegundos)
+        resetTimestamp = rawResetAt > 1e12 ? rawResetAt : rawResetAt * 1000;
+      }
+    }
+    
+    // 🆕 CLAVE: Si submitted === false explícitamente por el reset, debemos aplicarlo
+    // El reset escribe submitted: false, así que si cloudData.submitted es false
+    // y hay resetBy='docente', es un reset válido
+    const wasResetByDocente = cloudData?.resetBy === 'docente' && resetTimestamp > 0;
+    const isCurrentlySubmitted = cloudData?.submitted === true;
+    
+    // Solo aplicar reset si:
+    // 1. Hay resetBy='docente' y resetTimestamp válido
+    // 2. El artefacto NO está actualmente submitted (el docente lo reseteó a submitted: false)
+    const shouldApplyReset = wasResetByDocente && !isCurrentlySubmitted;
+    
+    if (shouldApplyReset) {
+      // Verificar si ya procesamos este reset específico
+      const resetKey = `${currentTextoId}_${resetTimestamp}`;
+      if (resetProcessedRef.current === resetKey) {
+        // Ya procesamos este reset, no hacer nada
+        return;
+      }
+      
+      console.log('🔄 [TablaACD] Detectado RESET por docente, limpiando estado local...');
+      console.log('🔄 [TablaACD] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
+      resetProcessedRef.current = resetKey; // Marcar como procesado
+      
+      // Limpiar estados
+      setIsSubmitted(false);
+      setIsLocked(false);
+      setHistory([]);
+      setEvaluationAttempts(0);
+      setFeedback(null);
+      setMarcoIdeologico('');
+      setEstrategiasRetoricas('');
+      setVocesPresentes('');
+      setVocesSilenciadas('');
+      setViewingVersion(null);
+      
+      // Limpiar sessionStorage
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const getKey = (base) => getDraftKey(base, lectureId);
+        sessionStorage.removeItem(getKey('tablaACD_marcoIdeologico'));
+        sessionStorage.removeItem(getKey('tablaACD_estrategiasRetoricas'));
+        sessionStorage.removeItem(getKey('tablaACD_vocesPresentes'));
+        sessionStorage.removeItem(getKey('tablaACD_vocesSilenciadas'));
+        console.log('🧹 [TablaACD] Borradores locales limpiados tras reset');
+      });
+      
+      // Limpiar localStorage (persistence)
+      if (persistence?.clearResults) {
+        persistence.clearResults();
+      }
+      
+      return; // No procesar más, ya reseteamos
+    }
+    
+    if (!cloudData) return;
+
+    // Priorizar datos de cloud sobre localStorage
+    if (cloudData.history && Array.isArray(cloudData.history)) {
+      console.log('☁️ [TablaACD] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
+      setHistory(prev => {
+        if (prev.length >= cloudData.history.length) return prev;
+        return cloudData.history;
+      });
+    }
+
+    if (cloudData.attempts && typeof cloudData.attempts === 'number') {
+      setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
+    }
+
+    if (cloudData.submitted) {
+      setIsSubmitted(true);
+    }
+
+    // 🆕 Restaurar borradores desde cloud si sessionStorage está vacío
+    if (cloudData.drafts) {
+      import('../../services/sessionManager').then(({ getDraftKey }) => {
+        const getKey = (base) => getDraftKey(base, lectureId);
+
+        if (cloudData.drafts.marcoIdeologico && !sessionStorage.getItem(getKey('tablaACD_marcoIdeologico'))) {
+          sessionStorage.setItem(getKey('tablaACD_marcoIdeologico'), cloudData.drafts.marcoIdeologico);
+          setMarcoIdeologico(cloudData.drafts.marcoIdeologico);
+        }
+        if (cloudData.drafts.estrategiasRetoricas && !sessionStorage.getItem(getKey('tablaACD_estrategiasRetoricas'))) {
+          sessionStorage.setItem(getKey('tablaACD_estrategiasRetoricas'), cloudData.drafts.estrategiasRetoricas);
+          setEstrategiasRetoricas(cloudData.drafts.estrategiasRetoricas);
+        }
+        if (cloudData.drafts.vocesPresentes && !sessionStorage.getItem(getKey('tablaACD_vocesPresentes'))) {
+          sessionStorage.setItem(getKey('tablaACD_vocesPresentes'), cloudData.drafts.vocesPresentes);
+          setVocesPresentes(cloudData.drafts.vocesPresentes);
+        }
+        if (cloudData.drafts.vocesSilenciadas && !sessionStorage.getItem(getKey('tablaACD_vocesSilenciadas'))) {
+          sessionStorage.setItem(getKey('tablaACD_vocesSilenciadas'), cloudData.drafts.vocesSilenciadas);
+          setVocesSilenciadas(cloudData.drafts.vocesSilenciadas);
+        }
+        console.log('☁️ [TablaACD] Borradores restaurados desde Firestore');
+      });
+    }
+  }, [lectureId, activitiesProgress, persistence]);
+
+  // 🆕 Handle submission
+  const handleSubmit = useCallback(() => {
+    if (!feedback) return;
+
+    if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
+      setIsSubmitted(true);
+
+      // ✅ Forzar guardado inmediato con saveManual
+      setTimeout(() => persistence.saveManual(), 100);
+
+      // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
+      if (lectureId && updateActivitiesProgress) {
+        updateActivitiesProgress(lectureId, prev => {
+          // Obtener el score previo guardado (lastScore) o calcular desde feedback
+          const previousArtifact = prev?.artifacts?.tablaACD || {};
+          const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
+          
+          console.log('📤 [TablaACD] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
+          
+          return {
+            ...prev,
+            artifacts: {
+              ...(prev?.artifacts || {}),
+              tablaACD: {
+                ...previousArtifact,
+                submitted: true,
+                submittedAt: Date.now(),
+                score: scoreToUse,
+                nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
+                history: history,
+                attempts: evaluationAttempts,
+                finalContent: { marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas }
+              }
+            }
+          };
+        });
+      }
+
+      if (rewards) {
+        rewards.recordEvent('ARTIFACT_SUBMITTED', {
+          artefacto: 'TablaACD',
+          level: feedback.nivel_global,
+          resourceId: rewardsResourceId
+        });
+      }
+
+      console.log('✅ [TablaACD] Tarea entregada y sincronizada con Dashboard');
+    }
+  }, [feedback, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas]);
+
+  // 🆕 Visualizar una versión histórica
+  const handleViewVersion = useCallback((entry) => {
+    if (!entry) {
+      setViewingVersion(null); // Volver al actual
+      return;
+    }
+    setViewingVersion(entry);
+    console.log(`📜 Visualizando versión: Intento ${entry.attemptNumber}`);
+  }, []);
+
+  // 🆕 Restaurar versión antigua como actual
+  const handleRestoreVersion = useCallback(() => {
+    if (!viewingVersion) return;
+
+    // Restaurar contenido (todos los campos)
+    if (viewingVersion.content) {
+      setMarcoIdeologico(viewingVersion.content.marco_ideologico || '');
+      setEstrategiasRetoricas(viewingVersion.content.estrategias_retoricas || '');
+      setVocesPresentes(viewingVersion.content.voces_presentes || '');
+      setVocesSilenciadas(viewingVersion.content.voces_silenciadas || '');
+    }
+
+    // Restaurar evaluación
+    setFeedback(viewingVersion.feedback);
+
+    // Configurar estado
+    setViewingVersion(null);
+    // Nota: TablaACD no tiene estado "Locked" explícito como Resumen, 
+    // pero al restaurar el feedback se muestra la evaluación.
+
+    // Guardar inmediatamente este cambio de estado
+    setTimeout(() => persistence.saveManual(), 100);
+
+    console.log('rewind ⏪ Versión restaurada exitosamente');
+  }, [viewingVersion, persistence]);
+
+  // Determine what to show: Current state or specific version
+  const displayedContent = useMemo(() => {
+    if (viewingVersion && viewingVersion.content) {
+      return {
+        marco: viewingVersion.content.marco_ideologico,
+        estrategias: viewingVersion.content.estrategias_retoricas,
+        presentes: viewingVersion.content.voces_presentes,
+        silenciadas: viewingVersion.content.voces_silenciadas
+      };
+    }
+    return {
+      marco: marcoIdeologico,
+      estrategias: estrategiasRetoricas,
+      presentes: vocesPresentes,
+      silenciadas: vocesSilenciadas
+    };
+  }, [viewingVersion, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas]);
+
+  // 🆕 Feedback a mostrar (histórico o actual)
+  const displayedFeedback = useMemo(() => {
+    if (viewingVersion && viewingVersion.feedback) {
+      return viewingVersion.feedback;
+    }
+    return feedback;
+  }, [viewingVersion, feedback]);
+
+  const isReadOnly = Boolean(viewingVersion) || isSubmitted;
+
+  // 🆕 Función para desbloquear y seguir editando después de recibir feedback
+  const handleSeguirEditando = useCallback(() => {
+    console.log('✏️ [TablaACD] Desbloqueando para editar...');
+    setIsLocked(false);
+    setFeedback(null); // Ocultar evaluación anterior para enfocarse en editar
+  }, []);
+
   // 🆕 Obtener citas guardadas
   const citasGuardadas = useMemo(() => {
-    if (!documentId) return [];
-    return getCitations(documentId);
-  }, [documentId, getCitations]);
+    if (!lectureId) return [];
+    return getCitations(lectureId);
+  }, [lectureId, getCitations]);
 
   // 🆕 Insertar cita en posición del cursor
   const insertarCita = useCallback((textoCita, campo) => {
     const citaFormateada = `"${textoCita}" `;
-    
+
     const refMap = {
       marco: marcoRef,
       estrategias: estrategiasRef,
       presentes: presentesRef,
       silenciadas: silenciadasRef
     };
-    
+
     const setterMap = {
       marco: setMarcoIdeologico,
       estrategias: setEstrategiasRetoricas,
       presentes: setVocesPresentes,
       silenciadas: setVocesSilenciadas
     };
-    
+
     const ref = refMap[campo];
     const setter = setterMap[campo];
-    
+
     if (ref && ref.current && setter) {
       const textarea = ref.current;
       const start = textarea.selectionStart || cursorPositions[campo] || 0;
       const end = textarea.selectionEnd || cursorPositions[campo] || 0;
-      
+
       setter(prev => {
         const before = prev.substring(0, start);
         const after = prev.substring(end);
         const newText = before + citaFormateada + after;
-        
+
         // Actualizar cursor después de la inserción
         setTimeout(() => {
           if (textarea) {
@@ -829,11 +1296,11 @@ export default function TablaACD({ theme }) {
             textarea.setSelectionRange(newPosition, newPosition);
           }
         }, 0);
-        
+
         return newText;
       });
     }
-    
+
     setShowCitasPanel(false);
   }, [cursorPositions]);
 
@@ -845,15 +1312,15 @@ export default function TablaACD({ theme }) {
 
   // 🆕 Eliminar cita
   const handleEliminarCita = useCallback((citaId) => {
-    if (documentId) deleteCitation(documentId, citaId);
-  }, [documentId, deleteCitation]);
+    if (lectureId) deleteCitation(lectureId, citaId);
+  }, [lectureId, deleteCitation]);
 
   // 🆕 Prevención de pegado
   const handlePaste = useCallback((e) => {
     e.preventDefault();
     const pastedText = e.clipboardData.getData('text');
     const wordCount = pastedText.trim().split(/\s+/).filter(word => word.length > 0).length;
-    
+
     if (wordCount <= 40) {
       // Permitir paste de hasta 40 palabras
       document.execCommand('insertText', false, pastedText);
@@ -870,9 +1337,29 @@ export default function TablaACD({ theme }) {
   const handleEvaluate = useCallback(async () => {
     if (!isValid || !texto) return;
 
+    // 🆕 Verificar límite de intentos
+    if (evaluationAttempts >= MAX_ATTEMPTS) {
+      setError(`🚫 Has alcanzado el límite de ${MAX_ATTEMPTS} intentos de evaluación para este artefacto.`);
+      return;
+    }
+
+    // ✅ Verificar rate limit
+    const rateLimitResult = rateLimit.attemptOperation();
+    if (!rateLimitResult.allowed) {
+      if (rateLimitResult.reason === 'cooldown') {
+        setError(`⏱️ Por favor espera ${rateLimitResult.waitSeconds} segundos antes de evaluar nuevamente.`);
+      } else if (rateLimitResult.reason === 'hourly_limit') {
+        setError(`🚦 Has alcanzado el límite de 10 evaluaciones totales por hora. Intenta más tarde.`);
+      }
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setCurrentEvaluationStep({ label: 'Iniciando análisis crítico...', icon: '🔍', duration: 2 });
+
+    // 🆕 Incrementar intentos inmediatamente
+    setEvaluationAttempts(prev => prev + 1);
 
     try {
       // Simular pasos para feedback visual
@@ -882,7 +1369,7 @@ export default function TablaACD({ theme }) {
         setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), 16000),
         setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando análisis...', icon: '🔧', duration: 4 }), 28000)
       ];
-      
+
       const result = await evaluateTablaACD({
         text: texto,
         marcoIdeologico,
@@ -895,69 +1382,140 @@ export default function TablaACD({ theme }) {
       stepTimeouts.forEach(timeout => clearTimeout(timeout));
 
       setFeedback(result);
-      
+      setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
+
       // 🆕 Actualizar progreso global de rúbrica
       updateRubricScore('rubrica2', {
         score: result.nivel_global * 2.5, // Convertir nivel 1-4 a escala 2.5-10
         nivel: result.nivel_global,
-        artefacto: 'TablaACD',
-        criterios: result.criterios
+        artefacto: 'AnalisisCriticoDiscurso',
+        sourceArtefacto: 'TablaACD',
+        criterios: result.criterios,
+        textoId: lectureId
       });
-      
+
+      // 🆕 Archivar en Historial
+      const newHistoryEntry = {
+        timestamp: new Date().toISOString(),
+        content: {
+          marco_ideologico: marcoIdeologico,
+          estrategias_retoricas: estrategiasRetoricas,
+          voces_presentes: vocesPresentes,
+          voces_silenciadas: vocesSilenciadas,
+        },
+        feedback: result,
+        score: result.nivel_global * 2.5,
+        attemptNumber: evaluationAttempts + 1
+      };
+
+      setHistory(prev => [...prev, newHistoryEntry]);
+      console.log('📜 [TablaACD] Versión archivada en historial');
+
+      // 🆕 CLOUD SYNC: Sincronizar historial y borradores con Firestore
+      if (lectureId && updateActivitiesProgress) {
+        updateActivitiesProgress(lectureId, prev => ({
+          ...prev,
+          artifacts: {
+            ...(prev?.artifacts || {}),
+            tablaACD: {
+              ...(prev?.artifacts?.tablaACD || {}),
+              history: [...(prev?.artifacts?.tablaACD?.history || []), newHistoryEntry],
+              attempts: evaluationAttempts + 1,
+              lastScore: result.nivel_global * 2.5,
+              lastNivel: result.nivel_global,
+              lastEvaluatedAt: Date.now(),
+              drafts: { marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas },
+              // 🆕 Limpiar flags de reset cuando el estudiante trabaja
+              resetBy: null,
+              resetAt: null
+            }
+          }
+        }));
+        console.log('☁️ [TablaACD] Historial sincronizado con Firestore');
+      }
+
+      // 🧹 Limpiar borradores tras evaluación exitosa (scoped + legacy)
+      if (currentTextoId) {
+        import('../../services/sessionManager').then(({ getDraftKey, updateCurrentSession, captureArtifactsDrafts }) => {
+          const getKey = (base) => getDraftKey(base, currentTextoId);
+
+          // scoped
+          sessionStorage.removeItem(getKey('tablaACD_marcoIdeologico'));
+          sessionStorage.removeItem(getKey('tablaACD_estrategiasRetoricas'));
+          sessionStorage.removeItem(getKey('tablaACD_vocesPresentes'));
+          sessionStorage.removeItem(getKey('tablaACD_vocesSilenciadas'));
+
+          // legacy
+          sessionStorage.removeItem('tablaACD_marcoIdeologico');
+          sessionStorage.removeItem('tablaACD_estrategiasRetoricas');
+          sessionStorage.removeItem('tablaACD_vocesPresentes');
+          sessionStorage.removeItem('tablaACD_vocesSilenciadas');
+
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+        });
+      }
+
       // 🎮 REGISTRAR RECOMPENSAS
       if (rewards) {
         // Puntos base por evaluación
         rewards.recordEvent('EVALUATION_SUBMITTED', {
           artefacto: 'TablaACD',
-          rubricId: 'rubrica2'
+          rubricId: 'rubrica2',
+          resourceId: rewardsResourceId
         });
-        
+
         // Puntos según nivel
         const nivelEvent = `EVALUATION_LEVEL_${result.nivel_global}`;
         rewards.recordEvent(nivelEvent, {
           score: result.nivel_global * 2.5,
           nivel: result.nivel_global,
-          artefacto: 'TablaACD'
+          artefacto: 'TablaACD',
+          resourceId: rewardsResourceId
         });
-        
+
         // Puntos especiales por completar Tabla ACD
         rewards.recordEvent('TABLA_ACD_COMPLETED', {
           score: result.nivel_global * 2.5,
-          nivel: result.nivel_global
+          nivel: result.nivel_global,
+          resourceId: rewardsResourceId
         });
-        
+
         // Puntos por identificar marco ideológico
         if (marcoIdeologico && marcoIdeologico.trim().length > 50) {
           rewards.recordEvent('ACD_FRAME_IDENTIFIED', {
-            frame: marcoIdeologico.substring(0, 100)
+            frame: marcoIdeologico.substring(0, 100),
+            resourceId: rewardsResourceId
           });
         }
-        
+
         // Puntos por identificar estrategias retóricas
         if (estrategiasRetoricas && estrategiasRetoricas.trim().length > 50) {
           rewards.recordEvent('ACD_STRATEGY_IDENTIFIED', {
-            strategies: estrategiasRetoricas.substring(0, 100)
+            strategies: estrategiasRetoricas.substring(0, 100),
+            resourceId: rewardsResourceId
           });
         }
-        
+
         // Puntos por análisis de poder (voces silenciadas)
         if (vocesSilenciadas && vocesSilenciadas.trim().length > 50) {
           rewards.recordEvent('ACD_POWER_ANALYSIS', {
-            analysis: vocesSilenciadas.substring(0, 100)
+            analysis: vocesSilenciadas.substring(0, 100),
+            resourceId: rewardsResourceId
           });
         }
-        
+
         // Achievement: Score perfecto
         if (result.nivel_global === 4) {
           rewards.recordEvent('PERFECT_SCORE', {
             score: 10,
-            artefacto: 'TablaACD'
+            artefacto: 'TablaACD',
+            resourceId: rewardsResourceId
           });
         }
-        
+
         console.log('🎮 [TablaACD] Recompensas registradas');
       }
-      
+
     } catch (error) {
       console.error('Error evaluando Tabla ACD:', error);
       setError(error.message || 'Error al evaluar el análisis');
@@ -965,7 +1523,7 @@ export default function TablaACD({ theme }) {
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
-  }, [isValid, texto, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, setError]);
+  }, [isValid, texto, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, setError, evaluationAttempts, rateLimit, currentTextoId, rewards, rewardsResourceId]);
 
   // Verificar si hay texto
   if (!texto) {
@@ -989,6 +1547,20 @@ export default function TablaACD({ theme }) {
         </Subtitle>
       </Header>
 
+      {/* 🆕 Banner de Entrega Final */}
+      {isSubmitted && (
+        <SubmissionBanner
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          theme={theme}
+        >
+          <span className="icon">✅</span>
+          <span className="text">
+            <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
+          </span>
+        </SubmissionBanner>
+      )}
+
       {/* 🆕 Panel lateral de citas guardadas */}
       <AnimatePresence>
         {showCitasPanel && (
@@ -1003,12 +1575,12 @@ export default function TablaACD({ theme }) {
             <CitasPanelHeader theme={theme}>
               <h3 style={{ margin: 0 }}>📋 Mis Citas Guardadas</h3>
               <p style={{ fontSize: '0.85rem', margin: '0.5rem 0 0 0', opacity: 0.8 }}>
-                {citasGuardadas.length === 0 
+                {citasGuardadas.length === 0
                   ? 'Selecciona texto en "Lectura Guiada" y guarda citas'
                   : 'Selecciona el campo y haz clic en "Insertar"'}
               </p>
             </CitasPanelHeader>
-            
+
             <CitasList>
               {citasGuardadas.length === 0 ? (
                 <EmptyCitasMessage theme={theme}>
@@ -1027,8 +1599,8 @@ export default function TablaACD({ theme }) {
                     <CitaTexto theme={theme}>{cita.texto}</CitaTexto>
                     <CitaFooter>
                       <CitaInfo theme={theme}>
-                        {new Date(cita.timestamp).toLocaleDateString('es-ES', { 
-                          month: 'short', 
+                        {new Date(cita.timestamp).toLocaleDateString('es-ES', {
+                          month: 'short',
                           day: 'numeric'
                         })}
                       </CitaInfo>
@@ -1084,8 +1656,71 @@ export default function TablaACD({ theme }) {
         </AnimatePresence>
       </GuideSection>
 
+      {/* Guía pedagógica */}
+      {/* ... (guía stays same) ... */}
+
+      {/* 🆕 Ribbon de Historial - SIEMPRE visible */}
+      {history.length > 0 && (
+        <HistoryRibbon theme={theme}>
+          <HistoryTitle theme={theme}>Versiones:</HistoryTitle>
+
+          {/* Versión actual primero */}
+          <HistoryBadge
+            $active={!viewingVersion}
+            onClick={() => handleViewVersion(null)}
+            theme={theme}
+          >
+            Actual
+            <span className="score">En progreso</span>
+          </HistoryBadge>
+
+          {/* Historial en orden cronológico inverso (más reciente primero) */}
+          {history.slice().reverse().map((entry, idx) => (
+            <HistoryBadge
+              key={idx}
+              $active={viewingVersion && viewingVersion.timestamp === entry.timestamp}
+              onClick={() => handleViewVersion(entry)}
+              theme={theme}
+            >
+              Intento {entry.attemptNumber}
+              <span className="score">Nivel {entry.feedback.nivel_global}</span>
+            </HistoryBadge>
+          ))}
+        </HistoryRibbon>
+      )}
+
+      {/* 🆕 Banner de Restauración */}
+      {viewingVersion && (
+        <RestoreBanner
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          theme={theme}
+        >
+          <div>
+            <strong>Modo Lectura:</strong> Estás viendo una versión anterior (Intento {viewingVersion.attemptNumber}).
+          </div>
+          <RestoreButton onClick={handleRestoreVersion} theme={theme}>
+            ↺ Restaurar esta versión
+          </RestoreButton>
+        </RestoreBanner>
+      )}
+
+      {/* 🔒 Mensaje cuando está bloqueado después de evaluar */}
+      {isLocked && !viewingVersion && !isSubmitted && (
+        <LockedMessage theme={theme}>
+          <LockIcon>🔒</LockIcon>
+          <LockText>
+            <strong>Análisis enviado a evaluación</strong>
+            <span>Revisa el feedback abajo. Si deseas mejorar tu trabajo, haz clic en "Seguir Editando".</span>
+          </LockText>
+          <UnlockButton onClick={handleSeguirEditando} theme={theme}>
+            ✏️ Seguir Editando
+          </UnlockButton>
+        </LockedMessage>
+      )}
+
       {/* Formulario */}
-      {!feedback && (
+      {!viewingVersion && (
         <>
           {/* 🆕 Mensaje de auto-guardado */}
           {(marcoIdeologico || estrategiasRetoricas || vocesPresentes || vocesSilenciadas) && (
@@ -1093,7 +1728,7 @@ export default function TablaACD({ theme }) {
               💾 Tu trabajo se guarda automáticamente. Puedes cambiar de pestaña sin perder tu progreso.
             </AutoSaveMessage>
           )}
-          
+
           {/* 🆕 Hint de guardado manual */}
           <AnimatePresence>
             {showSaveHint && (
@@ -1108,9 +1743,9 @@ export default function TablaACD({ theme }) {
               </ShortcutsHint>
             )}
           </AnimatePresence>
-          
+
           {/* 🆕 Barra de atajos de teclado */}
-          <KeyboardShortcutsBar 
+          <KeyboardShortcutsBar
             theme={theme}
             shortcuts={[
               { keys: ['Ctrl', 'S'], label: 'Guardar' },
@@ -1118,20 +1753,20 @@ export default function TablaACD({ theme }) {
               { keys: ['Esc'], label: 'Cerrar' }
             ]}
           />
-          
+
           <FormSection theme={theme}>
             <SectionTitle theme={theme}>1️⃣ Marco Ideológico</SectionTitle>
             <Label theme={theme}>¿Qué marco ideológico identifica en el texto?</Label>
             <Textarea
               ref={marcoRef}
               theme={theme}
-              value={marcoIdeologico}
-              onChange={(e) => setMarcoIdeologico(e.target.value)}
+              value={displayedContent.marco}
+              onChange={(e) => !viewingVersion && !isSubmitted && setMarcoIdeologico(e.target.value)}
               onClick={(e) => handleCursorChange('marco', e)}
               onKeyUp={(e) => handleCursorChange('marco', e)}
               onPaste={handlePaste}
-              placeholder="Ej: El texto adopta un marco neoliberal, naturalizando la competencia y el individualismo como valores universales..."
-              disabled={loading}
+              placeholder="Ej: El texto opera desde un marco neoliberal que naturaliza la competencia individual..."
+              disabled={loading || isReadOnly}
             />
             {pasteError && <PasteErrorMessage theme={theme}>{pasteError}</PasteErrorMessage>}
             <HintText theme={theme}>
@@ -1145,13 +1780,13 @@ export default function TablaACD({ theme }) {
             <Textarea
               ref={estrategiasRef}
               theme={theme}
-              value={estrategiasRetoricas}
-              onChange={(e) => setEstrategiasRetoricas(e.target.value)}
+              value={displayedContent.estrategias}
+              onChange={(e) => !viewingVersion && !isSubmitted && setEstrategiasRetoricas(e.target.value)}
               onClick={(e) => handleCursorChange('estrategias', e)}
               onKeyUp={(e) => handleCursorChange('estrategias', e)}
               onPaste={handlePaste}
-              placeholder="Ej: • Metáforas bélicas ('batalla', 'combate') para naturalizar conflictos&#10;• Eufemismos ('ajuste estructural' en vez de 'despidos masivos')&#10;• Nominalización ('la globalización') para ocultar agentes responsables..."
-              disabled={loading}
+              placeholder='Ej: Uso de metáforas biológicas ("supervivencia del más apto") para justificar desigualdades...'
+              disabled={loading || isReadOnly}
               style={{ minHeight: '150px' }}
             />
             <HintText theme={theme}>
@@ -1162,32 +1797,34 @@ export default function TablaACD({ theme }) {
           <FormSection theme={theme}>
             <SectionTitle theme={theme}>3️⃣ Voces en el Discurso</SectionTitle>
             <Label theme={theme}>Voces presentes (legitimadas):</Label>
-            <Input
+            <Textarea
               ref={presentesRef}
               theme={theme}
-              value={vocesPresentes}
-              onChange={(e) => setVocesPresentes(e.target.value)}
+              value={displayedContent.presentes}
+              onChange={(e) => !viewingVersion && !isSubmitted && setVocesPresentes(e.target.value)}
               onClick={(e) => handleCursorChange('presentes', e)}
               onKeyUp={(e) => handleCursorChange('presentes', e)}
               onPaste={handlePaste}
-              placeholder="Ej: Empresarios, economistas, expertos internacionales..."
-              disabled={loading}
+              placeholder="Ej: Expertos económicos, organismos internacionales, empresarios exitosos..."
+              disabled={loading || isReadOnly}
+              style={{ minHeight: '100px' }}
             />
             <HintText theme={theme} style={{ marginBottom: '1rem' }}>
               ¿Quiénes tienen autoridad en este texto?
             </HintText>
 
             <Label theme={theme}>Voces silenciadas (ausentes):</Label>
-            <Input
+            <Textarea
               ref={silenciadasRef}
               theme={theme}
-              value={vocesSilenciadas}
-              onChange={(e) => setVocesSilenciadas(e.target.value)}
+              value={displayedContent.silenciadas}
+              onChange={(e) => !viewingVersion && !isSubmitted && setVocesSilenciadas(e.target.value)}
               onClick={(e) => handleCursorChange('silenciadas', e)}
               onKeyUp={(e) => handleCursorChange('silenciadas', e)}
               onPaste={handlePaste}
-              placeholder="Ej: Trabajadores, comunidades locales, movimientos sociales..."
-              disabled={loading}
+              placeholder="Ej: Trabajadores informales, sindicatos, comunidades afectadas, perspectivas ecológicas..."
+              disabled={loading || isReadOnly}
+              style={{ minHeight: '100px' }}
             />
             <HintText theme={theme}>
               ¿Quiénes NO tienen voz en este discurso?
@@ -1195,13 +1832,15 @@ export default function TablaACD({ theme }) {
           </FormSection>
 
           {/* Validación */}
-          <ValidationMessage
-            $valid={isValid}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            {validationMessage}
-          </ValidationMessage>
+          {!viewingVersion && (
+            <ValidationMessage
+              $valid={isValid}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              {validationMessage}
+            </ValidationMessage>
+          )}
 
           {/* Botones */}
           <ButtonGroup>
@@ -1214,10 +1853,36 @@ export default function TablaACD({ theme }) {
             >
               {showCitasPanel ? '✕ Cerrar Citas' : `📋 Mis Citas (${citasGuardadas.length})`}
             </CitasButton>
-            
-            <PrimaryButton onClick={handleEvaluate} disabled={!isValid || loading}>
-              {loading ? '⏳ Evaluando...' : '🔍 Solicitar Evaluación Criterial'}
+
+            <PrimaryButton
+              onClick={handleEvaluate}
+              disabled={(!isValid && !viewingVersion) || loading || !rateLimit.canProceed || evaluationAttempts >= MAX_ATTEMPTS || isReadOnly}
+              theme={theme}
+              title={
+                viewingVersion
+                  ? 'Estás viendo una versión histórica. Vuelve a "Actual" para editar.'
+                  : evaluationAttempts >= MAX_ATTEMPTS
+                    ? 'Has agotado tus intentos de evaluación'
+                    : !rateLimit.canProceed && rateLimit.nextAvailableIn > 0
+                      ? `Espera ${rateLimit.nextAvailableIn}s`
+                      : rateLimit.remaining === 0
+                        ? 'Límite de evaluaciones alcanzado (10/hora)'
+                        : `${rateLimit.remaining} evaluaciones restantes esta hora`
+              }
+            >
+              {loading ? '⏳ Analizando...' :
+                viewingVersion ? '👁️ Modo Lectura' :
+                  evaluationAttempts >= MAX_ATTEMPTS ? '🚫 Intentos Agotados' :
+                    !rateLimit.canProceed && rateLimit.nextAvailableIn > 0 ? `⏱️ Espera ${rateLimit.nextAvailableIn}s` :
+                      '🔍 Solicitar Análisis Crítico'}
             </PrimaryButton>
+
+            {/* 🆕 Botón de Entrega */}
+            {!isSubmitted && feedback && !viewingVersion && (
+              <SubmitButton onClick={handleSubmit} theme={theme}>
+                🔒 Entregar Tarea
+              </SubmitButton>
+            )}
           </ButtonGroup>
         </>
       )}
@@ -1251,7 +1916,7 @@ export default function TablaACD({ theme }) {
 
       {/* Feedback */}
       <AnimatePresence>
-        {feedback && !loading && (
+        {displayedFeedback && !loading && (
           <FeedbackSection
             theme={theme}
             initial={{ opacity: 0, y: 20 }}
@@ -1261,16 +1926,16 @@ export default function TablaACD({ theme }) {
             <FeedbackHeader>
               <div>
                 <h3 style={{ margin: '0 0 0.5rem 0', color: theme.text }}>
-                  📊 Evaluación Criterial
+                  📊 Evaluación Criterial {viewingVersion ? `(Histórico: Intento ${viewingVersion.attemptNumber})` : ''}
                 </h3>
-                <NivelGlobal $nivel={feedback.nivel_global}>
-                  Nivel {feedback.nivel_global}/4
+                <NivelGlobal $nivel={displayedFeedback.nivel_global}>
+                  Nivel {displayedFeedback.nivel_global}/4
                 </NivelGlobal>
               </div>
             </FeedbackHeader>
 
             <DimensionLabel theme={theme}>
-              <strong>{feedback.dimension_label}:</strong> {feedback.dimension_description}
+              <strong>{displayedFeedback.dimension_label}:</strong> {displayedFeedback.dimension_description}
             </DimensionLabel>
 
             <CriteriosGrid>
@@ -1278,16 +1943,16 @@ export default function TablaACD({ theme }) {
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Marco Ideológico</CriterioTitle>
-                  <CriterioNivel $nivel={feedback.criterios.marco_ideologico.nivel}>
-                    Nivel {feedback.criterios.marco_ideologico.nivel}/4
+                  <CriterioNivel $nivel={displayedFeedback.criterios.marco_ideologico.nivel}>
+                    Nivel {displayedFeedback.criterios.marco_ideologico.nivel}/4
                   </CriterioNivel>
                 </CriterioHeader>
 
-                {feedback.criterios.marco_ideologico.fortalezas?.length > 0 && (
+                {displayedFeedback.criterios.marco_ideologico.fortalezas?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>✅ Fortalezas:</ListTitle>
                     <List>
-                      {feedback.criterios.marco_ideologico.fortalezas.map((f, idx) => (
+                      {displayedFeedback.criterios.marco_ideologico.fortalezas.map((f, idx) => (
                         <ListItem key={idx} theme={theme} $icon="✓">
                           {renderMarkdown(f)}
                         </ListItem>
@@ -1296,11 +1961,11 @@ export default function TablaACD({ theme }) {
                   </ListSection>
                 )}
 
-                {feedback.criterios.marco_ideologico.mejoras?.length > 0 && (
+                {displayedFeedback.criterios.marco_ideologico.mejoras?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>💡 Oportunidades de mejora:</ListTitle>
                     <List>
-                      {feedback.criterios.marco_ideologico.mejoras.map((m, idx) => (
+                      {displayedFeedback.criterios.marco_ideologico.mejoras.map((m, idx) => (
                         <ListItem key={idx} theme={theme} $icon="→">
                           {renderMarkdown(m)}
                         </ListItem>
@@ -1314,16 +1979,16 @@ export default function TablaACD({ theme }) {
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Estrategias Retóricas</CriterioTitle>
-                  <CriterioNivel $nivel={feedback.criterios.estrategias_retoricas.nivel}>
-                    Nivel {feedback.criterios.estrategias_retoricas.nivel}/4
+                  <CriterioNivel $nivel={displayedFeedback.criterios.estrategias_retoricas.nivel}>
+                    Nivel {displayedFeedback.criterios.estrategias_retoricas.nivel}/4
                   </CriterioNivel>
                 </CriterioHeader>
 
-                {feedback.criterios.estrategias_retoricas.fortalezas?.length > 0 && (
+                {displayedFeedback.criterios.estrategias_retoricas.fortalezas?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>✅ Fortalezas:</ListTitle>
                     <List>
-                      {feedback.criterios.estrategias_retoricas.fortalezas.map((f, idx) => (
+                      {displayedFeedback.criterios.estrategias_retoricas.fortalezas.map((f, idx) => (
                         <ListItem key={idx} theme={theme} $icon="✓">
                           {renderMarkdown(f)}
                         </ListItem>
@@ -1332,11 +1997,11 @@ export default function TablaACD({ theme }) {
                   </ListSection>
                 )}
 
-                {feedback.criterios.estrategias_retoricas.mejoras?.length > 0 && (
+                {displayedFeedback.criterios.estrategias_retoricas.mejoras?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>💡 Oportunidades de mejora:</ListTitle>
                     <List>
-                      {feedback.criterios.estrategias_retoricas.mejoras.map((m, idx) => (
+                      {displayedFeedback.criterios.estrategias_retoricas.mejoras.map((m, idx) => (
                         <ListItem key={idx} theme={theme} $icon="→">
                           {renderMarkdown(m)}
                         </ListItem>
@@ -1350,16 +2015,16 @@ export default function TablaACD({ theme }) {
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Voces y Silencios</CriterioTitle>
-                  <CriterioNivel $nivel={feedback.criterios.voces_silencios.nivel}>
-                    Nivel {feedback.criterios.voces_silencios.nivel}/4
+                  <CriterioNivel $nivel={displayedFeedback.criterios.voces_silencios.nivel}>
+                    Nivel {displayedFeedback.criterios.voces_silencios.nivel}/4
                   </CriterioNivel>
                 </CriterioHeader>
 
-                {feedback.criterios.voces_silencios.fortalezas?.length > 0 && (
+                {displayedFeedback.criterios.voces_silencios.fortalezas?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>✅ Fortalezas:</ListTitle>
                     <List>
-                      {feedback.criterios.voces_silencios.fortalezas.map((f, idx) => (
+                      {displayedFeedback.criterios.voces_silencios.fortalezas.map((f, idx) => (
                         <ListItem key={idx} theme={theme} $icon="✓">
                           {renderMarkdown(f)}
                         </ListItem>
@@ -1368,11 +2033,11 @@ export default function TablaACD({ theme }) {
                   </ListSection>
                 )}
 
-                {feedback.criterios.voces_silencios.mejoras?.length > 0 && (
+                {displayedFeedback.criterios.voces_silencios.mejoras?.length > 0 && (
                   <ListSection>
                     <ListTitle theme={theme}>💡 Oportunidades de mejora:</ListTitle>
                     <List>
-                      {feedback.criterios.voces_silencios.mejoras.map((m, idx) => (
+                      {displayedFeedback.criterios.voces_silencios.mejoras.map((m, idx) => (
                         <ListItem key={idx} theme={theme} $icon="→">
                           {renderMarkdown(m)}
                         </ListItem>
@@ -1389,3 +2054,104 @@ export default function TablaACD({ theme }) {
   );
 }
 
+// 🆕 Styled Components para Entrega Final
+const SubmissionBanner = styled(motion.div)`
+  background: ${props => `${props.theme.success || '#4CAF50'}10`};
+  border: 1px solid ${props => props.theme.success || '#4CAF50'};
+  color: ${props => props.theme.success || '#1b5e20'};
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+
+  .icon { font-size: 1.5rem; }
+  .text { font-size: 1rem; }
+`;
+
+const SubmitButton = styled.button`
+  padding: 0.9rem 1.8rem;
+  background: ${props => props.theme.success || '#4CAF50'};
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  
+  &:hover {
+    background: ${props => props.theme.successDark || '#388E3C'};
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px ${props => `${props.theme.success || '#4CAF50'}40`};
+  }
+`;
+
+// 🆕 Componentes para Bloqueo y Seguir Editando
+const LockedMessage = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  background: linear-gradient(135deg, ${props => props.theme.primary}15, ${props => props.theme.info}10);
+  border: 2px solid ${props => props.theme.primary}40;
+  border-radius: 8px;
+  animation: slideIn 0.3s ease-out;
+  
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
+const LockIcon = styled.span`
+  font-size: 1.5rem;
+`;
+
+const LockText = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  
+  strong {
+    color: ${props => props.theme?.text || '#333'};
+    font-size: 1rem;
+  }
+  
+  span {
+    color: ${props => props.theme?.textSecondary || '#666'};
+    font-size: 0.9rem;
+  }
+`;
+
+const UnlockButton = styled.button`
+  padding: 0.6rem 1.2rem;
+  background: ${props => props.theme.primary || '#2196F3'};
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: ${props => props.theme.primaryHover || '#1976D2'};
+    transform: translateY(-1px);
+  }
+`;

@@ -5,7 +5,7 @@
 
 import React, { useMemo } from 'react';
 import styled from 'styled-components';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const ChartContainer = styled.div`
   background: ${props => props.theme.surface};
@@ -149,7 +149,10 @@ const DistributionChart = ({ rubricProgress = {}, theme }) => {
   const chartData = useMemo(() => {
     const data = [];
     
-    Object.entries(rubricProgress).forEach(([rubricId, rubricData]) => {
+    // Ordenar por rubricId para mantener orden consistente
+    const sortedEntries = Object.entries(rubricProgress).sort((a, b) => a[0].localeCompare(b[0]));
+    
+    sortedEntries.forEach(([rubricId, rubricData]) => {
       if (rubricId.startsWith('rubrica') && rubricData?.scores?.length > 0) {
         const scores = rubricData.scores.map(s => 
           typeof s === 'object' ? Number(s.score) : Number(s)
@@ -168,7 +171,7 @@ const DistributionChart = ({ rubricProgress = {}, theme }) => {
       }
     });
 
-    return data.sort((a, b) => b.attempts - a.attempts); // Ordenar por más intentos
+    return data; // Mantener orden por rubricId (ya ordenado arriba)
   }, [rubricProgress]);
 
   const insights = useMemo(() => {

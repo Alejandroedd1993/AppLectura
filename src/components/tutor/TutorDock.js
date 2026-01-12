@@ -2,52 +2,235 @@ import React, { useState, useCallback, useEffect, useContext, useMemo } from 're
 import styled from 'styled-components';
 import TutorCore from './TutorCore';
 import useTutorPersistence from '../../hooks/useTutorPersistence';
+import useLocalStorageState from '../../hooks/useLocalStorageState';
 import useFollowUpQuestion from '../../hooks/useFollowUpQuestion';
 import useReaderActions from '../../hooks/useReaderActions';
 import { AppContext, BACKEND_URL } from '../../context/AppContext';
 import { generateTextHash } from '../../utils/cache';
+import { updateCurrentSession } from '../../services/sessionManager';
+import { useAuth } from '../../context/AuthContext';
 
 /**
  * Función simple para convertir markdown básico a HTML
  * Soporta: **negrita**, *cursiva*, `código`, listas, links
  */
+function escapeHtml(text) {
+  if (text == null) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeHref(url) {
+  try {
+    const raw = String(url || '').trim();
+    if (!raw) return null;
+    // Quitar entidades típicas si vinieron de un escape previo
+    const normalized = raw.replace(/&amp;/g, '&');
+    const parsed = new URL(normalized, window.location.origin);
+    if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+function renderPlainText(text) {
+  return escapeHtml(text).replace(/\n/g, '<br/>');
+}
+
 function parseMarkdown(text) {
   if (!text) return '';
-  
-  let html = text;
-  
+
   // Escapar HTML peligroso primero
-  html = html.replace(/&/g, '&amp;')
-             .replace(/</g, '&lt;')
-             .replace(/>/g, '&gt;');
-  
+  let html = escapeHtml(text);
+
   // **negrita**
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  
+
   // *cursiva*
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  
+
   // `código`
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  
+
   // Listas numeradas (1. Item)
   html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>');
   html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ol>$&</ol>');
-  
+
   // Listas con viñetas (- Item o * Item)
   html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
   html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => {
     // Solo convertir a <ul> si no está ya dentro de <ol>
     return match.includes('<ol>') ? match : `<ul>${match}</ul>`;
   });
-  
-  // Links [texto](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-  
+
+  // Links [texto](url) - sanitizar protocolo y escapar href
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, linkText, linkUrl) => {
+    const href = sanitizeHref(linkUrl);
+    if (!href) return `${linkText} (${linkUrl})`;
+    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${linkText}</a>`;
+  });
+
   // Párrafos (doble salto de línea)
   html = html.split('\n\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('\n');
-  
+
   return html;
+}
+
+function TutorDockEffects({
+  api,
+  texto,
+  lengthMode,
+  temperature,
+  userId,
+  textHash,
+  initialMessages,
+  messagesRef,
+  setIsSaving,
+  setPendingExternal,
+  followUpsEnabled,
+}) {
+  // api cambia de identidad con frecuencia (se construye en TutorCore).
+  // Guardamos una referencia estable para usarla dentro de effects sin depender de `api`.
+  const apiRef = React.useRef(api);
+  useEffect(() => {
+    apiRef.current = api;
+  }, [api]);
+
+  // 🆕 Sincronización automática con SessionManager (Global Session)
+  // Esto asegura que el historial actual se guarde en la sesión global y en Firestore
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (api.messages && api.messages.length > 0) {
+        setIsSaving(true);
+        // Solo actualizar si hay mensajes (evitar sobrescribir con vacío al inicio)
+        const compact = (Array.isArray(api.messages) ? api.messages : [])
+          .map(m => ({ r: m?.role, c: m?.content }))
+          .filter(m => m?.c)
+          .slice(-40);
+        updateCurrentSession({ tutorHistory: compact });
+
+        // Resetear indicador después de 1s
+        setTimeout(() => setIsSaving(false), 1000);
+      }
+    }, 3000); // Debounce de 3s para no saturar
+    return () => clearTimeout(timer);
+  }, [api.messages, setIsSaving]);
+
+  // Establecer contexto base con el texto completo cuando cambie
+  useEffect(() => {
+    try { api.setContext({ fullText: texto || '', lengthMode, temperature }); } catch { /* noop */ }
+  }, [texto, lengthMode, temperature, api]);
+
+  // Reiniciar/rehidratar historial al cambiar de texto
+  useEffect(() => {
+    try {
+      const currentApi = apiRef.current;
+      // Invalida peticiones del texto anterior sin sobrescribir historial del nuevo texto.
+      try { currentApi.cancelPending?.(); } catch { /* noop */ }
+
+      if (Array.isArray(initialMessages) && initialMessages.length > 0) {
+        currentApi.loadMessages(initialMessages);
+        return;
+      }
+
+      // Si no hay historial para este texto, limpiar mensajes
+      currentApi.clear();
+    } catch { /* noop */ }
+  }, [textHash, userId, initialMessages]);
+
+  // Suscribir acciones del visor SOLO cuando está montado el dock
+  useReaderActions({
+    onPrompt: ({ prompt, action, fragment }) => {
+      setPendingExternal(action);
+      if (action && fragment) {
+        // Ajustar lengthMode recomendado por acción
+        try {
+          if (action === 'summarize') api.setContext({ lengthMode: 'breve' });
+          else if (action === 'explain') api.setContext({ lengthMode: 'media' });
+          else if (action === 'deep') api.setContext({ lengthMode: 'detallada' });
+          else if (action === 'question') api.setContext({ lengthMode: 'breve' });
+        } catch { /* noop */ }
+        api.sendAction(action, fragment, {});
+      } else if (prompt) {
+        api.sendPrompt(prompt);
+      }
+    }
+  });
+
+  // Escuchar prompts externos (ej: enriquecimiento web en ReadingWorkspace)
+  useEffect(() => {
+    const handler = (e) => {
+      try {
+        const detail = e?.detail || {};
+        const { action, fragment, fullText, prompt, webContext } = detail;
+        if (action && fragment) {
+          // Ajustar lengthMode por acción antes de enviar
+          try {
+            if (action === 'summarize') api.setContext({ lengthMode: 'breve' });
+            else if (action === 'explain') api.setContext({ lengthMode: 'media' });
+            else if (action === 'deep') api.setContext({ lengthMode: 'detallada' });
+            else if (action === 'question') api.setContext({ lengthMode: 'breve' });
+          } catch { /* noop */ }
+          api.sendAction(action, fragment, { fullText });
+        } else if (prompt && typeof prompt === 'string') {
+          if (fullText) { try { api.setContext({ fullText }); } catch { } }
+          // Si hay webContext, agregarlo al contexto del sistema antes de enviar
+          if (webContext) {
+            console.log('🌐 [TutorDock] Agregando contexto web al sistema');
+            try {
+              api.setContext({ webEnrichment: webContext });
+            } catch (err) {
+              console.warn('⚠️ [TutorDock] Error agregando webContext:', err);
+            }
+          }
+          api.sendPrompt(prompt);
+        }
+      } catch { /* noop */ }
+    };
+    window.addEventListener('tutor-external-prompt', handler);
+    return () => window.removeEventListener('tutor-external-prompt', handler);
+  }, [api]);
+
+  // Auto-scroll cuando aparece el indicador de loading o nuevos mensajes
+  useEffect(() => {
+    if (messagesRef.current) {
+      // Scroll al final cuando cambia el estado de loading o cuando hay nuevos mensajes
+      const timer = setTimeout(() => {
+        if (messagesRef.current) {
+          messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [api.loading, api.messages.length, messagesRef]);
+
+  // Señalizar que el dock está listo (listeners activos).
+  useEffect(() => {
+    console.log('🎯 [TutorDock] useEffect montaje ejecutado, programando tutor-ready');
+    const t = setTimeout(() => {
+      console.log('🎯 [TutorDock] Disparando evento tutor-ready');
+      try {
+        window.dispatchEvent(new CustomEvent('tutor-ready'));
+        console.log('✅ [TutorDock] Evento tutor-ready disparado exitosamente');
+      } catch (err) {
+        console.error('❌ [TutorDock] Error disparando tutor-ready:', err);
+      }
+    }, 0);
+    return () => {
+      console.log('🎯 [TutorDock] Limpiando timeout de tutor-ready');
+      clearTimeout(t);
+    };
+  }, []);
+
+  // Reservado para futuras dependencias (por ejemplo, seguimiento)
+  void followUpsEnabled;
+
+  return null;
 }
 
 const DockWrapper = styled.div`
@@ -210,32 +393,6 @@ const Footer = styled.form`
   gap: .4rem;
 `;
 
-const CompactBar = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 10px;
-  background: transparent;
-`;
-
-const MiniHandle = styled.button`
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(0,0,0,.25);
-  color: #fff;
-  border: 1px solid rgba(255,255,255,.5);
-  border-radius: 999px;
-  font-size: .7rem;
-  padding: .15rem .4rem;
-  cursor: pointer;
-  display: ${p => p.$visible ? 'inline-flex' : 'none'};
-  align-items: center;
-  gap: .3rem;
-  backdrop-filter: blur(2px);
-`;
-
 const Input = styled.textarea`
   flex: 1;
   font-size: .7rem;
@@ -267,27 +424,6 @@ const Btn = styled.button`
   &:disabled { opacity: .5; cursor: not-allowed; }
 `;
 
-const HeaderSelect = styled.select`
-  font-size: .73rem;
-  padding: .25rem .4rem;
-  border-radius: 6px;
-  border: 1px solid rgba(255,255,255,.4);
-  background: rgba(255,255,255,.25);
-  color: #fff;
-  font-weight: 500;
-  cursor: pointer;
-  
-  option {
-    background: ${p => p.theme?.surface || '#fff'};
-    color: ${p => p.theme?.text || '#222'};
-    font-weight: 500;
-  }
-  
-  &:hover {
-    background: rgba(255,255,255,.35);
-  }
-`;
-
 const HeaderButton = styled.button`
   background: rgba(255,255,255,.25);
   color: #fff;
@@ -310,6 +446,40 @@ const HeaderButton = styled.button`
   }
 `;
 
+const SettingsPanel = styled.div`
+  background: ${p => p.theme?.surface || '#fff'};
+  border-bottom: 1px solid ${p => p.theme?.border || '#ccc'};
+  padding: .5rem .75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .8rem;
+  align-items: center;
+  font-size: .75rem;
+  color: ${p => p.theme?.text || '#222'};
+  animation: slideDown 0.2s ease-out;
+  
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    cursor: pointer;
+  }
+
+  select {
+    padding: .2rem .4rem;
+    border-radius: 4px;
+    border: 1px solid ${p => p.theme?.border || '#ccc'};
+    background: ${p => p.theme?.inputBg || '#fff'};
+    color: ${p => p.theme?.text || '#222'};
+    font-size: .75rem;
+  }
+`;
+
 const ToggleFab = styled.button`
   position: fixed;
   bottom: 1.25rem;
@@ -329,24 +499,27 @@ const ToggleFab = styled.button`
   justify-content: center;
 `;
 
-export default function TutorDock({ followUps, expanded = false, onToggleExpand }) {
+// VERSION MARKER: v3.0.0-simplified-ui-nov25
+export default function TutorDock({ followUps, expanded = false, onToggleExpand, onClose }) {
+  console.log('🚀🚀🚀 [TutorDock] NUEVA VERSION CARGADA - v3.0.0 - 25 Nov 2025 🚀🚀🚀');
   const appCtx = useContext(AppContext) || {};
   const { texto } = appCtx;
+  const { currentUser } = useAuth();
+  const userId = currentUser?.uid || 'guest';
   const [open, setOpen] = useState(true);
-  const [compact, setCompact] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('tutorCompactMode') || 'false'); } catch { return false; }
-  });
-  const [headerHidden, setHeaderHidden] = useState(false);
-  const [pendingExternal, setPendingExternal] = useState(null); // último prompt accionado por selección
-  
+  const [showSettings, setShowSettings] = useState(false);
+  const [headerHidden, _setHeaderHidden] = useState(false);
+  const [_pendingExternal, setPendingExternal] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
   // Estado de redimensionamiento
-  const [width, setWidth] = useState(() => {
-    try { 
-      const saved = localStorage.getItem('tutorDockWidth');
-      return saved ? parseInt(saved, 10) : 420;
-    } catch { 
-      return 420; 
-    }
+  const [width, setWidth] = useLocalStorageState(`tutorDockWidth:${userId}`, 420, {
+    serialize: (v) => String(v),
+    deserialize: (raw) => {
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) ? n : 420;
+    },
+    legacyKeys: ['tutorDockWidth']
   });
   const [isResizing, setIsResizing] = useState(false);
   // Historial por texto: clave depende del hash del texto actual
@@ -354,11 +527,10 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
     try { return texto ? generateTextHash(texto, 'tutor') : 'tutor_empty'; } catch { return 'tutor_empty'; }
   }, [texto]);
 
-  const { initialMessages, handleMessagesChange } = useTutorPersistence({ storageKey: `tutorHistorial:${textHash}`, max: 40 });
-  // Preferencia de follow-ups: si no viene prop, leer de localStorage (apagado por defecto)
-  const [followUpsEnabled, setFollowUpsEnabled] = useState(() => {
-    if (typeof followUps === 'boolean') return followUps;
-    try { const s = localStorage.getItem('tutorFollowUpsEnabled'); return s ? JSON.parse(s) : false; } catch { return false; }
+  const { initialMessages, handleMessagesChange, clearHistory } = useTutorPersistence({ storageKey: `tutorHistorial:${userId}:${textHash}`, max: 40 });
+  // Preferencia de follow-ups: si no viene prop, leer de localStorage (apagado por defecto - user scoped)
+  const [followUpsEnabled, setFollowUpsEnabled] = useLocalStorageState(`tutorFollowUpsEnabled:${userId}`, false, {
+    legacyKeys: ['tutorFollowUpsEnabled']
   });
   useEffect(() => {
     if (typeof followUps === 'boolean') {
@@ -366,79 +538,18 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
     }
   }, [followUps]);
   const { onAssistantMessage } = useFollowUpQuestion({ enabled: followUpsEnabled });
-  const { currentUser } = useContext(AppContext); // 🆕 Usar currentUser del contexto
-  const [convos, setConvos] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('tutorConvos') || '[]'); } catch { return []; }
+  const [lengthMode, setLengthMode] = useLocalStorageState(`tutorLengthMode:${userId}`, 'auto', {
+    serialize: (v) => String(v),
+    deserialize: (raw) => raw || 'auto',
+    legacyKeys: ['tutorLengthMode']
   });
-  const [selectedConvo, setSelectedConvo] = useState('');
-  
-  // 🆕 RESTAURAR conversaciones guardadas desde Firestore
-  useEffect(() => {
-    if (!currentUser?.uid) {
-      console.log('📚 [Tutor] Sin usuario autenticado, no se cargan conversaciones');
-      return;
-    }
-    
-    console.log(`📚 [Tutor] Cargando conversaciones guardadas para usuario: ${currentUser.uid}`);
-    
-    let unsubscribe = null;
-    let mounted = true;
-    
-    const loadSavedConversations = async () => {
-      try {
-        // 1. CARGA INICIAL INMEDIATA desde Firestore
-        const { getStudentProgress, subscribeToStudentProgress } = await import('../../firebase/firestore');
-        
-        const initialData = await getStudentProgress(currentUser.uid, 'tutor_conversations');
-        if (mounted && initialData?.conversations && Array.isArray(initialData.conversations)) {
-          console.log(`📚 [Tutor] Carga inicial: ${initialData.conversations.length} conversaciones desde Firestore`);
-          setConvos(initialData.conversations);
-          localStorage.setItem('tutorConvos', JSON.stringify(initialData.conversations));
-        }
-        
-        // 2. SUSCRIPCIÓN para actualizaciones en tiempo real
-        unsubscribe = subscribeToStudentProgress(
-          currentUser.uid, 
-          'tutor_conversations',
-          (data) => {
-            if (!mounted) return;
-            
-            console.log('📚 [Tutor] Actualización en tiempo real de Firestore:', data);
-            
-            if (data?.conversations && Array.isArray(data.conversations)) {
-              const remoteConvos = data.conversations;
-              
-              setConvos(remoteConvos);
-              localStorage.setItem('tutorConvos', JSON.stringify(remoteConvos));
-              console.log(`✅ [Tutor] ${remoteConvos.length} conversaciones sincronizadas`);
-            }
-          }
-        );
-      } catch (error) {
-        console.warn('⚠️ [Tutor] Error cargando conversaciones desde Firestore:', error);
-      }
-    };
-    
-    loadSavedConversations();
-    
-    return () => {
-      mounted = false;
-      if (unsubscribe) {
-        console.log('🔌 [Tutor] Desconectando listener de conversaciones');
-        unsubscribe();
-      }
-    };
-  }, [currentUser]);
-  const [lengthMode, setLengthMode] = useState(() => {
-    try { return localStorage.getItem('tutorLengthMode') || 'auto'; } catch { return 'auto'; }
-  });
-  const [temperature, setTemperature] = useState(() => {
-    try { 
-      const saved = localStorage.getItem('tutorTemperature');
-      return saved ? parseFloat(saved) : 0.7;
-    } catch { 
-      return 0.7; 
-    }
+  const [temperature, setTemperature] = useLocalStorageState(`tutorTemperature:${userId}`, 0.7, {
+    serialize: (v) => String(v),
+    deserialize: (raw) => {
+      const n = parseFloat(raw);
+      return Number.isFinite(n) ? n : 0.7;
+    },
+    legacyKeys: ['tutorTemperature']
   });
 
   // Ref para el textarea autoexpandible del chat
@@ -453,27 +564,23 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
     if (!expanded) return; // Solo redimensionar cuando está expandido
     e.preventDefault();
     setIsResizing(true);
-    
+
     const startX = e.clientX;
     const startWidth = width;
-    
+
     const handleMouseMove = (moveEvent) => {
       const deltaX = startX - moveEvent.clientX; // Invertido porque el borde está a la izquierda
       const newWidth = Math.max(320, Math.min(800, startWidth + deltaX));
       setWidth(newWidth);
     };
-    
+
     const handleMouseUp = () => {
       setIsResizing(false);
-      try {
-        localStorage.setItem('tutorDockWidth', width.toString());
-      } catch (e) {
-        console.warn('No se pudo guardar el ancho del tutor:', e);
-      }
+      // Removed localStorage logic as it is now handled by useLocalStorageState
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-    
+
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   }, [expanded, width]);
@@ -486,137 +593,30 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
     }
   }, [width, expanded]);
 
-  // Auto-ocultar header al hacer scroll cuando compact === true
-  const onScroll = useCallback((e) => {
-    if (!compact) {
-      setHeaderHidden(false);
-      return;
-    }
-    const el = e.currentTarget;
-    const y = el.scrollTop;
-    // Ocultar header cuando scroll > 30px para evitar parpadeo
-    setHeaderHidden(y > 30);
-  }, [compact]);
-
   return (
-    <TutorCore 
-      onBusyChange={() => {}} 
+    <TutorCore
+      onBusyChange={() => { }}
       initialMessages={initialMessages}
       onMessagesChange={handleMessagesChange}
       onAssistantMessage={onAssistantMessage}
       backendUrl={BACKEND_URL}
     >
       {(api) => {
-        // Establecer contexto base con el texto completo cuando cambie
-        useEffect(() => {
-          try { api.setContext({ fullText: texto || '', lengthMode, temperature }); } catch { /* noop */ }
-        }, [texto, lengthMode, temperature, api]);
-
-        // Reiniciar/rehidratar historial al cambiar de texto
-        useEffect(() => {
-          try {
-            // Intentar rehidratar historial del hash actual
-            const raw = localStorage.getItem(`tutorHistorial:${textHash}`);
-            if (raw) {
-              const arr = JSON.parse(raw);
-              if (Array.isArray(arr)) {
-                const restored = arr.map(o => ({ role: o.r || o.role, content: o.c || o.content })).filter(m => m.content);
-                api.loadMessages(restored);
-                return;
-              }
-            }
-            // Si no hay historial para este texto, limpiar mensajes
-            api.clear();
-          } catch { /* noop */ }
-  // eslint-disable-next-line
-        }, [textHash]);
-        // Suscribir acciones del visor SOLO cuando está montado el dock
-        useReaderActions({
-          onPrompt: ({ prompt, action, fragment }) => {
-            setPendingExternal(action);
-            if (action && fragment) {
-              // Ajustar lengthMode recomendado por acción
-              try {
-                if (action === 'summarize') api.setContext({ lengthMode: 'breve' });
-                else if (action === 'explain') api.setContext({ lengthMode: 'media' });
-                else if (action === 'deep') api.setContext({ lengthMode: 'detallada' });
-                else if (action === 'question') api.setContext({ lengthMode: 'breve' });
-              } catch { /* noop */ }
-              api.sendAction(action, fragment, {});
-            } else if (prompt) {
-              api.sendPrompt(prompt);
-            }
-          }
-        });
-
-        // Escuchar prompts externos (ej: enriquecimiento web en ReadingWorkspace)
-        useEffect(() => {
-          const handler = (e) => {
-            try {
-              const detail = e?.detail || {};
-              const { action, fragment, fullText, prompt, webContext } = detail;
-              if (action && fragment) {
-                // Ajustar lengthMode por acción antes de enviar
-                try {
-                  if (action === 'summarize') api.setContext({ lengthMode: 'breve' });
-                  else if (action === 'explain') api.setContext({ lengthMode: 'media' });
-                  else if (action === 'deep') api.setContext({ lengthMode: 'detallada' });
-                  else if (action === 'question') api.setContext({ lengthMode: 'breve' });
-                } catch { /* noop */ }
-                api.sendAction(action, fragment, { fullText });
-              } else if (prompt && typeof prompt === 'string') {
-                if (fullText) { try { api.setContext({ fullText }); } catch {} }
-                // Si hay webContext, agregarlo al contexto del sistema antes de enviar
-                if (webContext) {
-                  console.log('🌐 [TutorDock] Agregando contexto web al sistema');
-                  try { 
-                    api.setContext({ webEnrichment: webContext }); 
-                  } catch (e) {
-                    console.warn('⚠️ [TutorDock] Error agregando webContext:', e);
-                  }
-                }
-                api.sendPrompt(prompt);
-              }
-            } catch { /* noop */ }
-          };
-          window.addEventListener('tutor-external-prompt', handler);
-          return () => window.removeEventListener('tutor-external-prompt', handler);
-        }, [api]);
-
-        // Auto-scroll cuando aparece el indicador de loading o nuevos mensajes
-        useEffect(() => {
-          if (messagesRef.current) {
-            // Scroll al final cuando cambia el estado de loading o cuando hay nuevos mensajes
-            const timer = setTimeout(() => {
-              if (messagesRef.current) {
-                messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
-              }
-            }, 100);
-            return () => clearTimeout(timer);
-          }
-        }, [api.loading, api.messages.length]);
-
-        // Señalizar que el dock está listo (listeners activos). Pequeño retraso para asegurar que
-        // los effects internos y del hook useReaderActions estén suscritos antes de notificar.
-        useEffect(() => {
-          console.log('🎯 [TutorDock] useEffect montaje ejecutado, programando tutor-ready');
-          const t = setTimeout(() => {
-            console.log('🎯 [TutorDock] Disparando evento tutor-ready');
-            try { 
-              window.dispatchEvent(new CustomEvent('tutor-ready')); 
-              console.log('✅ [TutorDock] Evento tutor-ready disparado exitosamente');
-            } catch (err) {
-              console.error('❌ [TutorDock] Error disparando tutor-ready:', err);
-            }
-          }, 0);
-          return () => {
-            console.log('🎯 [TutorDock] Limpiando timeout de tutor-ready');
-            clearTimeout(t);
-          };
-        }, []);
-
         return (
           <>
+            <TutorDockEffects
+              api={api}
+              texto={texto}
+              lengthMode={lengthMode}
+              temperature={temperature}
+              userId={userId}
+              textHash={textHash}
+              initialMessages={initialMessages}
+              messagesRef={messagesRef}
+              setIsSaving={setIsSaving}
+              setPendingExternal={setPendingExternal}
+              followUpsEnabled={followUpsEnabled}
+            />
             {!open && !expanded && (
               <ToggleFab onClick={handleToggle} title="Mostrar tutor">
                 🧑‍🏫
@@ -626,201 +626,141 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
               <DockWrapper $expanded={expanded} $width={expanded ? width : null} $isResizing={isResizing}>
                 {expanded && <ResizeHandle onMouseDown={handleMouseDown} title="Arrastra para redimensionar" />}
                 <DockHeader $hidden={headerHidden}>
-                  <span>🧑‍🏫 Tutor Inteligente</span>
-                  <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap', alignItems:'center' }}>
-                    {/* Selector de extensión de respuestas */}
-                    <HeaderSelect 
-                      value={lengthMode} 
-                      onChange={(e) => { const v = e.target.value; setLengthMode(v); try { localStorage.setItem('tutorLengthMode', v); } catch {} }} 
-                      title="Controla qué tan extensas son las respuestas del tutor"
-                    >
-                      <option value="auto">📏 Automático</option>
-                      <option value="breve">⚡ Breve</option>
-                      <option value="media">📝 Media</option>
-                      <option value="detallada">📖 Detallada</option>
-                    </HeaderSelect>
-
-                    {/* Selector de temperatura (creatividad) */}
-                    <HeaderSelect 
-                      value={temperature} 
-                      onChange={(e) => { 
-                        const v = parseFloat(e.target.value); 
-                        setTemperature(v); 
-                        try { 
-                          localStorage.setItem('tutorTemperature', v.toString());
-                          // Actualizar contexto inmediatamente
-                          try { api.setContext({ temperature: v }); } catch {}
-                        } catch {} 
-                      }} 
-                      title={`Controla la creatividad de las respuestas (${temperature}). Más bajo = más determinista, más alto = más creativo`}
-                    >
-                      <option value="0.3">🎯 Determinista (0.3)</option>
-                      <option value="0.5">⚖️ Equilibrado (0.5)</option>
-                      <option value="0.7">💡 Creativo (0.7)</option>
-                      <option value="0.9">✨ Muy Creativo (0.9)</option>
-                      <option value="1.0">🚀 Máximo (1.0)</option>
-                    </HeaderSelect>
-
-                    {/* Botón de guardar conversación */}
-                    <HeaderButton 
-                      onClick={async () => {
-                        try {
-                          console.log('💾 [Tutor] Guardando conversación...');
-                          
-                          const now = new Date();
-                          const compactMsgs = (msgs) => msgs.map(m => ({ r: m.role, c: m.content }));
-                          const current = compactMsgs(api.messages || []);
-                          const item = { name: now.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }), data: current, textHash };
-                          const next = [...(Array.isArray(convos)?convos:[]), item];
-                          
-                          localStorage.setItem('tutorConvos', JSON.stringify(next));
-                          setConvos(next);
-                          console.log(`💾 [Tutor] Guardado en localStorage: ${next.length} conversaciones`);
-                          
-                          // 🆕 SINCRONIZAR con Firestore si hay usuario autenticado
-                          if (currentUser?.uid) {
-                            console.log(`💾 [Tutor] Sincronizando con Firestore para usuario: ${currentUser.uid}`);
-                            try {
-                              const { saveStudentProgress } = await import('../../firebase/firestore');
-                              await saveStudentProgress(currentUser.uid, 'tutor_conversations', {
-                                conversations: next,
-                                lastSync: new Date().toISOString()
-                              });
-                              console.log('✅ [Tutor] Conversaciones sincronizadas con Firestore');
-                            } catch (error) {
-                              console.error('❌ [Tutor] Error sincronizando con Firestore:', error);
-                            }
-                          } else {
-                            console.warn('⚠️ [Tutor] No hay usuario autenticado, solo guardado local');
-                          }
-                          
-                          alert('✅ Conversación guardada exitosamente');
-                        } catch (error) {
-                          console.error('❌ [Tutor] Error guardando conversación:', error);
-                          alert('❌ Error al guardar conversación');
-                        }
-                      }} 
-                      title="💾 Guardar esta conversación para revisar después"
-                    >
-                      💾 Guardar
-                    </HeaderButton>
-
-                    {/* Selector y botón de cargar conversaciones guardadas */}
-                    {convos.length > 0 && (
-                      <>
-                        <HeaderSelect 
-                          value={selectedConvo} 
-                          onChange={(e) => setSelectedConvo(e.target.value)} 
-                          style={{ maxWidth: '150px' }} 
-                          title="Selecciona una conversación guardada"
-                        >
-                          <option value="">📚 Guardadas ({convos.length})</option>
-                          {Array.isArray(convos) && convos.map((c, idx) => (
-                            <option key={idx} value={idx}>{c.name || `Conversación ${idx+1}`}</option>
-                          ))}
-                        </HeaderSelect>
-                        {selectedConvo !== '' && (
-                          <HeaderButton 
-                            onClick={() => {
-                              try {
-                                const idx = parseInt(selectedConvo, 10);
-                                const item = Array.isArray(convos) ? convos[idx] : null;
-                                if (item && Array.isArray(item.data)) {
-                                  const restored = item.data.map(o => ({ role:o.r, content:o.c }));
-                                  api.loadMessages(restored);
-                                  alert('✅ Conversación cargada');
-                                }
-                              } catch {}
-                            }} 
-                            title="📂 Cargar la conversación seleccionada"
-                          >
-                            📂 Cargar
-                          </HeaderButton>
-                        )}
-                      </>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                    <span>🧑‍🏫 Tutor Inteligente</span>
+                    {isSaving && (
+                      <span style={{ fontSize: '.7rem', opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        ☁️
+                      </span>
                     )}
+                  </div>
 
-                    {/* Botón de limpiar historial */}
-                    <HeaderButton 
-                      className="danger"
-                      onClick={() => {
-                        if (window.confirm('¿Seguro que quieres borrar todo el historial de esta conversación?')) {
-                          try { api.clear(); localStorage.setItem('tutorHistorial', '[]'); } catch {}
-                        }
-                      }} 
-                      title="🧹 Borrar todo el historial de la conversación actual"
+                  <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center' }}>
+                    {/* Botón de Configuración */}
+                    <HeaderButton
+                      onClick={() => setShowSettings(!showSettings)}
+                      title="Configuración del tutor (longitud, creatividad, historial)"
+                      style={{ background: showSettings ? 'rgba(255,255,255,0.4)' : undefined }}
                     >
-                      🧹 Limpiar
+                      ⚙️ Opciones
                     </HeaderButton>
 
                     {/* Botón de expandir/contraer */}
                     {onToggleExpand && (
-                      <HeaderButton 
-                        onClick={onToggleExpand || (()=>{})} 
-                        title={expanded ? 'Contraer el tutor a tamaño pequeño' : 'Expandir el tutor a pantalla completa lateral'}
+                      <HeaderButton
+                        onClick={onToggleExpand || (() => { })}
+                        title={expanded ? 'Contraer' : 'Expandir'}
                       >
-                        {expanded ? '⬅️ Contraer' : '➡️ Expandir'}
+                        {expanded ? '⬅️' : '➡️'}
                       </HeaderButton>
                     )}
 
-                    {/* Modo compacto (auto-oculta cabecera al hacer scroll) */}
-                    <label 
-                      style={{ display:'flex', alignItems:'center', gap:'.4rem', fontSize:'.73rem', background:'rgba(255,255,255,.25)', padding:'.25rem .5rem', borderRadius:'6px', cursor: 'pointer', fontWeight: '500', border: '1px solid rgba(255,255,255,.4)' }} 
-                      title="📐 Modo compacto: oculta esta barra automáticamente cuando haces scroll hacia abajo en la conversación. Ideal para ver más mensajes. Desliza hacia arriba para que reaparezca."
-                    >
-                      <input 
-                        type="checkbox" 
-                        checked={compact} 
-                        onChange={() => { const next = !compact; setCompact(next); try { localStorage.setItem('tutorCompactMode', JSON.stringify(next)); } catch {} }} 
-                      /> 
-                      📐 Compacto
-                    </label>
-
-                    {/* Preguntas de seguimiento automáticas */}
-                    <label 
-                      style={{ display:'flex', alignItems:'center', gap:'.4rem', fontSize:'.73rem', background:'rgba(255,255,255,.25)', padding:'.25rem .5rem', borderRadius:'6px', cursor: 'pointer', fontWeight: '500', border: '1px solid rgba(255,255,255,.4)' }} 
-                      title="💡 Preguntas de seguimiento: el tutor sugiere automáticamente preguntas relacionadas después de cada respuesta"
-                    >
-                      <input 
-                        type="checkbox" 
-                        checked={followUpsEnabled} 
-                        onChange={() => {
-                          const next = !followUpsEnabled; setFollowUpsEnabled(next); try { localStorage.setItem('tutorFollowUpsEnabled', JSON.stringify(next)); } catch {}
-                        }} 
-                      /> 
-                      💡 Seguimiento
-                    </label>
-
                     {/* Botón de cerrar */}
-                    <HeaderButton 
-                      onClick={handleToggle} 
-                      style={{ background:'transparent', border:'none', fontSize:'1rem', padding: '.2rem .4rem' }}
+                    <HeaderButton
+                      onClick={() => {
+                        handleToggle();
+                        if (onClose) onClose();
+                      }}
+                      style={{ background: 'transparent', border: 'none', fontSize: '1rem', padding: '.2rem .4rem' }}
                       title="Cerrar el tutor"
                     >
                       ✖
                     </HeaderButton>
                   </div>
                 </DockHeader>
-                <MiniHandle $visible={compact && headerHidden} onClick={() => setHeaderHidden(false)} title={expanded ? 'Mostrar cabecera' : 'Mostrar cabecera'}>
-                  ☰ Opciones
-                </MiniHandle>
-                <Messages ref={messagesRef} onScroll={onScroll}>
+
+                {/* Panel de Configuración Desplegable */}
+                {showSettings && (
+                  <SettingsPanel>
+                    <label title="Controla qué tan extensas son las respuestas">
+                      📏 Longitud:
+                      <select
+                        value={lengthMode}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setLengthMode(v);
+                          try {
+                            api.setContext({ lengthMode: v });
+                          } catch { }
+                        }}
+                      >
+                        <option value="auto">Automático</option>
+                        <option value="breve">Breve</option>
+                        <option value="media">Media</option>
+                        <option value="detallada">Detallada</option>
+                      </select>
+                    </label>
+
+                    <label title={`Creatividad: ${temperature}`}>
+                      💡 Creatividad:
+                      <select
+                        value={temperature}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          setTemperature(v);
+                          try {
+                            // Removed localStorage logic as it is now handled by useLocalStorageState
+                            api.setContext({ temperature: v });
+                          } catch { }
+                        }}
+                      >
+                        <option value="0.3">Baja (Determinista)</option>
+                        <option value="0.7">Media (Creativo)</option>
+                        <option value="1.0">Alta (Muy Creativo)</option>
+                      </select>
+                    </label>
+
+                    <label title="Sugerir preguntas relacionadas automáticamente">
+                      <input
+                        type="checkbox"
+                        checked={followUpsEnabled}
+                        onChange={() => {
+                          const next = !followUpsEnabled;
+                          setFollowUpsEnabled(next);
+                        }}
+                      />
+                      Seguimiento
+                    </label>
+
+                    <div style={{ flex: 1 }} />
+
+                    <button
+                      onClick={() => {
+                        if (window.confirm('¿Seguro que quieres borrar todo el historial?')) {
+                          try {
+                            api.clear();
+                            clearHistory();
+                          } catch { }
+                        }
+                      }}
+                      style={{
+                        background: '#ef4444', color: 'white', border: 'none',
+                        borderRadius: '4px', padding: '.2rem .5rem', cursor: 'pointer', fontSize: '.7rem'
+                      }}
+                      title="Borrar historial"
+                    >
+                      🧹 Limpiar Chat
+                    </button>
+                  </SettingsPanel>
+                )}
+
+                <Messages ref={messagesRef}>
                   {api.messages.length === 0 && (
                     <Msg $user={false}>Selecciona texto y usa la toolbar (Explicar, Resumir, etc.) o escribe una pregunta.</Msg>
                   )}
                   {api.messages.map(m => (
-                    <Msg 
-                      key={m.id} 
+                    <Msg
+                      key={m.id}
                       $user={m.role === 'user'}
-                      dangerouslySetInnerHTML={{ 
-                        __html: m.role === 'user' ? m.content : parseMarkdown(m.content) 
+                      dangerouslySetInnerHTML={{
+                        __html: m.role === 'user' ? renderPlainText(m.content) : parseMarkdown(m.content)
                       }}
                     />
                   ))}
                   {api.loading && (
                     <LoadingIndicator $user={false}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ 
+                        <span style={{
                           display: 'inline-block',
                           width: '12px',
                           height: '12px',
@@ -847,16 +787,16 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
                   const value = input.value.trim();
                   if (!value) return;
                   api.sendPrompt(value);
-                  input.value='';
+                  input.value = '';
                   // Resetear altura del textarea después de enviar
                   if (chatInputRef.current) {
                     chatInputRef.current.style.height = '32px';
                   }
                 }}>
-                  <Input 
+                  <Input
                     ref={chatInputRef}
-                    name="tutorUserInput" 
-                    placeholder="Haz una pregunta..." 
+                    name="tutorUserInput"
+                    placeholder="Haz una pregunta..."
                     autoComplete="off"
                     rows={1}
                     onChange={(e) => {
@@ -885,7 +825,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand 
                   <Btn type="submit" disabled={api.loading}>
                     {api.loading ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ 
+                        <span style={{
                           display: 'inline-block',
                           width: '10px',
                           height: '10px',

@@ -2,6 +2,8 @@ import React from 'react';
 import { render, waitFor, screen } from '@testing-library/react';
 import ReadingWorkspace from '../../src/components/ReadingWorkspace';
 import { AppContext } from '../../src/context/AppContext';
+import { AuthProvider } from '../../src/context/AuthContext';
+import fetchMock from 'jest-fetch-mock';
 
 // Mock búsqueda web para aislar
 jest.mock('../../src/hooks/useWebSearchTutor', () => () => ({
@@ -10,17 +12,17 @@ jest.mock('../../src/hooks/useWebSearchTutor', () => () => ({
   error: null
 }));
 
-// Mock fetch backend para respuesta asistente rápida
-beforeAll(() => {
-  global.originalFetch = global.fetch;
-  global.fetch = jest.fn(async () => ({
-    ok: true,
-    json: async () => ({ choices: [{ message: { content: 'Respuesta asistente simulada.' } }] })
-  }));
-});
-
-afterAll(() => {
-  global.fetch = global.originalFetch;
+beforeEach(() => {
+  fetchMock.mockResponse((req) => {
+    const url = String(req?.url || req || '');
+    if (url.includes('/api/chat/completion')) {
+      return Promise.resolve(JSON.stringify({
+        choices: [{ message: { content: 'Respuesta asistente simulada.' } }]
+      }));
+    }
+    // Respuesta genérica para otras llamadas del workspace
+    return Promise.resolve(JSON.stringify({ configuracion: {} }));
+  });
 });
 
 function Wrapper({ children }) {
@@ -28,7 +30,11 @@ function Wrapper({ children }) {
     texto: 'Fragmento inicial para análisis de acción.',
     setTexto: () => {}
   };
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AuthProvider>
+      <AppContext.Provider value={value}>{children}</AppContext.Provider>
+    </AuthProvider>
+  );
 }
 
 describe('ReadingWorkspace integración acción→render tutor', () => {

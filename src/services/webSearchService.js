@@ -34,7 +34,7 @@ class WebSearchService {
    * @param {Object} options - Opciones adicionales
    * @returns {Promise<Array>} Resultados de búsqueda formateados
    */
-  async searchWeb(query, provider = this.defaultProvider, options = {}) {
+  async searchWeb(query, _provider = this.defaultProvider, options = {}) {
     try {
       console.log(`🔍 Buscando en web vía backend: "${query}"`);
       

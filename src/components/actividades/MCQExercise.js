@@ -247,11 +247,11 @@ const ResultsText = styled.p`
   line-height: 1.6;
 `;
 
-const MCQExercise = ({ questions = [], onComplete, theme }) => {
+const MCQExercise = ({ questions = [], onComplete, theme, initialResults }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState({}); // { questionIndex: selectedOptionIndex }
-  const [revealedAnswers, setRevealedAnswers] = useState({}); // { questionIndex: true }
-  const [showResults, setShowResults] = useState(false);
+  const [selectedAnswers, setSelectedAnswers] = useState(initialResults?.selectedAnswers || {});
+  const [revealedAnswers, setRevealedAnswers] = useState(initialResults?.revealedAnswers || {});
+  const [showResults, setShowResults] = useState(!!initialResults?.passed); // Show results immediately if passed
 
   const currentQuestion = questions[currentIndex];
   const hasAnswered = revealedAnswers[currentIndex];
@@ -291,13 +291,13 @@ const MCQExercise = ({ questions = [], onComplete, theme }) => {
   // Calcular resultados
   const results = useMemo(() => {
     const total = questions.length;
-    const correct = questions.filter((q, idx) => 
+    const correct = questions.filter((q, idx) =>
       selectedAnswers[idx] === q.respuesta_correcta
     ).length;
     const percentage = total > 0 ? Math.round((correct / total) * 100) : 0;
     const passed = percentage >= 60;
-    
-    return { total, correct, percentage, passed };
+
+    return { total, correct, percentage, passed, selectedAnswers, revealedAnswers };
   }, [questions, selectedAnswers]);
 
   const getBadgeColor = (nivel) => {
@@ -337,27 +337,27 @@ const MCQExercise = ({ questions = [], onComplete, theme }) => {
           <ResultsTitle $passed={results.passed}>
             {results.passed ? '🎉 ¡Excelente trabajo!' : '📚 Sigue practicando'}
           </ResultsTitle>
-          
+
           <ResultsScore theme={theme}>
             {results.correct}/{results.total}
           </ResultsScore>
-          
+
           <ResultsText theme={theme}>
             Obtuviste {results.percentage}% de respuestas correctas
           </ResultsText>
-          
+
           {results.passed ? (
             <FeedbackText theme={theme}>
-              ✅ Has demostrado comprensión básica del texto. <br/>
+              ✅ Has demostrado comprensión básica del texto. <br />
               <strong>Ahora puedes continuar con las preguntas de síntesis.</strong>
             </FeedbackText>
           ) : (
             <FeedbackText theme={theme}>
-              ⚠️ Necesitas al menos 60% para continuar. <br/>
+              ⚠️ Necesitas al menos 60% para continuar. <br />
               Te recomendamos revisar el texto nuevamente.
             </FeedbackText>
           )}
-          
+
           <ActionsRow style={{ justifyContent: 'center', marginTop: '2rem' }}>
             <ActionButton
               $variant="outline"
@@ -366,7 +366,7 @@ const MCQExercise = ({ questions = [], onComplete, theme }) => {
             >
               🔄 Reintentar
             </ActionButton>
-            
+
             {results.passed && (
               <ActionButton
                 $variant="primary"
@@ -427,7 +427,7 @@ const MCQExercise = ({ questions = [], onComplete, theme }) => {
             {currentQuestion.opciones.map((opcion, idx) => {
               const isCorrect = idx === currentQuestion.respuesta_correcta;
               const isSelected = selectedOption === idx;
-              
+
               return (
                 <Option
                   key={idx}
@@ -483,7 +483,7 @@ const MCQExercise = ({ questions = [], onComplete, theme }) => {
                 ← Anterior
               </ActionButton>
             )}
-            
+
             {!hasAnswered ? (
               <ActionButton
                 $variant="primary"

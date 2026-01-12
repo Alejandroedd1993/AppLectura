@@ -3,62 +3,162 @@
  * Permite obtener información actual de Internet para contextualizar análisis crítico
  */
 
+const toBool = (value) => {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+};
+
+const clampInt = (value, { min, max, fallback }) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+};
+
+const sanitizeQuery = (query, maxLen = 500) => {
+  const q = String(query ?? '').trim();
+  if (!q) return '';
+  return q.slice(0, maxLen);
+};
+
+const isWebSearchEnabled = () => toBool(process.env.ENABLE_WEB_SEARCH);
+
+const parseCsv = (raw) =>
+  String(raw ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+const getAllowedDeepseekModels = () => {
+  const allowed = parseCsv(process.env.DEEPSEEK_ALLOWED_MODELS);
+  return allowed.length ? allowed : ['deepseek-chat'];
+};
+
+const pickDeepseekModel = (desired) => {
+  const allowed = getAllowedDeepseekModels();
+  const model = String(desired ?? '').trim() || 'deepseek-chat';
+  return allowed.includes(model) ? model : allowed[0];
+};
+
+const normalizeBaseUrl = (raw) => String(raw ?? '').trim().replace(/\/+$/, '') || 'https://api.deepseek.com/v1';
+
 /**
  * Realiza búsqueda web contextual
  * @param {Object} req - Request con query, type, maxResults
  * @param {Object} res - Response con resultados estructurados
  */
+
+/**
+ * Helper reutilizable: obtiene fuentes web con la misma prioridad de proveedores
+ * (Tavily → Serper → Bing → Simulada) y normaliza al formato que consume PreLectura.
+ *
+ * @param {string} query
+ * @param {number} maxResults
+ * @returns {Promise<Array<{title: string, url: string, snippet: string, score: number}>>}
+ */
+export async function searchWebSources(query, maxResults = 5) {
+  const enabled = isWebSearchEnabled();
+  const q = sanitizeQuery(query);
+  if (!q) return [];
+
+  const max = clampInt(maxResults, { min: 1, max: 10, fallback: 5 });
+
+  let resultados;
+  if (enabled && process.env.TAVILY_API_KEY) {
+    resultados = await buscarConTavily(q, max);
+  } else if (enabled && process.env.SERPER_API_KEY) {
+    resultados = await buscarConSerper(q, max);
+  } else if (enabled && process.env.BING_SEARCH_API_KEY) {
+    resultados = await buscarConBing(q, max);
+  } else {
+    resultados = await busquedaSimulada(q);
+  }
+
+  const normalized = (Array.isArray(resultados) ? resultados : [])
+    .filter(Boolean)
+    .map((item) => {
+      const title = String(item.titulo ?? item.title ?? '').trim();
+      const url = String(item.url ?? item.link ?? '').trim();
+      const snippet = String(item.resumen ?? item.snippet ?? item.content ?? '').trim();
+
+      // Score: Tavily lo trae. Para Serper usamos posición si existe.
+      let score = 0.4;
+      if (typeof item.score === 'number' && Number.isFinite(item.score)) {
+        score = item.score;
+      } else if (typeof item.posicion === 'number' && Number.isFinite(item.posicion) && item.posicion > 0) {
+        score = 1 / item.posicion;
+      }
+
+      return {
+        title: title || url,
+        url,
+        snippet,
+        score
+      };
+    })
+    .filter((s) => s.url);
+
+  return normalized.slice(0, max);
+}
+
 const buscarWeb = async (req, res) => {
   try {
+    const enabled = isWebSearchEnabled();
     const { query, type, maxResults = 5 } = req.body;
-    
-    if (!query) {
+    const q = sanitizeQuery(query);
+    const max = clampInt(maxResults, { min: 1, max: 10, fallback: 5 });
+
+    if (!q) {
       return res.status(400).json({
         error: 'Query de búsqueda requerida',
         codigo: 'QUERY_REQUIRED'
       });
     }
-    
-    console.log(`🔍 Búsqueda web: ${query} (tipo: ${type})`);
-    
+
+    console.log(`🔍 Búsqueda web: ${q} (tipo: ${type})`);
+
     // Usar diferentes estrategias según disponibilidad de APIs
     let resultados;
     let apiUtilizada = 'simulada';
-    
-    if (process.env.TAVILY_API_KEY) {
+
+    // Si web search está deshabilitado por flag, forzar modo simulado (sin llamadas externas)
+    if (!enabled) {
+      resultados = await busquedaSimulada(q, type);
+      apiUtilizada = 'disabled_simulada';
+    } else if (process.env.TAVILY_API_KEY) {
       // Opción 1: Tavily AI (Recomendado - Optimizado para IA)
-      resultados = await buscarConTavily(query, maxResults);
+      resultados = await buscarConTavily(q, max);
       apiUtilizada = 'tavily';
     } else if (process.env.SERPER_API_KEY) {
       // Opción 2: Serper API (Google Search)
-      resultados = await buscarConSerper(query, maxResults);
+      resultados = await buscarConSerper(q, max);
       apiUtilizada = 'serper';
     } else if (process.env.BING_SEARCH_API_KEY) {
       // Opción 3: Bing Search API
-      resultados = await buscarConBing(query, maxResults);
+      resultados = await buscarConBing(q, max);
       apiUtilizada = 'bing';
     } else {
       // Opción 4: Búsqueda simulada con datos contextuales
-      resultados = await busquedaSimulada(query, type);
+      resultados = await busquedaSimulada(q, type);
       apiUtilizada = 'simulada';
     }
-    
+
     // Filtrar y procesar resultados según el tipo de búsqueda
-    const resultadosProcesados = procesarResultadosPorTipo(resultados, type, query);
-    
+    const resultadosProcesados = procesarResultadosPorTipo(resultados, type, q);
+
     res.json({
-      query,
+      query: q,
       type,
-      resultados: resultadosProcesados.slice(0, maxResults),
+      resultados: resultadosProcesados.slice(0, max),
       resumen: generarResumenBusqueda(resultadosProcesados, type),
       fuentes: extraerFuentesPrincipales(resultadosProcesados),
       fecha: new Date().toISOString(),
-      api_utilizada: apiUtilizada
+      api_utilizada: apiUtilizada,
+      web_search_enabled: enabled
     });
-    
+
   } catch (error) {
     console.error('❌ Error en búsqueda web:', error);
-    
+
     res.status(500).json({
       error: 'Error en búsqueda web',
       detalle: error.message,
@@ -74,15 +174,18 @@ const buscarWeb = async (req, res) => {
  */
 const responderBusquedaIA = async (req, res) => {
   try {
+    const enabled = isWebSearchEnabled();
     const { query, maxResults = 5, provider = 'smart', type } = req.body || {};
-    if (!query) {
+    const q = sanitizeQuery(query);
+    const max = clampInt(maxResults, { min: 1, max: 10, fallback: 5 });
+    if (!q) {
       return res.status(400).json({ error: 'Query requerida', codigo: 'QUERY_REQUIRED' });
     }
 
     // 1) Obtener resultados (usa las mismas estrategias existentes)
     // Intento 1: respetar "type" si lo envían; si no, no filtrar
-    const maxInterno = Math.max(5, Math.min(12, maxResults * 2));
-    const reqBusqueda = { body: { query, maxResults: maxInterno, type } };
+    const maxInterno = Math.max(5, Math.min(12, max * 2));
+    const reqBusqueda = { body: { query: q, maxResults: maxInterno, type } };
     let payloadBusqueda;
     await buscarWeb(reqBusqueda, {
       status: () => ({ json: (data) => (payloadBusqueda = data) }),
@@ -94,7 +197,7 @@ const responderBusquedaIA = async (req, res) => {
 
     // Intento 2: si no hay resultados (p. ej., por filtros de "type"), reintentar sin tipo
     if (!resultados.length) {
-      const reqBusquedaAmplia = { body: { query, maxResults: maxInterno } };
+      const reqBusquedaAmplia = { body: { query: q, maxResults: maxInterno } };
       let payloadAmpliado;
       await buscarWeb(reqBusquedaAmplia, {
         status: () => ({ json: (data) => (payloadAmpliado = data) }),
@@ -107,20 +210,21 @@ const responderBusquedaIA = async (req, res) => {
     }
 
     // 2) Armar prompt compacto con citas
-    const contextLines = resultados.slice(0, maxResults).map((r, i) => (
+    const contextLines = resultados.slice(0, max).map((r, i) => (
       `(${i + 1}) ${r.titulo} — ${r.resumen} [${r.fuente}] <${r.url}>`
     ));
 
     const pregunta = `Responde de forma concisa y en español a la consulta del usuario usando SOLO la evidencia listada.
 Enumera afirmaciones clave con viñetas y añade citas entre corchetes con el índice de la fuente (p. ej., [1], [2]).
 Si algo no está en las fuentes, dilo explícitamente.
-Consulta: ${query}
+Consulta: ${q}
 Fuentes:
 ${contextLines.join('\n')}`;
 
     // 3) Elegir proveedor
-    const usarOpenAI = provider === 'openai' || (provider === 'smart' && !!process.env.OPENAI_API_KEY);
-    const usarDeepseek = provider === 'deepseek' || (provider === 'smart' && !usarOpenAI);
+    // Si ENABLE_WEB_SEARCH está apagado, no llamamos a IA aquí (solo devolvemos resumen básico)
+    const usarOpenAI = enabled && (provider === 'openai' || (provider === 'smart' && !!process.env.OPENAI_API_KEY));
+    const usarDeepseek = enabled && (provider === 'deepseek' || (provider === 'smart' && !usarOpenAI));
 
     let respuestaIA = null;
     let proveedorUsado = usarOpenAI ? 'openai' : (usarDeepseek ? 'deepseek' : 'basico');
@@ -129,13 +233,13 @@ ${contextLines.join('\n')}`;
       // Llamar al cliente OpenAI ya configurado
       const { openai } = await import('../config/apiClients.js');
       const completion = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo-1106',
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
         messages: [
           { role: 'system', content: 'Eres un asistente que sintetiza hallazgos con citas numeradas.' },
           { role: 'user', content: pregunta }
         ],
         temperature: 0.2,
-        max_tokens: 500
+        max_tokens: 1200
       });
       respuestaIA = completion.choices?.[0]?.message?.content?.trim() || null;
     } else if (usarDeepseek) {
@@ -143,20 +247,22 @@ ${contextLines.join('\n')}`;
       if (!process.env.DEEPSEEK_API_KEY) {
         throw new Error('DEEPSEEK_API_KEY no configurada');
       }
-      const resp = await fetch(`${process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'}/chat/completions`, {
+      const deepseekBase = normalizeBaseUrl(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1');
+      const deepseekModel = pickDeepseekModel(process.env.DEEPSEEK_MODEL || 'deepseek-chat');
+      const resp = await fetch(`${deepseekBase}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
-          model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+          model: deepseekModel,
           messages: [
             { role: 'system', content: 'Eres un asistente que sintetiza hallazgos con citas numeradas.' },
             { role: 'user', content: pregunta }
           ],
           temperature: 0.2,
-          max_tokens: 500
+          max_tokens: 1200
         })
       });
       if (!resp.ok) throw new Error(`DeepSeek API error: ${resp.status}`);
@@ -167,18 +273,19 @@ ${contextLines.join('\n')}`;
     // 4) Fallback básico si no hay proveedor/clave
     if (!respuestaIA) {
       proveedorUsado = 'basico';
-      respuestaIA = `Resumen de resultados para "${query}":\n` +
+      respuestaIA = `Resumen de resultados para "${q}":\n` +
         resultados.map((r, i) => `- ${r.titulo} [${i + 1}] — ${r.resumen}`).join('\n') +
         `\n\nFuentes: ` + fuentes.map((f, i) => `[${i + 1}] ${f}`).join(', ');
     }
 
     return res.json({
-      query,
+      query: q,
       proveedor: proveedorUsado,
       respuesta: respuestaIA,
-      citas: resultados.slice(0, maxResults).map((r, i) => ({ idx: i + 1, titulo: r.titulo, url: r.url, fuente: r.fuente })),
+      citas: resultados.slice(0, max).map((r, i) => ({ idx: i + 1, titulo: r.titulo, url: r.url, fuente: r.fuente })),
       fecha: new Date().toISOString(),
-      api_busqueda: payloadBusqueda?.api_utilizada || 'desconocida'
+      api_busqueda: payloadBusqueda?.api_utilizada || 'desconocida',
+      web_search_enabled: enabled
     });
   } catch (error) {
     console.error('❌ Error en responderBusquedaIA:', error);
@@ -193,7 +300,7 @@ ${contextLines.join('\n')}`;
 async function buscarConTavily(query, maxResults) {
   try {
     console.log('🌐 Usando Tavily AI Search');
-    
+
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: {
@@ -211,14 +318,14 @@ async function buscarConTavily(query, maxResults) {
         language: 'es'
       })
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(`Tavily API error: ${response.status} - ${errorData.error || response.statusText}`);
     }
-    
+
     const data = await response.json();
-    
+
     // Formatear resultados al formato estándar
     const resultados = data.results?.map(item => ({
       titulo: item.title,
@@ -229,28 +336,28 @@ async function buscarConTavily(query, maxResults) {
       score: item.score || 0,
       contenidoCompleto: item.content || null  // Contenido completo para análisis profundo
     })) || [];
-    
+
     // Si Tavily proporciona un answer automático, agregarlo como metadata
     if (data.answer) {
       console.log('✅ Tavily proporcionó respuesta automática');
       resultados.tavilyAnswer = data.answer;
     }
-    
+
     return resultados;
-    
+
   } catch (error) {
     console.error('❌ Error Tavily API:', error.message);
-    
+
     // Si es error de API key, dar mensaje específico
     if (error.message.includes('401') || error.message.includes('Unauthorized')) {
       throw new Error('API key de Tavily inválida o no configurada. Verifica TAVILY_API_KEY en .env');
     }
-    
+
     // Si es error de rate limit
     if (error.message.includes('429') || error.message.includes('rate limit')) {
       throw new Error('Límite de búsquedas Tavily excedido. Considera upgrade de plan o espera unos minutos.');
     }
-    
+
     throw error;
   }
 }
@@ -273,13 +380,13 @@ async function buscarConSerper(query, maxResults) {
         gl: 'ec' // Geo-localización para Ecuador por defecto
       })
     });
-    
+
     if (!response.ok) {
       throw new Error(`Serper API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     return data.organic?.map(item => ({
       titulo: item.title,
       resumen: item.snippet,
@@ -288,7 +395,7 @@ async function buscarConSerper(query, maxResults) {
       fecha: item.date || null,
       posicion: item.position
     })) || [];
-    
+
   } catch (error) {
     console.error('Error Serper API:', error);
     throw error;
@@ -307,19 +414,19 @@ async function buscarConBing(query, maxResults) {
       mkt: 'es-EC',
       safeSearch: 'Moderate'
     });
-    
+
     const response = await fetch(`${endpoint}?${params}`, {
       headers: {
         'Ocp-Apim-Subscription-Key': process.env.BING_SEARCH_API_KEY
       }
     });
-    
+
     if (!response.ok) {
       throw new Error(`Bing API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     return data.webPages?.value?.map(item => ({
       titulo: item.name,
       resumen: item.snippet,
@@ -327,7 +434,7 @@ async function buscarConBing(query, maxResults) {
       fuente: extraerDominio(item.url),
       fecha: item.dateLastCrawled || null
     })) || [];
-    
+
   } catch (error) {
     console.error('Error Bing API:', error);
     throw error;
@@ -339,7 +446,7 @@ async function buscarConBing(query, maxResults) {
  */
 async function busquedaSimulada(query, type) {
   console.log('🔄 Usando búsqueda simulada (sin API keys configuradas)');
-  
+
   // Base de datos simulada contextual
   const datosSimulados = {
     'pobreza ecuador': [
@@ -358,7 +465,7 @@ async function busquedaSimulada(query, type) {
         fecha: '2024-08-15'
       }
     ],
-    
+
     'educación ecuador estadísticas': [
       {
         titulo: 'Sistema educativo ecuatoriano: avances y desafíos 2024',
@@ -368,7 +475,7 @@ async function busquedaSimulada(query, type) {
         fecha: '2024-07-20'
       }
     ],
-    
+
     'medio ambiente ecuador': [
       {
         titulo: 'Ecuador aprueba nueva ley de cambio climático',
@@ -379,17 +486,17 @@ async function busquedaSimulada(query, type) {
       }
     ]
   };
-  
+
   // Buscar coincidencias en la base simulada
   const queryLower = query.toLowerCase();
   let resultadosEncontrados = [];
-  
+
   Object.entries(datosSimulados).forEach(([clave, datos]) => {
     if (queryLower.includes(clave.split(' ')[0]) || clave.includes(queryLower.split(' ')[0])) {
       resultadosEncontrados.push(...datos);
     }
   });
-  
+
   // Si no hay coincidencias específicas, generar resultados contextuales genéricos
   if (resultadosEncontrados.length === 0) {
     resultadosEncontrados = [
@@ -402,7 +509,7 @@ async function busquedaSimulada(query, type) {
       }
     ];
   }
-  
+
   return resultadosEncontrados;
 }
 
@@ -412,7 +519,7 @@ async function busquedaSimulada(query, type) {
 function procesarResultadosPorTipo(resultados, type, query) {
   switch (type) {
     case 'estadisticas_locales':
-      return resultados.filter(r => 
+      return resultados.filter(r =>
         r.titulo.toLowerCase().includes('estadística') ||
         r.titulo.toLowerCase().includes('dato') ||
         r.titulo.toLowerCase().includes('cifra') ||
@@ -420,15 +527,15 @@ function procesarResultadosPorTipo(resultados, type, query) {
         r.fuente.toLowerCase().includes('inec') ||
         r.fuente.toLowerCase().includes('estadística')
       );
-      
+
     case 'noticias_recientes':
       return resultados.filter(r => {
         const fechaReciente = new Date();
         fechaReciente.setMonth(fechaReciente.getMonth() - 3); // Últimos 3 meses
-        
+
         return r.fecha && new Date(r.fecha) >= fechaReciente;
       }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-      
+
     case 'politicas_publicas':
       return resultados.filter(r =>
         r.titulo.toLowerCase().includes('política') ||
@@ -437,7 +544,7 @@ function procesarResultadosPorTipo(resultados, type, query) {
         r.titulo.toLowerCase().includes('gobierno') ||
         r.titulo.toLowerCase().includes('ministerio')
       );
-      
+
     case 'tendencias_globales':
       return resultados.filter(r =>
         r.titulo.toLowerCase().includes('mundial') ||
@@ -447,7 +554,7 @@ function procesarResultadosPorTipo(resultados, type, query) {
         r.fuente.toLowerCase().includes('onu') ||
         r.fuente.toLowerCase().includes('banco mundial')
       );
-      
+
     case 'estudios_academicos':
       return resultados.filter(r =>
         r.titulo.toLowerCase().includes('estudio') ||
@@ -456,7 +563,7 @@ function procesarResultadosPorTipo(resultados, type, query) {
         r.fuente.toLowerCase().includes('universidad') ||
         r.fuente.toLowerCase().includes('.edu')
       );
-      
+
     default:
       return resultados;
   }
@@ -469,7 +576,7 @@ function generarResumenBusqueda(resultados, type) {
   if (resultados.length === 0) {
     return `No se encontraron resultados específicos para búsqueda de tipo ${type}`;
   }
-  
+
   const tiposResumen = {
     'estadisticas_locales': `Se encontraron ${resultados.length} fuentes con datos estadísticos locales`,
     'noticias_recientes': `Se identificaron ${resultados.length} noticias recientes sobre el tema`,
@@ -477,7 +584,7 @@ function generarResumenBusqueda(resultados, type) {
     'tendencias_globales': `Se obtuvieron ${resultados.length} fuentes sobre tendencias globales`,
     'estudios_academicos': `Se encontraron ${resultados.length} estudios académicos relevantes`
   };
-  
+
   return tiposResumen[type] || `Se encontraron ${resultados.length} resultados relacionados`;
 }
 
@@ -503,5 +610,6 @@ function extraerDominio(url) {
 
 export default {
   buscarWeb,
-  responderBusquedaIA
+  responderBusquedaIA,
+  searchWebSources
 };

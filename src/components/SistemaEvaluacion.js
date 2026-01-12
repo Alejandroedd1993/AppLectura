@@ -1,5 +1,5 @@
 // src/components/SistemaEvaluacionMejorado.js
-import React, { useState, useCallback, useContext, useMemo } from 'react';
+import React, { useState, useCallback, useContext } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../context/AppContext';
@@ -13,13 +13,15 @@ import PrerequisitosChecklist from './evaluacion/PrerequisitosChecklist';
 import ErrorDisplay from './evaluacion/ErrorDisplay';
 import EvaluationProgress from './evaluacion/EvaluationProgress';
 import SkipNavigation from './common/SkipNavigation';
-import { announceToScreenReader, ariaHelpers } from '../utils/accessibility';
+import { announceToScreenReader } from '../utils/accessibility';
 import { generarPregunta, evaluarRespuesta, sugerirArtefactos, DIMENSION_MAP } from '../services/evaluacionIntegral.service';
 import { generarConRetry, evaluarConRetry } from '../services/retryWrapper';
 import { createEvaluationError } from '../services/evaluationErrors';
 import useActivityPersistence from '../hooks/useActivityPersistence';
 import AlertMessage from './AlertMessage';
 import NextStepCard from './common/NextStepCard';
+import EnsayoIntegrador from './ensayoIntegrador/EnsayoIntegrador';
+import DashboardRubricas from './evaluacion/DashboardRubricas';
 
 // ============================================
 // STYLED COMPONENTS
@@ -460,7 +462,7 @@ const DIMENSIONES = [
 // ============================================
 
 export default function SistemaEvaluacionMejorado() {
-  const { texto, completeAnalysis, modoOscuro, rubricProgress, updateRubricScore } = useContext(AppContext);
+  const { texto, completeAnalysis, modoOscuro, rubricProgress, updateRubricScore, currentTextoId } = useContext(AppContext);
   const theme = modoOscuro ? darkTheme : lightTheme;
 
   // Estados
@@ -483,11 +485,13 @@ export default function SistemaEvaluacionMejorado() {
   const [revealedHintsCount, setRevealedHintsCount] = useState(0);
 
   // Persistencia
-  const documentId = completeAnalysis?.metadata?.document_id || 'general';
-  const persistenceKey = documentId; // Usar directamente el document_id
+  const legacyDocumentId = completeAnalysis?.metadata?.document_id || null;
+  const lectureId = currentTextoId || legacyDocumentId || 'general';
+  const persistenceKey = lectureId; // 🆕 Clave estable por lectura (textoId)
 
-  const { saveManual, clearResults, getMetrics } = useActivityPersistence(persistenceKey, {
-    enabled: !!documentId && !!texto,
+  const { saveManual, clearResults, getMetrics: _getMetrics } = useActivityPersistence(persistenceKey, {
+    enabled: !!lectureId && !!texto,
+    legacyDocumentIds: legacyDocumentId && legacyDocumentId !== lectureId ? [legacyDocumentId] : [],
     studentAnswers: { 
       [dimensionSeleccionada || 'general']: respuesta 
     },
@@ -660,7 +664,8 @@ export default function SistemaEvaluacionMejorado() {
           score: result.score,
           nivel: result.nivel,
           artefacto: 'Evaluacion',
-          criterios: result.detalles
+          criterios: result.detalles,
+          textoId: currentTextoId // 🛡️ CRÍTICO: Asegurar que se guarde en el documento correcto
         });
       }
 
@@ -681,7 +686,7 @@ export default function SistemaEvaluacionMejorado() {
     } finally {
       setEvaluando(false);
     }
-  }, [preguntaActual, respuesta, evaluando, texto, dimensionSeleccionada, rubricProgress, updateRubricScore]);
+  }, [preguntaActual, respuesta, evaluando, texto, dimensionSeleccionada, rubricProgress, updateRubricScore, currentTextoId]);
 
   // Manejar selección de dimensión desde dashboard
   const handleSelectFromDashboard = useCallback((rubricId) => {
@@ -732,8 +737,8 @@ export default function SistemaEvaluacionMejorado() {
     return (
       <Container>
         <Header>
-          <Title>📝 Evaluación Criterial Integral</Title>
-          <Subtitle>Evalúa tu literacidad crítica en las 5 dimensiones pedagógicas</Subtitle>
+          <Title>📝 Ensayo Integrador (Evaluación Final)</Title>
+          <Subtitle>Envía tu ensayo integrador y recibe evaluación IA dual</Subtitle>
         </Header>
         <AlertMessage type="info" message="Carga un texto para comenzar la evaluación." />
       </Container>
@@ -741,416 +746,50 @@ export default function SistemaEvaluacionMejorado() {
   }
 
   return (
-    <Container 
+    <Container
       role="main"
-      aria-label="Sistema de evaluación de literacidad crítica"
+      aria-label="Evaluación final: Ensayo Integrador"
       id="main-content"
       tabIndex={-1}
     >
-      <SkipNavigation theme={theme} />
+      <SkipNavigation
+        theme={theme}
+        links={[{ href: '#dashboard-rubricas', label: 'Saltar a resultados y progreso' }]}
+      />
       <Header theme={theme} role="banner">
-        <Title theme={theme} as="h1">📝 Evaluación Criterial Integral</Title>
+        <Title theme={theme} as="h1">📝 Ensayo Integrador (Evaluación Final)</Title>
         <Subtitle>
-          Evalúa tu literacidad crítica en las 5 dimensiones pedagógicas con preguntas contextualizadas y feedback dual (DeepSeek + OpenAI)
+          Envía tu ensayo integrador y recibe evaluación IA dual (DeepSeek + OpenAI).
         </Subtitle>
       </Header>
 
-      {/* Dashboard de progreso */}
-      <div id="dashboard-rubricas">
-        <EnhancedDashboard 
-          rubricProgress={rubricProgress}
-          theme={theme} 
-          onSelectRubric={handleSelectFromDashboard} 
-        />
-      </div>
-
-      {/* Panel de analíticas */}
-      <AnalyticsPanel 
-        rubricProgress={rubricProgress}
+      <SelectorDimension
         theme={theme}
-      />
+        id="dashboard-rubricas"
+        tabIndex={-1}
+        aria-label="Resultados y progreso"
+      >
+        <SelectorTitle theme={theme}>📊 Resultados y progreso</SelectorTitle>
+        <SelectorSubtitle theme={theme}>
+          Aquí ves un resumen de tus rúbricas. El detalle completo (incluye <strong>Mi progreso</strong>, exportación y gestión)
+          está en la pestaña <strong>Actividades</strong>.
+        </SelectorSubtitle>
 
-      {/* Panel de exportación */}
-      <ExportPanel 
-        rubricProgress={rubricProgress}
-        theme={theme}
-      />
-
-      {/* Modo de práctica guiada */}
-      {!preguntaActual && !feedback && (
-        <GuidedPracticeMode
-          rubricProgress={rubricProgress}
-          selectedDimension={dimensionSeleccionada}
-          onStartPractice={handleStartGuidedPractice}
+        <DashboardRubricas
           theme={theme}
+          onSelectRubric={() => {
+            handleNavigateFromPrerequisites('actividades');
+          }}
         />
-      )}
+      </SelectorDimension>
 
-      {/* Prerequisitos faltantes */}
-      {prerequisitosFaltantes && (
-        <PrerequisitosChecklist
-          dimension={prerequisitosFaltantes.dimension}
-          faltantes={prerequisitosFaltantes.faltantes}
-          onNavigate={handleNavigateFromPrerequisites}
-          theme={theme}
-        />
-      )}
+      <EnsayoIntegrador theme={theme} />
 
-      {/* Display de errores */}
-      {error && (
-        <ErrorDisplay
-          error={error}
-          onRetry={retryCallback ? () => retryCallback() : null}
-          onDismiss={() => setError(null)}
-          attempt={retryAttempt}
-          maxAttempts={3}
-          showDetails={process.env.NODE_ENV === 'development'}
-          theme={theme}
-        />
-      )}
-
-      {/* Progreso de operaciones */}
-      {(cargando || evaluando) && progressStep && (
-        <EvaluationProgress
-          mode={cargando ? 'generating' : 'evaluating'}
-          currentStep={progressStep}
-          progress={progressPercent}
-          theme={theme}
-        />
-      )}
-
-      {/* Selector de dimensión */}
-      {!preguntaActual && !feedback && !prerequisitosFaltantes && (
-        <SelectorDimension 
-          theme={theme}
-          role="region"
-          aria-label="Selección de dimensión a evaluar"
-        >
-          <SelectorTitle theme={theme}>
-            🎯 Selecciona la dimensión que deseas evaluar
-          </SelectorTitle>
-          <SelectorSubtitle theme={theme}>
-            Solo puedes evaluar <strong>una dimensión a la vez</strong> para garantizar un análisis profundo y contextualizado.
-            {dimensionSeleccionada && (
-              <span style={{ display: 'block', marginTop: '0.5rem', color: theme.success }}>
-                ✅ Dimensión seleccionada: <strong>{DIMENSIONES.find(d => d.id === dimensionSeleccionada)?.nombre}</strong>
-              </span>
-            )}
-          </SelectorSubtitle>
-          <DimensionesGrid>
-            {DIMENSIONES.map((dim) => (
-              <DimensionCard
-                key={dim.id}
-                $selected={dimensionSeleccionada === dim.id}
-                theme={theme}
-                onClick={() => {
-                  setDimensionSeleccionada(dim.id);
-                  announceToScreenReader(`Dimensión ${dim.nombre} seleccionada`);
-                }}
-                role="button"
-                tabIndex={0}
-                aria-pressed={dimensionSeleccionada === dim.id}
-                aria-label={`Seleccionar dimensión: ${dim.nombre}`}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setDimensionSeleccionada(dim.id);
-                    announceToScreenReader(`Dimensión ${dim.nombre} seleccionada`);
-                  }
-                }}
-              >
-                <DimensionIcon>{dim.icono}</DimensionIcon>
-                <DimensionNombre>{dim.nombre}</DimensionNombre>
-              </DimensionCard>
-            ))}
-          </DimensionesGrid>
-
-          {dimensionSeleccionada && (
-            <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-              <PrimaryButton theme={theme} onClick={handleGenerarPregunta} disabled={cargando}>
-                {cargando ? '⏳ Generando pregunta...' : '✨ Generar Pregunta Contextualizada'}
-              </PrimaryButton>
-            </div>
-          )}
-        </SelectorDimension>
-      )}
-
-      {/* Loading */}
-      {cargando && (
-        <LoadingSpinner>
-          <SpinnerIcon
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-          >
-            🔄
-          </SpinnerIcon>
-          <LoadingText theme={theme}>Generando pregunta contextualizada con IA...</LoadingText>
-        </LoadingSpinner>
-      )}
-
-      {/* Pregunta y respuesta */}
-      {preguntaActual && !feedback && !cargando && (
-        <PreguntaCard
-          theme={theme}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <PreguntaHeader>
-            <DimensionBadge theme={theme}>
-              {preguntaActual.dimensionLabel}
-            </DimensionBadge>
-            <span style={{ fontSize: '0.85rem', color: theme.textMuted }}>
-              Nivel: {preguntaActual.nivelDificultad}
-            </span>
-          </PreguntaHeader>
-
-          <PreguntaTexto theme={theme}>
-            {preguntaActual.pregunta}
-          </PreguntaTexto>
-
-          {/* Sistema de hints en modo guiado */}
-          {guidedMode && guidedMode.hints && guidedMode.hints.length > 0 && (
-            <HintsSystem
-              hints={guidedMode.hints}
-              maxHints={guidedMode.level.hintsAvailable}
-              onHintRevealed={handleHintRevealed}
-              theme={theme}
-            />
-          )}
-
-          <Textarea
-            theme={theme}
-            value={respuesta}
-            onChange={(e) => setRespuesta(e.target.value)}
-            placeholder="Escribe tu respuesta aquí... Procura ser específico y usar evidencias del texto."
-            disabled={evaluando}
-            aria-label="Tu respuesta a la pregunta de evaluación"
-            aria-required="true"
-            aria-describedby="respuesta-hint"
-            aria-invalid={respuesta.length > 0 && respuesta.length < 50}
-          />
-          <span id="respuesta-hint" style={{ position: 'absolute', left: '-10000px' }}>
-            Escribe una respuesta de al menos 50 caracteres para ser evaluada.
-          </span>
-
-          <ButtonGroup>
-            <CharCount theme={theme}>
-              {respuesta.length} caracteres
-            </CharCount>
-
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <SecondaryButton theme={theme} onClick={handleNuevaPregunta} disabled={evaluando}>
-                🔄 Nueva Pregunta
-              </SecondaryButton>
-              <PrimaryButton
-                theme={theme}
-                onClick={handleEvaluar}
-                disabled={!respuesta.trim() || respuesta.length < 50 || evaluando}
-              >
-                {evaluando ? '⏳ Evaluando...' : '✅ Evaluar con IA Dual'}
-              </PrimaryButton>
-            </div>
-          </ButtonGroup>
-        </PreguntaCard>
-      )}
-
-      {/* Feedback */}
-      <AnimatePresence>
-        {feedback && !evaluando && (
-          <FeedbackCard
-            theme={theme}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-          >
-            <FeedbackHeader>
-              <div>
-                <h3 style={{ margin: '0 0 0.5rem 0', color: theme.text }}>
-                  📊 Evaluación Criterial (IA Dual)
-                </h3>
-                <DimensionBadge theme={theme}>{feedback.dimensionLabel}</DimensionBadge>
-              </div>
-              <ScoreBadge>
-                <div>
-                  <ScoreValue $score={feedback.score}>{feedback.score}/10</ScoreValue>
-                </div>
-                <NivelLabel $nivel={feedback.nivel}>
-                  Nivel {feedback.nivel}/4
-                </NivelLabel>
-              </ScoreBadge>
-            </FeedbackHeader>
-
-            {/* Detalles */}
-            <Detalles theme={theme}>
-              <DetalleItem>
-                <DetalleLabel theme={theme}>Claridad</DetalleLabel>
-                <DetalleValor theme={theme}>{feedback.detalles.claridad}/4</DetalleValor>
-              </DetalleItem>
-              <DetalleItem>
-                <DetalleLabel theme={theme}>Anclaje</DetalleLabel>
-                <DetalleValor theme={theme}>{feedback.detalles.anclaje}/4</DetalleValor>
-              </DetalleItem>
-              <DetalleItem>
-                <DetalleLabel theme={theme}>Completitud</DetalleLabel>
-                <DetalleValor theme={theme}>{feedback.detalles.completitud}/4</DetalleValor>
-              </DetalleItem>
-              <DetalleItem>
-                <DetalleLabel theme={theme}>Profundidad</DetalleLabel>
-                <DetalleValor theme={theme}>{feedback.detalles.profundidad}/4</DetalleValor>
-              </DetalleItem>
-              <DetalleItem>
-                <DetalleLabel theme={theme}>Comprensión</DetalleLabel>
-                <DetalleValor theme={theme}>{feedback.detalles.comprension}/4</DetalleValor>
-              </DetalleItem>
-              <DetalleItem>
-                <DetalleLabel theme={theme}>Originalidad</DetalleLabel>
-                <DetalleValor theme={theme}>{feedback.detalles.originalidad}/4</DetalleValor>
-              </DetalleItem>
-            </Detalles>
-
-            {/* Fortalezas */}
-            {feedback.fortalezas?.length > 0 && (
-              <FeedbackSection>
-                <SectionTitle theme={theme}>✅ Fortalezas</SectionTitle>
-                <ListaItems>
-                  {feedback.fortalezas.map((f, idx) => (
-                    <ListItem key={idx} theme={theme} $icon="✓">
-                      {f}
-                    </ListItem>
-                  ))}
-                </ListaItems>
-              </FeedbackSection>
-            )}
-
-            {/* Mejoras */}
-            {feedback.mejoras?.length > 0 && (
-              <FeedbackSection>
-                <SectionTitle theme={theme}>💡 Oportunidades de mejora</SectionTitle>
-                <ListaItems>
-                  {feedback.mejoras.map((m, idx) => (
-                    <ListItem key={idx} theme={theme} $icon="→">
-                      {m}
-                    </ListItem>
-                  ))}
-                </ListaItems>
-              </FeedbackSection>
-            )}
-
-            {/* Comentario crítico */}
-            {feedback.comentarioCritico && (
-              <FeedbackSection>
-                <SectionTitle theme={theme}>📝 Comentario Crítico</SectionTitle>
-                <p style={{ color: theme.textSecondary, fontSize: '0.95rem', lineHeight: 1.6, margin: 0 }}>
-                  {feedback.comentarioCritico}
-                </p>
-              </FeedbackSection>
-            )}
-
-            {/* Feedback adaptado de modo guiado */}
-            {feedback.feedback_combined && feedback.practiceMode && (
-              <FeedbackSection>
-                <SectionTitle theme={theme}>
-                  🎯 Feedback del Modo Práctica ({feedback.practiceMode.level})
-                </SectionTitle>
-                <p style={{ color: theme.textSecondary, fontSize: '0.95rem', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' }}>
-                  {feedback.feedback_combined}
-                </p>
-                {feedback.practiceMode.hintsUsed > 0 && (
-                  <p style={{ color: theme.textMuted, fontSize: '0.85rem', marginTop: '0.75rem' }}>
-                    💡 Utilizaste {feedback.practiceMode.hintsUsed} hint(s) durante esta práctica.
-                  </p>
-                )}
-              </FeedbackSection>
-            )}
-
-            <ButtonGroup>
-              <SecondaryButton theme={theme} onClick={handleNuevaPregunta}>
-                🔄 Nueva Pregunta
-              </SecondaryButton>
-            </ButtonGroup>
-          </FeedbackCard>
-        )}
-      </AnimatePresence>
-
-      {/* Sugerencias de artefactos */}
-      {sugerencias.length > 0 && (
-        <SugerenciasCard theme={theme}>
-          <h4 style={{ margin: '0 0 1rem 0', color: theme.text }}>
-            💡 Artefactos sugeridos para mejorar
-          </h4>
-          {sugerencias.map((sug, idx) => (
-            <SugerenciaItem key={idx} theme={theme}>
-              <SugerenciaNombre theme={theme}>
-                {sug.icono} {sug.nombre}
-              </SugerenciaNombre>
-              <SugerenciaRazon theme={theme}>{sug.razon}</SugerenciaRazon>
-            </SugerenciaItem>
-          ))}
-        </SugerenciasCard>
-      )}
-
-      {/* Controles de persistencia */}
-      {(respuesta || feedback) && (
-        <div style={{ 
-          display: 'flex', 
-          gap: '0.75rem', 
-          justifyContent: 'center', 
-          marginTop: '1rem',
-          flexWrap: 'wrap'
-        }}>
-          <SecondaryButton 
-            theme={theme} 
-            onClick={() => {
-              saveManual();
-              alert('✅ Progreso guardado manualmente');
-            }}
-            style={{ fontSize: '0.9rem' }}
-          >
-            💾 Guardar Progreso
-          </SecondaryButton>
-          <SecondaryButton 
-            theme={theme} 
-            onClick={() => {
-              if (window.confirm('¿Estás seguro de que quieres borrar tu progreso en esta dimensión?')) {
-                clearResults();
-                setRespuesta('');
-                setFeedback(null);
-                setSugerencias([]);
-                alert('🗑️ Progreso eliminado');
-              }
-            }}
-            style={{ fontSize: '0.9rem', opacity: 0.7 }}
-          >
-            🗑️ Limpiar Progreso
-          </SecondaryButton>
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div style={{ marginTop: '1rem' }}>
-          <AlertMessage 
-            type="error" 
-            message={error instanceof Error ? error.message : (error.message || String(error))} 
-          />
-        </div>
-      )}
-
-      {/* Next Step Card */}
-      <NextStepCard
-        icon="📚"
-        title="Practica con Artefactos Formativos"
-        description="La evaluación criterial te muestra tu nivel actual. Para mejorar, ve a la pestaña Actividades y practica con los artefactos pedagógicos que reciben feedback formativo detallado."
-        actionLabel="Ir a Actividades →"
-        onAction={() => {
-          window.dispatchEvent(new CustomEvent('app-change-tab', { 
-            detail: { tabId: 'actividades' } 
-          }));
-        }}
-        theme={theme}
-        variant="primary"
-      />
+      {/*
+        Nota: La generación de preguntas contextualizadas y la práctica guiada
+        se mantienen en la pestaña "Actividades" como trabajo opcional.
+        Esta pestaña queda enfocada en la evaluación final (Ensayo Integrador).
+      */}
     </Container>
   );
 }
-

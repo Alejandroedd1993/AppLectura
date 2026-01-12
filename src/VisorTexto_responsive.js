@@ -32,7 +32,7 @@ const MIN_FONT_SIZE = 12;
 const MAX_FONT_SIZE = 22;
 const DEFAULT_FONT_SIZE = 16;
 
-function dividirParrafos(texto) {
+function _dividirParrafos(texto) {
   if (!texto) return [];
   // Normalizar saltos Windows/Unix
   const norm = texto.replace(/\r\n?/g, '\n').trim();
@@ -218,32 +218,75 @@ const Footnote = styled.div`
 const SelectionToolbar = styled.div`
   position: fixed;
   top: ${p => p.y}px;
-  left: ${p => p.x}px;
-  transform: translateY(-120%);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 10px;
-  padding: 6px;
+  left: ${p => Math.max(16, Math.min(p.x, typeof window !== 'undefined' ? window.innerWidth - 320 : p.x))}px;
+  transform: translateX(-50%) translateY(-120%);
+  /* Glassmorphism con colores del tema (azul/teal, sin púrpura) */
+  background: ${p => p.theme?.name === 'dark'
+    ? 'rgba(27, 34, 48, 0.92)'
+    : 'rgba(255, 255, 255, 0.95)'};
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid ${p => p.theme?.name === 'dark'
+    ? 'rgba(91, 165, 253, 0.3)'
+    : 'rgba(49, 144, 252, 0.25)'};
+  border-radius: 12px;
+  padding: 8px 10px;
   display: flex;
-  gap: 4px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.25), 0 2px 8px rgba(102,126,234,0.2);
+  gap: 6px;
+  box-shadow: ${p => p.theme?.name === 'dark'
+    ? '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(91, 165, 253, 0.15) inset'
+    : '0 8px 32px rgba(49, 144, 252, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08)'};
   z-index: 10000;
-  animation: fadeIn .15s ease;
+  animation: toolbarSlideIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  
   button {
-    background: ${p => p.theme?.primary || '#2563eb'};
+    background: ${p => p.theme?.primary || '#3190FC'};
     color: #fff;
     border: none;
-    padding: 6px 10px;
-    font-size: 0.75rem;
-    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-radius: 8px;
     cursor: pointer;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
     transition: all 0.15s ease;
-    &:hover { opacity: 0.9; transform: translateY(-1px); }
-    &:active { transform: translateY(0); }
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    
+    &:hover {
+      background: ${p => p.theme?.primaryDark || '#1F7EEB'};
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    &:active { 
+      transform: translateY(0); 
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Botón de cerrar con estilo especial */
+    &:last-child {
+      background: ${p => p.theme?.name === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
+      color: ${p => p.theme?.textMuted || '#607D8B'};
+      padding: 8px;
+      min-width: auto;
+      &:hover {
+        background: ${p => p.theme?.error || '#d93025'};
+        color: #fff;
+      }
+    }
   }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(calc(-120% - 4px)); }
-    to { opacity: 1; transform: translateY(-120%); }
+  
+  @keyframes toolbarSlideIn {
+    from { 
+      opacity: 0; 
+      transform: translateX(-50%) translateY(calc(-120% - 8px)) scale(0.95); 
+    }
+    to { 
+      opacity: 1; 
+      transform: translateX(-50%) translateY(-120%) scale(1); 
+    }
   }
 `;
 
@@ -321,12 +364,12 @@ const ProgressBar = styled.div`
 `;
 
 function VisorTextoResponsive({ texto, onParagraphClick }) {
-  const { textStructure, archivoActual, saveCitation, completeAnalysis } = useContext(AppContext); // 🆕 Obtener estructura, archivo, análisis y función para guardar citas
-  
-  const [enfoque, setEnfoque] = useState(false);
+  const { textStructure, archivoActual, saveCitation, completeAnalysis, currentTextoId } = useContext(AppContext); // 🆕 Obtener estructura, archivo, análisis y función para guardar citas
+
+  const [_enfoque, setEnfoque] = useState(false);
   const [selectionInfo, setSelectionInfo] = useState(null); // {x,y,text}
   const [showSaveSuccess, setShowSaveSuccess] = useState(false); // 🆕 Feedback visual al guardar cita
-  const lockRef = useRef(false);
+  const _lockRef = useRef(false);
   const virtuosoRef = useRef(null);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [progress, setProgress] = useState(0); // 0..1
@@ -338,7 +381,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   const [activeIndex, setActiveIndex] = useState(-1);
   const isVirtualizedRef = useRef(false);
   const paraRefs = useRef([]); // sólo cuando no hay virtualización
-  const lastPointerTypeRef = useRef('mouse');
+  const _lastPointerTypeRef = useRef('mouse');
   const selectionInfoRef = useRef(null);
 
   // 🆕 Estados para modo PDF (scroll continuo)
@@ -356,23 +399,31 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
 
   // 🆕 Preparar fuente del PDF cuando sea necesario
   useEffect(() => {
+    // 🆕 FIX: Resetear numPages al cambiar de archivo
+    setPdfNumPages(null);
+
     if (!isPDF || !archivoActual) {
       setPdfSource(null);
       return;
     }
 
+    console.log('📄 [VisorTexto] Preparando nuevo PDF:', archivoActual.name);
+
     // Si es un File object, usarlo directamente
     if (archivoActual.file instanceof File) {
+      console.log('📄 [VisorTexto] Usando File object');
       setPdfSource(archivoActual.file);
       return;
     }
 
     // Si tiene objectUrl, usarlo
     if (archivoActual.objectUrl) {
+      console.log('📄 [VisorTexto] Usando objectUrl');
       setPdfSource(archivoActual.objectUrl);
       return;
     }
 
+    console.warn('⚠️ [VisorTexto] No se encontró fuente válida para PDF');
     setPdfSource(null);
   }, [isPDF, archivoActual]);
 
@@ -389,21 +440,21 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
           if (!k) continue;
-            if (k.startsWith('visor_highlights_') || k === 'notasLectura') {
-              toDelete.push(k);
-            }
+          if (k.startsWith('visor_highlights_') || k === 'notasLectura') {
+            toDelete.push(k);
+          }
         }
         toDelete.forEach(k => localStorage.removeItem(k));
         localStorage.setItem('annotations_migrated_v1', '1');
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const parrafos = useMemo(() => {
     if (!texto || !texto.trim()) return [];
-    
+
     console.log('📐 [VisorTexto] Procesando texto, estructura IA disponible:', !!textStructure);
-    
+
     // 🆕 PRIORIDAD 1: Si hay estructura detectada por IA, usarla
     if (textStructure && textStructure.sections && textStructure.elements) {
       console.log('✨ Usando estructura detectada por IA:', textStructure);
@@ -414,9 +465,9 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         metadata: seg.metadata
       }));
     }
-    
+
     console.log('🔧 [VisorTexto] Usando segmentación manual/heurística');
-    
+
     // 🔧 PRIORIDAD 2: Respetar estructura original del texto (doble salto de línea)
     if (/\n\n/.test(texto)) {
       const manual = texto.split(/\n\n+/).map(t => t.trim()).filter(Boolean);
@@ -426,7 +477,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         return manual.map(text => ({ text, type: 'paragraph', metadata: {} }));
       }
     }
-    
+
     // 🔧 PRIORIDAD 3: Fallback - servicio de segmentación inteligente
     const seg = getSegmentedCached(texto, { minParagraphLen: 10 }).map(p => p.content);
     console.log(`🤖 [VisorTexto] Usando ${seg.length} párrafos por segmentación algorítmica`);
@@ -438,12 +489,12 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
 
   // Sin resaltado persistente
 
-  const toggleEnfoque = useCallback(() => {
+  const _toggleEnfoque = useCallback(() => {
     setEnfoque(prev => {
       const next = !prev;
       try {
         window.dispatchEvent(new CustomEvent('visor-focus-mode', { detail: { active: next } }));
-      } catch {}
+      } catch { }
       return next;
     });
   }, []);
@@ -463,10 +514,11 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       return;
     }
 
-    // Usar documentId del análisis completo si está disponible, o generar uno simple
-    const documentId = completeAnalysis?.metadata?.document_id || 
-                       (texto ? `doc_${texto.substring(0, 50).replace(/\s+/g, '_')}` : 'documento_sin_id');
-    
+    // 🆕 FASE 2 FIX: Usar textoId estable para aislar por lectura
+    // Fallbacks se mantienen por compatibilidad si aún no hay currentTextoId.
+    const documentId = currentTextoId || completeAnalysis?.metadata?.document_id ||
+      (texto ? `doc_${texto.substring(0, 50).replace(/\s+/g, '_')}` : 'documento_sin_id');
+
     const success = saveCitation({
       documentId,
       texto: selectionInfo.text.trim(),
@@ -483,12 +535,12 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     setTimeout(() => {
       setSelectionInfo(null);
     }, 100);
-  }, [selectionInfo, texto, saveCitation, completeAnalysis]);
+  }, [selectionInfo, texto, saveCitation, completeAnalysis, currentTextoId]);
 
   // Función para emitir acciones desde SelectionToolbar
   const dispatchAction = useCallback((action) => {
     if (!selectionInfo?.text) return;
-    
+
     const customEvent = new CustomEvent('reader-action', {
       detail: {
         action,
@@ -499,9 +551,9 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       bubbles: true,
       cancelable: true
     });
-    
+
     window.dispatchEvent(customEvent);
-    
+
     // Cerrar toolbar después de la acción (excepto para copiar que tiene su propia lógica)
     if (action !== 'copy') {
       setTimeout(() => {
@@ -516,43 +568,68 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     if (clearTextSelection) {
       try {
         window.getSelection()?.removeAllRanges();
-      } catch {}
+      } catch { }
     }
   }, []);
-  
+
+
+  // 🆕 Ref para limitar detección de selección SOLO al visor
+  const visorContainerRef = useRef(null);
 
   // Listener para selección de texto (mouseup) - muestra SelectionToolbar
+  // 🆕 FIX: Ahora solo se activa si la selección está DENTRO del visor
   useEffect(() => {
     const handleMouseUp = (e) => {
       // Evitar abrir toolbar si se hizo click en un botón de acción
       if (e.target.closest('button')) return;
-      
+
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
         setSelectionInfo(null);
         return;
       }
-      
+
+      // 🆕 FIX CRÍTICO: Verificar que la selección está DENTRO del visor
+      const anchorNode = selection.anchorNode;
+      const focusNode = selection.focusNode;
+      const visorEl = visorContainerRef.current;
+
+      if (!visorEl) {
+        setSelectionInfo(null);
+        return;
+      }
+
+      // Verificar que tanto el inicio como el final de la selección están en el visor
+      const anchorInVisor = anchorNode && visorEl.contains(anchorNode);
+      const focusInVisor = focusNode && visorEl.contains(focusNode);
+
+      if (!anchorInVisor || !focusInVisor) {
+        // La selección está fuera del visor (ej: chat del tutor, sidebar)
+        setSelectionInfo(null);
+        return;
+      }
+
       const selectedText = selection.toString().trim();
       if (!selectedText || selectedText.length < 3) {
         setSelectionInfo(null);
         return;
       }
-      
+
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      
+
       // Calcular posición centrada sobre la selección
       const x = rect.left + (rect.width / 2) + window.scrollX;
       const y = rect.top + window.scrollY;
-      
+
       setSelectionInfo({
         text: selectedText,
         x,
         y
       });
     };
-    
+
+    // Escuchamos en document pero filtramos por contenedor
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
   }, []);
@@ -651,7 +728,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
 
   const handlePdfSelection = useCallback((selectionData) => {
     if (!selectionData?.text) return;
-    
+
     setSelectionInfo({
       text: selectionData.text,
       x: selectionData.x,
@@ -682,7 +759,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     return () => observer.disconnect();
   }, [parrafos.length]);
 
-  const copyToClipboard = useCallback(async (textToCopy) => {
+  const _copyToClipboard = useCallback(async (textToCopy) => {
     try {
       await navigator.clipboard.writeText(textToCopy);
       // Opcional: mostrar notificación de éxito
@@ -710,67 +787,67 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   const detectParagraphType = useCallback((text) => {
     const trimmed = text.trim();
     if (!trimmed) return 'p';
-    
+
     // 🆕 0. SECCIONES ACADÉMICAS ESPECÍFICAS (prioridad máxima)
     const academicSections = /^(resumen|abstract|introducción|introduction|objetivos|objectives|metodología|methodology|resultados|results|conclusiones|conclusions|referencias|references|bibliografía|bibliography|anexos|appendix|agradecimientos|acknowledgments|marco teórico|theoretical framework|discusión|discussion|análisis|analysis)/i;
     if (academicSections.test(trimmed) && trimmed.length < 100) {
-      return { 
-        type: 'section-header', 
+      return {
+        type: 'section-header',
         level: 1,
-        category: trimmed.toLowerCase().replace(/\s+/g, '_').split(/[:\-]/)[0]
+        category: trimmed.toLowerCase().replace(/\s+/g, '_').split(/[:-]/)[0]
       };
     }
-    
+
     // 1. LISTAS CON VIÑETAS: -, *, •, ◦, ▪, ‣
-    const bulletPattern = /^[\-\*\•\◦\▪\‣]\s+/;
+    const bulletPattern = /^[-*•◦▪‣]\s+/;
     if (bulletPattern.test(trimmed)) {
       return { type: 'list-item', bullet: true };
     }
-    
+
     // 2. LISTAS NUMERADAS (con captura del número): 1., 1), a), a., i., etc.
-    const numberedListPattern = /^([\d]+|[a-z]|[ivxlcdm]+)[\.\)]\s+/i;
+    const numberedListPattern = /^([\d]+|[a-z]|[ivxlcdm]+)[.)]\s+/i;
     if (numberedListPattern.test(trimmed)) {
       return { type: 'list-item', bullet: false, marker: trimmed.match(numberedListPattern)[0] };
     }
-    
+
     // 3. CITAS O BLOQUES INDENTADOS: empieza con > o tiene indentación notable
     if (trimmed.startsWith('>') || /^\s{4,}/.test(text)) {
       return { type: 'blockquote' };
     }
-    
+
     // 4. NOTAS AL PIE O REFERENCIAS: [1], (1), *1, †
-    const footnotePattern = /^[\[\(]?\d+[\]\)]?\s*[:\-]?\s+/;
+    const footnotePattern = /^(?:\[|\()?\d+(?:\]|\))?\s*[:-]?\s+/;
     if (footnotePattern.test(trimmed) && trimmed.length < 200) {
       return { type: 'footnote' };
     }
-    
+
     // 5. TÍTULOS CON FORMATO ESPECIAL
     const isShort = trimmed.length < 120;
     const noPeriod = !trimmed.endsWith('.');
-    const startsWithNumber = /^[\d]+[\.\)]\s+[A-ZÁÉÍÓÚÑ]/.test(trimmed); // Requiere mayúscula después
-    const startsWithRoman = /^[IVX]+[\.\)]\s+/.test(trimmed);
+    const startsWithNumber = /^[\d]+[.)]\s+[A-ZÁÉÍÓÚÑ]/.test(trimmed); // Requiere mayúscula después
+    const startsWithRoman = /^[IVX]+[.)]\s+/.test(trimmed);
     const hasChapter = /^(capítulo|cap\.|chapter|sección|parte|anexo|apéndice)/i.test(trimmed);
     const isAllCaps = trimmed === trimmed.toUpperCase() && /[A-ZÁÉÍÓÚÑ]/.test(trimmed) && trimmed.length > 3 && trimmed.length < 100;
     const isFirstLineShort = trimmed.split('\n')[0].length < 80;
-    
+
     // Detectar títulos con mayor precisión
     if (isAllCaps && isShort) {
       return { type: 'h1' }; // Títulos en mayúsculas = H1
     }
-    
+
     if (hasChapter || startsWithRoman) {
       return { type: 'h2' }; // Capítulos o numeración romana = H2
     }
-    
+
     if (startsWithNumber && isShort && noPeriod) {
       return { type: 'h3' }; // Numerados cortos sin punto final = H3
     }
-    
+
     if (isShort && noPeriod && isFirstLineShort && !bulletPattern.test(trimmed) && /^[A-ZÁÉÍÓÚÑ]/.test(trimmed)) {
       // Líneas cortas que empiezan con mayúscula, sin punto final = probablemente título
       return { type: 'h3' };
     }
-    
+
     // 6. PÁRRAFO NORMAL
     return { type: 'p' };
   }, []);
@@ -780,19 +857,19 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     const content = typeof parrafoData === 'string' ? parrafoData : parrafoData.text;
     const aiType = typeof parrafoData === 'object' ? parrafoData.type : null;
     const metadata = typeof parrafoData === 'object' ? parrafoData.metadata : {};
-    
+
     const isSearchHit = searchHits.includes(index);
     const isCurrent = currentHit >= 0 && searchHits[currentHit] === index;
-    
+
     // Determinar tipo de elemento
     let elementType = aiType; // Priorizar tipo de IA si existe
     let detection = null;
-    
+
     // Si no hay tipo de IA o es 'paragraph', usar detección heurística
     if (!elementType || elementType === 'paragraph') {
       detection = detectParagraphType(content);
       elementType = typeof detection === 'string' ? detection : detection.type;
-      
+
       // Debug: mostrar detecciones especiales
       if (elementType === 'section-header') {
         console.log('🎯 [VisorTexto] Sección detectada:', {
@@ -821,29 +898,29 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         return text;
       }
     };
-    
+
     // Preparar contenido (quitar viñetas/marcadores del texto si no vienen de IA)
     let displayContent = content;
     if (!aiType) {
       // Solo limpiar si estamos usando detección heurística
       if (elementType === 'list-item') {
-        displayContent = content.replace(/^[\-\*\•\◦\▪\‣]\s+/, '').replace(/^([\d]+|[a-z]|[ivxlcdm]+)[\.\)]\s+/i, '');
+        displayContent = content.replace(/^[-*•◦▪‣]\s+/, '').replace(/^([\d]+|[a-z]|[ivxlcdm]+)[.)]\s+/i, '');
       } else if (elementType === 'blockquote') {
         displayContent = content.replace(/^>\s*/, '').replace(/^\s{4,}/, '');
       }
     }
-    
+
     const renderedContent = searchQuery ? renderWithHighlights(displayContent, searchQuery) : displayContent;
-    
+
     // 🆕 Renderizar elementos académicos especiales detectados por IA o heurística
     if (elementType === 'section-header') {
-      const level = metadata.level || 1;
+      const _level = metadata.level || 1;
       const category = metadata.category || '';
-      
+
       // Determinar si viene de heurística o IA
       const detection = !aiType ? detectParagraphType(content) : null;
       const actualCategory = category || (detection?.category) || '';
-      
+
       return (
         <Parrafo
           key={index}
@@ -856,17 +933,17 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
           $searchHit={isSearchHit}
           $currentHit={isCurrent}
           style={{
-            color: actualCategory.includes('resumen') || actualCategory.includes('abstract') 
-              ? '#6366f1' 
+            color: actualCategory.includes('resumen') || actualCategory.includes('abstract')
+              ? '#6366f1'
               : actualCategory.includes('introduc') || actualCategory.includes('introduction')
-              ? '#8b5cf6'
-              : actualCategory.includes('metodolog') || actualCategory.includes('methodology')
-              ? '#3b82f6'
-              : actualCategory.includes('resultado') || actualCategory.includes('results')
-              ? '#10b981'
-              : actualCategory.includes('conclus') || actualCategory.includes('conclusion')
-              ? '#f59e0b'
-              : '#6366f1',
+                ? '#8b5cf6'
+                : actualCategory.includes('metodolog') || actualCategory.includes('methodology')
+                  ? '#3b82f6'
+                  : actualCategory.includes('resultado') || actualCategory.includes('results')
+                    ? '#10b981'
+                    : actualCategory.includes('conclus') || actualCategory.includes('conclusion')
+                      ? '#f59e0b'
+                      : '#6366f1',
             fontWeight: 700,
             textTransform: 'uppercase',
             letterSpacing: '0.1em',
@@ -876,7 +953,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
             marginTop: '2rem',
             marginBottom: '1.5rem'
           }}
-          onClick={(e) => {
+          onClick={(_e) => {
             handleParagraphClick(index, content);
             setActiveIndex(index);
           }}
@@ -885,7 +962,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         </Parrafo>
       );
     }
-    
+
     if (elementType === 'emphasis') {
       return (
         <Parrafo
@@ -901,7 +978,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
             borderLeft: '3px solid #fbc02d',
             fontWeight: 500
           }}
-          onClick={(e) => {
+          onClick={(_e) => {
             handleParagraphClick(index, content);
             setActiveIndex(index);
           }}
@@ -910,7 +987,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         </Parrafo>
       );
     }
-    
+
     // Renderizar según el tipo detectado (heurístico o IA)
     if (elementType === 'list-item') {
       const detection = detectParagraphType(content);
@@ -923,7 +1000,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
           $selected={activeIndex === index}
           $searchHit={isSearchHit}
           $currentHit={isCurrent}
-          onClick={(e) => {
+          onClick={(_e) => {
             handleParagraphClick(index, content);
             setActiveIndex(index);
           }}
@@ -932,13 +1009,13 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         </ListItem>
       );
     }
-    
+
     if (elementType === 'blockquote') {
       return (
         <BlockQuote
           key={index}
           data-parrafo={index}
-          onClick={(e) => {
+          onClick={(_e) => {
             handleParagraphClick(index, content);
             setActiveIndex(index);
           }}
@@ -947,13 +1024,13 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         </BlockQuote>
       );
     }
-    
+
     if (elementType === 'footnote') {
       return (
         <Footnote
           key={index}
           data-parrafo={index}
-          onClick={(e) => {
+          onClick={(_e) => {
             handleParagraphClick(index, content);
             setActiveIndex(index);
           }}
@@ -962,7 +1039,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         </Footnote>
       );
     }
-    
+
     // Renderizado por defecto para títulos y párrafos
     return (
       <Parrafo
@@ -974,7 +1051,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         $selected={activeIndex === index}
         $searchHit={isSearchHit}
         $currentHit={isCurrent}
-        onClick={(e) => {
+        onClick={(_e) => {
           handleParagraphClick(index, content);
           setActiveIndex(index);
         }}
@@ -983,7 +1060,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       </Parrafo>
     );
   }, [handleParagraphClick, searchHits, currentHit, bigText, activeIndex, searchQuery, detectParagraphType]);
-  
+
 
   const isVirtualized = parrafos.length > VIRTUALIZATION_THRESHOLD;
   isVirtualizedRef.current = isVirtualized;
@@ -1051,7 +1128,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     <>
       {pdfHeaderChrome}
       <PDFViewer
-        key={`pdf-scale-${pdfScale.toFixed(2)}`}
+        key={`pdf-${archivoActual?.name || 'none'}-${archivoActual?.size || 0}-${pdfScale.toFixed(2)}`}
         file={pdfSource}
         scale={pdfScale}
         searchQuery={searchQuery}
@@ -1082,19 +1159,19 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
 
   return (
     <VisorWrapper style={isPDF ? undefined : { fontSize: `${fontSize}px` }}>
-      <div role="document" aria-label="contenido-lectura">{body}</div>
+      <div ref={visorContainerRef} role="document" aria-label="contenido-lectura">{body}</div>
       {selectionInfo && (
         <SelectionToolbar x={selectionInfo.x} y={selectionInfo.y} role="toolbar" aria-label="seleccion-herramientas">
           <button aria-label="explicar-seleccion" onClick={() => dispatchAction('explain')}>💡 Explicar</button>
           <button aria-label="guardar-cita-seleccion" onClick={handleSaveCitation}>💾 Guardar Cita</button>
           <button aria-label="abrir-notas-seleccion" onClick={() => dispatchAction('notes')}>📓 Notas</button>
-          <button aria-label="copiar-seleccion" onClick={() => { 
-            try { 
-              navigator.clipboard.writeText(selectionInfo.text || ''); 
+          <button aria-label="copiar-seleccion" onClick={() => {
+            try {
+              navigator.clipboard.writeText(selectionInfo.text || '');
               setCopied(true);
               setTimeout(() => setCopied(false), 1200);
-            } catch {}
-            clearSelection(true); 
+            } catch { }
+            clearSelection(true);
           }}>📋 Copiar</button>
           <button aria-label="cerrar-toolbar" onClick={() => clearSelection(true)}>✖</button>
         </SelectionToolbar>
