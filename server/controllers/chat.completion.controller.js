@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/responseCache.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -133,12 +134,46 @@ export async function createChatCompletion(req, res) {
       ua: req.get('user-agent') || ''
     };
 
+    // 🚀 CACHE CHECK: buscar respuesta cacheada antes de llamar a la API
+    const cachedContent = getCachedResponse(messages, temperature);
+    if (cachedContent) {
+      if (logUsage) {
+        console.log('⚡ [chat/completion] CACHE HIT', { ...requestTag, cached: true, stream: !!stream });
+      }
+      if (stream) {
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders?.();
+
+        const chunkSize = 50;
+        for (let i = 0; i < cachedContent.length; i += chunkSize) {
+          const chunk = cachedContent.slice(i, i + chunkSize);
+          res.write(`data: ${JSON.stringify({ content: chunk, cached: true })}\n\n`);
+        }
+        res.write(`event: done\ndata: ${JSON.stringify({ reason: 'stop', cached: true })}\n\n`);
+        return res.end();
+      }
+      return res.json({
+        provider,
+        model: selectedModel,
+        max_tokens: resolvedMaxTokens,
+        content: cachedContent,
+        finish_reason: 'stop',
+        cached: true,
+        usage: { cached: true }
+      });
+    }
+
+    const startTime = Date.now();
+
     if (stream) {
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache, no-transform');
       res.setHeader('Connection', 'keep-alive');
       res.flushHeaders?.();
 
+      let streamedContent = '';
       const streamResp = await client.chat.completions.create({
         model: selectedModel,
         messages,
@@ -153,9 +188,17 @@ export async function createChatCompletion(req, res) {
 
       for await (const part of streamResp) {
         const delta = part.choices?.[0]?.delta?.content || '';
-        if (delta) res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        if (delta) {
+          streamedContent += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        }
         const reason = part.choices?.[0]?.finish_reason;
         if (reason) res.write(`event: done\ndata: ${JSON.stringify({ reason })}\n\n`);
+      }
+
+      const latencyMs = Date.now() - startTime;
+      if (streamedContent.length > 10) {
+        setCachedResponse(messages, temperature, streamedContent, latencyMs);
       }
       return res.end();
     }
@@ -168,25 +211,44 @@ export async function createChatCompletion(req, res) {
       stream: false,
     });
 
+    const latencyMs = Date.now() - startTime;
+
     if (logUsage) {
       console.log('📊 [chat/completion] usage', {
         ...requestTag,
+        latencyMs,
         usage: completion.usage || null
       });
     }
 
     const choice = completion.choices?.[0];
+    const content = choice?.message?.content || '';
+
+    if (content.length > 10) {
+      setCachedResponse(messages, temperature, content, latencyMs);
+    }
     return res.json({
       provider,
       model: selectedModel,
       max_tokens: resolvedMaxTokens,
-      content: choice?.message?.content || '',
+      content,
       finish_reason: choice?.finish_reason || 'stop',
       usage: completion.usage,
+      latencyMs
     });
   } catch (error) {
     console.error('❌ Error en createChatCompletion:', error);
     const status = error.status || 500;
     res.status(status).json({ error: error.message || 'Error interno generando completion' });
+  }
+}
+
+export function getChatCacheStats(req, res) {
+  try {
+    const stats = getCacheStats();
+    return res.json(stats);
+  } catch (error) {
+    console.error('❌ Error obteniendo cache stats:', error);
+    return res.status(500).json({ error: 'Error obteniendo estadísticas' });
   }
 }

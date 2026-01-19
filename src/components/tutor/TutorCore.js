@@ -251,6 +251,21 @@ Adapta tu respuesta según señales del estudiante:
     }
   }, [maxMessages, onMessagesChange]);
 
+  // 🌊 Streaming: actualizar contenido de un mensaje existente
+  const updateMessage = useCallback((msgId, newContent, notify = false) => {
+    setMessages(prev => {
+      const idx = prev.findIndex(m => m.id === msgId);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], content: newContent };
+      if (notify) {
+        try { onMessagesChange?.(next); } catch (e) { /* noop */ }
+      }
+      return next;
+    });
+    lastAssistantContentRef.current = newContent;
+  }, [onMessagesChange]);
+
   // 📝 HISTORIAL INTELIGENTE: Genera resumen de conversación cuando hay muchos mensajes
   const generateConversationSummary = useCallback((messageHistory) => {
     if (messageHistory.length < 6) return null; // No resumir si hay pocos mensajes
@@ -386,24 +401,62 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
         body: JSON.stringify({
           messages: messagesArr,
           temperature: temperature,
-          max_tokens: 1024 // 🆕 Asegurar suficiente margen para respuestas largas
+          max_tokens: 800,
+          stream: true
         }),
         signal: abortRef.current.signal
       });
 
-      clearTimeout(timeoutId);
-
       if (myRequestId !== requestIdRef.current) return;
 
       if (!res.ok) {
+        clearTimeout(timeoutId);
         const errorText = await res.text().catch(() => '');
         throw new Error(`HTTP ${res.status}: ${errorText || 'Respuesta no OK'}`);
       }
 
-      const data = await res.json();
-      let content = data?.choices?.[0]?.message?.content?.trim() || data?.content || 'Sin respuesta.';
+      // 🌊 Crear mensaje placeholder y actualizarlo mientras llega el stream
+      const streamingMsgId = Date.now() + '-assistant-stream';
+      addMessage({ id: streamingMsgId, role: 'assistant', content: '▌' });
 
+      let content = '';
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamActive = true;
+
+      while (streamActive) {
+        const { done, value } = await reader.read();
+        if (done) {
+          streamActive = false;
+          break;
+        }
+        if (myRequestId !== requestIdRef.current) {
+          reader.cancel();
+          return;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const json = JSON.parse(line.slice(6));
+              if (json.content) {
+                content += json.content;
+                updateMessage(streamingMsgId, content + '▌');
+              }
+            } catch { /* noop */ }
+          }
+        }
+      }
+
+      clearTimeout(timeoutId);
       if (myRequestId !== requestIdRef.current) return;
+
+      content = content.trim() || 'Sin respuesta.';
 
       // 🔍 VALIDACIÓN POST-RESPUESTA (reutilizando ctx declarado arriba)
       const previousMessages = messages.filter(m => m.role === 'assistant').slice(-3);
@@ -415,33 +468,29 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
 
       if (!validation.isValid && validation.correctedResponse?.needsRegeneration) {
         console.warn('⚠️ [TutorCore] Respuesta no válida detectada:', validation.errors);
-        // Solo regenerar si no hemos intentado demasiadas veces
         if (retries < 1) {
           console.log('🔄 [TutorCore] Regenerando respuesta con corrección...');
+          setMessages(prev => prev.filter(m => m.id !== streamingMsgId));
           const correctionMessages = [
-            ...messagesArr.slice(0, -1), // Todos menos el último mensaje
+            ...messagesArr.slice(0, -1),
             {
               role: 'user',
               content: `${messagesArr[messagesArr.length - 1]?.content || ''}\n\n${validation.correctedResponse.correctionPrompt}`
             }
           ];
-          // Intentar regenerar (sin incrementar retries para regeneración)
           await callBackendWith(correctionMessages, retries);
           return;
-        } else {
-          console.warn('⚠️ [TutorCore] Máximo de regeneraciones alcanzado, usando respuesta con advertencia');
-          // Agregar advertencia al contenido
-          content = `⚠️ Nota: Esta respuesta puede contener información inferida. ${content}`;
         }
+        console.warn('⚠️ [TutorCore] Máximo de regeneraciones alcanzado, usando respuesta con advertencia');
+        content = `⚠️ Nota: Esta respuesta puede contener información inferida. ${content}`;
       }
 
-      // Filtro anti-eco
+      // Filtro anti-eco y actualización final
       content = filterEchoIfNeeded(lastAssistantContentRef.current, content);
-      const msg = { id: Date.now() + '-assistant', role: 'assistant', content };
+      updateMessage(streamingMsgId, content, true);
 
       if (myRequestId !== requestIdRef.current) return;
-      addMessage(msg);
-      try { onAssistantMessage?.(msg, apiRef.current); } catch { /* noop */ }
+      try { onAssistantMessage?.({ id: streamingMsgId, role: 'assistant', content }, apiRef.current); } catch { /* noop */ }
 
     } catch (e) {
       clearTimeout(timeoutId);
