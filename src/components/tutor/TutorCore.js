@@ -252,7 +252,7 @@ Adapta tu respuesta según señales del estudiante:
   }, [maxMessages, onMessagesChange]);
 
   // 🌊 Streaming: actualizar contenido de un mensaje existente
-  const updateMessage = useCallback((msgId, newContent, notify = false) => {
+  const updateMessage = useCallback((msgId, newContent, notify = false, updateLastRef = true) => {
     setMessages(prev => {
       const idx = prev.findIndex(m => m.id === msgId);
       if (idx === -1) return prev;
@@ -263,7 +263,9 @@ Adapta tu respuesta según señales del estudiante:
       }
       return next;
     });
-    lastAssistantContentRef.current = newContent;
+    if (updateLastRef) {
+      lastAssistantContentRef.current = newContent;
+    }
   }, [onMessagesChange]);
 
   // 📝 HISTORIAL INTELIGENTE: Genera resumen de conversación cuando hay muchos mensajes
@@ -416,8 +418,11 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       }
 
       // 🌊 Crear mensaje placeholder y actualizarlo mientras llega el stream
+      const prevAssistantContent = lastAssistantContentRef.current;
       const streamingMsgId = Date.now() + '-assistant-stream';
       addMessage({ id: streamingMsgId, role: 'assistant', content: '▌' });
+      // Evitar que el placeholder altere el filtro anti-eco
+      lastAssistantContentRef.current = prevAssistantContent;
 
       let content = '';
       const reader = res.body.getReader();
@@ -446,7 +451,7 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
               const json = JSON.parse(line.slice(6));
               if (json.content) {
                 content += json.content;
-                updateMessage(streamingMsgId, content + '▌');
+                updateMessage(streamingMsgId, content + '▌', false, false);
               }
             } catch { /* noop */ }
           }
@@ -486,8 +491,8 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       }
 
       // Filtro anti-eco y actualización final
-      content = filterEchoIfNeeded(lastAssistantContentRef.current, content);
-      updateMessage(streamingMsgId, content, true);
+      content = filterEchoIfNeeded(prevAssistantContent, content);
+      updateMessage(streamingMsgId, content, true, true);
 
       if (myRequestId !== requestIdRef.current) return;
       try { onAssistantMessage?.({ id: streamingMsgId, role: 'assistant', content }, apiRef.current); } catch { /* noop */ }
