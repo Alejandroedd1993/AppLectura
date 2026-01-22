@@ -16,6 +16,7 @@ import PanelStudyItems from '../PanelStudyItems';
 import useStudyItems from '../../hooks/useStudyItems';
 import DraftWarning from '../common/DraftWarning';
 import * as tokens from '../../styles/designTokens';
+import useMediaQuery from '../../hooks/useMediaQuery';
 
 /**
  * Componente principal para generar y mostrar notas de estudio
@@ -72,6 +73,9 @@ const NotasEstudio = () => {
     lightText: modoOscuro ? '#aaa' : '#666'
   }), [modoOscuro]);
 
+  const isSmallScreen = useMediaQuery('(max-width: 640px)');
+  const isNarrowScreen = useMediaQuery('(max-width: 768px)');
+
   // Función para alternar la visibilidad del panel de configuración
   const toggleConfiguracion = useCallback(() => {
     setMostrarConfiguracion(prev => !prev);
@@ -97,7 +101,7 @@ const NotasEstudio = () => {
     <div style={{ 
       backgroundColor: theme.background,
       color: theme.text,
-      padding: typeof window !== 'undefined' && window.innerWidth < 768 ? tokens.spacing.md : tokens.spacing.lg,
+      padding: isNarrowScreen ? tokens.spacing.md : tokens.spacing.lg,
       borderRadius: tokens.borderRadius.lg,
       boxShadow: tokens.boxShadow.md,
       maxWidth: tokens.containerWidth.lg,
@@ -113,9 +117,9 @@ const NotasEstudio = () => {
             borderRadius: tokens.borderRadius.lg,
             marginBottom: tokens.spacing.lg,
             display: 'flex',
-            flexDirection: typeof window !== 'undefined' && window.innerWidth < 600 ? 'column' : 'row',
+            flexDirection: isSmallScreen ? 'column' : 'row',
             gap: tokens.spacing.md,
-            alignItems: typeof window !== 'undefined' && window.innerWidth < 600 ? 'stretch' : 'center',
+            alignItems: isSmallScreen ? 'stretch' : 'center',
             boxShadow: tokens.boxShadow.lg,
             animation: 'slideDown 0.3s ease-out',
             border: `1px solid ${theme.secondary}`
@@ -148,7 +152,7 @@ const NotasEstudio = () => {
             <div style={{ 
               display: 'flex', 
               gap: tokens.spacing.sm,
-              flexDirection: typeof window !== 'undefined' && window.innerWidth < 600 ? 'column' : 'row',
+              flexDirection: isSmallScreen ? 'column' : 'row',
               alignItems: 'stretch'
             }}>
               <button

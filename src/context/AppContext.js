@@ -614,31 +614,38 @@ export const AppContextProvider = ({ children }) => {
   // 🆕 P9 FIX: Estado de sincronización con Firestore (idle | syncing | synced | error)
   const [syncStatus, setSyncStatus] = useState('idle');
   // 🆕 REGISTRO GLOBAL DE INTERACCIONES DEL TUTOR (A5 FIX)
-  const [globalTutorInteractions, setGlobalTutorInteractions] = useState([]);
+  const [_globalTutorInteractions, setGlobalTutorInteractions] = useState([]);
 
   useEffect(() => {
     // Usar 'global' como fallback si no hay textoId específico
     const lectureId = currentTextoId || 'global';
     const storageKey = `tutorInteractionsLog:${lectureId}`;
 
-    console.log('🎧 [AppContext] Registrando listener global para tutor-interaction-logged, lectureId:', lectureId);
-
     // Cargar inicial
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
       setGlobalTutorInteractions(Array.isArray(saved) ? saved : []);
-      console.log('📂 [AppContext] Interacciones cargadas:', saved?.length || 0);
     } catch {
       setGlobalTutorInteractions([]);
     }
 
     const handleNewInteraction = (event) => {
-      console.log('🎯 [AppContext] Evento tutor-interaction-logged recibido:', event.detail);
       const interaction = event.detail;
+      const targetLectureId = interaction?.lectureId || lectureId;
+      const targetKey = `tutorInteractionsLog:${targetLectureId}`;
+
+      if (targetLectureId !== lectureId) {
+        try {
+          const existing = JSON.parse(localStorage.getItem(targetKey) || '[]');
+          const updated = [...(Array.isArray(existing) ? existing : []), interaction];
+          localStorage.setItem(targetKey, JSON.stringify(updated));
+        } catch { /* noop */ }
+        return;
+      }
+
       setGlobalTutorInteractions(prev => {
         const updated = [...prev, interaction];
         localStorage.setItem(storageKey, JSON.stringify(updated));
-        console.log('💾 [AppContext] Interacción guardada. Total:', updated.length);
         return updated;
       });
     };
@@ -651,7 +658,7 @@ export const AppContextProvider = ({ children }) => {
   }, [currentTextoId]);
 
   // Opción para limpiar log globalmente
-  const clearGlobalTutorLog = useCallback(() => {
+  const _clearGlobalTutorLog = useCallback(() => {
     const lectureId = currentTextoId || 'global';
     const storageKey = `tutorInteractionsLog:${lectureId}`;
     localStorage.removeItem(storageKey);

@@ -45,6 +45,10 @@ const TopBar = styled.div`
   padding: 0.75rem 1rem;
   background: ${p => p.theme?.surface || '#ffffff'};
   border-bottom: 1px solid ${p => p.theme?.border || '#ddd'};
+  flex-wrap: wrap;
+  @media (max-width: 640px) {
+    gap: 0.5rem;
+  }
 `;
 
 const ActionsGroup = styled.div`
@@ -65,6 +69,8 @@ const ActionBtn = styled.button`
   display: inline-flex;
   align-items: center;
   gap: .4rem;
+  min-height: 44px;
+  touch-action: manipulation;
   &:hover { opacity: .9; }
 `;
 
@@ -73,7 +79,7 @@ const ContentArea = styled.div`
   min-height: 0;
   overflow: auto;
   position: relative;
-  padding-bottom: 80px; /* Espacio para PromptBar fijo más compacto */
+  padding-bottom: calc(80px + env(safe-area-inset-bottom)); /* Espacio para PromptBar fijo + safe-area */
 `;
 
 const _NotesPanel = styled.div`
@@ -90,6 +96,12 @@ const _NotesPanel = styled.div`
   box-shadow: 0 6px 20px rgba(0,0,0,.15);
   z-index: 1700;
   overflow: hidden;
+  @media (max-width: 768px) {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 70vh;
+  }
 `;
 
 const _NotesHeader = styled.div`
@@ -171,11 +183,11 @@ const _NoteInput = styled.textarea`
 
 const PromptBar = styled.form`
   position: fixed;
-  bottom: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   max-width: 700px;
-  width: 85%;
+  width: min(92%, 700px);
   display: flex;
   gap: .45rem;
   padding: .5rem .75rem;
@@ -184,11 +196,16 @@ const PromptBar = styled.form`
   box-shadow: 0 2px 16px rgba(0,0,0,.1);
   z-index: 100;
   border-radius: 24px;
+  @media (max-width: 640px) {
+    width: min(94%, 700px);
+    padding: 0.45rem 0.6rem;
+    border-radius: 20px;
+  }
 `;
 
 const PromptInput = styled.textarea`
   flex: 1;
-  font-size: .8rem;
+  font-size: clamp(0.75rem, 2.2vw, 0.85rem);
   padding: .5rem .7rem;
   border: none;
   border-radius: 18px;
@@ -220,6 +237,8 @@ const SendBtn = styled.button`
   align-items: center;
   gap: .35rem;
   transition: all 0.2s ease;
+  min-height: 44px;
+  touch-action: manipulation;
   &:hover { transform: scale(1.02); opacity: 0.9; }
   &:disabled { opacity:.55; cursor:not-allowed; transform: scale(1); }
 `;

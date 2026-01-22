@@ -7,6 +7,7 @@
 import React from 'react';
 import { ConceptoEtiqueta } from './NotasUI';
 import * as tokens from '../../styles/designTokens';
+import useMediaQuery from '../../hooks/useMediaQuery';
 
 /**
  * Componente para notas de texto narrativo
@@ -814,6 +815,8 @@ const NotasEnsayo = React.memo(({ notas, theme }) => (
  * Vista genérica (backend): resumen, notas, preguntas y tarjetas
  */
 const NotasGenericas = React.memo(({ data, theme }) => {
+  const isMobile = useMediaQuery('(max-width: 640px)');
+
   const Tarjeta = ({ card, idx: _idx }) => {
     const [show, setShow] = React.useState(false);
     const [isFlipping, setIsFlipping] = React.useState(false);
@@ -832,7 +835,7 @@ const NotasGenericas = React.memo(({ data, theme }) => {
         border: `${tokens.borderWidth.normal} solid ${theme.border}`,
         borderRadius: tokens.borderRadius.lg,
         padding: tokens.spacing.lg,
-        width: typeof window !== 'undefined' && window.innerWidth < 600 ? '100%' : 'calc(50% - 8px)',
+        width: isMobile ? '100%' : 'calc(50% - 8px)',
         minHeight: '180px',
         display: 'flex',
         flexDirection: 'column',

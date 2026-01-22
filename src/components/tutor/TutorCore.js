@@ -368,16 +368,10 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
             previousAssistantMessages: previousMessages.map(m => m.content)
           });
 
-          if (!validation.isValid && validation.correctedResponse?.needsRegeneration) {
-            console.warn('⚠️ [TutorCore] Respuesta no válida, regenerando...', validation.errors);
-            // Regenerar con prompt de corrección
-            const correctionMessages = [
-              ...messagesArr.slice(0, -1), // Todos menos el último
-              { role: 'user', content: validation.correctedResponse.correctionPrompt }
-            ];
-            // Llamar recursivamente pero solo 1 vez para regeneración
-            await callBackendWith(correctionMessages, 0);
-            return;
+          // 🔇 REGENERACIÓN AUTOMÁTICA DESHABILITADA (causaba respuestas duplicadas)
+          // Si la validación falla, solo loguear pero no regenerar
+          if (!validation.isValid && validation.errors?.length > 0) {
+            console.log('ℹ️ [TutorCore] Validación con observaciones (no regenerando):', validation.errors);
           }
 
           // Filtro anti-eco: evitar repetir lo mismo que el último assistant
@@ -471,23 +465,10 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
         previousAssistantMessages: previousMessages.map(m => m.content)
       });
 
-      if (!validation.isValid && validation.correctedResponse?.needsRegeneration) {
-        console.warn('⚠️ [TutorCore] Respuesta no válida detectada:', validation.errors);
-        if (retries < 1) {
-          console.log('🔄 [TutorCore] Regenerando respuesta con corrección...');
-          setMessages(prev => prev.filter(m => m.id !== streamingMsgId));
-          const correctionMessages = [
-            ...messagesArr.slice(0, -1),
-            {
-              role: 'user',
-              content: `${messagesArr[messagesArr.length - 1]?.content || ''}\n\n${validation.correctedResponse.correctionPrompt}`
-            }
-          ];
-          await callBackendWith(correctionMessages, retries);
-          return;
-        }
-        console.warn('⚠️ [TutorCore] Máximo de regeneraciones alcanzado, usando respuesta con advertencia');
-        content = `⚠️ Nota: Esta respuesta puede contener información inferida. ${content}`;
+      // 🔇 REGENERACIÓN AUTOMÁTICA DESHABILITADA (causaba respuestas duplicadas y lentitud)
+      // Si la validación falla, solo loguear pero no regenerar
+      if (!validation.isValid && validation.errors?.length > 0) {
+        console.log('ℹ️ [TutorCore] Validación con observaciones (no regenerando):', validation.errors);
       }
 
       // Filtro anti-eco y actualización final
@@ -579,16 +560,10 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
 
     // 🌐 Agregar contexto de búsqueda web si está disponible
     if (ctx.webEnrichment) {
-      console.log('🌐 [TutorCore] Agregando contexto web al system prompt');
-      console.log('📄 [TutorCore] Contenido web:', ctx.webEnrichment.substring(0, 300));
       systemContent += '\n\n' + ctx.webEnrichment;
       // Limpiar webEnrichment después de usarlo (solo para esta petición)
       delete ctx.webEnrichment;
-    } else {
-      console.log('⚠️ [TutorCore] No hay webEnrichment en contexto. ctx:', Object.keys(ctx));
     }
-
-    console.log('📋 [TutorCore] System prompt final length:', systemContent.length);
 
     const messagesArr = [
       { role: 'system', content: systemContent },
@@ -597,7 +572,6 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       { role: 'user', content: prompt }
     ];
 
-    console.log('📤 [TutorCore] Enviando al backend:', messagesArr.length, 'mensajes');
     return callBackendWith(messagesArr);
   }, [callBackendWith, getCondensedHistory]);
 
@@ -634,22 +608,21 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
 
       // 🤖 LOGGING PARA BITÁCORA ÉTICA IA
       try {
+        const currentLectureId = lastActionInfoRef.current?.lectureId || 'global';
+
         const interactionLog = {
           timestamp: new Date().toISOString(),
+          lectureId: currentLectureId,
           question: prompt,
           context: lastActionInfoRef.current?.fragment || '',
           bloomLevel: null, // Se actualizará después de detección
           tutorMode: lastActionInfoRef.current?.action || 'general'
         };
 
-        console.log('🤖 [TutorCore] Emitiendo evento tutor-interaction-logged:', interactionLog);
-
         // Emitir evento para que BitacoraEticaIA lo capture
         window.dispatchEvent(new CustomEvent('tutor-interaction-logged', {
           detail: interactionLog
         }));
-
-        console.log('✅ [TutorCore] Evento emitido exitosamente');
       } catch (e) {
         console.warn('[TutorCore] Error logging interaction:', e);
       }
@@ -678,7 +651,6 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
 
       // 🧠 DETECCIÓN INTELIGENTE DE NECESIDADES DEL ESTUDIANTE
       const studentNeeds = detectStudentNeeds(prompt);
-      console.log('🎯 [TutorCore] Necesidades detectadas:', studentNeeds);
 
       // Construir instrucción contextual según necesidades
       let contextualGuidance = '';
@@ -1267,6 +1239,8 @@ Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el tex
 
   function filterEchoIfNeeded(prevContent, newContent) {
     try {
+      const MIN_KEEP_LENGTH = 200;
+      const MAX_SHRINK_RATIO = 0.6;
       const prevT = tokenizeForSimilarity(prevContent);
       const newT = tokenizeForSimilarity(newContent);
       if (prevT.length >= 15 && newT.length >= 15) { // Reducido de 20 a 15 para captar más casos
@@ -1278,9 +1252,17 @@ Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el tex
           const cand = splitSentences(newContent).filter(s => !prevSent.has(s.trim().toLowerCase()));
           const condensed = cand.slice(0, 3).join(' ');
           if (condensed && condensed.length > 20) { // Asegurar que haya contenido suficiente
-            return 'Como comentamos antes, en resumen: ' + condensed;
+            const candidate = 'Como comentamos antes, en resumen: ' + condensed;
+            if (newContent.length > MIN_KEEP_LENGTH && candidate.length < newContent.length * MAX_SHRINK_RATIO) {
+              return newContent;
+            }
+            return candidate;
           }
-          return 'Como comentamos antes, ¿quieres que profundice en algún aspecto concreto del fragmento?';
+          const fallback = 'Como comentamos antes, ¿quieres que profundice en algún aspecto concreto del fragmento?';
+          if (newContent.length > MIN_KEEP_LENGTH && fallback.length < newContent.length * MAX_SHRINK_RATIO) {
+            return newContent;
+          }
+          return fallback;
         }
       }
     } catch { /* noop */ }

@@ -32,7 +32,7 @@ const NotificationBell = ({ theme }) => {
 
     const loadNotifications = async () => {
       try {
-        const { collection, query, orderBy, limit, onSnapshot } = await import('firebase/firestore');
+        const { collection, query, limit, onSnapshot } = await import('firebase/firestore');
         const { db } = await import('../../firebase/config');
 
         console.log('🔔 [NotificationBell] Configurando listener para:', currentUser.uid);

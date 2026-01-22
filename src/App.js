@@ -154,6 +154,8 @@ const AppContainer = styled.div`
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom);
   transition: all 0.3s ease;
   background: ${props => props.theme.background};
   color: ${props => props.theme.text};
@@ -196,10 +198,11 @@ const SidebarContainer = styled(motion.aside)`
   @media (min-width: 768px) {
     width: ${props => props.$collapsed ? '60px' : '320px'};
     min-width: ${props => props.$collapsed ? '60px' : '320px'};
-    max-height: calc(100vh - 80px);
+    max-height: calc(100dvh - 80px);
     position: sticky;
     top: 80px;
     transition: width 0.3s ease;
+    overflow-y: auto;
   }
   
   @media (min-width: 1200px) {
@@ -217,9 +220,10 @@ const ContentArea = styled.div`
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
   
   @media (min-width: 768px) {
-    min-height: calc(100vh - 80px);
+    min-height: calc(100dvh - 80px);
     margin-left: 1rem;
   }
 `;

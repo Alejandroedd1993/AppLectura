@@ -16,24 +16,23 @@
 ### ✅ DeepSeek (PREDETERMINADA - YA CONFIGURADA)
 
 **Estado:** Activa y funcionando  
-**API Key:** `sk-0632e6fd405b41f3bd4db539bb60b3e8`  
-**Ubicación:** Hardcoded en `server/index.js` línea 40  
-**Requiere configuración del usuario:** ❌ NO
+**API Key:** Configurada vía variable de entorno (Render: Environment / Local: `server/.env`)  
+**Ubicación:** `process.env.DEEPSEEK_API_KEY` en el backend (`server/index.js`)  
+**Requiere configuración del usuario:** ✅ SÍ (en el backend; no en el frontend)
 
 ```javascript
 // server/index.js línea 38-42
 deepseek: {
-  baseURL: 'https://api.deepseek.com',
-  apiKey: process.env.DEEPSEEK_API_KEY || 'sk-0632e6fd405b41f3bd4db539bb60b3e8',
+  baseURL: 'https://api.deepseek.com/v1',
+  apiKey: process.env.DEEPSEEK_API_KEY,
   model: 'deepseek-chat'
 }
 ```
 
 **Características:**
-- ✅ Gratuita con límite diario (50 requests)
 - ✅ Funciona para chat, análisis, evaluación
-- ✅ No requiere API key del usuario
-- ✅ Configurada automáticamente
+- ✅ Mantiene las claves fuera del frontend
+- ✅ Recomendada para despliegue (Render) mediante variables de entorno
 
 ---
 
@@ -110,8 +109,8 @@ const aiClient = {
 
 **Flujo:**
 1. Si `process.env.DEEPSEEK_API_KEY` existe → usa esa
-2. Si NO existe → usa la hardcoded `sk-0632e6fd405b41f3bd4db539bb60b3e8`
-3. **Resultado:** DeepSeek SIEMPRE funciona
+2. Si NO existe → el backend no podrá autenticar contra DeepSeek
+3. **Resultado:** En producción, configurar la variable en Render es obligatorio
 
 ---
 

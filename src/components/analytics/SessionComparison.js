@@ -12,8 +12,10 @@
 import React, { useMemo } from 'react';
 import styled from 'styled-components';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import useMediaQuery from '../../hooks/useMediaQuery';
 
 const SessionComparison = ({ sessions, theme }) => {
+  const isMobile = useMediaQuery('(max-width: 640px)');
   // Filtrar sesiones con progreso de rúbricas
   const sessionsWithProgress = useMemo(() => {
     return sessions.filter(s => s.rubricProgress && Object.keys(s.rubricProgress).length > 0);
@@ -22,7 +24,6 @@ const SessionComparison = ({ sessions, theme }) => {
   // Calcular datos para gráfico de tendencia
   const trendData = useMemo(() => {
     if (sessionsWithProgress.length === 0) return [];
-
     return sessionsWithProgress
       .sort((a, b) => (a.timestamp || a.createdAt) - (b.timestamp || b.createdAt))
       .map((session, index) => {
@@ -217,46 +218,89 @@ const SessionComparison = ({ sessions, theme }) => {
       {/* Tabla comparativa detallada */}
       <TableSection>
         <SectionTitle theme={theme}>📋 Detalle por Sesión</SectionTitle>
-        <TableContainer>
-          <Table theme={theme}>
-            <thead>
-              <tr>
-                <Th theme={theme}>#</Th>
-                <Th theme={theme}>Sesión</Th>
-                <Th theme={theme}>Promedio</Th>
-                <Th theme={theme}>📖</Th>
-                <Th theme={theme}>🔍</Th>
-                <Th theme={theme}>🌍</Th>
-                <Th theme={theme}>💬</Th>
-                <Th theme={theme}>🧠</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {trendData.map((session, index) => (
-                <Tr 
-                  key={index} 
-                  theme={theme}
-                  $highlight={
-                    session.sessionNumber === aggregateMetrics.bestSession.sessionNumber
-                  }
-                >
-                  <Td theme={theme}>{session.sessionNumber}</Td>
-                  <Td theme={theme} $bold>{session.sessionTitle}</Td>
-                  <Td theme={theme} $bold>
+        {isMobile ? (
+          <SessionCards>
+            {trendData.map((session, index) => {
+              const isBest = session.sessionNumber === aggregateMetrics.bestSession.sessionNumber;
+              return (
+                <SessionCard key={index} $highlight={isBest}>
+                  <SessionCardHeader>
+                    <div>
+                      <SessionTitleLine>Sesión {session.sessionNumber}</SessionTitleLine>
+                      <SessionSubtitle>{session.sessionTitle}</SessionSubtitle>
+                    </div>
                     <ScoreBadge $score={session.promedio}>
                       {session.promedio.toFixed(1)}
                     </ScoreBadge>
-                  </Td>
-                  <Td theme={theme}>{session.rubrica1.toFixed(1)}</Td>
-                  <Td theme={theme}>{session.rubrica2.toFixed(1)}</Td>
-                  <Td theme={theme}>{session.rubrica3.toFixed(1)}</Td>
-                  <Td theme={theme}>{session.rubrica4.toFixed(1)}</Td>
-                  <Td theme={theme}>{session.rubrica5.toFixed(1)}</Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
-        </TableContainer>
+                  </SessionCardHeader>
+                  <SessionStats>
+                    <SessionStatItem>
+                      <span className="label">📖</span>
+                      <span className="value">{session.rubrica1.toFixed(1)}</span>
+                    </SessionStatItem>
+                    <SessionStatItem>
+                      <span className="label">🔍</span>
+                      <span className="value">{session.rubrica2.toFixed(1)}</span>
+                    </SessionStatItem>
+                    <SessionStatItem>
+                      <span className="label">🌍</span>
+                      <span className="value">{session.rubrica3.toFixed(1)}</span>
+                    </SessionStatItem>
+                    <SessionStatItem>
+                      <span className="label">💬</span>
+                      <span className="value">{session.rubrica4.toFixed(1)}</span>
+                    </SessionStatItem>
+                    <SessionStatItem>
+                      <span className="label">🧠</span>
+                      <span className="value">{session.rubrica5.toFixed(1)}</span>
+                    </SessionStatItem>
+                  </SessionStats>
+                </SessionCard>
+              );
+            })}
+          </SessionCards>
+        ) : (
+          <TableContainer>
+            <Table theme={theme}>
+              <thead>
+                <tr>
+                  <Th theme={theme}>#</Th>
+                  <Th theme={theme}>Sesión</Th>
+                  <Th theme={theme}>Promedio</Th>
+                  <Th theme={theme}>📖</Th>
+                  <Th theme={theme}>🔍</Th>
+                  <Th theme={theme}>🌍</Th>
+                  <Th theme={theme}>💬</Th>
+                  <Th theme={theme}>🧠</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {trendData.map((session, index) => (
+                  <Tr 
+                    key={index} 
+                    theme={theme}
+                    $highlight={
+                      session.sessionNumber === aggregateMetrics.bestSession.sessionNumber
+                    }
+                  >
+                    <Td theme={theme}>{session.sessionNumber}</Td>
+                    <Td theme={theme} $bold>{session.sessionTitle}</Td>
+                    <Td theme={theme} $bold>
+                      <ScoreBadge $score={session.promedio}>
+                        {session.promedio.toFixed(1)}
+                      </ScoreBadge>
+                    </Td>
+                    <Td theme={theme}>{session.rubrica1.toFixed(1)}</Td>
+                    <Td theme={theme}>{session.rubrica2.toFixed(1)}</Td>
+                    <Td theme={theme}>{session.rubrica3.toFixed(1)}</Td>
+                    <Td theme={theme}>{session.rubrica4.toFixed(1)}</Td>
+                    <Td theme={theme}>{session.rubrica5.toFixed(1)}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </TableContainer>
+        )}
       </TableSection>
 
       {/* Insights */}
@@ -314,7 +358,7 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   gap: 2rem;
-  padding: 1.5rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
 `;
 
 const Header = styled.div`
@@ -323,22 +367,25 @@ const Header = styled.div`
 `;
 
 const Title = styled.h2`
-  font-size: 1.75rem;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
   font-weight: 700;
   color: ${props => props.theme.text || '#1F2937'};
   margin: 0 0 0.5rem 0;
 `;
 
 const Subtitle = styled.p`
-  font-size: 1rem;
+  font-size: clamp(0.85rem, 2.2vw, 1rem);
   color: ${props => props.theme.textMuted || '#6B7280'};
   margin: 0;
 `;
 
 const MetricsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 1rem;
+  @media (max-width: 640px) {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
 `;
 
 const MetricCard = styled.div`
@@ -361,7 +408,7 @@ const MetricIcon = styled.div`
 `;
 
 const MetricValue = styled.div`
-  font-size: 1.75rem;
+  font-size: clamp(1.2rem, 4vw, 1.75rem);
   font-weight: 700;
   color: ${props => props.$color || props.theme.text || '#1F2937'};
   margin-bottom: 0.25rem;
@@ -388,7 +435,7 @@ const ChartSection = styled.div`
 `;
 
 const SectionTitle = styled.h3`
-  font-size: 1.25rem;
+  font-size: clamp(1rem, 2.4vw, 1.25rem);
   font-weight: 600;
   color: ${props => props.theme.text || '#1F2937'};
   margin: 0 0 1rem 0;
@@ -396,7 +443,7 @@ const SectionTitle = styled.h3`
 
 const ChartContainer = styled.div`
   width: 100%;
-  height: 350px;
+  height: clamp(240px, 45vw, 350px);
 `;
 
 const TableSection = styled.div`
@@ -408,6 +455,55 @@ const TableSection = styled.div`
 
 const TableContainer = styled.div`
   overflow-x: auto;
+`;
+
+const SessionCards = styled.div`
+  display: grid;
+  gap: 0.75rem;
+`;
+
+const SessionCard = styled.div`
+  border: 1px solid ${props => props.theme?.border || '#E5E7EB'};
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: ${props => props.$highlight ? (props.theme?.successLight || '#D1FAE5') : (props.theme?.surface || '#FFFFFF')};
+`;
+
+const SessionCardHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+`;
+
+const SessionTitleLine = styled.div`
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: ${props => props.theme?.text || '#1F2937'};
+`;
+
+const SessionSubtitle = styled.div`
+  font-size: 0.8rem;
+  color: ${props => props.theme?.textMuted || '#6B7280'};
+`;
+
+const SessionStats = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+  gap: 0.5rem;
+`;
+
+const SessionStatItem = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: ${props => props.theme?.surfaceVariant || '#F9FAFB'};
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
+  .label { opacity: 0.8; }
+  .value { font-weight: 600; }
 `;
 
 const Table = styled.table`

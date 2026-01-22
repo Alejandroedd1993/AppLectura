@@ -84,6 +84,7 @@ function parseMarkdown(text) {
 function TutorDockEffects({
   api,
   texto,
+  currentTextoId,
   lengthMode,
   temperature,
   userId,
@@ -121,10 +122,18 @@ function TutorDockEffects({
     return () => clearTimeout(timer);
   }, [api.messages, setIsSaving]);
 
-  // Establecer contexto base con el texto completo cuando cambie
-  useEffect(() => {
-    try { api.setContext({ fullText: texto || '', lengthMode, temperature }); } catch { /* noop */ }
-  }, [texto, lengthMode, temperature, api]);
+    // Establecer contexto base con el texto completo y lectureId cuando cambie
+    useEffect(() => {
+      const lectureIdToSet = currentTextoId || 'global';
+      try {
+        api.setContext({
+          fullText: texto || '',
+          lengthMode,
+          temperature,
+          lectureId: lectureIdToSet
+        });
+      } catch { /* noop */ }
+    }, [texto, lengthMode, temperature, currentTextoId, api]);
 
   // Reiniciar/rehidratar historial al cambiar de texto
   useEffect(() => {
@@ -211,20 +220,12 @@ function TutorDockEffects({
 
   // Señalizar que el dock está listo (listeners activos).
   useEffect(() => {
-    console.log('🎯 [TutorDock] useEffect montaje ejecutado, programando tutor-ready');
     const t = setTimeout(() => {
-      console.log('🎯 [TutorDock] Disparando evento tutor-ready');
       try {
         window.dispatchEvent(new CustomEvent('tutor-ready'));
-        console.log('✅ [TutorDock] Evento tutor-ready disparado exitosamente');
-      } catch (err) {
-        console.error('❌ [TutorDock] Error disparando tutor-ready:', err);
-      }
+      } catch { /* noop */ }
     }, 0);
-    return () => {
-      console.log('🎯 [TutorDock] Limpiando timeout de tutor-ready');
-      clearTimeout(t);
-    };
+    return () => clearTimeout(t);
   }, []);
 
   // Reservado para futuras dependencias (por ejemplo, seguimiento)
@@ -499,11 +500,10 @@ const ToggleFab = styled.button`
   justify-content: center;
 `;
 
-// VERSION MARKER: v3.0.0-simplified-ui-nov25
+// VERSION MARKER: v3.0.1-performance-fix-jan26
 export default function TutorDock({ followUps, expanded = false, onToggleExpand, onClose }) {
-  console.log('🚀🚀🚀 [TutorDock] NUEVA VERSION CARGADA - v3.0.0 - 25 Nov 2025 🚀🚀🚀');
   const appCtx = useContext(AppContext) || {};
-  const { texto } = appCtx;
+  const { texto, currentTextoId } = appCtx;
   const { currentUser } = useAuth();
   const userId = currentUser?.uid || 'guest';
   const [open, setOpen] = useState(true);
@@ -607,6 +607,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
             <TutorDockEffects
               api={api}
               texto={texto}
+              currentTextoId={currentTextoId}
               lengthMode={lengthMode}
               temperature={temperature}
               userId={userId}

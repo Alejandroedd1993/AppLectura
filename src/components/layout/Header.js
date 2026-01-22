@@ -97,14 +97,21 @@ const HeaderContainer = styled.header`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   border-bottom: 2px solid ${props => props.theme?.border || '#E4EAF1'};
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  @media (max-width: 640px) {
+    padding: 12px 16px;
+  }
 `;
 
 const LeftSection = styled.div`
   display: flex;
   align-items: center;
   gap: 1rem;
+  min-width: 0;
+  flex: 1 1 auto;
 `;
 
 const BackButton = styled.button`
@@ -134,12 +141,14 @@ const BackButton = styled.button`
 
 const Title = styled.h1`
   margin: 0;
-  font-size: 1.5rem;
+  font-size: clamp(1.1rem, 2.6vw, 1.5rem);
   font-weight: 600;
   background: linear-gradient(45deg, #3190FC, #009688);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  min-width: 0;
+  word-break: break-word;
   
   @media (max-width: 768px) {
     font-size: 1.2rem;
@@ -150,6 +159,12 @@ const HeaderActions = styled.div`
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  @media (max-width: 640px) {
+    width: 100%;
+    justify-content: flex-start;
+  }
 `;
 
 const ModeToggle = styled.button`
@@ -240,6 +255,7 @@ const LogoutButton = styled.button`
   padding: 0.5rem 1rem;
   font-size: 0.9rem;
   font-weight: 600;
+  min-height: 44px;
   cursor: pointer;
   display: flex;
   align-items: center;

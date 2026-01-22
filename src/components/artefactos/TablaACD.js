@@ -20,21 +20,21 @@ import { renderMarkdown } from '../../utils/markdownUtils';
 const Container = styled.div`
   max-width: 900px;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
 `;
 
 const Header = styled.div`
   text-align: center;
   margin-bottom: 2rem;
-  padding: 1.5rem;
-  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  padding: clamp(1rem, 3vw, 1.5rem);
+  background: linear-gradient(135deg, ${props => props.theme.primary || '#2196F3'} 0%, ${props => props.theme.primaryDark || props.theme.primary || '#1976D2'} 100%);
   border-radius: 12px;
   color: white;
 `;
 
 const Title = styled.h2`
   margin: 0 0 0.5rem 0;
-  font-size: 1.8rem;
+  font-size: clamp(1.25rem, 3vw, 1.6rem);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -43,7 +43,7 @@ const Title = styled.h2`
 
 const Subtitle = styled.p`
   margin: 0;
-  font-size: 0.95rem;
+  font-size: clamp(0.85rem, 2.2vw, 0.95rem);
   opacity: 0.9;
   line-height: 1.5;
 `;
@@ -51,7 +51,7 @@ const Subtitle = styled.p`
 const GuideSection = styled(motion.div)`
   background: ${props => props.theme.surface};
   border: 1px solid ${props => props.theme.border};
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
 `;
@@ -110,7 +110,7 @@ const GuideQuestion = styled.li`
 const FormSection = styled.div`
   background: ${props => props.theme.surface};
   border: 1px solid ${props => props.theme.border};
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
 `;
@@ -118,7 +118,8 @@ const FormSection = styled.div`
 const SectionTitle = styled.h3`
   margin: 0 0 1rem 0;
   color: ${props => props.theme.text};
-  font-size: 1.1rem;
+  font-size: 1.15rem;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -129,7 +130,7 @@ const Label = styled.label`
   color: ${props => props.theme.text};
   font-weight: 500;
   margin-bottom: 0.5rem;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
 `;
 
 const Textarea = styled.textarea`
@@ -137,9 +138,9 @@ const Textarea = styled.textarea`
   min-height: 120px;
   padding: 0.75rem;
   border: 1px solid ${props => props.theme.border};
-  border-radius: 6px;
+  border-radius: 8px;
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: clamp(0.9rem, 2.2vw, 0.95rem);
   color: ${props => props.theme.text};
   background: ${props => props.theme.background};
   resize: vertical;
@@ -147,20 +148,24 @@ const Textarea = styled.textarea`
 
   &:focus {
     outline: none;
-    border-color: #8b5cf6;
+    border-color: ${props => props.theme.primary || '#2196F3'};
   }
 
   &::placeholder {
     color: ${props => props.theme.textMuted};
     opacity: 0.6;
   }
+
+  @media (max-width: 640px) {
+    min-height: 100px;
+  }
 `;
 
-const Input = styled.input`
+const _Input = styled.input`
   width: 100%;
   padding: 0.75rem;
   border: 1px solid ${props => props.theme.border};
-  border-radius: 6px;
+  border-radius: 8px;
   font-family: inherit;
   font-size: 0.95rem;
   color: ${props => props.theme.text};
@@ -169,7 +174,7 @@ const Input = styled.input`
 
   &:focus {
     outline: none;
-    border-color: #8b5cf6;
+    border-color: ${props => props.theme.primary || '#2196F3'};
   }
 
   &::placeholder {
@@ -203,14 +208,21 @@ const ButtonGroup = styled.div`
   gap: 1rem;
   justify-content: center;
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    align-items: stretch;
+  }
 `;
 
 const Button = styled.button`
-  padding: 0.75rem 1.5rem;
+  padding: 0.75rem 1.25rem;
   border: none;
   border-radius: 8px;
   font-weight: 600;
   font-size: 0.95rem;
+  min-height: 44px;
   cursor: pointer;
   transition: all 0.3s ease;
   display: flex;
@@ -224,13 +236,13 @@ const Button = styled.button`
 `;
 
 const PrimaryButton = styled(Button)`
-  background: ${props => props.theme.success};
+  background: ${props => props.theme.primary || '#2196F3'};
   color: white;
 
   &:hover:not(:disabled) {
+    background: ${props => props.theme.primaryHover || props.theme.primaryDark || props.theme.primary || '#1976D2'};
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 150, 136, 0.3);
-    opacity: 0.9;
+    box-shadow: 0 4px 12px ${props => `${props.theme.primary || '#2196F3'}40`};
   }
 `;
 
@@ -1874,7 +1886,7 @@ export default function TablaACD({ theme }) {
                 viewingVersion ? '👁️ Modo Lectura' :
                   evaluationAttempts >= MAX_ATTEMPTS ? '🚫 Intentos Agotados' :
                     !rateLimit.canProceed && rateLimit.nextAvailableIn > 0 ? `⏱️ Espera ${rateLimit.nextAvailableIn}s` :
-                      '🔍 Solicitar Análisis Crítico'}
+                      `🔍 Solicitar Evaluación (${MAX_ATTEMPTS - evaluationAttempts} restantes)`}
             </PrimaryButton>
 
             {/* 🆕 Botón de Entrega */}
