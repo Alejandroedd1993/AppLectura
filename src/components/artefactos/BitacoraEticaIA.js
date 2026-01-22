@@ -155,11 +155,14 @@ export default function BitacoraEticaIA({ theme }) {
   // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
   const resetProcessedRef = useRef(null);
 
-  // 🤖 Consumir interacciones del tutor desde el contexto global
-  const tutorInteractions = globalTutorInteractions || [];
+  // 🤖 Consumir interacciones del tutor desde el contexto global (con fallback local)
+  const [localTutorInteractions, setLocalTutorInteractions] = useState([]);
+  const tutorInteractions = (globalTutorInteractions && globalTutorInteractions.length > 0)
+    ? globalTutorInteractions
+    : localTutorInteractions;
 
-  // 🔍 DEBUG: Log para diagnóstico
-  console.log(`📋 [BitacoraEticaIA] Montado - textoId: ${currentTextoId}, globalTutorInteractions: ${globalTutorInteractions?.length || 0}`);
+  // Datos de diagnóstico disponibles si se necesitan
+  // textoId: currentTextoId, interacciones: globalTutorInteractions?.length
 
   // Estado local para reflexiones
   const [verificacionFuentes, setVerificacionFuentes] = useState('');
@@ -206,7 +209,13 @@ export default function BitacoraEticaIA({ theme }) {
   const reflectionsStorageKey = `ethicalReflections:${lectureId}`;
 
   // 🆕 Keyboard shortcuts para productividad
-  const [showSaveHint, setShowSaveHint] = useState(false);
+  const [_showSaveHint, setShowSaveHint] = useState(false);
+  const handleEvaluateCriterialRef = useRef(null);
+  const handleEvaluarBitacora = useCallback(() => {
+    if (handleEvaluateCriterialRef.current) {
+      handleEvaluateCriterialRef.current();
+    }
+  }, []);
 
   useKeyboardShortcuts({
     'ctrl+s': (_e) => {
@@ -239,18 +248,19 @@ export default function BitacoraEticaIA({ theme }) {
     excludeInputs: false
   });
 
-  // 🔍 DEBUG: Verificar qué hay en localStorage con esta clave
-  React.useEffect(() => {
-    const stored = localStorage.getItem(tutorLogStorageKey);
-    const count = stored ? JSON.parse(stored)?.length : 0;
-    console.log(`🔍 [BitacoraEticaIA] localStorage key: ${tutorLogStorageKey}, count: ${count}`);
+  // Verificación de localStorage (solo en desarrollo si es necesario)
+  // Los logs de debug fueron removidos para mejorar rendimiento
 
-    // También verificar la clave que usa AppContext
-    const appContextKey = `tutorInteractionsLog:${currentTextoId || 'global'}`;
-    const appContextStored = localStorage.getItem(appContextKey);
-    const appContextCount = appContextStored ? JSON.parse(appContextStored)?.length : 0;
-    console.log(`🔍 [BitacoraEticaIA] AppContext key: ${appContextKey}, count: ${appContextCount}`);
-  }, [tutorLogStorageKey, currentTextoId]);
+  // 🧩 Fallback: si el contexto está vacío, cargar desde localStorage por lectura
+  React.useEffect(() => {
+    if (globalTutorInteractions && globalTutorInteractions.length > 0) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(tutorLogStorageKey) || '[]');
+      setLocalTutorInteractions(Array.isArray(stored) ? stored : []);
+    } catch {
+      setLocalTutorInteractions([]);
+    }
+  }, [tutorLogStorageKey, globalTutorInteractions]);
 
   // 🆕 Variables para visualizar contenido (Actual o Histórico)
   const displayedContent = React.useMemo(() => {
@@ -738,6 +748,10 @@ export default function BitacoraEticaIA({ theme }) {
     }
   }, [isValidForEvaluation, evaluationAttempts, MAX_ATTEMPTS, rateLimit, tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, setError, updateRubricScore]);
 
+  useEffect(() => {
+    handleEvaluateCriterialRef.current = handleEvaluateCriterial;
+  }, [handleEvaluateCriterial]);
+
   // Usar theme del prop o crear uno basado en modoOscuro si no viene
   const effectiveTheme = theme || {
     background: modoOscuro ? '#1a1a1a' : '#f8f9fa',
@@ -1134,7 +1148,7 @@ export default function BitacoraEticaIA({ theme }) {
             {loadingEvaluation ? '⏳ Evaluando con IA Dual...' :
               evaluationAttempts >= MAX_ATTEMPTS ? '🔒 Límite de Intentos Alcanzado' :
                 !rateLimit.canProceed ? `⏳ Espera ${Math.ceil(rateLimit.nextAvailableIn / 1000)} s` :
-                  `🤖 Solicitar Evaluación Criterial(Intento ${evaluationAttempts} / ${MAX_ATTEMPTS})`}
+                  `🤖 Solicitar Evaluación (${MAX_ATTEMPTS - evaluationAttempts} restantes)`}
           </EvaluationButton>
         </EvaluationButtonSection>
       )}
@@ -1320,14 +1334,14 @@ const Header = styled.div`
   text-align: center;
   margin-bottom: 2rem;
   padding: 1.5rem;
-  background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+  background: linear-gradient(135deg, ${props => props.theme.primary || '#2196F3'} 0%, ${props => props.theme.primaryDark || props.theme.primary || '#1976D2'} 100%);
   border-radius: 12px;
   color: white;
 `;
 
 const HeaderTitle = styled.h2`
   margin: 0 0 0.5rem 0;
-  font-size: 1.8rem;
+  font-size: 1.6rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1447,7 +1461,7 @@ const SectionHeader = styled.div`
 
 const SectionTitle = styled.h2`
   margin: 0 0 1rem 0;
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: ${props => props.theme.textPrimary};
   display: flex;
@@ -1464,18 +1478,19 @@ const SectionDescription = styled.p`
 
 const ActionButtons = styled.div`
   display: flex;
-  gap: 0.5rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
 `;
 
 const SmallButton = styled.button`
-  padding: 0.5rem 1rem;
+  padding: 0.75rem 1.25rem;
   background: ${props => props.$variant === 'danger' ? props.theme.danger : props.theme.primary};
   color: white;
   border: none;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
   font-weight: 600;
+  min-height: 44px;
   cursor: pointer;
   transition: all 0.2s ease;
   
@@ -1833,27 +1848,28 @@ max - width: 600px;
 `;
 
 const EvaluationButton = styled.button`
-padding: 1rem 2rem;
-background: ${props => props.theme.purple};
-color: white;
-border: none;
-border - radius: 8px;
-font - size: 1rem;
-font - weight: 600;
-cursor: pointer;
-transition: all 0.3s ease;
-box - shadow: 0 4px 12px ${props => props.theme.purple} 40;
+  padding: 0.75rem 1.25rem;
+  background: ${props => props.theme.primary || '#2196F3'};
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-height: 44px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   
-  &: hover: not(: disabled) {
-  background: ${props => props.theme.purple} dd;
-  transform: translateY(-2px);
-  box - shadow: 0 6px 20px ${props => props.theme.purple} 50;
-}
+  &:hover:not(:disabled) {
+    background: ${props => props.theme.primaryHover || props.theme.primaryDark || props.theme.primary || '#1976D2'};
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px ${props => `${props.theme.primary || '#2196F3'}40`};
+  }
 
   &:disabled {
-  opacity: 0.5;
-  cursor: not - allowed;
-}
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const FeedbackCriterialSection = styled.div`

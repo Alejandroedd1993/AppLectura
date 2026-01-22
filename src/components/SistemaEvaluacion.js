@@ -1,4 +1,5 @@
 // src/components/SistemaEvaluacionMejorado.js
+/* eslint-disable no-unused-vars */
 import React, { useState, useCallback, useContext } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';

@@ -1012,7 +1012,7 @@ function TeacherDashboard() {
             const details = await getStudentArtifactDetails(estudiante.estudianteUid, lectura.textoId);
 
             if (details.hasProgress && details.artifacts) {
-              for (const [artifactKey, artifact] of Object.entries(details.artifacts)) {
+              for (const [_artifactKey, artifact] of Object.entries(details.artifacts)) {
                 rows.push([
                   estudiante.estudianteNombre || 'Sin nombre',
                   estudiante.estudianteEmail || '',
@@ -2022,11 +2022,16 @@ const DashboardWrapper = styled.section`
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+
+  @media (max-width: 640px) {
+    padding: 1rem;
+    gap: 1rem;
+  }
 `;
 
 const DashboardGrid = styled.div`
   display: grid;
-  grid-template-columns: minmax(280px, 360px) 1fr;
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
   gap: 1.5rem;
 
   @media (max-width: 1080px) {
@@ -2056,6 +2061,8 @@ const UploadSection = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   padding: 1rem;
   background: ${props => props.theme.surface};
   border: 1px dashed ${props => props.theme.primary};
@@ -2081,6 +2088,7 @@ const ActionButton = styled.button`
   border-radius: 8px;
   padding: 0.5rem 1rem;
   min-width: 140px;
+  min-height: 44px;
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
@@ -2098,6 +2106,11 @@ const ActionButton = styled.button`
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  @media (max-width: 640px) {
+    width: 100%;
+    min-width: 0;
   }
 `;
 
@@ -2293,11 +2306,16 @@ const CourseCodeBox = styled.div`
   background: ${props => props.theme.background};
   border-radius: 12px;
   text-align: center;
+
+  @media (max-width: 640px) {
+    min-width: 0;
+    width: 100%;
+  }
 `;
 
 const MetricsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.75rem;
   margin: 1rem 0;
 `;
@@ -2379,6 +2397,7 @@ const ActionsRow = styled.div`
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  align-items: center;
 `;
 
 const PendingNotice = styled.div`
@@ -2408,9 +2427,10 @@ const PendingStudent = styled.div`
   }
 `;
 
-const StudentsTable = styled.table`
+const _StudentsTable = styled.table`
   width: 100%;
   border-collapse: collapse;
+  max-width: 100%;
 
   th, td {
     text-align: left;
@@ -2422,6 +2442,12 @@ const StudentsTable = styled.table`
     font-size: 0.85rem;
     color: ${props => props.theme.textMuted};
     font-weight: 600;
+  }
+
+  @media (max-width: 640px) {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
   }
 `;
 
@@ -2470,6 +2496,11 @@ const ModalContent = styled.div`
   max-width: 500px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.3);
 
+  @media (max-width: 640px) {
+    padding: 1.25rem;
+    border-radius: 12px;
+  }
+
   h3 {
     margin-top: 0;
     margin-bottom: 1.5rem;
@@ -2504,6 +2535,7 @@ const SecondaryButton = styled.button`
   color: ${props => props.theme.text};
   padding: 0.5rem 1rem;
   min-width: 140px;
+  min-height: 44px;
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 500;
@@ -2518,10 +2550,15 @@ const SecondaryButton = styled.button`
     background: ${props => props.theme.background};
     transform: translateY(-1px);
   }
+
+  @media (max-width: 640px) {
+    width: 100%;
+    min-width: 0;
+  }
 `;
 
 // 🆕 Styled Components para Dropdown de Reset
-const ResetDropdown = styled.div`
+const _ResetDropdown = styled.div`
   position: relative;
   display: inline-block;
   
@@ -2530,7 +2567,7 @@ const ResetDropdown = styled.div`
   }
 `;
 
-const ResetDropdownButton = styled.button`
+const _ResetDropdownButton = styled.button`
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: white;
   border: none;
@@ -2548,21 +2585,27 @@ const ResetDropdownButton = styled.button`
   }
 `;
 
-const ResetDropdownContent = styled.div`
+const _ResetDropdownContent = styled.div`
   display: none;
   position: absolute;
   right: 0;
   top: 100%;
   min-width: 220px;
+  max-width: 92vw;
   background: white;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
   z-index: 100;
   overflow: hidden;
+
+  @media (max-width: 640px) {
+    min-width: 180px;
+    right: 0;
+  }
 `;
 
-const ResetDropdownHeader = styled.div`
+const _ResetDropdownHeader = styled.div`
   padding: 0.75rem 1rem;
   background: #f3f4f6;
   font-size: 0.75rem;
@@ -2571,7 +2614,7 @@ const ResetDropdownHeader = styled.div`
   border-bottom: 1px solid #e5e7eb;
 `;
 
-const ResetDropdownItem = styled.button`
+const _ResetDropdownItem = styled.button`
   display: block;
   width: 100%;
   padding: 0.75rem 1rem;
@@ -2671,6 +2714,11 @@ const StudentInfoCard = styled.div`
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+  }
+
+  @media (max-width: 640px) {
+    margin: 1rem;
+    padding: 1rem;
   }
 `;
 
@@ -2805,6 +2853,10 @@ const ArtifactsGrid = styled.div`
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1.25rem;
   padding: 1rem 1.5rem 1.5rem;
+
+  @media (max-width: 640px) {
+    padding: 0.75rem 1rem 1rem;
+  }
 `;
 
 const ArtifactCard = styled.div`
@@ -2822,6 +2874,10 @@ const ArtifactCard = styled.div`
   &:hover {
     transform: translateY(-4px);
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  }
+
+  @media (max-width: 640px) {
+    min-height: 0;
   }
 `;
 
@@ -2874,6 +2930,10 @@ const ArtifactMetricsGrid = styled.div`
   grid-template-columns: repeat(3, 1fr);
   gap: 0.75rem;
   margin-bottom: 1rem;
+
+  @media (max-width: 640px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
 `;
 
 const MetricBox = styled.div`
@@ -2889,7 +2949,7 @@ const MetricBox = styled.div`
 `;
 
 const MetricValue = styled.div`
-  font-size: 1.5rem;
+  font-size: clamp(1.1rem, 4vw, 1.5rem);
   font-weight: 800;
   color: #1e293b;
   line-height: 1;
@@ -2926,7 +2986,7 @@ const MetricBarFill = styled.div`
   transition: width 0.3s ease;
 `;
 
-const ScoreRing = styled.div`
+const _ScoreRing = styled.div`
   position: absolute;
   top: 4px;
   right: 4px;
@@ -3134,6 +3194,10 @@ const ViewContentPanel = styled.div`
   border: 2px solid #3b82f6;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
+  @media (max-width: 640px) {
+    margin: 0.75rem 1rem;
+    border-radius: 12px;
+  }
 `;
 
 const ViewContentHeader = styled.div`
@@ -3143,6 +3207,9 @@ const ViewContentHeader = styled.div`
   padding: 1rem 1.5rem;
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: white;
+  @media (max-width: 640px) {
+    padding: 0.75rem 1rem;
+  }
 `;
 
 const ViewContentTitle = styled.h4`
@@ -3172,6 +3239,9 @@ const CloseViewButton = styled.button`
 
 const ViewContentBody = styled.div`
   padding: 1.5rem;
+  @media (max-width: 640px) {
+    padding: 1rem;
+  }
 `;
 
 const StudentWorkContent = styled.div`
@@ -3186,6 +3256,10 @@ const StudentWorkContent = styled.div`
   overflow-y: auto;
   white-space: pre-wrap;
   font-family: ${props => props.$structured ? 'inherit' : "'Georgia', serif"};
+  @media (max-width: 640px) {
+    max-height: 240px;
+    font-size: 0.9rem;
+  }
 `;
 
 const WorkFields = styled.div`
@@ -3291,6 +3365,7 @@ const CommentActions = styled.div`
   align-items: center;
   gap: 1rem;
   margin-top: 1rem;
+  flex-wrap: wrap;
 `;
 
 const SaveCommentButton = styled.button`
@@ -3303,6 +3378,7 @@ const SaveCommentButton = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  min-height: 44px;
   
   &:hover:not(:disabled) {
     transform: translateY(-2px);
@@ -3326,6 +3402,7 @@ const DeleteCommentButton = styled.button`
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
+  min-height: 40px;
   
   &:hover:not(:disabled) {
     background: #dc2626;
@@ -3390,9 +3467,15 @@ const StudentCardHeader = styled.div`
   cursor: pointer;
   background: #fafafa;
   border-bottom: 1px solid #f0f0f0;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   
   &:hover {
     background: #f5f5f5;
+  }
+
+  @media (max-width: 640px) {
+    padding: 0.85rem 1rem;
   }
 `;
 
@@ -3401,12 +3484,15 @@ const StudentMainInfo = styled.div`
   align-items: center;
   gap: 1rem;
   flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
 `;
 
 const StudentNameSection = styled.div`
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-width: 0;
 `;
 
 const StudentNameRow = styled.div`
@@ -3417,7 +3503,7 @@ const StudentNameRow = styled.div`
 `;
 
 const StudentFullName = styled.span`
-  font-size: 1.05rem;
+  font-size: clamp(0.95rem, 2.6vw, 1.05rem);
   font-weight: 600;
   color: #1f2937;
 `;
@@ -3425,6 +3511,10 @@ const StudentFullName = styled.span`
 const StudentQuickStats = styled.div`
   display: flex;
   gap: 1.25rem;
+  flex-wrap: wrap;
+  @media (max-width: 640px) {
+    gap: 0.75rem;
+  }
 `;
 
 const QuickStat = styled.div`
@@ -3498,6 +3588,11 @@ const LecturaProgressHeader = styled.div`
 const LecturaInfo = styled.div`
   flex: 1;
   min-width: 200px;
+
+  @media (max-width: 640px) {
+    min-width: 0;
+    width: 100%;
+  }
 `;
 
 const LecturaTitulo = styled.div`
@@ -3515,6 +3610,7 @@ const LecturaAutor = styled.div`
 const LecturaStats = styled.div`
   display: flex;
   gap: 1rem;
+  flex-wrap: wrap;
 `;
 
 const LecturaStat = styled.div`
@@ -3561,6 +3657,10 @@ const LecturaStat = styled.div`
 const LecturaActions = styled.div`
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  @media (max-width: 640px) {
+    width: 100%;
+  }
 `;
 
 const SmallActionButton = styled.button`
@@ -3572,6 +3672,8 @@ const SmallActionButton = styled.button`
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
+  min-height: 44px;
+  touch-action: manipulation;
   transition: all 0.2s ease;
   white-space: nowrap;
   

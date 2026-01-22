@@ -7,6 +7,9 @@ const TabsContainer = styled.div`
   align-items: center;
   gap: 0.5rem;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  scroll-padding: 0.5rem;
   scrollbar-width: none;
   -ms-overflow-style: none;
   
@@ -40,6 +43,9 @@ const TabButton = styled(motion.button).withConfig({
   transition: all 0.2s ease;
   white-space: nowrap;
   min-width: fit-content;
+  min-height: 44px;
+  touch-action: manipulation;
+  scroll-snap-align: start;
   box-shadow: ${props => props.active
     ? '0 4px 12px rgba(49, 144, 252, 0.3)'
     : '0 1px 3px rgba(0, 0, 0, 0.05)'};
@@ -80,6 +86,7 @@ const TabButton = styled(motion.button).withConfig({
   
   @media (max-width: 480px) {
     padding: 8px 10px;
+    min-height: 40px;
     
     span:last-child {
       display: none;

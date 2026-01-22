@@ -134,6 +134,11 @@ const Parrafo = styled.p`
     /* Quitar indentación si es el primer párrafo después de un título */
     &:first-of-type { text-indent: 0; }
   ` : ''}
+  @media (max-width: 640px) {
+    padding: .6rem .75rem;
+    text-indent: 0;
+    text-align: left;
+  }
 `;
 
 // Componente para listas con viñetas o numeradas
@@ -233,12 +238,14 @@ const SelectionToolbar = styled.div`
   padding: 8px 10px;
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+  max-width: calc(100vw - 24px);
   box-shadow: ${p => p.theme?.name === 'dark'
     ? '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(91, 165, 253, 0.15) inset'
     : '0 8px 32px rgba(49, 144, 252, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08)'};
   z-index: 10000;
   animation: toolbarSlideIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  
+
   button {
     background: ${p => p.theme?.primary || '#3190FC'};
     color: #fff;
@@ -252,40 +259,57 @@ const SelectionToolbar = styled.div`
     display: flex;
     align-items: center;
     gap: 4px;
+    min-height: 36px;
+    touch-action: manipulation;
     transition: all 0.15s ease;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    
+
     &:hover {
       background: ${p => p.theme?.primaryDark || '#1F7EEB'};
       transform: translateY(-2px);
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
     }
-    &:active { 
-      transform: translateY(0); 
+
+    &:active {
+      transform: translateY(0);
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
-    
+
     /* Botón de cerrar con estilo especial */
     &:last-child {
       background: ${p => p.theme?.name === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
       color: ${p => p.theme?.textMuted || '#607D8B'};
       padding: 8px;
       min-width: auto;
+
       &:hover {
         background: ${p => p.theme?.error || '#d93025'};
         color: #fff;
       }
     }
   }
-  
-  @keyframes toolbarSlideIn {
-    from { 
-      opacity: 0; 
-      transform: translateX(-50%) translateY(calc(-120% - 8px)) scale(0.95); 
+
+  @media (max-width: 640px) {
+    left: 50%;
+    transform: translateX(-50%) translateY(-120%);
+    padding: 6px 8px;
+    max-width: 92vw;
+
+    button {
+      padding: 6px 8px;
+      font-size: 0.75rem;
+      min-height: 32px;
     }
-    to { 
-      opacity: 1; 
-      transform: translateX(-50%) translateY(-120%) scale(1); 
+  }
+
+  @keyframes toolbarSlideIn {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(calc(-120% - 8px)) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-120%) scale(1);
     }
   }
 `;
@@ -331,6 +355,13 @@ const SaveSuccessToast = styled.div`
       opacity: 1;
     }
   }
+
+  @media (max-width: 640px) {
+    left: 12px;
+    right: 12px;
+    top: 12px;
+    text-align: center;
+  }
 `;
 
 const ToolsBar = styled.div`
@@ -346,8 +377,34 @@ const ToolsBar = styled.div`
   padding: 6px 6px;
   border-radius: 8px;
   box-shadow: 0 1px 0 rgba(0,0,0,.03);
-  > input[type="search"] { padding: 6px 8px; border:1px solid ${p => p.theme?.border || '#cbd5e1'}; border-radius: 6px; min-width: 200px; }
-  > button { background: ${p => p.theme?.surface || '#eef2ff'}; border:1px solid ${p => p.theme?.border || '#cbd5e1'}; color:${p => p.theme?.text || '#1f2937'}; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:.8rem; }
+  > input[type="search"] {
+    padding: 6px 8px;
+    border:1px solid ${p => p.theme?.border || '#cbd5e1'};
+    border-radius: 6px;
+    min-width: 200px;
+    flex: 1 1 200px;
+  }
+  > button {
+    background: ${p => p.theme?.surface || '#eef2ff'};
+    border:1px solid ${p => p.theme?.border || '#cbd5e1'};
+    color:${p => p.theme?.text || '#1f2937'};
+    padding:6px 10px;
+    border-radius:6px;
+    cursor:pointer;
+    font-size:.8rem;
+    min-height: 36px;
+    touch-action: manipulation;
+  }
+
+  @media (max-width: 640px) {
+    > input[type="search"] {
+      min-width: 140px;
+      flex: 1 1 140px;
+    }
+    > button {
+      min-height: 40px;
+    }
+  }
 `;
 
 const ProgressBar = styled.div`

@@ -1182,7 +1182,7 @@ const ResumenAcademico = ({ theme }) => {
 // ============================================================
 
 const Container = styled.div`
-  padding: 1.5rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
   max-width: 900px;
   margin: 0 auto;
 `;
@@ -1190,15 +1190,15 @@ const Container = styled.div`
 const Header = styled.div`
   text-align: center;
   margin-bottom: 2rem;
-  padding: 1.5rem;
-  background: linear-gradient(135deg, #009688 0%, #00796B 100%);
+  padding: clamp(1rem, 3vw, 1.5rem);
+  background: linear-gradient(135deg, ${props => props.theme.primary || '#2196F3'} 0%, ${props => props.theme.primaryDark || props.theme.primary || '#1976D2'} 100%);
   border-radius: 12px;
   color: white;
 `;
 
 const HeaderTitle = styled.h2`
   margin: 0 0 0.5rem 0;
-  font-size: 1.8rem;
+  font-size: clamp(1.25rem, 3vw, 1.6rem);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1208,7 +1208,7 @@ const HeaderTitle = styled.h2`
 
 const HeaderDescription = styled.p`
   margin: 0;
-  font-size: 0.95rem;
+  font-size: clamp(0.85rem, 2.2vw, 0.95rem);
   opacity: 0.9;
   line-height: 1.5;
   color: white;
@@ -1218,7 +1218,7 @@ const HeaderDescription = styled.p`
 const GuideSection = styled(motion.div)`
   background: ${props => props.theme.surface || '#ffffff'};
   border: 1px solid ${props => props.theme.border || '#e0e0e0'};
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
 `;
@@ -1354,9 +1354,10 @@ const RestoreButton = styled.button`
   background: ${props => props.theme.warning};
   color: white;
   border: none;
-  padding: 0.4rem 1rem;
-  border-radius: 4px;
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
   font-weight: 600;
+  font-size: 0.9rem;
   cursor: pointer;
   
   &:hover {
@@ -1411,7 +1412,7 @@ const Textarea = styled.textarea`
   border: 2px solid ${props => props.theme.border || '#e0e0e0'};
   background: ${props => props.$isLocked ? `${props.theme.surface || '#f5f5f5'}` : props.theme.background || '#fff'};
   color: ${props => props.theme.textPrimary || '#333'};
-  font-size: 1rem;
+  font-size: clamp(0.9rem, 2.2vw, 0.95rem);
   line-height: 1.8;
   font-family: inherit;
   resize: vertical;
@@ -1429,6 +1430,10 @@ const Textarea = styled.textarea`
     opacity: 0.6;
     cursor: not-allowed;
     background: ${props => props.theme.surface || '#f5f5f5'};
+  }
+
+  @media (max-width: 640px) {
+    min-height: 160px;
   }
 `;
 
@@ -1487,13 +1492,14 @@ const SubmissionBanner = styled(motion.div)`
 `;
 
 const SubmitButton = styled.button`
-  padding: 0.9rem 1.8rem;
+  padding: 0.75rem 1.25rem;
   background: ${props => props.theme.success || '#4CAF50'};
   color: white;
   border: none;
   border-radius: 8px;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  min-height: 44px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1531,13 +1537,14 @@ const LockText = styled.div`
 `;
 
 const UnlockButton = styled.button`
-  padding: 0.6rem 1.2rem;
+  padding: 0.75rem 1.25rem;
   background: ${props => props.theme.primary};
   color: white;
   border: none;
   border-radius: 6px;
   font-weight: 600;
   font-size: 0.95rem;
+  min-height: 44px;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
@@ -1573,19 +1580,25 @@ const ErrorItem = styled.div`
 
 const ActionButtons = styled.div`
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   margin-top: 1.5rem;
   flex-wrap: wrap;
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    align-items: stretch;
+  }
 `;
 
 const EvaluateButton = styled.button`
-  padding: 0.9rem 1.8rem;
+  padding: 0.75rem 1.25rem;
   background: ${props => props.theme.primary || '#2196F3'};
   color: white;
   border: none;
   border-radius: 8px;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  min-height: 44px;
   cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
   opacity: ${props => props.disabled ? 0.6 : 1};
   transition: all 0.2s ease;

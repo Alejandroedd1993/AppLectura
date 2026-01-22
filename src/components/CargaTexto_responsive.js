@@ -25,6 +25,10 @@ const CargaContainer = styled(motion.div)`
   flex-direction: column;
   gap: 1rem;
   overflow-y: auto;
+  @media (max-width: 640px) {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
 `;
 
 const Header = styled.div`
@@ -33,11 +37,12 @@ const Header = styled.div`
   gap: 0.75rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid ${props => props.theme.border};
+  flex-wrap: wrap;
 `;
 
 const Title = styled.h3`
   margin: 0;
-  font-size: 1.1rem;
+  font-size: clamp(1rem, 2.4vw, 1.1rem);
   font-weight: 600;
   color: ${props => props.theme.text};
 `;
@@ -65,6 +70,10 @@ const CompactDropZone = styled(motion.div)`
   &:hover {
     border-color: ${props => props.theme.primary};
     background: ${props => props.theme.surfaceHover};
+  }
+
+  @media (max-width: 640px) {
+    padding: 1rem 0.75rem;
   }
 `;
 
@@ -105,6 +114,10 @@ const TextArea = styled.textarea`
   &::placeholder {
     color: ${props => props.theme.textMuted};
   }
+
+  @media (max-width: 640px) {
+    min-height: 100px;
+  }
 `;
 
 const SubmitButton = styled(motion.button)`
@@ -116,6 +129,8 @@ const SubmitButton = styled(motion.button)`
   font-weight: 600;
   cursor: pointer;
   font-size: 0.9rem;
+  min-height: 44px;
+  touch-action: manipulation;
   transition: all 0.2s ease;
   
   &:hover:not(:disabled) {
@@ -140,6 +155,7 @@ const FileInfo = styled(motion.div)`
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  flex-wrap: wrap;
 `;
 
 const FileDetails = styled.div`
@@ -167,6 +183,9 @@ const RemoveButton = styled.button`
   padding: 0.25rem;
   border-radius: 4px;
   font-size: 1.2rem;
+  min-height: 32px;
+  min-width: 32px;
+  touch-action: manipulation;
   
   &:hover {
     background: ${props => props.theme.error}20;
