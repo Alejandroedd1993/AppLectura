@@ -31,6 +31,9 @@ const Container = styled.div`
   min-height: 100vh;
   background: ${props => props.theme.background};
   padding: 40px 20px;
+  @media (max-width: 640px) {
+    padding: 24px 14px;
+  }
 `;
 
 const Header = styled.div`
@@ -43,6 +46,14 @@ const Header = styled.div`
     font-size: 42px;
     font-weight: 700;
     margin: 0 0 12px 0;
+  }
+
+  @media (max-width: 640px) {
+    margin: 0 auto 24px auto;
+    text-align: left;
+    h1 {
+      font-size: clamp(24px, 6vw, 32px);
+    }
   }
 `;
 
@@ -78,6 +89,40 @@ const UserInfo = styled.div`
     cursor: pointer;
     &:hover { background: ${props => props.theme.error}10; }
   }
+
+  @media (max-width: 720px) {
+    padding: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: stretch;
+
+    .info {
+      flex: 1 1 100%;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .item .value {
+      font-size: clamp(14px, 4.2vw, 16px);
+    }
+
+    .logout-btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+`;
+
+const UserActions = styled.div`
+  display: flex;
+  gap: 10px;
+  align-items: center;
+
+  @media (max-width: 720px) {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
 `;
 
 const CourseGrid = styled.div`
@@ -111,6 +156,18 @@ const CourseHeader = styled.div`
     display: flex;
     gap: 10px;
   }
+
+  @media (max-width: 720px) {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+
+    h2 { font-size: clamp(18px, 5.2vw, 22px); }
+    .actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+  }
 `;
 
 const WithdrawButton = styled.button`
@@ -128,6 +185,12 @@ const WithdrawButton = styled.button`
     opacity: 1;
     background: ${props => props.theme.error}10;
   }
+
+  @media (max-width: 720px) {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
 `;
 
 const ReadingsList = styled.div`
@@ -135,6 +198,10 @@ const ReadingsList = styled.div`
   display: flex;
   flex-direction: column;
   gap: 16px;
+  @media (max-width: 720px) {
+    padding: 14px;
+    gap: 12px;
+  }
 `;
 
 const ReadingItem = styled.div`
@@ -175,6 +242,43 @@ const ReadingItem = styled.div`
     &:disabled { opacity: 0.7; cursor: wait; }
     &:hover:not(:disabled) { background: ${props => props.theme.primaryDark}; }
   }
+
+  @media (max-width: 720px) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+
+    .progress-ring {
+      width: 100%;
+      margin: 0;
+      .label { text-align: left; }
+    }
+
+    button {
+      width: 100%;
+    }
+  }
+`;
+
+const ReadingActions = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  .export-btn {
+    min-width: 44px;
+    padding: 8px 12px;
+  }
+
+  @media (max-width: 720px) {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+
+    .export-btn {
+      width: 100%;
+    }
+  }
 `;
 
 const JoinCourseSection = styled.div`
@@ -206,6 +310,17 @@ const JoinCourseSection = styled.div`
       border: none;
       border-radius: 8px;
       cursor: pointer;
+    }
+  }
+
+  @media (max-width: 640px) {
+    padding: 16px;
+    .input-group {
+      flex-direction: column;
+      align-items: stretch;
+      input, button {
+        width: 100%;
+      }
     }
   }
 `;
@@ -575,7 +690,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
           <div className="item"><span className="label">Estudiante</span><span className="value">{userData?.nombre}</span></div>
           <div className="item"><span className="label">Cursos Activos</span><span className="value">{courses.length}</span></div>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <UserActions>
           {/* 🆕 Button for Free Analysis */}
           <button
             className="logout-btn"
@@ -585,7 +700,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
             Análisis Libre
           </button>
           <button className="logout-btn" onClick={signOut}>Cerrar Sesión</button>
-        </div>
+        </UserActions>
       </UserInfo>
 
       <JoinCourseSection>
@@ -633,11 +748,12 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
                       <div className="bar-bg"><div className="bar-fill" style={{ width: `${pct}%` }}></div></div>
                       <div className="label">{Math.round(pct)}% completado</div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <ReadingActions>
                       {pct > 0 && (
                         <button
                           onClick={() => handleExport(reading)}
                           style={{ background: 'transparent', color: '#666', border: '1px solid #ccc' }}
+                          className="export-btn"
                           title="Exportar progreso"
                         >
                           📥
@@ -651,7 +767,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
                           (canContinue ? '▶ Continuar' : 'Iniciar')
                         }
                       </button>
-                    </div>
+                    </ReadingActions>
                   </ReadingItem>
                 );
               })}
