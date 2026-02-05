@@ -9,6 +9,20 @@
       ]
     },
     {
+      "collectionId": "textos",
+      "fields": [
+        { "fieldPath": "docenteUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionId": "textos",
+      "fields": [
+        { "fieldPath": "asignadoA", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionId": "courses",
       "fields": [
         { "fieldPath": "docenteUid", "order": "ASCENDING" },
