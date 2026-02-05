@@ -214,6 +214,46 @@ Adapta tu respuesta según señales del estudiante:
 
 **TU TONO**: Empático, paciente, entusiasta por las preguntas del estudiante. NUNCA evaluativo ni correctivo. Siempre constructivo.`;
 
+  const SYSTEM_EQUITY_GUARD = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧭 **EQUIDAD, ANTI-SESGO Y PERSPECTIVAS (OBLIGATORIO)**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Mantén un lenguaje respetuoso e inclusivo. No uses estereotipos ni generalizaciones sobre grupos.
+- NO hagas suposiciones sobre atributos sensibles (raza/etnia, nacionalidad, religión, género, orientación sexual, discapacidad, clase social) del estudiante, del autor o de personajes.
+- Evita sesgos eurocéntricos: no trates perspectivas europeas/occidentales como “norma”; reconoce pluralidad cultural y contextual.
+- Si el texto contiene racismo, sexismo, colonialismo o discriminación, analízalo de forma crítica y contextualizada SIN reproducirlo como válido ni amplificarlo.
+- Si aparece lenguaje ofensivo o insultos contra grupos, NO los repitas textualmente. Refiérete de forma indirecta (p. ej., "insulto racista" / "insulto homofóbico") o usa una redacción suavizada con asteriscos.
+- No penalices ni corrijas de forma despectiva variedades del español o registros culturales; prioriza comprensión y análisis.
+`;
+
+  function detectHateOrSlur(text) {
+    const t = String(text || '').toLowerCase();
+    // Heurística mínima: prioriza protección de estudiantes.
+    // Nota: lista corta a propósito (evitar sobre-bloqueo).
+    const patterns = [
+      /\b(maric[ao]s?)\b/i,
+      /\b(negr[oa]s?)\b\s+\b(maric[ao]s?)\b/i,
+      /\b(indio(?:s)?\s+de\s+mierda)\b/i,
+      /\b(moro(?:s)?\s+de\s+mierda)\b/i,
+      /\b(judi[io]s?\s+de\s+mierda)\b/i
+    ];
+    return patterns.some((r) => r.test(t));
+  }
+
+  function redactHateOrSlur(text) {
+    let s = String(text || '');
+    // Redacción conservadora: oculta términos muy problemáticos sin destruir el sentido.
+    s = s.replace(/\b(maric)(a|o)(s?)\b/gi, 'm***$2$3');
+    // Combinaciones explícitas (para evitar que el tutor las repita)
+    s = s.replace(/\b(negr)(a|o)(s?)\s+(m\*\*\*|maric(a|o)(s?))\b/gi, 'n***$2$3 m***$5$6');
+    s = s.replace(/\b(indio)(s)?\s+de\s+mierda\b/gi, 'i***$2 de m***');
+    s = s.replace(/\b(moro)(s)?\s+de\s+mierda\b/gi, 'm***$2 de m***');
+    s = s.replace(/\b(judi)(o|a)(s)?\s+de\s+mierda\b/gi, 'j***$2$3 de m***');
+    return s;
+  }
+
   const SYSTEM_ANTI_REDUNDANCY = `Ten en cuenta el historial para evitar repetir preguntas ya hechas. Si el estudiante pide algo ya discutido, reconócelo y profundiza:
   
 "Antes mencionaste [X]. Ahora que también observas [Y], ¿cómo crees que se conectan?"
@@ -544,7 +584,7 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
     const creativityInstruction = buildCreativityInstruction(ctx.temperature);
 
     // Construir contenido del system prompt con resumen si está disponible
-    let systemContent = SYSTEM_TOPIC_GUARD + ' ' + SYSTEM_ANTI_REDUNDANCY;
+    let systemContent = SYSTEM_TOPIC_GUARD + ' ' + SYSTEM_EQUITY_GUARD + ' ' + SYSTEM_ANTI_REDUNDANCY;
     if (summary) {
       systemContent += '\n\n' + summary;
     }
@@ -597,6 +637,9 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       } catch { /* noop */ }
     },
     sendPrompt: (prompt) => {
+      const containsSlur = detectHateOrSlur(prompt);
+      const safePromptForModel = containsSlur ? redactHateOrSlur(prompt) : prompt;
+
       // Anti-duplicado: evitar reenvío del mismo prompt de usuario en ráfaga (<500ms)
       const now = Date.now();
       const hash = (prompt || '').trim().slice(0, 140);
@@ -613,7 +656,7 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
         const interactionLog = {
           timestamp: new Date().toISOString(),
           lectureId: currentLectureId,
-          question: prompt,
+          question: safePromptForModel,
           context: lastActionInfoRef.current?.fragment || '',
           bloomLevel: null, // Se actualizará después de detección
           tutorMode: lastActionInfoRef.current?.action || 'general'
@@ -662,6 +705,10 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
         contextualGuidance = '\n\n✨ AJUSTE: El estudiante muestra curiosidad genuina. Reconócelo: "Interesante pregunta..." o "Me gusta tu curiosidad...". Da pistas en lugar de respuesta completa. Invita a explorar con pregunta abierta.';
       } else if (studentNeeds.insight) {
         contextualGuidance = '\n\n🎯 AJUSTE: El estudiante mostró un insight valioso. CELEBRA su descubrimiento: "¡Exacto!" o "Has captado algo importante...". Expande la idea conectándola con conceptos más profundos. Pregunta de nivel superior (síntesis/evaluación).';
+      }
+
+      if (containsSlur) {
+        contextualGuidance += '\n\n🧭 EQUIDAD (PRIORITARIO): El usuario usó lenguaje ofensivo hacia un grupo. NO lo repitas textualmente. Establece un límite con respeto, explica brevemente por qué es dañino y redirige a un análisis crítico del texto. Si la frase aparece en el texto, trátala como ejemplo de discurso discriminatorio (contextualiza y problematiza), sin normalizarla. Sugiere reformular con términos neutrales.';
       }
       // Off-topic guard ESTRICTO: SOLO activar cuando el usuario claramente pregunta sobre algo totalmente diferente
       try {
@@ -745,7 +792,7 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       addMessage({ id: Date.now() + '-user', role: 'user', content: prompt });
       // Antes se mostraba un mensaje meta indicando el uso del texto cargado.
       // Se elimina para evitar ruido: siempre se asume el texto cargado como contexto.
-      return callBackend(prompt, contextualGuidance);
+      return callBackend(safePromptForModel, contextualGuidance);
     },
     sendAction: async (action, fragment, opts = {}) => {
       // Conservar contexto previo (p.ej., lengthMode, fullText ya seteado)
@@ -854,7 +901,7 @@ ${fuentesTexto}
 
       const contextSnippet = fullText ? (fullText.length > 1200 ? fullText.slice(0, 1200) + '…' : fullText) : '';
       const userContent = `Fragmento seleccionado: "${frag}"${contextSnippet ? `\n\nContexto adicional (truncado):\n${contextSnippet}` : ''}${webEnrichment}`;
-      const systemContent = `${SYSTEM_TOPIC_GUARD} ${actionDirectives}`;
+      const systemContent = `${SYSTEM_TOPIC_GUARD} ${SYSTEM_EQUITY_GUARD} ${actionDirectives}`;
 
       const historyData = getCondensedHistory();
       const history = Array.isArray(historyData) ? historyData : historyData.items;

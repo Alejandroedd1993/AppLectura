@@ -54,6 +54,15 @@ export class EssayEvaluationError extends Error {
 const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 
+const BIAS_SAFETY_RULES = `
+EQUIDAD Y NO DISCRIMINACIÓN (OBLIGATORIO):
+- No uses estereotipos ni lenguaje racista/sexista; no hagas suposiciones sobre identidad.
+- Evita eurocentrismo: reconoce pluralidad cultural/contextual; no asumas una perspectiva única como norma.
+- No repitas insultos o slurs textualmente; usa referencias indirectas o redacción suavizada.
+- Evalúa el razonamiento, evidencias y criterios de rúbrica; no penalices variedades del español.
+- Si el ensayo o el texto incluyen sesgos/discriminación, señálalo críticamente de forma respetuosa y basada en evidencia.
+`;
+
 // 🆕 Timeout específico para evaluación de ensayos (más largo que chat normal)
 const ESSAY_EVALUATION_TIMEOUT_MS = Math.max(CHAT_TIMEOUT_MS, 90000); // Mínimo 90s
 
@@ -151,6 +160,8 @@ ENSAYO DEL ESTUDIANTE:
 ${String(essayText || '').substring(0, 5000)}
 """
 
+${BIAS_SAFETY_RULES}
+
 TAREA:
 Evalúa el ensayo según la rúbrica de la dimensión indicada.
 
@@ -212,7 +223,7 @@ async function evaluarConProveedor({ provider, model, texto, essayText, dimensio
       temperature,
       max_tokens,
       messages: [
-        { role: 'system', content: 'Responde estrictamente en JSON.' },
+        { role: 'system', content: 'Responde estrictamente en JSON. Aplica reglas de equidad y no discriminación; evita estereotipos y suposiciones sobre identidad.' },
         { role: 'user', content: prompt }
       ],
       signal // 🆕 Pasar señal de cancelación
