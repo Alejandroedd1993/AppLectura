@@ -40,6 +40,98 @@ try {
  *  - maxMessages: límite FIFO de mensajes retenidos (default 40, alineado con persistencia en LecturaInteractiva)
  *  - backendUrl: URL del backend (default: http://localhost:3001)
  */
+
+// ═══ CONSTANTES PRE-COMPILADAS (fuera del componente para rendimiento) ═══
+
+// Patrones de detección de slurs — se evalúan en cada sendPrompt/sendAction
+const HATE_SLUR_PATTERNS = [
+  /\b(maric[ao]s?)\b/i,
+  /\b(negr[oa]s?)\b\s+\b(maric[ao]s?)\b/i,
+  /\b(indio(?:s)?\s+de\s+mierda)\b/i,
+  /\b(moro(?:s)?\s+de\s+mierda)\b/i,
+  /\b(judi[io]s?\s+de\s+mierda)\b/i,
+  /\b(gitano(?:s|a|as)?\s+de\s+mierda)\b/i,
+  /\b(sudaca(?:s)?)\b/i,
+  /\b(mund[oa]s?\s+de\s+mierda)\b/i,
+  /\b(retrasa(?:do|da|dos|das))\b/i,
+  /\b(mongol(?:o|a|os|as|ito|ita))\b/i,
+  /\b(inval|minus)\s*v[aá]lid[oa]s?\b/i,
+  /\b(pu(?:t[ao]s?|nhet[ao]?))\b\s+\b(negr[oa]s?|indi[oa]s?|moro|judi[oa]s?)\b/i,
+];
+
+// Patrones de detección de necesidades del estudiante (confusión, frustración, curiosidad, insight)
+const CONFUSION_PATTERNS = [
+  /no entiendo/i, /no comprendo/i, /no comprend/i,
+  /qu[eé] significa/i, /qu[eé] quiere decir/i, /qu[eé] quieres decir/i,
+  /me pierdo/i, /no capto/i, /no cacho/i, /no pillo/i,
+  /no s[eé] qu[eé]/i, /no s[eé] que/i,
+  /confuso/i, /confundid[oa]/i, /me confund/i,
+  /complicado/i, /muy complicad/i,
+  /dif[ií]cil/i, /muy dif[ií]cil/i, /es dif[ií]cil/i,
+  /\?\?\?+/,
+  /no me queda claro/i, /no me queda/i, /no tengo claro/i,
+  /no lo veo claro/i, /no lo pillo/i,
+  /estoy perdid[oa]/i, /me perd[ií]/i,
+  /no le veo sentido/i, /no tiene sentido/i, /no me cuadra/i,
+  /estoy bloquead[oa]/i, /no me sale/i,
+];
+const FRUSTRATION_PATTERNS = [
+  /esto es dif[ií]cil/i, /no le encuentro sentido/i,
+  /muy complicado/i, /súper complicad/i,
+  /imposible/i, /es imposible/i,
+  /no puedo/i, /no puedo más/i, /ya no puedo/i,
+  /ya intent[ée]/i, /ya lo intent[ée]/i,
+  /no veo c[oó]mo/i, /frustrante/i, /frustrad[oa]/i,
+  /me frustra/i, /esto me frustra/i,
+  /no me sale/i, /no me da/i,
+  /estoy hart[oa]/i, /ya me cans[ée]/i,
+  /tirar la toalla/i, /me rindo/i, /rendirme/i,
+  /no puedo con esto/i, /no doy m[aá]s/i,
+];
+const CURIOSITY_PATTERNS = [
+  /me pregunto/i, /me estoy preguntando/i,
+  /ser[aá] que/i, /será que/i,
+  /por qu[eé]/i, /porque/i, /por qué razón/i,
+  /c[oó]mo/i, /de qué manera/i, /de qué forma/i,
+  /qu[eé] pasa si/i, /y si/i, /cu[aá]l ser[ií]a/i,
+  /interesante/i, /es interesante/i, /muy interesante/i,
+  /curioso/i, /qué curioso/i,
+  /quisiera saber/i, /me gustaría saber/i,
+  /tengo curiosidad/i, /me da curiosidad/i,
+  /me llama la atención/i, /qué pasaría si/i,
+  /cómo funcionaría/i, /cuál sería el resultado/i,
+  /investigar/i, /explorar/i, /profundizar/i,
+  /saber más/i, /conocer más/i,
+];
+const INSIGHT_PATTERNS = [
+  /creo que/i, /pienso que/i, /me parece que/i,
+  /opino que/i, /considero que/i,
+  /tal vez/i, /quizá/i, /quizás/i,
+  /podr[ií]a ser/i, /podría ser/i,
+  /esto se relaciona con/i, /esto me recuerda/i, /me recuerda a/i,
+  /similar a/i, /parecido a/i, /se parece a/i,
+  /conecta con/i, /está conectado con/i,
+  /entiendo que/i, /ahora entiendo/i,
+  /ah[aá],?\s/i, /¡ah!/i, /ya veo/i, /ahora veo/i,
+  /tiene sentido/i, /ahora tiene sentido/i, /¡claro!/i,
+  /exacto/i, /eso es/i, /tiene lógica/i, /es lógico/i,
+  /como si/i, /analogía/i, /comparar/i, /comparando/i,
+  /igual que/i, /lo mismo que/i, /es como/i, /equivalente a/i,
+];
+
+// Whitelist de intenciones pedagógicas válidas (off-topic guard)
+const VALID_INTENTS = [
+  /(qu[eé]\s+significa|qu[eé]\s+quiere\s+decir|explica|explicar|aclarar)/i,
+  /(c[oó]mo\s+se\s+relaciona|por\s+qu[eé]|qu[eé]\s+implica)/i,
+  /(cu[aá]l\s+es\s+el\s+(tema|sentido|significado|mensaje))/i,
+  /(de\s+qu[eé]\s+trata|resumen|resume|idea\s+principal)/i,
+  /(entiendo\s+que|creo\s+que|parece\s+que|tal\s+vez)/i,
+  /(en\s+el\s+(texto|fragmento|p[aá]rrafo)|este\s+(texto|fragmento))/i,
+  /(el\s+autor|dice|menciona|plantea|sugiere)/i,
+  /(lenguaje|estilo|recurso|met[aá]fora|imagen|s[ií]mbolo)/i,
+  /(no\s+entiendo|no\s+comprendo|duda|confus)/i,
+  /(profundiza|m[aá]s\s+sobre|detalla|amplia)/i,
+];
 export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantMessage, initialMessages = [], children, maxMessages = 40, backendUrl = 'http://localhost:3001' }) {
   // ✨ FASE 2: Integrar hooks pedagógicos
   const pedagogyIntegration = React.useZDPIntegration ? React.useZDPIntegration() : { zdp: null, rew: null };
@@ -212,7 +304,20 @@ Adapta tu respuesta según señales del estudiante:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-**TU TONO**: Empático, paciente, entusiasta por las preguntas del estudiante. NUNCA evaluativo ni correctivo. Siempre constructivo.`;
+**TU TONO**: Empático, paciente, entusiasta por las preguntas del estudiante. NUNCA evaluativo ni correctivo. Siempre constructivo.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 **ANCLAJE AL TEXTO (OBLIGATORIO)**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- **SIEMPRE** fundamenta tus respuestas en el texto que el estudiante está leyendo.
+- **CITA frases específicas** del texto entre comillas ("…") para respaldar cada explicación o análisis.
+- Si el estudiante pregunta algo y el texto contiene evidencia, responde con: "En el texto dice '…', lo cual sugiere que…"
+- Si el texto NO contiene información relevante para la pregunta, dilo con honestidad: "El texto no aborda directamente ese punto, pero podemos inferir que…"
+- **NO inventes** datos que no estén en el texto (autor, fecha, título, hechos) a menos que sean conocimiento general verificable.
+- Cuando el estudiante haga una interpretación, pídele que señale la evidencia textual: "¿Qué parte del texto te hace pensar eso?"
+- Distingue entre lo que el texto DICE explícitamente y lo que se puede INFERIR.
+- Si no tienes suficiente contexto del texto para responder bien, pide al estudiante que seleccione el fragmento relevante.`;
 
   const SYSTEM_EQUITY_GUARD = `
 
@@ -220,27 +325,34 @@ Adapta tu respuesta según señales del estudiante:
 🧭 **EQUIDAD, ANTI-SESGO Y PERSPECTIVAS (OBLIGATORIO)**
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+**A. Lenguaje inclusivo y respetuoso:**
 - Mantén un lenguaje respetuoso e inclusivo. No uses estereotipos ni generalizaciones sobre grupos.
 - NO hagas suposiciones sobre atributos sensibles (raza/etnia, nacionalidad, religión, género, orientación sexual, discapacidad, clase social) del estudiante, del autor o de personajes.
-- Evita sesgos eurocéntricos: no trates perspectivas europeas/occidentales como “norma”; reconoce pluralidad cultural y contextual.
+- No penalices ni corrijas de forma despectiva variedades del español o registros culturales; prioriza comprensión y análisis.
+
+**B. Anti-estereotipos y anti-discriminación:**
+- Evita sesgos eurocéntricos: no trates perspectivas europeas/occidentales como "norma"; reconoce pluralidad cultural y contextual.
+- Nunca generalices sobre grupos sociales ("los [grupo] siempre...", "los [grupo] suelen..."). Si el texto contiene tales generalizaciones, señálalas críticamente.
 - Si el texto contiene racismo, sexismo, colonialismo o discriminación, analízalo de forma crítica y contextualizada SIN reproducirlo como válido ni amplificarlo.
+
+**C. Manejo de lenguaje ofensivo:**
 - Si aparece lenguaje ofensivo o insultos contra grupos, NO los repitas textualmente. Refiérete de forma indirecta (p. ej., "insulto racista" / "insulto homofóbico") o usa una redacción suavizada con asteriscos.
 - No asumas que un término ofensivo proviene del texto: si no está en el fragmento/texto cargado, dilo explícitamente (p. ej., "este término no ha sido localizado en el texto analizado") y redirige la conversación.
-- No penalices ni corrijas de forma despectiva variedades del español o registros culturales; prioriza comprensión y análisis.
+
+**D. Perspectivas múltiples:**
+- Cuando el tema lo permita, presenta al menos dos perspectivas o enfoques interpretativos. Ejemplo: "Una lectura desde la teoría X plantea [A], pero desde la perspectiva Y se interpreta como [B]. ¿Con cuál te identificas más y por qué?"
+- No presentes una sola interpretación como la única válida salvo que el texto sea explícitamente unívoco.
+
+**E. Limitaciones epistémicas (honestidad intelectual):**
+- Si no tienes certeza, dilo abiertamente: "Esto puede interpretarse de varias formas...", "No tengo información suficiente para afirmar esto con seguridad...".
+- Si el tema requiere datos actualizados que podrían estar fuera de tu conocimiento, indícalo: "Mi información puede no estar actualizada sobre este punto específico...".
+- Si hay debate académico sobre un tema, reconócelo: "Hay diferentes posturas sobre esto..." en vez de dar una respuesta cerrada.
+- Prefiere preguntas abiertas que inviten al estudiante a formar su propio criterio.
 `;
 
   function detectHateOrSlur(text) {
     const t = String(text || '').toLowerCase();
-    // Heurística mínima: prioriza protección de estudiantes.
-    // Nota: lista corta a propósito (evitar sobre-bloqueo).
-    const patterns = [
-      /\b(maric[ao]s?)\b/i,
-      /\b(negr[oa]s?)\b\s+\b(maric[ao]s?)\b/i,
-      /\b(indio(?:s)?\s+de\s+mierda)\b/i,
-      /\b(moro(?:s)?\s+de\s+mierda)\b/i,
-      /\b(judi[io]s?\s+de\s+mierda)\b/i
-    ];
-    return patterns.some((r) => r.test(t));
+    return HATE_SLUR_PATTERNS.some((r) => r.test(t));
   }
 
   function redactHateOrSlur(text) {
@@ -252,6 +364,11 @@ Adapta tu respuesta según señales del estudiante:
     s = s.replace(/\b(indio)(s)?\s+de\s+mierda\b/gi, 'i***$2 de m***');
     s = s.replace(/\b(moro)(s)?\s+de\s+mierda\b/gi, 'm***$2 de m***');
     s = s.replace(/\b(judi)(o|a)(s)?\s+de\s+mierda\b/gi, 'j***$2$3 de m***');
+    // Nuevos patrones ampliados (género, discapacidad, xenofobia)
+    s = s.replace(/\b(gitano)(s|a|as)?\s+de\s+mierda\b/gi, 'g***$2 de m***');
+    s = s.replace(/\b(sudaca)(s?)\b/gi, 's***$2');
+    s = s.replace(/\b(retrasa)(do|da|dos|das)\b/gi, 'r***$2');
+    s = s.replace(/\b(mongol)(o|a|os|as|ito|ita)\b/gi, 'm***$2');
     return s;
   }
 
@@ -314,45 +431,70 @@ Adapta tu respuesta según señales del estudiante:
     }
   }, [onMessagesChange]);
 
-  // 📝 HISTORIAL INTELIGENTE: Genera resumen de conversación cuando hay muchos mensajes
+  // 📝 HISTORIAL INTELIGENTE: Genera resumen estructurado de la conversación
   const generateConversationSummary = useCallback((messageHistory) => {
-    if (messageHistory.length < 6) return null; // No resumir si hay pocos mensajes
+    if (messageHistory.length < 6) return null;
 
-    const userMessages = messageHistory.filter(m => m.role === 'user').slice(0, 5); // Primeras 5 preguntas
-    const topics = new Set();
-    const questions = [];
+    const userMsgs = messageHistory.filter(m => m.role === 'user');
+    const assistantMsgs = messageHistory.filter(m => m.role === 'assistant' && !m.content?.startsWith('⚠️'));
+    const turnCount = userMsgs.length;
 
-    userMessages.forEach(msg => {
-      const content = msg.content.toLowerCase();
-      // Extraer temas/keywords (palabras > 4 caracteres que aparecen varias veces)
-      const words = content.split(/\s+/).filter(w => w.length > 4);
-      words.forEach(w => {
-        if (words.filter(x => x === w).length > 1) {
-          topics.add(w);
-        }
-      });
+    // Fase de conversación
+    const phase = turnCount <= 3 ? 'inicial (comprensión básica)' : turnCount <= 8 ? 'intermedia (análisis)' : 'avanzada (síntesis y evaluación crítica)';
 
-      // Extraer preguntas principales (primeras 80 caracteres de cada mensaje de usuario)
-      if (msg.content.length > 0) {
-        questions.push(msg.content.slice(0, 80).replace(/\n/g, ' '));
-      }
+    // Normalizar texto (quitar acentos para comparación uniforme)
+    const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zñ\s]/gi, ' ');
+
+    // Extraer temas clave: palabras sustantivas frecuentes en ambos roles
+    const allText = norm(messageHistory.map(m => m.content || '').join(' '));
+    const stopWords = new Set(['para','como','este','esta','esto','esos','esas','todo','toda','tiene','puede','hacer','sido','sobre','entre','cuando','donde','desde','hasta','tambien','pero','porque','aunque','sino','cada','otros','otras','otro','otra','mismo','misma','dice','decir','texto','fragmento','pregunta','respuesta','creo','parece','podria','seria','algo','solo','bien','mucho','manera','forma','parte']);
+    const wordFreq = {};
+    allText.split(/\s+/).filter(w => w.length > 4 && !stopWords.has(w)).forEach(w => {
+      wordFreq[w] = (wordFreq[w] || 0) + 1;
     });
+    const topThemes = Object.entries(wordFreq)
+      .filter(([, c]) => c >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([w]) => w);
 
-    if (topics.size === 0 && questions.length === 0) return null;
+    // Últimas preguntas del estudiante
+    const recentQuestions = userMsgs.slice(-4).map(m => m.content.slice(0, 100).replace(/\n/g, ' '));
 
-    const topicsArray = Array.from(topics).slice(0, 5);
-    const summary = `**Resumen de la conversación hasta ahora:**
-- El estudiante ha hecho ${userMessages.length} preguntas principales.
-${topicsArray.length > 0 ? `- Temas explorados: ${topicsArray.join(', ')}` : ''}
-${questions.length > 0 ? `- Preguntas principales: ${questions.slice(0, 3).map((q, i) => `${i + 1}. "${q}..."`).join(' ')}` : ''}
+    // Detectar insights del estudiante (momentos donde conectó ideas)
+    const insightSignals = /(creo que|pienso que|se relaciona con|me recuerda|tal vez|podría ser|es como|ahora entiendo|ya veo)/i;
+    const studentInsights = userMsgs
+      .filter(m => insightSignals.test(m.content))
+      .map(m => m.content.slice(0, 80))
+      .slice(-3);
 
-Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre lo que ya se ha discutido.`;
+    // Detectar citas/conceptos ya explicados por el tutor (para no repetir)
+    const explainedConcepts = [];
+    for (const msg of assistantMsgs.slice(-5)) {
+      const matches = msg.content.match(/["«]([^"»]{3,40})["»]/g);
+      if (matches) explainedConcepts.push(...matches.slice(0, 2));
+    }
 
-    return summary;
+    const parts = [
+      `**📋 Estado de la conversación (turno ${turnCount}, fase ${phase}):**`
+    ];
+    if (topThemes.length > 0) parts.push(`- Temas abordados: ${topThemes.join(', ')}`);
+    if (recentQuestions.length > 0) parts.push(`- Últimas preguntas: ${recentQuestions.map((q, i) => `${i + 1}) "${q}"`).join(' | ')}`);
+    if (studentInsights.length > 0) parts.push(`- Insights del estudiante: ${studentInsights.map(s => `"${s}"`).join('; ')}`);
+    if (explainedConcepts.length > 0) parts.push(`- Citas ya explicadas: ${[...new Set(explainedConcepts)].slice(0, 5).join(', ')}`);
+
+    parts.push('');
+    parts.push(`INSTRUCCIONES DE FASE ${phase.toUpperCase()}:`);
+    if (turnCount <= 3) parts.push('→ Prioriza comprensión literal. Pregunta si entiende el vocabulario y las ideas principales.');
+    else if (turnCount <= 8) parts.push('→ Ya hay base. Invita a análisis: causas, consecuencias, relaciones, técnicas del autor.');
+    else parts.push('→ Conversación avanzada. Desafía con síntesis, comparaciones, evaluación crítica, posicionamiento personal.');
+    parts.push('Construye SOBRE lo ya discutido. NO repitas explicaciones previas.');
+
+    return parts.join('\n');
   }, []);
 
   // Construir historial condensado para enviar al backend (evitar prompts sin contexto)
-  const getCondensedHistory = useCallback((limit = 8, maxCharsPerMsg = 300, includeSummary = true) => {
+  const getCondensedHistory = useCallback((limit = 12, maxCharsPerMsg = 500, includeSummary = true) => {
     // Si hay muchos mensajes y no hemos incluido resumen recientemente, generarlo
     const shouldIncludeSummary = includeSummary && messages.length > 10;
     const summary = shouldIncludeSummary ? generateConversationSummary(messages) : null;
@@ -437,13 +579,17 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       const ctx = lastActionInfoRef.current || {};
       const temperature = ctx.temperature || 0.7; // Default 0.7 si no se especifica
 
+      // Adaptar max_tokens según modo de longitud para dar espacio a respuestas detalladas
+      const lm = (ctx.lengthMode || 'auto').toLowerCase();
+      const maxTokens = lm === 'breve' ? 400 : lm === 'detallada' ? 1200 : 800;
+
       const res = await fetch(`${backendUrl}/api/chat/completion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: messagesArr,
           temperature: temperature,
-          max_tokens: 800,
+          max_tokens: maxTokens,
           stream: true
         }),
         signal: abortRef.current.signal
@@ -611,6 +757,15 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       delete ctx.webEnrichment;
     }
 
+    // Inyectar fase conversacional cuando aún no hay resumen (< 10 msgs)
+    if (!summary) {
+      const turnCount = messages.filter(m => m.role === 'user').length;
+      if (turnCount > 0) {
+        const phase = turnCount <= 3 ? 'inicial' : turnCount <= 8 ? 'intermedia' : 'avanzada';
+        systemContent += `\n\n[Turno ${turnCount}, fase ${phase}. ${turnCount <= 3 ? 'Prioriza comprensión y vocabulario.' : turnCount <= 8 ? 'Invita a análisis más profundo.' : 'Desafía con síntesis y evaluación crítica.'}]`;
+      }
+    }
+
     const messagesArr = [
       { role: 'system', content: systemContent },
       ...history,
@@ -746,27 +901,7 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
           console.log('ℹ️ [TutorCore] Sin contexto de lectura, permitiendo pregunta libre');
           // Continuar sin restricción
         } else {
-          // Whitelist AMPLIADA: intenciones pedagógicas válidas que SIEMPRE deben pasar
-          const validIntents = [
-            // Intenciones analíticas generales
-            /(qu[eé]\s+significa|qu[eé]\s+quiere\s+decir|explica|explicar|aclarar)/i,
-            /(c[oó]mo\s+se\s+relaciona|por\s+qu[eé]|qu[eé]\s+implica)/i,
-            /(cu[aá]l\s+es\s+el\s+(tema|sentido|significado|mensaje))/i,
-            // Intenciones de comprensión
-            /(de\s+qu[eé]\s+trata|resumen|resume|idea\s+principal)/i,
-            /(entiendo\s+que|creo\s+que|parece\s+que|tal\s+vez)/i,
-            // Referencias explícitas al texto
-            /(en\s+el\s+(texto|fragmento|p[aá]rrafo)|este\s+(texto|fragmento))/i,
-            /(el\s+autor|dice|menciona|plantea|sugiere)/i,
-            // Meta-análisis textual
-            /(lenguaje|estilo|recurso|met[aá]fora|imagen|s[ií]mbolo)/i,
-            // Dudas y confusión (siempre válidas)
-            /(no\s+entiendo|no\s+comprendo|duda|confus)/i,
-            // Preguntas de profundización (siempre válidas)
-            /(profundiza|m[aá]s\s+sobre|detalla|amplia)/i
-          ];
-
-          const hasValidIntent = validIntents.some(pattern => pattern.test(p));
+          const hasValidIntent = VALID_INTENTS.some(pattern => pattern.test(p));
 
           // Conversación establecida: deshabilitar guard después de 2 mensajes (antes 3)
           const userMsgCount = messages.filter(m => m.role === 'user').length;
@@ -930,8 +1065,9 @@ ${fuentesTexto}
         }
       }
 
-      const contextSnippet = fullText ? (fullText.length > 1200 ? fullText.slice(0, 1200) + '…' : fullText) : '';
-      const userContent = `Fragmento seleccionado: "${safeFragForModel}"${contextSnippet ? `\n\nContexto adicional (truncado):\n${contextSnippet}` : ''}${webEnrichment}`;
+      const MAX_ACTION_CONTEXT = 3500;
+      const contextSnippet = fullText ? (fullText.length > MAX_ACTION_CONTEXT ? fullText.slice(0, MAX_ACTION_CONTEXT) + '…' : fullText) : '';
+      const userContent = `📖 FRAGMENTO SELECCIONADO POR EL ESTUDIANTE:\n"${safeFragForModel}"${contextSnippet ? `\n\n📄 TEXTO COMPLETO DE REFERENCIA (cita frases de aquí):\n${contextSnippet}` : ''}${webEnrichment}`;
       const systemContent = `${SYSTEM_TOPIC_GUARD} ${SYSTEM_EQUITY_GUARD} ${actionDirectives}`;
 
       const historyData = getCondensedHistory();
@@ -944,6 +1080,13 @@ ${fuentesTexto}
       let finalSystemContent = systemContent + ' ' + SYSTEM_ANTI_REDUNDANCY;
       if (summary) {
         finalSystemContent += '\n\n' + summary;
+      } else {
+        // Inyectar fase conversacional cuando aún no hay resumen
+        const turnCount = messages.filter(m => m.role === 'user').length;
+        if (turnCount > 0) {
+          const phase = turnCount <= 3 ? 'inicial' : turnCount <= 8 ? 'intermedia' : 'avanzada';
+          finalSystemContent += `\n\n[Turno ${turnCount}, fase ${phase}. ${turnCount <= 3 ? 'Prioriza comprensión.' : turnCount <= 8 ? 'Invita a análisis.' : 'Desafía con síntesis crítica.'}]`;
+        }
       }
       if (lengthInstruction) {
         finalSystemContent += ' ' + lengthInstruction;
@@ -987,174 +1130,23 @@ ${fuentesTexto}
     }
   };
 
-  // 🧠 Detección inteligente de necesidades del estudiante (MEJORADA)
+  // 🧠 Detección inteligente de necesidades del estudiante (OPTIMIZADA — constantes pre-compiladas)
   function detectStudentNeeds(prompt) {
     const p = (prompt || '').toLowerCase();
 
-    // Patrones de confusión (EXPANDIDOS con variaciones regionales y jerga estudiantil)
-    const confusionPatterns = [
-      /no entiendo/i,
-      /no comprendo/i,
-      /no comprend/i, // Variante común de error de tipeo
-      /qu[eé] significa/i,
-      /qu[eé] quiere decir/i,
-      /qu[eé] quieres decir/i, // Variante común
-      /me pierdo/i,
-      /no capto/i,
-      /no cacho/i, // Jerga chilena
-      /no pillo/i, // Jerga española/rioplatense
-      /no s[eé] qu[eé]/i,
-      /no s[eé] que/i, // Sin tilde
-      /confuso/i,
-      /confundid[oa]/i,
-      /me confund/i,
-      /complicado/i,
-      /muy complicad/i,
-      /dif[ií]cil/i,
-      /muy dif[ií]cil/i,
-      /es dif[ií]cil/i,
-      /\?\?\?+/,
-      /no me queda claro/i,
-      /no me queda/i,
-      /no tengo claro/i,
-      /no lo veo claro/i,
-      /no lo pillo/i, // Jerga
-      /estoy perdid[oa]/i,
-      /me perd[ií]/i,
-      /no le veo sentido/i,
-      /no tiene sentido/i,
-      /no me cuadra/i, // Expresión coloquial
-      /estoy bloquead[oa]/i,
-      /no me sale/i
-    ];
+    // Scoring con constantes pre-compiladas (definidas fuera del componente)
+    const getScore = (patterns) => patterns.reduce((s, rx) => s + (rx.test(p) ? 1 : 0), 0);
 
-    // Patrones de frustración (EXPANDIDOS)
-    const frustrationPatterns = [
-      /esto es dif[ií]cil/i,
-      /no le encuentro sentido/i,
-      /muy complicado/i,
-      /súper complicad/i,
-      /imposible/i,
-      /es imposible/i,
-      /no puedo/i,
-      /no puedo más/i,
-      /ya no puedo/i,
-      /ya intent[eé]/i,
-      /ya lo intent[eé]/i,
-      /no veo c[oó]mo/i,
-      /frustrante/i,
-      /frustrad[oa]/i,
-      /me frustra/i,
-      /esto me frustra/i,
-      /no me sale/i,
-      /no me da/i, // "No me da la cabeza"
-      /estoy hart[oa]/i,
-      /ya me cans[eé]/i,
-      /no puedo más/i,
-      /tirar la toalla/i, // Expresión idiomática
-      /me rindo/i,
-      /rendirme/i,
-      /no puedo con esto/i,
-      /no doy m[aá]s/i
-    ];
+    const confusionScore = getScore(CONFUSION_PATTERNS);
+    const frustrationScore = getScore(FRUSTRATION_PATTERNS);
+    const curiosityScore = getScore(CURIOSITY_PATTERNS);
+    const insightScore = getScore(INSIGHT_PATTERNS);
 
-    // Patrones de curiosidad (EXPANDIDOS con más variaciones)
-    const curiosityPatterns = [
-      /me pregunto/i,
-      /me estoy preguntando/i,
-      /ser[aá] que/i,
-      /será que/i, // Sin tilde
-      /por qu[eé]/i,
-      /porque/i, // Sin espacio
-      /por qué razón/i,
-      /c[oó]mo/i,
-      /de qué manera/i,
-      /de qué forma/i,
-      /qu[eé] pasa si/i,
-      /y si/i,
-      /cu[aá]l ser[ií]a/i,
-      /interesante/i,
-      /es interesante/i,
-      /muy interesante/i,
-      /curioso/i,
-      /qué curioso/i,
-      /quisiera saber/i,
-      /me gustaría saber/i,
-      /tengo curiosidad/i,
-      /me da curiosidad/i,
-      /me llama la atención/i,
-      /qué pasaría si/i,
-      /cómo funcionaría/i,
-      /cuál sería el resultado/i,
-      /investigar/i,
-      /explorar/i,
-      /profundizar/i,
-      /saber más/i,
-      /conocer más/i
-    ];
-
-    // Patrones de insight (EXPANDIDOS - estudiante está conectando ideas)
-    const insightPatterns = [
-      /creo que/i,
-      /pienso que/i,
-      /me parece que/i,
-      /opino que/i,
-      /considero que/i,
-      /tal vez/i,
-      /quizá/i,
-      /quizás/i,
-      /podr[ií]a ser/i,
-      /podría ser/i,
-      /esto se relaciona con/i,
-      /esto me recuerda/i,
-      /me recuerda a/i,
-      /similar a/i,
-      /parecido a/i,
-      /se parece a/i,
-      /conecta con/i,
-      /está conectado con/i,
-      /entiendo que/i,
-      /ahora entiendo/i,
-      /ah[aá],?\s/i, // "Ah!"
-      /¡ah!/i,
-      /ya veo/i,
-      /ahora veo/i,
-      /tiene sentido/i,
-      /ahora tiene sentido/i,
-      /¡claro!/i,
-      /exacto/i,
-      /eso es/i,
-      /tiene lógica/i,
-      /es lógico/i,
-      /como si/i,
-      /analogía/i,
-      /comparar/i,
-      /comparando/i,
-      /igual que/i,
-      /lo mismo que/i,
-      /es como/i,
-      /equivalente a/i
-    ];
-
-    // Detección con scoring (múltiples matches aumentan confianza)
-    const getScore = (patterns) => {
-      return patterns.reduce((score, pattern) => {
-        return score + (pattern.test(p) ? 1 : 0);
-      }, 0);
-    };
-
-    const confusionScore = getScore(confusionPatterns);
-    const frustrationScore = getScore(frustrationPatterns);
-    const curiosityScore = getScore(curiosityPatterns);
-    const insightScore = getScore(insightPatterns);
-
-    // Retornar con scores para mayor precisión
     return {
       confusion: confusionScore > 0,
       frustration: frustrationScore > 0,
       curiosity: curiosityScore > 0,
       insight: insightScore > 0,
-      // Scores adicionales para ajuste fino (futuro uso)
       _scores: {
         confusion: confusionScore,
         frustration: frustrationScore,
@@ -1357,9 +1349,18 @@ Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el tex
   function buildContextSnippet(ctx = {}) {
     const frag = (ctx.fragment || '').toString().trim();
     const full = (ctx.fullText || '').toString();
-    const contextSnippet = full ? (full.length > 1200 ? full.slice(0, 1200) + '…' : full) : '';
+    // Contexto amplio (3500 chars) para que el modelo tenga suficiente texto de referencia y pueda citar
+    const MAX_CONTEXT = 3500;
+    const contextSnippet = full ? (full.length > MAX_CONTEXT ? full.slice(0, MAX_CONTEXT) + '…' : full) : '';
     if (!frag && !contextSnippet) return '';
-    return `Contexto de lectura${frag ? ' (fragmento)' : ''}: ${frag ? '"' + frag + '"' : ''}${contextSnippet ? `\n\nContexto adicional (truncado):\n${contextSnippet}` : ''}`;
+    // Etiquetar claramente para que el modelo distinga texto real vs meta-instrucción
+    if (frag && contextSnippet) {
+      return `📖 TEXTO DEL ESTUDIANTE (fragmento seleccionado):\n"${frag}"\n\n📄 TEXTO COMPLETO DE REFERENCIA (cita frases de aquí):\n${contextSnippet}`;
+    } else if (frag) {
+      return `📖 TEXTO DEL ESTUDIANTE (fragmento seleccionado):\n"${frag}"`;
+    } else {
+      return `📄 TEXTO COMPLETO DE REFERENCIA (cita frases de aquí):\n${contextSnippet}`;
+    }
   }
 
   function buildLengthInstruction(mode, prompt) {
