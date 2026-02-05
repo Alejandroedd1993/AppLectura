@@ -1108,6 +1108,92 @@ ${fuentesTexto}
       try { onAssistantMessage?.(msg, apiRef.current); } catch { /* noop */ }
       return msg;
     },
+    /**
+     * Regenera la última respuesta del tutor con un enfoque diferente.
+     * Elimina la última respuesta y vuelve a enviar el último prompt del usuario
+     * con instrucción de variar el enfoque.
+     */
+    regenerateLastResponse: () => {
+      const msgs = messages;
+      if (msgs.length < 2) return Promise.resolve();
+
+      // Encontrar último par user→assistant
+      let lastAssistantIdx = -1;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === 'assistant' && !msgs[i].content.startsWith('⚠️')) {
+          lastAssistantIdx = i;
+          break;
+        }
+      }
+      if (lastAssistantIdx < 0) return Promise.resolve();
+
+      // Buscar el prompt del usuario que generó esa respuesta
+      let lastUserPrompt = '';
+      for (let i = lastAssistantIdx - 1; i >= 0; i--) {
+        if (msgs[i].role === 'user') {
+          lastUserPrompt = msgs[i].content;
+          break;
+        }
+      }
+      if (!lastUserPrompt) return Promise.resolve();
+
+      // Guardar la respuesta anterior para instrucción de variación
+      const previousAnswer = msgs[lastAssistantIdx].content;
+
+      // Eliminar la última respuesta del asistente
+      setMessages(prev => {
+        const next = prev.filter((_, idx) => idx !== lastAssistantIdx);
+        try { onMessagesChange?.(next); } catch { /* noop */ }
+        return next;
+      });
+
+      // Re-enviar con instrucción de variar
+      const variationGuidance = `\n\n🔄 REGENERACIÓN: El estudiante pidió otra respuesta. Tu respuesta anterior fue:\n"${previousAnswer.substring(0, 300)}${previousAnswer.length > 300 ? '...' : ''}"\nOfrece un enfoque DIFERENTE: cambia la estructura, usa otras analogías o ejemplos, o aborda desde otro ángulo. NO repitas lo mismo.`;
+      const ctxBase = lastActionInfoRef.current || {};
+      return callBackend(lastUserPrompt, variationGuidance, { ...ctxBase, fragment: '' });
+    },
+
+    /**
+     * Genera un resumen pedagógico de toda la sesión de tutoría.
+     * Analiza la conversación y produce: temas cubiertos, dudas resueltas,
+     * conceptos clave y sugerencias para seguir estudiando.
+     */
+    generateSessionSummary: () => {
+      const msgs = messages;
+      if (msgs.length < 2) {
+        const noDataMsg = { id: Date.now() + '-summary-empty', role: 'assistant', content: '📊 No hay suficiente conversación para generar un resumen. ¡Sigue explorando el texto!' };
+        addMessage(noDataMsg);
+        try { onAssistantMessage?.(noDataMsg, apiRef.current); } catch { /* noop */ }
+        return Promise.resolve();
+      }
+
+      // Construir transcripción compacta de la conversación
+      const transcript = msgs.map(m => {
+        const role = m.role === 'user' ? 'Estudiante' : 'Tutor';
+        return `${role}: ${m.content.substring(0, 400)}`;
+      }).join('\n');
+
+      const summaryPrompt = `📊 GENERA UN RESUMEN DE SESIÓN de la siguiente conversación de tutoría.\n\nTRANSCRIPCIÓN:\n${transcript}`;
+
+      const summarySystemPrompt = `Eres un tutor pedagógico generando un resumen de sesión de estudio. Genera un resumen ESTRUCTURADO y ÚTIL con estos apartados:
+
+📚 **Temas abordados**: Lista breve de temas/conceptos discutidos
+✅ **Logros del estudiante**: Qué comprendió bien, qué conexiones hizo
+❓ **Dudas pendientes**: Si quedó algo sin resolver o que requiere más profundización
+💡 **Conceptos clave**: 3-5 términos o ideas fundamentales de la sesión
+📝 **Sugerencias para seguir**: Qué podría explorar después el estudiante
+
+Sé conciso pero informativo. Usa el contenido REAL de la conversación, no inventes. Máximo 250 palabras.`;
+
+      const messagesArr = [
+        { role: 'system', content: summarySystemPrompt },
+        { role: 'user', content: summaryPrompt }
+      ];
+
+      addMessage({ id: Date.now() + '-user-summary', role: 'user', content: '📊 Generar resumen de esta sesión' });
+      return callBackendWith(messagesArr);
+    },
+
     cancelPending: () => {
       // Invalida cualquier petición en curso sin modificar/persistir mensajes.
       // Útil al cambiar de texto para evitar que respuestas tardías contaminen el historial.

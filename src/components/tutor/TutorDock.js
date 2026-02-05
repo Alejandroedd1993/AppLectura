@@ -452,9 +452,8 @@ const SettingsPanel = styled.div`
   border-bottom: 1px solid ${p => p.theme?.border || '#ccc'};
   padding: .5rem .75rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: .8rem;
-  align-items: center;
+  flex-direction: column;
+  gap: .5rem;
   font-size: .75rem;
   color: ${p => p.theme?.text || '#222'};
   animation: slideDown 0.2s ease-out;
@@ -479,6 +478,35 @@ const SettingsPanel = styled.div`
     color: ${p => p.theme?.text || '#222'};
     font-size: .75rem;
   }
+`;
+
+const SettingsRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+`;
+
+const SettingsDivider = styled.hr`
+  border: none;
+  border-top: 1px solid ${p => p.theme?.border || '#e5e7eb'};
+  margin: .1rem 0;
+  width: 100%;
+`;
+
+const ActionButton = styled.button`
+  border: none;
+  border-radius: 5px;
+  padding: .3rem .55rem;
+  cursor: pointer;
+  font-size: .7rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  transition: opacity 0.15s, filter 0.15s;
+  &:disabled { opacity: .45; cursor: not-allowed; }
+  &:hover:not(:disabled) { filter: brightness(1.1); }
 `;
 
 const ToggleFab = styled.button`
@@ -673,149 +701,153 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                 {/* Panel de Configuración Desplegable */}
                 {showSettings && (
                   <SettingsPanel>
-                    <label title="Controla qué tan extensas son las respuestas">
-                      📏 Longitud:
-                      <select
-                        value={lengthMode}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setLengthMode(v);
-                          try {
-                            api.setContext({ lengthMode: v });
-                          } catch { }
-                        }}
-                      >
-                        <option value="auto">Automático</option>
-                        <option value="breve">Breve</option>
-                        <option value="media">Media</option>
-                        <option value="detallada">Detallada</option>
-                      </select>
-                    </label>
+                    {/* ── Fila 1: Ajustes de respuesta ── */}
+                    <SettingsRow>
+                      <label title="Controla qué tan extensas son las respuestas">
+                        📏 Longitud:
+                        <select
+                          value={lengthMode}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setLengthMode(v);
+                            try { api.setContext({ lengthMode: v }); } catch { }
+                          }}
+                        >
+                          <option value="auto">Auto</option>
+                          <option value="breve">Breve</option>
+                          <option value="media">Media</option>
+                          <option value="detallada">Detallada</option>
+                        </select>
+                      </label>
+                      <label title={`Creatividad: ${temperature}`}>
+                        💡 Creatividad:
+                        <select
+                          value={temperature}
+                          onChange={(e) => {
+                            const v = parseFloat(e.target.value);
+                            setTemperature(v);
+                            try { api.setContext({ temperature: v }); } catch { }
+                          }}
+                        >
+                          <option value="0.3">Baja</option>
+                          <option value="0.7">Media</option>
+                          <option value="1.0">Alta</option>
+                        </select>
+                      </label>
+                      <label title="Sugerir preguntas relacionadas automáticamente">
+                        <input
+                          type="checkbox"
+                          checked={followUpsEnabled}
+                          onChange={() => setFollowUpsEnabled(!followUpsEnabled)}
+                        />
+                        Seguimiento
+                      </label>
+                    </SettingsRow>
 
-                    <label title={`Creatividad: ${temperature}`}>
-                      💡 Creatividad:
-                      <select
-                        value={temperature}
-                        onChange={(e) => {
-                          const v = parseFloat(e.target.value);
-                          setTemperature(v);
-                          try {
-                            // Removed localStorage logic as it is now handled by useLocalStorageState
-                            api.setContext({ temperature: v });
-                          } catch { }
-                        }}
-                      >
-                        <option value="0.3">Baja (Determinista)</option>
-                        <option value="0.7">Media (Creativo)</option>
-                        <option value="1.0">Alta (Muy Creativo)</option>
-                      </select>
-                    </label>
+                    <SettingsDivider />
 
-                    <label title="Sugerir preguntas relacionadas automáticamente">
-                      <input
-                        type="checkbox"
-                        checked={followUpsEnabled}
-                        onChange={() => {
-                          const next = !followUpsEnabled;
-                          setFollowUpsEnabled(next);
-                        }}
-                      />
-                      Seguimiento
-                    </label>
-
-                    <div style={{ flex: 1 }} />
-
-                    {/* Botón Guardar conversación como .txt */}
-                    <button
-                      onClick={() => {
-                        try {
-                          const msgs = api.messages;
-                          if (!msgs || msgs.length === 0) {
-                            alert('No hay mensajes para guardar.');
-                            return;
+                    {/* ── Fila 2: Acciones de conversación ── */}
+                    <SettingsRow>
+                      <ActionButton
+                        onClick={() => {
+                          try { api.generateSessionSummary(); } catch (err) {
+                            console.error('[TutorDock] Error resumen:', err);
                           }
-                          const header = `=== Conversación con Tutor Inteligente ===\nFecha: ${new Date().toLocaleString('es-ES')}\nMensajes: ${msgs.length}\n${'='.repeat(44)}\n\n`;
-                          const body = msgs.map(m => {
-                            const role = m.role === 'user' ? '🧑 Estudiante' : '🧑‍🏫 Tutor';
-                            return `${role}:\n${m.content}\n`;
-                          }).join('\n---\n\n');
-                          const blob = new Blob([header + body], { type: 'text/plain;charset=utf-8' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `tutor_conversacion_${new Date().toISOString().slice(0,10)}.txt`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          URL.revokeObjectURL(url);
-                        } catch (err) {
-                          console.error('[TutorDock] Error al guardar conversación:', err);
-                          alert('Error al guardar la conversación.');
-                        }
-                      }}
-                      disabled={!api.messages || api.messages.length === 0}
-                      style={{
-                        background: '#2563eb', color: 'white', border: 'none',
-                        borderRadius: '4px', padding: '.2rem .5rem', cursor: 'pointer', fontSize: '.7rem',
-                        opacity: (!api.messages || api.messages.length === 0) ? 0.5 : 1
-                      }}
-                      title="Descargar conversación como archivo de texto"
-                    >
-                      💾 Guardar
-                    </button>
+                        }}
+                        disabled={api.loading || !api.messages || api.messages.length < 2}
+                        style={{ background: '#8b5cf6', color: 'white' }}
+                        title="Genera un resumen de lo aprendido en esta sesión"
+                      >
+                        📊 Resumen de sesión
+                      </ActionButton>
 
-                    {/* Botón Copiar conversación al portapapeles */}
-                    <button
-                      onClick={async () => {
-                        try {
-                          const msgs = api.messages;
-                          if (!msgs || msgs.length === 0) {
-                            alert('No hay mensajes para copiar.');
-                            return;
+                      <ActionButton
+                        onClick={() => {
+                          try { api.regenerateLastResponse(); } catch (err) {
+                            console.error('[TutorDock] Error regenerar:', err);
                           }
-                          const text = msgs.map(m => {
-                            const role = m.role === 'user' ? 'Estudiante' : 'Tutor';
-                            return `${role}: ${m.content}`;
-                          }).join('\n\n');
-                          await navigator.clipboard.writeText(text);
-                          // Feedback visual temporal
-                          const btn = document.activeElement;
-                          const original = btn.textContent;
-                          btn.textContent = '✅ Copiado';
-                          setTimeout(() => { btn.textContent = original; }, 1500);
-                        } catch (err) {
-                          console.error('[TutorDock] Error al copiar:', err);
-                          alert('No se pudo copiar al portapapeles.');
-                        }
-                      }}
-                      disabled={!api.messages || api.messages.length === 0}
-                      style={{
-                        background: '#6b7280', color: 'white', border: 'none',
-                        borderRadius: '4px', padding: '.2rem .5rem', cursor: 'pointer', fontSize: '.7rem',
-                        opacity: (!api.messages || api.messages.length === 0) ? 0.5 : 1
-                      }}
-                      title="Copiar conversación al portapapeles"
-                    >
-                      📋 Copiar
-                    </button>
+                        }}
+                        disabled={api.loading || !api.messages || api.messages.length < 2}
+                        style={{ background: '#0891b2', color: 'white' }}
+                        title="Regenera la última respuesta con un enfoque diferente"
+                      >
+                        🔄 Regenerar respuesta
+                      </ActionButton>
+                    </SettingsRow>
 
-                    <button
-                      onClick={() => {
-                        if (window.confirm('¿Seguro que quieres borrar todo el historial?')) {
+                    <SettingsDivider />
+
+                    {/* ── Fila 3: Exportar y gestión ── */}
+                    <SettingsRow>
+                      <ActionButton
+                        onClick={() => {
                           try {
-                            api.clear();
-                            clearHistory();
-                          } catch { }
-                        }
-                      }}
-                      style={{
-                        background: '#ef4444', color: 'white', border: 'none',
-                        borderRadius: '4px', padding: '.2rem .5rem', cursor: 'pointer', fontSize: '.7rem'
-                      }}
-                      title="Borrar historial"
-                    >
-                      🧹 Limpiar Chat
-                    </button>
+                            const msgs = api.messages;
+                            if (!msgs || msgs.length === 0) return;
+                            const header = `=== Conversación con Tutor Inteligente ===\nFecha: ${new Date().toLocaleString('es-ES')}\nMensajes: ${msgs.length}\n${'='.repeat(44)}\n\n`;
+                            const body = msgs.map(m => {
+                              const role = m.role === 'user' ? '🧑 Estudiante' : '🧑‍🏫 Tutor';
+                              return `${role}:\n${m.content}\n`;
+                            }).join('\n---\n\n');
+                            const blob = new Blob([header + body], { type: 'text/plain;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `tutor_conversacion_${new Date().toISOString().slice(0,10)}.txt`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                          } catch (err) {
+                            console.error('[TutorDock] Error al guardar:', err);
+                          }
+                        }}
+                        disabled={!api.messages || api.messages.length === 0}
+                        style={{ background: '#2563eb', color: 'white' }}
+                        title="Descargar conversación como archivo de texto"
+                      >
+                        💾 Guardar
+                      </ActionButton>
+
+                      <ActionButton
+                        onClick={async () => {
+                          try {
+                            const msgs = api.messages;
+                            if (!msgs || msgs.length === 0) return;
+                            const text = msgs.map(m => {
+                              const role = m.role === 'user' ? 'Estudiante' : 'Tutor';
+                              return `${role}: ${m.content}`;
+                            }).join('\n\n');
+                            await navigator.clipboard.writeText(text);
+                            const btn = document.activeElement;
+                            const orig = btn.textContent;
+                            btn.textContent = '✅ Copiado';
+                            setTimeout(() => { btn.textContent = orig; }, 1500);
+                          } catch (err) {
+                            console.error('[TutorDock] Error al copiar:', err);
+                          }
+                        }}
+                        disabled={!api.messages || api.messages.length === 0}
+                        style={{ background: '#6b7280', color: 'white' }}
+                        title="Copiar conversación al portapapeles"
+                      >
+                        📋 Copiar
+                      </ActionButton>
+
+                      <div style={{ flex: 1 }} />
+
+                      <ActionButton
+                        onClick={() => {
+                          if (window.confirm('¿Seguro que quieres borrar todo el historial?')) {
+                            try { api.clear(); clearHistory(); } catch { }
+                          }
+                        }}
+                        style={{ background: '#ef4444', color: 'white' }}
+                        title="Borrar historial"
+                      >
+                        🧹 Limpiar
+                      </ActionButton>
+                    </SettingsRow>
                   </SettingsPanel>
                 )}
 
