@@ -345,6 +345,17 @@ Mejora clave: **evitar repetir la frase ofensiva tal cual**. En su lugar:
 
 Esto reduce la “amplificación” y evita que el sistema parezca validar el lenguaje al repetirlo.
 
+### 8.4.1. Ajuste adicional: no asumir que el término está en el texto
+
+Caso real de QA: el estudiante escribe un término discriminatorio que **no aparece** en el texto cargado.
+
+Mejora recomendada:
+- Evitar frases del tipo “el texto que estás leyendo utiliza lenguaje discriminatorio” si no hay evidencia.
+- Responder con verificación explícita: “este término no ha sido localizado en el texto analizado”.
+- Ofrecer 2 rutas:
+  1) reformular la pregunta con lenguaje neutral para poder ayudar, y/o
+  2) pedir el fragmento exacto del texto donde aparece (si realmente está en la lectura) para analizarlo críticamente.
+
 ### 8.5. Checklist de pruebas (smoke tests) para tribunal y QA
 
 - **Slur en entrada (Tutor)**: el estudiante escribe una frase con insulto hacia un grupo.

@@ -225,6 +225,7 @@ Adapta tu respuesta según señales del estudiante:
 - Evita sesgos eurocéntricos: no trates perspectivas europeas/occidentales como “norma”; reconoce pluralidad cultural y contextual.
 - Si el texto contiene racismo, sexismo, colonialismo o discriminación, analízalo de forma crítica y contextualizada SIN reproducirlo como válido ni amplificarlo.
 - Si aparece lenguaje ofensivo o insultos contra grupos, NO los repitas textualmente. Refiérete de forma indirecta (p. ej., "insulto racista" / "insulto homofóbico") o usa una redacción suavizada con asteriscos.
+- No asumas que un término ofensivo proviene del texto: si no está en el fragmento/texto cargado, dilo explícitamente (p. ej., "este término no ha sido localizado en el texto analizado") y redirige la conversación.
 - No penalices ni corrijas de forma despectiva variedades del español o registros culturales; prioriza comprensión y análisis.
 `;
 
@@ -252,6 +253,11 @@ Adapta tu respuesta según señales del estudiante:
     s = s.replace(/\b(moro)(s)?\s+de\s+mierda\b/gi, 'm***$2 de m***');
     s = s.replace(/\b(judi)(o|a)(s)?\s+de\s+mierda\b/gi, 'j***$2$3 de m***');
     return s;
+  }
+
+  function slurAppearsInContext(contextText) {
+    if (!contextText) return false;
+    return detectHateOrSlur(contextText);
   }
 
   const SYSTEM_ANTI_REDUNDANCY = `Ten en cuenta el historial para evitar repetir preguntas ya hechas. Si el estudiante pide algo ya discutido, reconócelo y profundiza:
@@ -572,13 +578,13 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
     }
   }, [addMessage, onBusyChange, messages]);
 
-  const callBackend = useCallback(async (prompt, contextualGuidance = '') => {
+  const callBackend = useCallback(async (prompt, contextualGuidance = '', ctxOverride = null) => {
     const historyData = getCondensedHistory();
     const history = Array.isArray(historyData) ? historyData : historyData.items;
     const summary = Array.isArray(historyData) ? null : historyData.summary;
 
     // Adjuntar contexto de lectura si está disponible
-    const ctx = lastActionInfoRef.current || {};
+    const ctx = (ctxOverride && typeof ctxOverride === 'object') ? ctxOverride : (lastActionInfoRef.current || {});
     const contextSnippet = buildContextSnippet(ctx);
     const lengthInstruction = buildLengthInstruction(ctx.lengthMode, prompt);
     const creativityInstruction = buildCreativityInstruction(ctx.temperature);
@@ -639,6 +645,11 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
     sendPrompt: (prompt) => {
       const containsSlur = detectHateOrSlur(prompt);
       const safePromptForModel = containsSlur ? redactHateOrSlur(prompt) : prompt;
+
+      const frag = (lastActionInfoRef.current?.fragment || '').toString();
+      const fullText = (lastActionInfoRef.current?.fullText || '').toString();
+      const contextText = fullText || frag;
+      const slurInText = containsSlur && slurAppearsInContext(contextText);
 
       // Anti-duplicado: evitar reenvío del mismo prompt de usuario en ráfaga (<500ms)
       const now = Date.now();
@@ -708,8 +719,19 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       }
 
       if (containsSlur) {
-        contextualGuidance += '\n\n🧭 EQUIDAD (PRIORITARIO): El usuario usó lenguaje ofensivo hacia un grupo. NO lo repitas textualmente. Establece un límite con respeto, explica brevemente por qué es dañino y redirige a un análisis crítico del texto. Si la frase aparece en el texto, trátala como ejemplo de discurso discriminatorio (contextualiza y problematiza), sin normalizarla. Sugiere reformular con términos neutrales.';
+        contextualGuidance += '\n\n🧭 EQUIDAD (PRIORITARIO): El usuario usó lenguaje ofensivo hacia un grupo. NO lo repitas textualmente. Establece un límite con respeto, explica brevemente por qué es dañino y redirige.';
+
+        if (contextText && !slurInText) {
+          contextualGuidance += ' IMPORTANTE: El término NO aparece en el texto/fragmento cargado. Dilo explícitamente: "este término no ha sido localizado en el texto analizado". Luego sugiere reformular y ofrece volver al análisis del texto real (pide un fragmento o el lugar exacto).';
+        } else if (contextText && slurInText) {
+          contextualGuidance += ' Si la frase aparece en el texto, trátala como ejemplo de discurso discriminatorio (contextualiza y problematiza), sin normalizarla.';
+        } else {
+          contextualGuidance += ' Si no hay texto cargado, explica el límite y propone una reformulación neutral para poder ayudar.';
+        }
       }
+
+      // En sendPrompt el usuario no necesariamente seleccionó un fragmento.
+      contextualGuidance += '\n\nFORMATO: No digas "has seleccionado" ni asumas selección de fragmento; responde como a una pregunta escrita por el estudiante.';
       // Off-topic guard ESTRICTO: SOLO activar cuando el usuario claramente pregunta sobre algo totalmente diferente
       try {
         const frag = (lastActionInfoRef.current?.fragment || '').toString().trim();
@@ -792,7 +814,12 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       addMessage({ id: Date.now() + '-user', role: 'user', content: prompt });
       // Antes se mostraba un mensaje meta indicando el uso del texto cargado.
       // Se elimina para evitar ruido: siempre se asume el texto cargado como contexto.
-      return callBackend(safePromptForModel, contextualGuidance);
+
+      // IMPORTANTE: En prompts escritos por el usuario (sendPrompt), no arrastrar el fragmento seleccionado previo.
+      // Mantener `fullText` como contexto, pero evitar que el modelo asuma selección actual.
+      const ctxBase = lastActionInfoRef.current || {};
+      const ctxNoFragment = { ...ctxBase, fragment: '' };
+      return callBackend(safePromptForModel, contextualGuidance, ctxNoFragment);
     },
     sendAction: async (action, fragment, opts = {}) => {
       // Conservar contexto previo (p.ej., lengthMode, fullText ya seteado)
@@ -800,6 +827,10 @@ Usa este contexto para evitar repetir explicaciones ya dadas y construir sobre l
       lastActionInfoRef.current = { ...prev, action, fragment, fullText: opts.fullText || prev.fullText || '' };
       const frag = (fragment || '').trim();
       const fullText = (opts.fullText || '').toString();
+
+      // Si el fragmento seleccionado contiene slurs, redactar para el modelo (sin afectar lo que ve el usuario en UI).
+      const containsSlurInFrag = detectHateOrSlur(frag);
+      const safeFragForModel = containsSlurInFrag ? redactHateOrSlur(frag) : frag;
 
       // No mostramos un prompt-instrucción al usuario; opcionalmente podríamos registrar una marca mínima.
       // addMessage({ id: now + '-user-action', role: 'user', content: `(${action}) ${preview}` });
@@ -900,7 +931,7 @@ ${fuentesTexto}
       }
 
       const contextSnippet = fullText ? (fullText.length > 1200 ? fullText.slice(0, 1200) + '…' : fullText) : '';
-      const userContent = `Fragmento seleccionado: "${frag}"${contextSnippet ? `\n\nContexto adicional (truncado):\n${contextSnippet}` : ''}${webEnrichment}`;
+      const userContent = `Fragmento seleccionado: "${safeFragForModel}"${contextSnippet ? `\n\nContexto adicional (truncado):\n${contextSnippet}` : ''}${webEnrichment}`;
       const systemContent = `${SYSTEM_TOPIC_GUARD} ${SYSTEM_EQUITY_GUARD} ${actionDirectives}`;
 
       const historyData = getCondensedHistory();
