@@ -5,6 +5,16 @@ import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 
+const BIAS_SAFETY_RULES = `
+EQUIDAD Y NO DISCRIMINACIÓN (OBLIGATORIO):
+- No uses estereotipos, lenguaje racista/sexista ni generalizaciones sobre grupos.
+- No hagas suposiciones sobre identidad (raza/etnia, género, nacionalidad, religión, orientación sexual, discapacidad, clase social).
+- Evita eurocentrismo: reconoce pluralidad cultural y contextual; no asumas una perspectiva única como norma.
+- Si el texto o la respuesta contienen discriminación, analízala críticamente y con cuidado, sin validarla ni amplificarla.
+- No repitas insultos o slurs textualmente en la salida; usa referencias indirectas ("insulto racista", "insulto homofóbico") o redacción suavizada.
+- Evalúa el razonamiento y el anclaje textual; no penalices dialectos o variedades del español.
+`;
+
 /**
  * Mapa de dimensiones a rúbricas
  */
@@ -106,6 +116,8 @@ ${texto.substring(0, 1500)}...
 """
 
 ${contextoAnalisis}
+
+${BIAS_SAFETY_RULES}
 
 TAREA: Genera UNA pregunta de nivel ${nivelDificultad} que evalúe la dimensión "${rubricDimension.nombre}".
 
@@ -225,6 +237,8 @@ ${texto.substring(0, 1200)}...
 """
 
 ${contextoAnalisis ? `CONTEXTO DE ANÁLISIS DISPONIBLE:\n${contextoAnalisis}` : ''}
+
+${BIAS_SAFETY_RULES}
 
 INSTRUCCIONES:
 - Genera ${safeCount} hints PROGRESIVOS (de más general a más específico).
@@ -451,6 +465,8 @@ ${respuesta}
 TEXTO ORIGINAL (extracto):
 ${texto.substring(0, 1000)}...
 
+${BIAS_SAFETY_RULES}
+
 TAREA: Evalúa la ESTRUCTURA Y CLARIDAD de la respuesta según estos criterios:
 
 1. **Claridad**: ¿La respuesta es clara y coherente?
@@ -531,6 +547,8 @@ ${respuesta}
 
 EVALUACIÓN ESTRUCTURAL PREVIA:
 ${JSON.stringify(deepseekResult, null, 2)}
+
+${BIAS_SAFETY_RULES}
 
 TAREA: Evalúa la PROFUNDIDAD CRÍTICA de la respuesta. No repitas la evaluación estructural.
 

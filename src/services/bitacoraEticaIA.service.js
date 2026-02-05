@@ -6,6 +6,15 @@ const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 const DIMENSION_KEY = 'metacognicion_etica_ia';
 
+const BIAS_SAFETY_RULES = `
+EQUIDAD Y NO DISCRIMINACIÓN (OBLIGATORIO):
+- No uses lenguaje racista/sexista ni estereotipos.
+- No hagas suposiciones sobre identidad (raza/etnia, género, nacionalidad, religión, orientación sexual, discapacidad, clase social).
+- Evita eurocentrismo: reconoce pluralidad cultural y contextual.
+- No repitas insultos o slurs textualmente; usa referencias indirectas o redacción suavizada.
+- Si aparece discriminación en el registro o reflexión, analízala críticamente sin validarla ni amplificarla.
+`;
+
 /**
  * Limpia respuestas JSON que vienen con bloques markdown o texto adicional
  */
@@ -60,6 +69,8 @@ ${reflexionEtica || '(No proporcionado)'}
 
 **Declaraciones completadas:**
 ${declaracionesTexto}
+
+${BIAS_SAFETY_RULES}
 
 ---
 
@@ -136,6 +147,8 @@ ${reflexionEtica || '(No proporcionado)'}
 
 **Evaluación estructural previa (DeepSeek):**
 ${JSON.stringify(deepseekFeedback.criterios_evaluados, null, 2)}
+
+${BIAS_SAFETY_RULES}
 
 ---
 
