@@ -725,6 +725,80 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
 
                     <div style={{ flex: 1 }} />
 
+                    {/* Botón Guardar conversación como .txt */}
+                    <button
+                      onClick={() => {
+                        try {
+                          const msgs = api.messages;
+                          if (!msgs || msgs.length === 0) {
+                            alert('No hay mensajes para guardar.');
+                            return;
+                          }
+                          const header = `=== Conversación con Tutor Inteligente ===\nFecha: ${new Date().toLocaleString('es-ES')}\nMensajes: ${msgs.length}\n${'='.repeat(44)}\n\n`;
+                          const body = msgs.map(m => {
+                            const role = m.role === 'user' ? '🧑 Estudiante' : '🧑‍🏫 Tutor';
+                            return `${role}:\n${m.content}\n`;
+                          }).join('\n---\n\n');
+                          const blob = new Blob([header + body], { type: 'text/plain;charset=utf-8' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `tutor_conversacion_${new Date().toISOString().slice(0,10)}.txt`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        } catch (err) {
+                          console.error('[TutorDock] Error al guardar conversación:', err);
+                          alert('Error al guardar la conversación.');
+                        }
+                      }}
+                      disabled={!api.messages || api.messages.length === 0}
+                      style={{
+                        background: '#2563eb', color: 'white', border: 'none',
+                        borderRadius: '4px', padding: '.2rem .5rem', cursor: 'pointer', fontSize: '.7rem',
+                        opacity: (!api.messages || api.messages.length === 0) ? 0.5 : 1
+                      }}
+                      title="Descargar conversación como archivo de texto"
+                    >
+                      💾 Guardar
+                    </button>
+
+                    {/* Botón Copiar conversación al portapapeles */}
+                    <button
+                      onClick={async () => {
+                        try {
+                          const msgs = api.messages;
+                          if (!msgs || msgs.length === 0) {
+                            alert('No hay mensajes para copiar.');
+                            return;
+                          }
+                          const text = msgs.map(m => {
+                            const role = m.role === 'user' ? 'Estudiante' : 'Tutor';
+                            return `${role}: ${m.content}`;
+                          }).join('\n\n');
+                          await navigator.clipboard.writeText(text);
+                          // Feedback visual temporal
+                          const btn = document.activeElement;
+                          const original = btn.textContent;
+                          btn.textContent = '✅ Copiado';
+                          setTimeout(() => { btn.textContent = original; }, 1500);
+                        } catch (err) {
+                          console.error('[TutorDock] Error al copiar:', err);
+                          alert('No se pudo copiar al portapapeles.');
+                        }
+                      }}
+                      disabled={!api.messages || api.messages.length === 0}
+                      style={{
+                        background: '#6b7280', color: 'white', border: 'none',
+                        borderRadius: '4px', padding: '.2rem .5rem', cursor: 'pointer', fontSize: '.7rem',
+                        opacity: (!api.messages || api.messages.length === 0) ? 0.5 : 1
+                      }}
+                      title="Copiar conversación al portapapeles"
+                    >
+                      📋 Copiar
+                    </button>
+
                     <button
                       onClick={() => {
                         if (window.confirm('¿Seguro que quieres borrar todo el historial?')) {
