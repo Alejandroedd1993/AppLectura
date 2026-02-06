@@ -1,5 +1,12 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 
+const isDev = process.env.NODE_ENV === 'development';
+const devLog = (...args) => isDev && console.log(...args);
+const devWarn = (...args) => isDev && console.warn(...args);
+
+// Caché en memoria para evitar llamadas duplicadas a la API
+const _definitionCache = new Map();
+
 /**
  * Obtiene una definición contextual de un término usando IA
  * 
@@ -8,8 +15,15 @@ import { chatCompletion, extractContent } from './unifiedAiService';
  * @returns {Promise<object>} - Objeto con definición, contexto, relacionados, nivel
  */
 export async function fetchTermDefinition(term, fullText) {
+  // Revisar caché primero
+  const cacheKey = term.toLowerCase().trim();
+  if (_definitionCache.has(cacheKey)) {
+    devLog(`📋 Definición cacheada para: "${term}"`);
+    return _definitionCache.get(cacheKey);
+  }
+
   try {
-    console.log(`🔍 Obteniendo definición contextual para: "${term}"`);
+    devLog(`🔍 Obteniendo definición contextual para: "${term}"`);
 
     // Crear prompt optimizado para definición contextual
     const prompt = `Eres un asistente educativo especializado en explicar conceptos de manera clara y contextual.
@@ -50,7 +64,7 @@ IMPORTANTE:
       throw new Error('No se recibió respuesta del servicio de IA');
     }
 
-    console.log('📦 Respuesta raw:', content.substring(0, 200));
+    devLog('📦 Respuesta recibida, parseando...');
 
     // Parsear JSON
     let definition;
@@ -63,8 +77,7 @@ IMPORTANTE:
       
       definition = JSON.parse(cleanContent);
     } catch (parseError) {
-      console.error('❌ Error parseando JSON:', parseError);
-      console.error('Contenido recibido:', content);
+      devWarn('❌ Error parseando JSON de definición:', parseError.message);
       
       // Fallback: extraer manualmente
       definition = {
@@ -89,11 +102,12 @@ IMPORTANTE:
       definition.nivel_complejidad = 'Intermedio';
     }
 
-    console.log('✅ Definición generada exitosamente');
+    devLog('✅ Definición generada exitosamente');
+    _definitionCache.set(cacheKey, definition);
     return definition;
 
   } catch (error) {
-    console.error('❌ Error obteniendo definición del término:', error);
+    devWarn('❌ Error obteniendo definición del término:', error.message);
     
     // Fallback robusto
     return {
@@ -114,5 +128,5 @@ export function searchTermOnWeb(term) {
   const query = encodeURIComponent(term + ' definición educativa');
   const searchUrl = `https://www.google.com/search?q=${query}`;
   window.open(searchUrl, '_blank', 'noopener,noreferrer');
-  console.log(`🌐 Búsqueda web abierta para: "${term}"`);
+  devLog(`🌐 Búsqueda web abierta para: "${term}"`);
 }

@@ -6,10 +6,14 @@
  * ACTUALIZADO: Ahora incluye glosario dinámico, términos clickeables y exportación
  */
 
-import React, { useContext, useState, useCallback, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import { AppContext } from '../context/AppContext';
+
+// 🚀 PERF: Log silenciado en producción
+const __DEV__ = process.env.NODE_ENV !== 'production';
+const devLog = __DEV__ ? console.log.bind(console) : () => {};
+const devWarn = __DEV__ ? console.warn.bind(console) : () => {};
 
 // Componentes de análisis avanzado
 import GlossaryPanel from './analisis/GlossaryPanel';
@@ -33,8 +37,8 @@ const PreLectura = () => {
   const [termDefinition, setTermDefinition] = useState(null);
   const [loadingTermDefinition, setLoadingTermDefinition] = useState(false);
 
-  // Calcular tema
-  const theme = modoOscuro ? darkTheme : lightTheme;
+  // Calcular tema (memoizado)
+  const theme = useMemo(() => modoOscuro ? darkTheme : lightTheme, [modoOscuro]);
 
   // Estado de carga: Solo si loading es true (no depender de completeAnalysis para evitar loading infinito)
   const isLoading = loading;
@@ -57,13 +61,13 @@ const PreLectura = () => {
         const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 horas
 
         if (cacheAge < CACHE_DURATION) {
-          console.log('✅ Glosario recuperado del caché');
+          devLog('✅ Glosario recuperado del caché');
           setGlossary(data || []);
           return; // Usar caché, no regenerar
         }
       }
     } catch (err) {
-      console.log('⚠️ Error leyendo caché de glosario:', err);
+      devWarn('⚠️ Error leyendo caché de glosario:', err);
     }
 
     // Si no hay caché válido, generar nuevo glosario
@@ -78,12 +82,12 @@ const PreLectura = () => {
           data: glossaryData,
           timestamp: Date.now()
         }));
-        console.log('💾 Glosario guardado en caché');
+        devLog('💾 Glosario guardado en caché');
       } catch (cacheError) {
-        console.log('⚠️ No se pudo guardar en caché:', cacheError);
+        devWarn('⚠️ No se pudo guardar en caché:', cacheError);
       }
     } catch (error) {
-      console.error('Error generando glosario:', error);
+      devWarn('Error generando glosario:', error);
     } finally {
       setLoadingGlossary(false);
     }
@@ -95,7 +99,7 @@ const PreLectura = () => {
     try {
       await downloadGlossaryAsPDF(glossary, texto.slice(0, 100));
     } catch (error) {
-      console.error('Error exportando glosario:', error);
+      devWarn('Error exportando glosario:', error);
     }
   }, [glossary, texto]);
 
@@ -108,7 +112,7 @@ const PreLectura = () => {
       const definition = await fetchTermDefinition(term, texto);
       setTermDefinition(definition);
     } catch (error) {
-      console.error('Error obteniendo definición:', error);
+      devWarn('Error obteniendo definición:', error);
       setTermDefinition({ error: 'No se pudo obtener la definición' });
     } finally {
       setLoadingTermDefinition(false);
@@ -171,23 +175,8 @@ const PreLectura = () => {
 
     return (
       <Container $darkMode={modoOscuro}>
-        <LoadingState
-          as={motion.div}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <LoadingSpinner
-            as={motion.div}
-            animate={{
-              rotate: 360
-            }}
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              ease: "linear"
-            }}
-          >
+        <LoadingState>
+          <LoadingSpinner>
             📊
           </LoadingSpinner>
           <LoadingTitle>Analizando documento...</LoadingTitle>
@@ -215,35 +204,23 @@ const PreLectura = () => {
 
           <LoadingSteps>
             <LoadingStep
-              as={motion.div}
-              initial={{ opacity: 0.5 }}
-              animate={{ opacity: progressInfo.step >= 1 ? 1 : 0.5 }}
-              style={{ color: progressInfo.step >= 2 ? '#10b981' : 'inherit' }}
+              style={{ opacity: progressInfo.step >= 1 ? 1 : 0.5, color: progressInfo.step >= 2 ? '#10b981' : 'inherit' }}
             >
               <StepIcon>{progressInfo.step >= 2 ? '✅' : '🔍'}</StepIcon> Detectando necesidad de contexto
             </LoadingStep>
             <LoadingStep
-              as={motion.div}
-              initial={{ opacity: 0.5 }}
-              animate={{ opacity: progressInfo.step >= 2 ? 1 : 0.5 }}
-              style={{ color: progressInfo.step >= 3 ? '#10b981' : 'inherit' }}
+              style={{ opacity: progressInfo.step >= 2 ? 1 : 0.5, color: progressInfo.step >= 3 ? '#10b981' : 'inherit' }}
             >
               <StepIcon>{progressInfo.step >= 3 ? '✅' : '🤖'}</StepIcon> Analizando estructura y argumentación
             </LoadingStep>
             <LoadingStep
-              as={motion.div}
-              initial={{ opacity: 0.5 }}
-              animate={{ opacity: progressInfo.step >= 3 ? 1 : 0.5 }}
-              style={{ color: progressInfo.step >= 4 ? '#10b981' : 'inherit' }}
+              style={{ opacity: progressInfo.step >= 3 ? 1 : 0.5, color: progressInfo.step >= 4 ? '#10b981' : 'inherit' }}
             >
               <StepIcon>{progressInfo.step >= 4 ? '✅' : '📝'}</StepIcon> Generando análisis académico
             </LoadingStep>
           </LoadingSteps>
           <ProgressBar
-            as={motion.div}
-            initial={{ width: "0%" }}
-            animate={{ width: `${Math.min(95, (elapsedSeconds / 90) * 100)}%` }}
-            transition={{ duration: 0.5 }}
+            style={{ width: `${Math.min(95, (elapsedSeconds / 90) * 100)}%` }}
           />
         </LoadingState>
       </Container>
@@ -355,13 +332,9 @@ const PreLectura = () => {
       {analysisMeta?._isPreliminary && !completeAnalysis._isFallback && (
         <PreliminaryBanner $darkMode={modoOscuro}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <motion.span
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-              style={{ fontSize: '24px' }}
-            >
+            <span className="spin-icon" style={{ fontSize: '24px', display: 'inline-block', animation: 'spin 2s linear infinite' }}>
               ⏳
-            </motion.span>
+            </span>
             <div>
               <strong style={{ color: '#3b82f6' }}>Análisis preliminar mostrado</strong>
               <br />
@@ -374,12 +347,7 @@ const PreLectura = () => {
       )}
 
       {/* FASE I: CONTEXTUALIZACIÓN */}
-      <Section
-        as={motion.div}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-      >
+      <Section>
         <SectionHeader>
           <SectionIcon>🎯</SectionIcon>
           <SectionTitle>Fase I: Contextualización</SectionTitle>
@@ -427,12 +395,7 @@ const PreLectura = () => {
       </Section>
 
       {/* FASE II: ANÁLISIS DE CONTENIDO Y ARGUMENTACIÓN */}
-      <Section
-        as={motion.div}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-      >
+      <Section>
         <SectionHeader>
           <SectionIcon>💡</SectionIcon>
           <SectionTitle>Fase II: Contenido y Argumentación</SectionTitle>
@@ -546,12 +509,7 @@ const PreLectura = () => {
       </Section>
 
       {/* FASE III: ANÁLISIS FORMAL Y LINGÜÍSTICO */}
-      <Section
-        as={motion.div}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.2 }}
-      >
+      <Section>
         <SectionHeader>
           <SectionIcon>📖</SectionIcon>
           <SectionTitle>Fase III: Análisis Formal y Lingüístico</SectionTitle>
@@ -765,12 +723,7 @@ const PreLectura = () => {
 
       {/* FASE IV: ANÁLISIS IDEOLÓGICO-DISCURSIVO (ACD) */}
       {(acdData.voces_representadas?.length > 0 || acdData.voces_silenciadas?.length > 0 || acdData.ideologia_subyacente) && (
-        <Section
-          as={motion.div}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.25 }}
-        >
+        <Section>
           <SectionHeader>
             <SectionIcon>ACD</SectionIcon>
             <SectionTitle>Fase IV: Análisis Ideológico-Discursivo (ACD)</SectionTitle>
@@ -848,12 +801,7 @@ const PreLectura = () => {
 
       {/* FUENTES WEB (si aplica) */}
       {web_sources?.length > 0 && (
-        <Section
-          as={motion.div}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.3 }}
-        >
+        <Section>
           <SectionHeader>
             <SectionIcon>🌐</SectionIcon>
             <SectionTitle>Fuentes Web Consultadas</SectionTitle>
@@ -957,6 +905,20 @@ const Container = styled.div`
   margin: 0 auto;
   background: ${props => props.$darkMode ? '#1a1a1a' : '#f8f9fa'};
   min-height: calc(100vh - 120px);
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    & * { animation: none !important; }
+  }
 `;
 
 const EmptyState = styled.div`
@@ -976,12 +938,12 @@ const Icon = styled.div`
 const Title = styled.h2`
   font-size: 28px;
   margin-bottom: 8px;
-  color: #333;
+  color: ${props => props.theme?.text || '#333'};
 `;
 
 const Description = styled.p`
   font-size: 16px;
-  color: #666;
+  color: ${props => props.theme?.textMuted || '#666'};
   max-width: 400px;
 `;
 
@@ -998,18 +960,19 @@ const LoadingState = styled.div`
 const LoadingSpinner = styled.div`
   font-size: 72px;
   margin-bottom: 24px;
+  animation: spin 2s linear infinite;
 `;
 
 const LoadingTitle = styled.h2`
   font-size: 28px;
   font-weight: 600;
   margin-bottom: 8px;
-  color: #333;
+  color: ${props => props.theme?.text || '#333'};
 `;
 
 const LoadingDescription = styled.p`
   font-size: 16px;
-  color: #666;
+  color: ${props => props.theme?.textMuted || '#666'};
   margin-bottom: 32px;
 `;
 
@@ -1039,11 +1002,12 @@ const StepIcon = styled.span`
 `;
 
 const ProgressBar = styled.div`
-  width: 100%;
+  width: 0%;
   max-width: 400px;
   height: 4px;
   background: linear-gradient(90deg, #4a90e2 0%, #357abd 100%);
   border-radius: 2px;
+  transition: width 0.5s ease;
 `;
 
 const Header = styled.div`
@@ -1079,11 +1043,12 @@ const WebBadge = styled.div`
 `;
 
 const Section = styled.div`
-  background: white;
+  background: ${props => props.theme?.surface || 'white'};
   border-radius: 12px;
   padding: 24px;
   margin-bottom: 24px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  animation: fadeInUp 0.35s ease-out;
 `;
 
 const SectionHeader = styled.div`
@@ -1108,7 +1073,7 @@ const SectionIcon = styled.span`
 const SectionTitle = styled.h2`
   font-size: 22px;
   font-weight: 600;
-  color: #2c3e50;
+  color: ${props => props.theme?.text || '#2c3e50'};
   margin: 0;
 `;
 
@@ -1140,7 +1105,7 @@ const Label = styled.span`
 
 const Value = styled.span`
   font-size: 16px;
-  color: #2c3e50;
+  color: ${props => props.theme?.text || '#2c3e50'};
   font-weight: 500;
 `;
 
@@ -1163,7 +1128,7 @@ const HighlightLabel = styled.div`
 const HighlightContent = styled.p`
   font-size: 17px;
   line-height: 1.6;
-  color: #2c3e50;
+  color: ${props => props.theme?.text || '#2c3e50'};
   margin: 0;
   font-weight: 500;
 `;
@@ -1175,7 +1140,7 @@ const ListSection = styled.div`
 const ListTitle = styled.h4`
   font-size: 15px;
   font-weight: 600;
-  color: #34495e;
+  color: ${props => props.theme?.text || '#34495e'};
   margin-bottom: 12px;
 `;
 
@@ -1187,11 +1152,11 @@ const List = styled.ul`
 
 const ListItem = styled.li`
   padding: 10px 16px;
-  background: #f8f9fa;
+  background: ${props => props.theme?.background || '#f8f9fa'};
   border-radius: 6px;
   margin-bottom: 8px;
   font-size: 15px;
-  color: #2c3e50;
+  color: ${props => props.theme?.text || '#2c3e50'};
   border-left: 3px solid #3498db;
 `;
 
@@ -1206,7 +1171,7 @@ const ArgumentCard = styled.div`
 const ArgumentText = styled.p`
   font-size: 15px;
   line-height: 1.6;
-  color: #2c3e50;
+  color: ${props => props.theme?.text || '#2c3e50'};
   margin: 0 0 12px 0;
 `;
 
@@ -1258,7 +1223,7 @@ const TextBlock = styled.div`
     margin: 8px 0 0 0;
     font-size: 15px;
     line-height: 1.6;
-    color: #2c3e50;
+    color: ${props => props.$darkMode ? '#e2e8f0' : '#2c3e50'};
   }
 `;
 
@@ -1383,7 +1348,7 @@ const SourceContent = styled.div`
 const SourceTitle = styled.h5`
   font-size: 15px;
   font-weight: 600;
-  color: #2c3e50;
+  color: ${props => props.theme?.text || '#2c3e50'};
   margin: 0;
 `;
 
@@ -1485,7 +1450,7 @@ const ACDLabel = styled.div`
 const ACDValue = styled.p`
   font-size: 15px;
   line-height: 1.7;
-  color: #2c3e50;
+  color: ${props => props.theme?.text || '#2c3e50'};
   margin: 0;
   font-weight: 500;
 `;

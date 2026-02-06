@@ -6,40 +6,36 @@
  * Ciclo: Lectura Guiada → Análisis → Actividades → Evaluación
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import styled from 'styled-components';
-import { motion } from 'framer-motion';
 
 const NextStepCard = ({ icon, title, description, actionLabel, onAction, theme, variant = 'primary' }) => {
-  const variants = {
-    primary: {
-      bgGradient: `linear-gradient(135deg, ${theme.primary}10, ${theme.success}10)`,
-      borderColor: `${theme.primary}40`,
-      iconColor: theme.primary,
-      buttonBg: theme.primary
-    },
-    success: {
-      bgGradient: `linear-gradient(135deg, ${theme.success}10, ${theme.primary}10)`,
-      borderColor: `${theme.success}40`,
-      iconColor: theme.success,
-      buttonBg: theme.success
-    },
-    warning: {
-      bgGradient: `linear-gradient(135deg, ${theme.warning}10, ${theme.primary}10)`,
-      borderColor: `${theme.warning}40`,
-      iconColor: theme.warning,
-      buttonBg: theme.warning
-    }
-  };
-
-  const variantStyles = variants[variant] || variants.primary;
+  const variantStyles = useMemo(() => {
+    const variants = {
+      primary: {
+        bgGradient: `linear-gradient(135deg, ${theme.primary}10, ${theme.success}10)`,
+        borderColor: `${theme.primary}40`,
+        iconColor: theme.primary,
+        buttonBg: theme.primary
+      },
+      success: {
+        bgGradient: `linear-gradient(135deg, ${theme.success}10, ${theme.primary}10)`,
+        borderColor: `${theme.success}40`,
+        iconColor: theme.success,
+        buttonBg: theme.success
+      },
+      warning: {
+        bgGradient: `linear-gradient(135deg, ${theme.warning}10, ${theme.primary}10)`,
+        borderColor: `${theme.warning}40`,
+        iconColor: theme.warning,
+        buttonBg: theme.warning
+      }
+    };
+    return variants[variant] || variants.primary;
+  }, [theme.primary, theme.success, theme.warning, variant]);
 
   return (
     <CardContainer
-      as={motion.div}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
       $bgGradient={variantStyles.bgGradient}
       $borderColor={variantStyles.borderColor}
     >
@@ -58,8 +54,6 @@ const NextStepCard = ({ icon, title, description, actionLabel, onAction, theme, 
         <ActionButton
           onClick={onAction}
           $buttonBg={variantStyles.buttonBg}
-          whileHover={{ scale: 1.02, y: -2 }}
-          whileTap={{ scale: 0.98 }}
         >
           {actionLabel}
         </ActionButton>
@@ -68,7 +62,7 @@ const NextStepCard = ({ icon, title, description, actionLabel, onAction, theme, 
   );
 };
 
-export default NextStepCard;
+export default React.memo(NextStepCard);
 
 // ============================================================
 // STYLED COMPONENTS
@@ -85,9 +79,19 @@ const CardContainer = styled.div`
   margin-top: 2rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   transition: all 0.3s ease;
+  animation: cardFadeIn 0.4s ease-out;
+
+  @keyframes cardFadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   
   &:hover {
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 `;
 
@@ -130,7 +134,7 @@ const Description = styled.p`
   color: ${props => props.theme.textSecondary || props.theme.textMuted};
 `;
 
-const ActionButton = styled(motion.button)`
+const ActionButton = styled.button`
   align-self: flex-start;
   padding: 0.75rem 1.5rem;
   background: ${props => props.$buttonBg};
@@ -141,8 +145,14 @@ const ActionButton = styled(motion.button)`
   font-size: 0.95rem;
   cursor: pointer;
   box-shadow: 0 2px 8px ${props => props.$buttonBg}40;
-  
+  transition: all 0.2s ease;
+
   &:hover {
     box-shadow: 0 4px 12px ${props => props.$buttonBg}50;
+    transform: scale(1.02) translateY(-2px);
+  }
+
+  &:active {
+    transform: scale(0.98);
   }
 `;
