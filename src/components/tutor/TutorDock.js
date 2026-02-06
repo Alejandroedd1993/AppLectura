@@ -536,8 +536,11 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   const userId = currentUser?.uid || 'guest';
   const [open, setOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [headerHidden, _setHeaderHidden] = useState(false);
-  const [_pendingExternal, setPendingExternal] = useState(null);
+  // 🚀 PERF: headerHidden nunca cambia (siempre false), usar constante
+  const headerHidden = false;
+  // 🚀 PERF: _pendingExternal solo se escribe, nunca se lee para render → usar ref
+  const pendingExternalRef = React.useRef(null);
+  const setPendingExternal = useCallback((v) => { pendingExternalRef.current = v; }, []);
   const [isSaving, setIsSaving] = useState(false);
 
   // Estado de redimensionamiento
@@ -595,16 +598,26 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
 
     const startX = e.clientX;
     const startWidth = width;
+    let rafId = null;
+    let latestWidth = startWidth;
 
     const handleMouseMove = (moveEvent) => {
       const deltaX = startX - moveEvent.clientX; // Invertido porque el borde está a la izquierda
-      const newWidth = Math.max(320, Math.min(800, startWidth + deltaX));
-      setWidth(newWidth);
+      latestWidth = Math.max(320, Math.min(800, startWidth + deltaX));
+      // 🚀 PERF: Throttle con rAF — solo 1 setState por frame (60fps)
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          setWidth(latestWidth);
+          rafId = null;
+        });
+      }
     };
 
     const handleMouseUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      // Aplicar ancho final
+      setWidth(latestWidth);
       setIsResizing(false);
-      // Removed localStorage logic as it is now handled by useLocalStorageState
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -613,12 +626,14 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     document.addEventListener('mouseup', handleMouseUp);
   }, [expanded, width]);
 
-  // Notificar cambios de ancho al workspace para ajustar espacio de lectura
+  // 🚀 PERF: Debounce la notificación de cambio de ancho al workspace
   useEffect(() => {
-    if (expanded) {
+    if (!expanded) return;
+    const timer = setTimeout(() => {
       const event = new CustomEvent('tutor-width-change', { detail: { width } });
       window.dispatchEvent(event);
-    }
+    }, 100);
+    return () => clearTimeout(timer);
   }, [width, expanded]);
 
   return (

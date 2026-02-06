@@ -284,28 +284,29 @@ export default performanceMonitor;
 // Importar React para el HOC
 import React from 'react';
 
-/**
- * Hook para usar el monitor de performance en componentes React
- */
-export const usePerformanceMonitor = () => {
-  return {
-    markStart: performanceMonitor.markStart.bind(performanceMonitor),
-    markEnd: performanceMonitor.markEnd.bind(performanceMonitor),
-    measure: performanceMonitor.measure.bind(performanceMonitor),
-    measureAsync: performanceMonitor.measureAsync.bind(performanceMonitor),
-    getStats: performanceMonitor.getStats.bind(performanceMonitor),
-    getSummary: performanceMonitor.getSummary.bind(performanceMonitor)
-  };
+// Singleton estable: se crea UNA VEZ fuera del componente para evitar
+// que cada render genere un objeto nuevo con .bind() (invalida dependencias de useCallback/useMemo).
+const _stableMonitorApi = {
+  markStart: performanceMonitor.markStart.bind(performanceMonitor),
+  markEnd: performanceMonitor.markEnd.bind(performanceMonitor),
+  measure: performanceMonitor.measure.bind(performanceMonitor),
+  measureAsync: performanceMonitor.measureAsync.bind(performanceMonitor),
+  getStats: performanceMonitor.getStats.bind(performanceMonitor),
+  getSummary: performanceMonitor.getSummary.bind(performanceMonitor)
 };
+
+/**
+ * Hook para usar el monitor de performance en componentes React.
+ * Retorna siempre la MISMA referencia para no invalidar useCallback/useMemo.
+ */
+export const usePerformanceMonitor = () => _stableMonitorApi;
 
 /**
  * HOC para medir performance de componentes
  */
 export const withPerformanceTracking = (WrappedComponent, componentName) => {
   return React.forwardRef((props, ref) => {
-    const { measure } = usePerformanceMonitor();
-    
-    return measure(`component-${componentName}`, () => 
+    return _stableMonitorApi.measure(`component-${componentName}`, () => 
       React.createElement(WrappedComponent, { ...props, ref })
     );
   });

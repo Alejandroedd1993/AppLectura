@@ -1,6 +1,10 @@
 import React, { useState, useContext, useCallback, useMemo, lazy, Suspense } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+// framer-motion eliminado del rendering principal para mejorar rendimiento de tabs
 import styled, { ThemeProvider } from 'styled-components';
+
+// 🚀 PERF: Log silenciado en producción
+const __DEV__ = process.env.NODE_ENV !== 'production';
+const devLog = __DEV__ ? console.log.bind(console) : () => {};
 
 // Estilos globales de accesibilidad
 import './styles/a11y.css';
@@ -57,7 +61,7 @@ const clearArtifactDrafts = () => {
       cleared++;
     }
   });
-  console.log(`🧹 [App] Borradores de artefactos limpiados: ${cleared}`);
+  devLog(`🧹 [App] Borradores de artefactos limpiados: ${cleared}`);
   return cleared;
 };
 
@@ -68,7 +72,7 @@ if (typeof window !== 'undefined') {
     clearLegacyActivities,
     clearAllActivities,
     clearArtifactDrafts,
-    help: () => console.log(`
+    help: () => devLog(`
 🔧 AppLectura - Funciones de Diagnóstico
 
 📊 diagnoseStoredActivities()
@@ -86,7 +90,7 @@ if (typeof window !== 'undefined') {
 Uso: window.appDiagnostics.diagnoseStoredActivities()
     `)
   };
-  console.log('🔧 Funciones de diagnóstico disponibles: window.appDiagnostics.help()');
+  devLog('🔧 Funciones de diagnóstico disponibles: window.appDiagnostics.help()');
 }
 
 
@@ -188,7 +192,7 @@ const MainContent = styled.main`
   }
 `;
 
-const SidebarContainer = styled(motion.aside)`
+const SidebarContainer = styled.aside`
   width: 100%;
   background: ${props => props.theme.surface};
   border-right: 1px solid ${props => props.theme.border};
@@ -263,13 +267,23 @@ const TabsContainer = styled.div`
   gap: 0.5rem;
 `;
 
-const ViewContent = styled(motion.div)`
+const ViewContent = styled.div`
   flex: 1;
   overflow-y: auto;
   max-height: calc(100vh - 160px);
+  animation: fadeInView 0.18s ease-out;
   
+  @keyframes fadeInView {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
   @media (min-width: 768px) {
     max-height: calc(100vh - 200px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 `;
 
@@ -501,9 +515,9 @@ function AppContent() {
     const targetId = textoData?.textoId || textoData?.id;
     const courseId = textoData?.sourceCourseId;
 
-    console.log('📖 [App] handleSelectText con switchLecture atómico');
-    console.log('📎 textoId:', targetId);
-    console.log('📎 courseId:', courseId);
+    devLog('📖 [App] handleSelectText con switchLecture atómico');
+    devLog('📎 textoId:', targetId);
+    devLog('📎 courseId:', courseId);
 
     // 🆕 Un solo llamado que actualiza TODO atómicamente
     switchLecture({
@@ -533,7 +547,7 @@ function AppContent() {
 
     // 🆕 Limpiar borradores de artefactos al cambiar de curso
     if (courseId) {
-      console.log('✅ [App] Limpiando borradores al cambiar de curso');
+      devLog('✅ [App] Limpiando borradores al cambiar de curso');
       clearArtifactDrafts();
     }
 
@@ -542,7 +556,7 @@ function AppContent() {
 
     // 🆕 Disparar análisis automáticamente DESPUÉS del cambio atómico
     if (content && content.trim().length >= 100) {
-      console.log('🚀 [App] Disparando análisis automático...');
+      devLog('🚀 [App] Disparando análisis automático...');
       // Pequeño delay para permitir que React procese el estado atómico
       setTimeout(() => {
         analyzeDocument(content, targetId);
@@ -737,7 +751,7 @@ function AppContent() {
                     </TeacherModeButton>
                   </TeacherModeSwitch>
                 )}
-                <RewardsHeader onClickDetails={() => console.log('TODO: Abrir panel de detalles')} />
+                <RewardsHeader onClickDetails={() => devLog('TODO: Abrir panel de detalles')} />
               </>
             </Header>
           )}
@@ -762,9 +776,6 @@ function AppContent() {
               {!focusMode && (
                 <SidebarContainer
                   $collapsed={sidebarCollapsed}
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ duration: 0.3 }}
                 >
                   <CollapseButton onClick={toggleSidebar}>
                     {sidebarCollapsed ? '→' : '←'}
@@ -794,17 +805,11 @@ function AppContent() {
 
                   <ViewContent
                     key={vistaActiva}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.3 }}
                   >
                     <ErrorBoundary>
-                      <AnimatePresence mode="wait">
-                        {loading && vistaActiva !== 'prelectura' && <LoadingOverlay />}
-                        {error && <div>Error: {error}</div>}
-                        {(!loading || vistaActiva === 'prelectura') && !error && renderVistaContent()}
-                      </AnimatePresence>
+                      {loading && vistaActiva !== 'prelectura' && <LoadingOverlay />}
+                      {error && <div>Error: {error}</div>}
+                      {(!loading || vistaActiva === 'prelectura') && !error && renderVistaContent()}
                     </ErrorBoundary>
                   </ViewContent>
                 </ReadingContainer>
