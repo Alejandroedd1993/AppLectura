@@ -669,15 +669,116 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
     }
     try {
       const { exportGenericPDF } = await import('../../utils/exportUtils');
-      const sections = [{ heading: 'Lectura', keyValues: { Título: reading.titulo || 'Sin título' } }];
+      const sections = [{ heading: 'Lectura', keyValues: { titulo: reading.titulo || 'Sin titulo' } }];
+
       const progress = reading.progress;
-      if (typeof progress === 'object') {
-        const kv = {};
-        Object.entries(progress).forEach(([k, v]) => {
-          if (typeof v === 'object' && v !== null) kv[k] = JSON.stringify(v);
-          else kv[k] = String(v ?? '');
+      const safeObj = (v) => (v && typeof v === 'object' ? v : null);
+
+      // Resumen (evita IDs/syncType y datos crudos)
+      if (safeObj(progress)) {
+        const resumen = {};
+
+        // Progreso porcentual simple
+        const pct = calculateProgress(progress);
+        if (Number.isFinite(pct) && pct > 0) resumen.porcentaje = Math.round(pct);
+
+        // Campos comunes (si existen)
+        const candidateKeys = [
+          'promedioGlobal', 'PromedioGlobal',
+          'ultimaPuntuacion', 'UltimaPuntuacion',
+          'lastActivity', 'LastActivity', 'ultimaActividad', 'UltimaActividad',
+          'lastResetAt', 'LastResetAt'
+        ];
+        candidateKeys.forEach((k) => {
+          if (progress[k] !== undefined && progress[k] !== null && progress[k] !== '') {
+            resumen[k] = progress[k];
+          }
         });
-        sections.push({ heading: 'Progreso', keyValues: kv });
+
+        // Si no encontramos nada, al menos exportar valores primitivos "cortos"
+        if (Object.keys(resumen).length === 0) {
+          Object.entries(progress).forEach(([k, v]) => {
+            if (v === null || v === undefined || v === '') return;
+            if (typeof v === 'string' && v.length > 250) return;
+            if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') {
+              resumen[k] = v;
+            }
+          });
+        }
+
+        sections.push({ heading: 'Resumen de progreso', keyValues: resumen });
+
+        // Actividades: resumir activitiesProgress en lugar de volcar JSON
+        const rawActivities = progress.activitiesProgress || progress.ActivitiesProgress;
+        let activities = rawActivities;
+        if (typeof rawActivities === 'string') {
+          try { activities = JSON.parse(rawActivities); } catch { activities = null; }
+        }
+
+        if (activities && typeof activities === 'object') {
+          const docs = Object.entries(activities);
+          const stats = {
+            totalActividades: docs.length,
+            completadas: 0,
+            mcqPasados: 0,
+            totalPreguntasMCQ: 0,
+            correctasMCQ: 0,
+            totalPreguntasSintesis: 0,
+          };
+
+          const rows = [];
+          docs.slice(0, 8).forEach(([docId, docData], idx) => {
+            const d = docData && typeof docData === 'object' ? docData : {};
+            const prep = (d.preparation && typeof d.preparation === 'object') ? d.preparation : d;
+
+            const completed = !!prep.completed;
+            if (completed) stats.completadas += 1;
+
+            const mcq = (prep.mcqResults && typeof prep.mcqResults === 'object') ? prep.mcqResults : (d.mcqResults || null);
+            if (mcq && typeof mcq === 'object') {
+              if (typeof mcq.total === 'number') stats.totalPreguntasMCQ += mcq.total;
+              if (typeof mcq.correct === 'number') stats.correctasMCQ += mcq.correct;
+              if (mcq.passed === true) stats.mcqPasados += 1;
+            } else if (prep.mcqPassed === true) {
+              stats.mcqPasados += 1;
+            }
+
+            const synth = (prep.synthesisAnswers && typeof prep.synthesisAnswers === 'object') ? prep.synthesisAnswers : (d.synthesisAnswers || null);
+            if (synth && typeof synth.totalQuestions === 'number') {
+              stats.totalPreguntasSintesis += synth.totalQuestions;
+            }
+
+            const percentage = (typeof prep.percentage === 'number') ? prep.percentage
+              : (typeof prep.porcentaje === 'number') ? prep.porcentaje
+              : (mcq && typeof mcq.total === 'number' && mcq.total > 0 && typeof mcq.correct === 'number')
+                ? Math.round((mcq.correct / mcq.total) * 100)
+                : null;
+
+            rows.push([
+              `Actividad ${idx + 1}`,
+              completed ? 'Completada' : 'En progreso',
+              percentage === null ? '—' : `${percentage}%`,
+            ]);
+          });
+
+          sections.push({
+            heading: 'Actividades (resumen)',
+            keyValues: {
+              totalActividades: stats.totalActividades,
+              completadas: stats.completadas,
+              mcqPasados: stats.mcqPasados,
+              totalPreguntasMCQ: stats.totalPreguntasMCQ,
+              correctasMCQ: stats.correctasMCQ,
+              totalPreguntasSintesis: stats.totalPreguntasSintesis,
+            },
+          });
+          if (rows.length > 0) {
+            sections.push({
+              heading: 'Detalle (muestra)',
+              table: { headers: ['Actividad', 'Estado', '%'], rows },
+            });
+          }
+        }
       }
       await exportGenericPDF({
         title: `Progreso de Lectura - ${reading.titulo || 'Sin título'}`,
