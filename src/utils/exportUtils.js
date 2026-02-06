@@ -1,20 +1,128 @@
 /**
- * @file Módulo con utilidades para exportar datos.
+ * @file Módulo con utilidades para exportar datos en PDF.
  * @module exportUtils
- * @version 1.2.0
+ * @version 2.0.0
  */
 
 /**
- * Construye y exporta los resultados de un análisis a un archivo JSON.
- *
- * @param {object} analisis - El objeto principal del análisis.
- * @param {object} metadata - Metadatos adicionales para incluir en la exportación.
- * @returns {{success: boolean, message?: string, error?: string}} Un objeto indicando el resultado.
+ * Compatibilidad: redirige a exportación PDF.
  */
 export const exportarResultados = (analisis, metadata = {}) => {
-  // Compatibilidad: redirige a exportación PDF
   exportarResultadosPDF(analisis, metadata);
   return { success: true, message: 'Exportación PDF iniciada.' };
+};
+
+/**
+ * Helper genérico para exportar cualquier dato estructurado como PDF.
+ *
+ * @param {object} config
+ * @param {string} config.title - Título principal del PDF.
+ * @param {Array}  config.sections - Array de secciones: { heading?, text?, keyValues?, list?, table? }
+ * @param {string} [config.fileName='export.pdf'] - Nombre del archivo.
+ * @returns {Promise<{success: boolean, error?: string}>}
+ *
+ * Ejemplo de sección:
+ *   { heading: 'Datos', keyValues: { Nombre: 'Ana', Puntaje: 8 } }
+ *   { heading: 'Resumen', text: 'Lorem ipsum...' }
+ *   { list: ['Elemento 1', 'Elemento 2'] }
+ *   { table: { headers: ['Col1','Col2'], rows: [['a','b'],['c','d']] } }
+ */
+export const exportGenericPDF = async ({ title, sections = [], fileName = 'export.pdf' }) => {
+  try {
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const contentWidth = pageWidth - margin * 2;
+    let y = margin;
+
+    const addPageIfNeeded = (needed = 8) => {
+      if (y + needed > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+      }
+    };
+
+    const writeLine = (text, opts = {}) => {
+      const { bold = false, size = 10, indent = 0 } = opts;
+      doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      doc.setFontSize(size);
+      const maxW = contentWidth - indent;
+      const lines = doc.splitTextToSize(String(text ?? ''), maxW);
+      lines.forEach((line) => {
+        addPageIfNeeded(size * 0.5 + 1);
+        doc.text(line, margin + indent, y);
+        y += size * 0.45 + 0.5;
+      });
+    };
+
+    // Título
+    writeLine(title, { bold: true, size: 16 });
+    y += 2;
+    writeLine(`Fecha: ${new Date().toLocaleString('es-ES')}`, { size: 9 });
+    y += 4;
+
+    for (const sec of sections) {
+      if (sec.heading) {
+        y += 2;
+        writeLine(sec.heading, { bold: true, size: 12 });
+        y += 1;
+      }
+
+      if (sec.text) {
+        writeLine(sec.text);
+        y += 2;
+      }
+
+      if (sec.keyValues && typeof sec.keyValues === 'object') {
+        Object.entries(sec.keyValues).forEach(([key, value]) => {
+          if (value === null || value === undefined || value === '') return;
+          let printable = value;
+          if (Array.isArray(value)) printable = value.filter(Boolean).join(', ');
+          else if (typeof value === 'object') printable = JSON.stringify(value);
+          writeLine(`${key}: ${printable}`, { indent: 2 });
+        });
+        y += 2;
+      }
+
+      if (sec.list && Array.isArray(sec.list)) {
+        sec.list.forEach((item, idx) => {
+          writeLine(`${idx + 1}. ${typeof item === 'object' ? JSON.stringify(item) : item}`, { indent: 4 });
+        });
+        y += 2;
+      }
+
+      if (sec.table) {
+        const { headers = [], rows = [] } = sec.table;
+        const colW = contentWidth / Math.max(headers.length, 1);
+        // Header
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        addPageIfNeeded(8);
+        headers.forEach((h, i) => {
+          doc.text(String(h).slice(0, 30), margin + i * colW, y);
+        });
+        y += 5;
+        // Rows
+        doc.setFont('helvetica', 'normal');
+        rows.forEach((row) => {
+          addPageIfNeeded(6);
+          row.forEach((cell, i) => {
+            doc.text(String(cell ?? '').slice(0, 35), margin + i * colW, y);
+          });
+          y += 4.5;
+        });
+        y += 3;
+      }
+    }
+
+    doc.save(fileName);
+    return { success: true };
+  } catch (error) {
+    console.error('Error generando PDF:', error);
+    return { success: false, error: error.message };
+  }
 };
 
 /**

@@ -662,18 +662,32 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
     return (completed / 5) * 100;
   };
 
-  const handleExport = (reading) => {
+  const handleExport = async (reading) => {
     if (!reading.progress) {
       alert('No hay progreso para exportar.');
       return;
     }
-    const dataStr = JSON.stringify(reading.progress, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-    const exportFileDefaultName = `progreso-${reading.titulo}.json`;
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
+    try {
+      const { exportGenericPDF } = await import('../../utils/exportUtils');
+      const sections = [{ heading: 'Lectura', keyValues: { Título: reading.titulo || 'Sin título' } }];
+      const progress = reading.progress;
+      if (typeof progress === 'object') {
+        const kv = {};
+        Object.entries(progress).forEach(([k, v]) => {
+          if (typeof v === 'object' && v !== null) kv[k] = JSON.stringify(v);
+          else kv[k] = String(v ?? '');
+        });
+        sections.push({ heading: 'Progreso', keyValues: kv });
+      }
+      await exportGenericPDF({
+        title: `Progreso de Lectura - ${reading.titulo || 'Sin título'}`,
+        sections,
+        fileName: `progreso-${(reading.titulo || 'lectura').replace(/[^a-z0-9]/gi, '_')}-${new Date().toISOString().slice(0,10)}.pdf`,
+      });
+    } catch (error) {
+      console.error('Error exportando progreso como PDF:', error);
+      alert('Error exportando el progreso');
+    }
   };
 
   if (loading) return <Container><h2 style={{ textAlign: 'center' }}>Cargando cursos...</h2></Container>;

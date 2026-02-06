@@ -130,26 +130,34 @@ const BitacoraEticaIA = () => {
     }
   }, []);
 
-  const exportBitacora = useCallback(() => {
-    const bitacoraData = {
-      timestamp: new Date().toISOString(),
-      interaccionesTutor: tutorInteractions,
-      reflexiones: {
-        verificacionFuentes,
-        procesoUsoIA,
-        reflexionEtica
-      },
-      declaraciones,
-      evaluacion: evaluarRubrica5()
-    };
-
-    const blob = new Blob([JSON.stringify(bitacoraData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bitacora-etica-ia-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportBitacora = useCallback(async () => {
+    try {
+      const { exportGenericPDF } = await import('../utils/exportUtils');
+      const evalData = evaluarRubrica5();
+      const sections = [];
+      if (tutorInteractions.length > 0) {
+        sections.push({ heading: 'Interacciones con el Tutor IA', list: tutorInteractions.map(i => typeof i === 'string' ? i : `${i.role || 'usuario'}: ${i.content || JSON.stringify(i)}`) });
+      }
+      sections.push({ heading: 'Reflexiones' });
+      if (verificacionFuentes) sections.push({ heading: 'Verificación de Fuentes', text: verificacionFuentes });
+      if (procesoUsoIA) sections.push({ heading: 'Proceso de Uso de IA', text: procesoUsoIA });
+      if (reflexionEtica) sections.push({ heading: 'Reflexión Ética', text: reflexionEtica });
+      const declResumen = Object.entries(declaraciones).filter(([, v]) => v).map(([k]) => k);
+      if (declResumen.length > 0) sections.push({ heading: 'Declaraciones', list: declResumen });
+      if (evalData) {
+        const evalKV = {};
+        if (evalData.dimensiones) Object.entries(evalData.dimensiones).forEach(([k, v]) => { evalKV[k] = `${v}/10`; });
+        if (evalData.promedioGeneral !== undefined) evalKV['Promedio General'] = `${evalData.promedioGeneral}/10`;
+        sections.push({ heading: 'Evaluación Rúbrica 5', keyValues: evalKV });
+      }
+      await exportGenericPDF({
+        title: 'Bitácora Ética de IA',
+        sections,
+        fileName: `bitacora-etica-ia-${new Date().toISOString().split('T')[0]}.pdf`,
+      });
+    } catch (error) {
+      console.error('Error exportando bitácora como PDF:', error);
+    }
   }, [tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones]);
 
   // Evaluación de la Rúbrica 5
@@ -697,7 +705,7 @@ const BitacoraEticaIA = () => {
       {/* Botón de Exportación */}
       <ExportSection>
         <ExportButton onClick={exportBitacora} theme={theme}>
-          📥 Exportar Bitácora Completa (JSON)
+          📥 Exportar Bitácora Completa (PDF)
         </ExportButton>
         <ExportHint theme={theme}>
           Descarga un registro completo de tu uso ético de IA para incluir en tu portafolio de aprendizaje.

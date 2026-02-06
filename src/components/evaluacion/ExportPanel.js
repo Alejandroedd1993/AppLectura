@@ -152,17 +152,55 @@ const ExportPanel = ({ rubricProgress = {}, theme }) => {
     }
   };
 
-  const handleExportJSON = () => {
+  const handleExportJSON = async () => {
     try {
       const stats = calculateDetailedStats(rubricProgress);
-      const json = exportToJSON(rubricProgress, stats);
+      const { exportGenericPDF } = await import('../../utils/exportUtils');
+      const sections = [];
+      // Resumen general
+      if (stats.summary) {
+        sections.push({ heading: 'Resumen General', keyValues: {
+          'Rúbricas evaluadas': `${stats.summary.evaluatedRubrics}/${stats.summary.totalRubrics}`,
+          'Total de intentos': stats.summary.totalAttempts,
+          'Promedio general': `${stats.summary.averageScore.toFixed(2)}/10`,
+          'Mediana': `${stats.summary.medianScore.toFixed(2)}/10`,
+          'Tasa de completitud': `${stats.summary.completionRate.toFixed(1)}%`,
+        }});
+      }
+      // Desglose por rúbrica
+      Object.entries(rubricProgress).forEach(([rubricId, data]) => {
+        const scores = (data.scores || []).map(s => typeof s === 'object' ? Number(s.score) : Number(s));
+        const bestScore = scores.length > 0 ? Math.max(...scores) : 0;
+        const lastScore = scores.length > 0 ? scores[scores.length - 1] : 0;
+        sections.push({ heading: rubricId, keyValues: {
+          'Promedio': `${Number(data.average || 0).toFixed(2)}/10`,
+          'Intentos': scores.length,
+          'Mejor puntaje': bestScore.toFixed(2),
+          'Último puntaje': lastScore.toFixed(2),
+        }});
+      });
+      // Fortalezas y debilidades
+      if (stats.performance?.strengths?.length > 0) {
+        sections.push({ heading: '💪 Fortalezas', list: stats.performance.strengths.map(s => `${s.rubricId}: ${s.score.toFixed(2)}/10`) });
+      }
+      if (stats.performance?.weaknesses?.length > 0) {
+        sections.push({ heading: '🎯 Áreas de Mejora', list: stats.performance.weaknesses.map(w => `${w.rubricId}: ${w.score.toFixed(2)}/10`) });
+      }
+      // Recomendaciones
+      if (stats.recommendations?.length > 0) {
+        sections.push({ heading: '💡 Recomendaciones', list: stats.recommendations.map(r => `${r.title}: ${r.description} → ${r.action}`) });
+      }
       const timestamp = new Date().toISOString().split('T')[0];
-      downloadFile(json, `evaluacion-completa-${timestamp}.json`, 'application/json;charset=utf-8;');
-      setExportStatus('✅ JSON exportado exitosamente');
+      await exportGenericPDF({
+        title: 'Reporte de Evaluación Criterial',
+        sections,
+        fileName: `evaluacion-completa-${timestamp}.pdf`,
+      });
+      setExportStatus('✅ PDF exportado exitosamente');
       setTimeout(() => setExportStatus(''), 3000);
     } catch (error) {
-      console.error('Error al exportar JSON:', error);
-      setExportStatus('❌ Error al exportar JSON');
+      console.error('Error al exportar PDF:', error);
+      setExportStatus('❌ Error al exportar PDF');
       setTimeout(() => setExportStatus(''), 3000);
     }
   };
@@ -281,12 +319,12 @@ const ExportPanel = ({ rubricProgress = {}, theme }) => {
           </ExportButton>
         </ExportCard>
 
-        {/* JSON Export */}
+        {/* PDF Export */}
         <ExportCard theme={theme}>
-          <CardIcon>💾</CardIcon>
-          <CardTitle theme={theme}>Datos Completos (JSON)</CardTitle>
+          <CardIcon>📝</CardIcon>
+          <CardTitle theme={theme}>Reporte Completo (PDF)</CardTitle>
           <CardDescription theme={theme}>
-            Archivo estructurado con metadatos, resumen ejecutivo (rúbricas evaluadas, promedio general, mediana, completitud), estadísticas avanzadas y datos completos por artefacto. Ideal para análisis programático.
+            Documento PDF con resumen ejecutivo, estadísticas por artefacto, fortalezas, áreas de mejora y recomendaciones. Ideal para portafolio y seguimiento docente.
           </CardDescription>
           <ExportButton
             theme={theme}
@@ -294,7 +332,7 @@ const ExportPanel = ({ rubricProgress = {}, theme }) => {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
-            💾 Descargar JSON
+            📝 Descargar PDF
           </ExportButton>
         </ExportCard>
 
