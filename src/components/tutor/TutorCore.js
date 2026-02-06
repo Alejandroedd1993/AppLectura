@@ -154,6 +154,13 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   const lastAssistantContentRef = useRef('');
   const _didContextHintRef = useRef(false);
 
+  // 🚀 PERF: Refs para acceder a valores actuales en callbacks memoizados
+  // sin necesidad de recrear el objeto api en cada render.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
+
   // MEJORA PEDAGÓGICA: Sistema de tutor inteligente, empático y adaptable
   // Enfoque: APOYO (no evaluación), CLARIFICACIÓN de dudas, PREGUNTAS ORGÁNICAS para profundizar
 
@@ -776,27 +783,52 @@ Adapta tu respuesta según señales del estudiante:
     return callBackendWith(messagesArr);
   }, [callBackendWith, getCondensedHistory]);
 
-  // Referencia mut able para exponer API dentro de callbacks de onAssistantMessage
+  // Referencia mutable para exponer API dentro de callbacks de onAssistantMessage
   const apiRef = useRef(null);
 
+  // 🚀 PERF: Memoizar funciones del API para estabilizar la referencia.
+  // Las funciones usan refs (messagesRef, loadingRef, lastActionInfoRef)
+  // para acceder a valores actuales sin recrearse en cada render.
+  const stableGetContext = useCallback(() => ({ lastAction: lastActionInfoRef.current }), []);
+  const stableSetContext = useCallback((ctx = {}) => {
+    try {
+      const prev = lastActionInfoRef.current || {};
+      lastActionInfoRef.current = { ...prev, ...ctx };
+    } catch { /* noop */ }
+  }, []);
+  const stableLoadMessages = useCallback((arr) => {
+    try {
+      if (!Array.isArray(arr)) return;
+      const mapped = arr.map((m, i) => ({ id: Date.now() + '-load-' + i, role: m.role || m.r || 'assistant', content: m.content || m.c || '' })).filter(m => m.content);
+      setMessages(mapped);
+      try { onMessagesChange?.(mapped); } catch { /* noop */ }
+    } catch { /* noop */ }
+  }, [onMessagesChange]);
+  const stableCancelPending = useCallback(() => {
+    requestIdRef.current += 1;
+    try { abortRef.current?.abort(); } catch { /* noop */ }
+    abortRef.current = null;
+    setLoading(false);
+    try { onBusyChange?.(false); } catch { /* noop */ }
+  }, [onBusyChange]);
+  const stableClear = useCallback(() => {
+    requestIdRef.current += 1;
+    try { abortRef.current?.abort(); } catch { /* noop */ }
+    abortRef.current = null;
+    setLoading(false);
+    try { onBusyChange?.(false); } catch { /* noop */ }
+    setMessages([]);
+    try { onMessagesChange?.([]); } catch (e) { /* noop */ }
+  }, [onBusyChange, onMessagesChange]);
+
+  // El objeto api se actualiza en cada render para exponer messages/loading actuales
+  // PERO las funciones son referencias estables (no se recrean).
   const api = apiRef.current = {
     messages,
     loading,
-    getContext: () => ({ lastAction: lastActionInfoRef.current }),
-    setContext: (ctx = {}) => {
-      try {
-        const prev = lastActionInfoRef.current || {};
-        lastActionInfoRef.current = { ...prev, ...ctx };
-      } catch { /* noop */ }
-    },
-    loadMessages: (arr) => {
-      try {
-        if (!Array.isArray(arr)) return;
-        const mapped = arr.map((m, i) => ({ id: Date.now() + '-load-' + i, role: m.role || m.r || 'assistant', content: m.content || m.c || '' })).filter(m => m.content);
-        setMessages(mapped);
-        try { onMessagesChange?.(mapped); } catch { /* noop */ }
-      } catch { /* noop */ }
-    },
+    getContext: stableGetContext,
+    setContext: stableSetContext,
+    loadMessages: stableLoadMessages,
     sendPrompt: (prompt) => {
       const containsSlur = detectHateOrSlur(prompt);
       const safePromptForModel = containsSlur ? redactHateOrSlur(prompt) : prompt;
@@ -1194,26 +1226,8 @@ Sé conciso pero informativo. Usa el contenido REAL de la conversación, no inve
       return callBackendWith(messagesArr);
     },
 
-    cancelPending: () => {
-      // Invalida cualquier petición en curso sin modificar/persistir mensajes.
-      // Útil al cambiar de texto para evitar que respuestas tardías contaminen el historial.
-      requestIdRef.current += 1;
-      try { abortRef.current?.abort(); } catch { /* noop */ }
-      abortRef.current = null;
-      setLoading(false);
-      try { onBusyChange?.(false); } catch { /* noop */ }
-    },
-    clear: () => {
-      // Si hay una petición en curso, abortarla para evitar respuestas tardías
-      // que repueblen el chat tras limpiar o al cambiar de texto.
-      requestIdRef.current += 1;
-      try { abortRef.current?.abort(); } catch { /* noop */ }
-      abortRef.current = null;
-      setLoading(false);
-      try { onBusyChange?.(false); } catch { /* noop */ }
-      setMessages([]);
-      try { onMessagesChange?.([]); } catch (e) { /* noop */ }
-    }
+    cancelPending: stableCancelPending,
+    clear: stableClear
   };
 
   // 🧠 Detección inteligente de necesidades del estudiante (OPTIMIZADA — constantes pre-compiladas)
