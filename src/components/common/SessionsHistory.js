@@ -394,19 +394,36 @@ const SessionsHistory = ({ theme }) => {
     setFilters(newFilters);
   }, []);
 
-  const handleExportSession = useCallback((session) => {
+  const handleExportSession = useCallback(async (session) => {
     try {
-      const dataStr = JSON.stringify(session, null, 2);
-      const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-      
-      const exportFileDefaultName = `session-${session.id}.json`;
-      
-      const linkElement = document.createElement('a');
-      linkElement.setAttribute('href', dataUri);
-      linkElement.setAttribute('download', exportFileDefaultName);
-      linkElement.click();
-      
-      console.log('✅ Sesión exportada:', session.id);
+      const { exportGenericPDF } = await import('../../utils/exportUtils');
+      const sections = [];
+      sections.push({ heading: 'Información de la sesión', keyValues: {
+        ID: session.id,
+        Fecha: session.timestamp ? new Date(session.timestamp).toLocaleString('es-ES') : 'N/A',
+        'Última actividad': session.lastActivity ? new Date(session.lastActivity).toLocaleString('es-ES') : 'N/A',
+      }});
+      if (session.text) {
+        sections.push({ heading: 'Texto', keyValues: {
+          Título: session.text.title || session.text.fileName || 'Sin título',
+          Tamaño: session.text.content ? `${session.text.content.length} caracteres` : 'N/A',
+        }});
+        if (session.text.content) {
+          sections.push({ text: session.text.content.slice(0, 2000) + (session.text.content.length > 2000 ? '\n[...texto truncado...]' : '') });
+        }
+      }
+      if (session.savedCitations && Object.keys(session.savedCitations).length > 0) {
+        sections.push({ heading: 'Citas guardadas', list: Object.values(session.savedCitations).map(c => typeof c === 'string' ? c : c.text || JSON.stringify(c)) });
+      }
+      if (session.analysis) {
+        sections.push({ heading: 'Análisis', keyValues: session.analysis });
+      }
+      await exportGenericPDF({
+        title: `Sesión de Lectura - ${session.text?.title || session.id}`,
+        sections,
+        fileName: `sesion-${session.id}-${new Date().toISOString().slice(0,10)}.pdf`,
+      });
+      console.log('✅ Sesión exportada como PDF:', session.id);
     } catch (error) {
       console.error('❌ Error exportando sesión:', error);
       alert('Error exportando la sesión');

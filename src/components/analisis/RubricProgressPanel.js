@@ -142,20 +142,23 @@ export default function RubricProgressPanel({ rubric, criterionFeedbacks = {}, t
     return rows.join('\n');
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     try {
       const data = buildExportData();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'progreso_rubrica.json';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
-    } catch (e) {
-      // noop
-    }
+      const { exportGenericPDF } = await import('../../utils/exportUtils');
+      const sections = [];
+      if (data.rubricId) sections.push({ keyValues: { 'Rúbrica': data.rubricId } });
+      if (data.dimensions) {
+        data.dimensions.forEach(dim => {
+          const kv = {};
+          (dim.criteria || []).forEach(c => {
+            kv[c.label || c.id] = c.nivel || '—';
+          });
+          sections.push({ heading: dim.label || dim.id, keyValues: kv });
+        });
+      }
+      await exportGenericPDF({ title: 'Progreso de Rúbrica', sections, fileName: 'progreso_rubrica.pdf' });
+    } catch (e) {}
   };
 
   const handleExportCSV = () => {
@@ -174,18 +177,20 @@ export default function RubricProgressPanel({ rubric, criterionFeedbacks = {}, t
     }
   };
 
-  const handleExportSelected = () => {
+  const handleExportSelected = async () => {
     if (!selectedDimensionId) return;
     try {
       const data = buildExportData(selectedDimensionId);
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `progreso_rubrica_${selectedDimensionId}.json`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+      const { exportGenericPDF } = await import('../../utils/exportUtils');
+      const sections = [];
+      if (data.dimensions) {
+        data.dimensions.forEach(dim => {
+          const kv = {};
+          (dim.criteria || []).forEach(c => { kv[c.label || c.id] = c.nivel || '—'; });
+          sections.push({ heading: dim.label || dim.id, keyValues: kv });
+        });
+      }
+      await exportGenericPDF({ title: `Progreso - ${selectedDimensionId}`, sections, fileName: `progreso_rubrica_${selectedDimensionId}.pdf` });
     } catch (e) {}
   };
 
@@ -261,12 +266,12 @@ export default function RubricProgressPanel({ rubric, criterionFeedbacks = {}, t
             Usar ; en CSV
           </label>
           <button data-testid="copy-rubric-progress" onClick={handleCopySummary} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Copiar resumen</button>
-          <button data-testid="export-rubric-progress" onClick={handleExport} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exportar progreso (JSON)</button>
+          <button data-testid="export-rubric-progress" onClick={handleExport} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exportar progreso (PDF)</button>
           <button data-testid="export-rubric-progress-csv" onClick={handleExportCSV} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exportar progreso (CSV)</button>
           <button data-testid="export-rubric-progress-xlsx" onClick={handleExportXLSX} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exportar (XLSX)</button>
           {selectedDimensionId && (
             <>
-              <button data-testid="export-rubric-progress-dim" onClick={handleExportSelected} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exportar dimensión (JSON)</button>
+              <button data-testid="export-rubric-progress-dim" onClick={handleExportSelected} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exportar dimensión (PDF)</button>
               <button data-testid="export-rubric-progress-csv-dim" onClick={handleExportSelectedCSV} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exportar dimensión (CSV)</button>
               <button data-testid="export-rubric-progress-xlsx-dim" onClick={handleExportSelectedXLSX} style={{ border: `1px solid ${theme?.border || '#e5e7eb'}`, background: theme?.background || '#f9fafb', color: theme?.text || '#111827', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exportar dimensión (XLSX)</button>
             </>
