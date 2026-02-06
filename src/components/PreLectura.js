@@ -37,6 +37,16 @@ const PreLectura = () => {
   const [termDefinition, setTermDefinition] = useState(null);
   const [loadingTermDefinition, setLoadingTermDefinition] = useState(false);
 
+  // Estado para secciones colapsables (todas abiertas por defecto)
+  const [collapsedSections, setCollapsedSections] = useState({});
+  const toggleSection = useCallback((sectionId) => {
+    setCollapsedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+  }, []);
+  const expandAll = useCallback(() => setCollapsedSections({}), []);
+  const collapseAll = useCallback(() => {
+    setCollapsedSections({ fase1: true, fase2: true, fase3: true, fase4: true, fuentes: true });
+  }, []);
+
   // Calcular tema (memoizado)
   const theme = useMemo(() => modoOscuro ? darkTheme : lightTheme, [modoOscuro]);
 
@@ -346,14 +356,25 @@ const PreLectura = () => {
         </PreliminaryBanner>
       )}
 
+      {/* Barra de control de secciones */}
+      <SectionToolbar>
+        <ToolbarButton onClick={expandAll} title="Expandir todas las fases">
+          📖 Expandir todo
+        </ToolbarButton>
+        <ToolbarButton onClick={collapseAll} title="Colapsar todas las fases">
+          📋 Colapsar todo
+        </ToolbarButton>
+      </SectionToolbar>
+
       {/* FASE I: CONTEXTUALIZACIÓN */}
       <Section>
-        <SectionHeader>
+        <SectionHeader $collapsed={collapsedSections.fase1} onClick={() => toggleSection('fase1')} role="button" aria-expanded={!collapsedSections.fase1} tabIndex={0} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSection('fase1'))}>
           <SectionIcon>🎯</SectionIcon>
           <SectionTitle>Fase I: Contextualización</SectionTitle>
+          <CollapseToggle $collapsed={collapsedSections.fase1} aria-hidden="true">▼</CollapseToggle>
         </SectionHeader>
 
-        <SectionContent>
+        <SectionContent $collapsed={collapsedSections.fase1}>
           <InfoGrid>
             <InfoItem>
               <Label>Género Textual</Label>
@@ -396,12 +417,13 @@ const PreLectura = () => {
 
       {/* FASE II: ANÁLISIS DE CONTENIDO Y ARGUMENTACIÓN */}
       <Section>
-        <SectionHeader>
+        <SectionHeader $collapsed={collapsedSections.fase2} onClick={() => toggleSection('fase2')} role="button" aria-expanded={!collapsedSections.fase2} tabIndex={0} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSection('fase2'))}>
           <SectionIcon>💡</SectionIcon>
           <SectionTitle>Fase II: Contenido y Argumentación</SectionTitle>
+          <CollapseToggle $collapsed={collapsedSections.fase2} aria-hidden="true">▼</CollapseToggle>
         </SectionHeader>
 
-        <SectionContent>
+        <SectionContent $collapsed={collapsedSections.fase2}>
           {argumentation.tesis_central && (
             <Highlight $darkMode={modoOscuro}>
               <HighlightLabel>Tesis Central</HighlightLabel>
@@ -510,12 +532,13 @@ const PreLectura = () => {
 
       {/* FASE III: ANÁLISIS FORMAL Y LINGÜÍSTICO */}
       <Section>
-        <SectionHeader>
+        <SectionHeader $collapsed={collapsedSections.fase3} onClick={() => toggleSection('fase3')} role="button" aria-expanded={!collapsedSections.fase3} tabIndex={0} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSection('fase3'))}>
           <SectionIcon>📖</SectionIcon>
           <SectionTitle>Fase III: Análisis Formal y Lingüístico</SectionTitle>
+          <CollapseToggle $collapsed={collapsedSections.fase3} aria-hidden="true">▼</CollapseToggle>
         </SectionHeader>
 
-        <SectionContent>
+        <SectionContent $collapsed={collapsedSections.fase3}>
           <InfoGrid>
             <InfoItem>
               <Label>Tipo de Estructura</Label>
@@ -724,12 +747,13 @@ const PreLectura = () => {
       {/* FASE IV: ANÁLISIS IDEOLÓGICO-DISCURSIVO (ACD) */}
       {(acdData.voces_representadas?.length > 0 || acdData.voces_silenciadas?.length > 0 || acdData.ideologia_subyacente) && (
         <Section>
-          <SectionHeader>
+          <SectionHeader $collapsed={collapsedSections.fase4} onClick={() => toggleSection('fase4')} role="button" aria-expanded={!collapsedSections.fase4} tabIndex={0} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSection('fase4'))}>
             <SectionIcon>ACD</SectionIcon>
             <SectionTitle>Fase IV: Análisis Ideológico-Discursivo (ACD)</SectionTitle>
+            <CollapseToggle $collapsed={collapsedSections.fase4} aria-hidden="true">▼</CollapseToggle>
           </SectionHeader>
 
-          <SectionContent>
+          <SectionContent $collapsed={collapsedSections.fase4}>
             {/* Marco Ideológico */}
             {acdData.ideologia_subyacente && (
               <ACDCard $darkMode={modoOscuro} $variant="ideology">
@@ -802,12 +826,13 @@ const PreLectura = () => {
       {/* FUENTES WEB (si aplica) */}
       {web_sources?.length > 0 && (
         <Section>
-          <SectionHeader>
+          <SectionHeader $collapsed={collapsedSections.fuentes} onClick={() => toggleSection('fuentes')} role="button" aria-expanded={!collapsedSections.fuentes} tabIndex={0} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSection('fuentes'))}>
             <SectionIcon>🌐</SectionIcon>
             <SectionTitle>Fuentes Web Consultadas</SectionTitle>
+            <CollapseToggle $collapsed={collapsedSections.fuentes} aria-hidden="true">▼</CollapseToggle>
           </SectionHeader>
 
-          <SectionContent>
+          <SectionContent $collapsed={collapsedSections.fuentes}>
             {web_summary && (
               <TextBlock $darkMode={modoOscuro}>
                 {Array.isArray(web_summary)
@@ -1055,19 +1080,60 @@ const SectionHeader = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #e0e0e0;
+  margin-bottom: ${props => props.$collapsed ? '0' : '20px'};
+  padding-bottom: ${props => props.$collapsed ? '0' : '12px'};
+  border-bottom: ${props => props.$collapsed ? 'none' : `2px solid ${props.theme?.border || '#e0e0e0'}`};
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  padding: 8px;
+  margin: -8px -8px ${props => props.$collapsed ? '-8px' : '12px'} -8px;
+
+  &:hover {
+    background: ${props => props.theme?.background || '#f0f4f8'};
+  }
 `;
 
 const SectionIcon = styled.span`
   font-size: 14px;
   font-weight: 700;
   color: #3498db;
-  background: #f8f9fa;
-  border: 1px solid #e0e0e0;
+  background: ${props => props.theme?.background || '#f8f9fa'};
+  border: 1px solid ${props => props.theme?.border || '#e0e0e0'};
   padding: 6px 10px;
   border-radius: 999px;
+`;
+
+const CollapseToggle = styled.span`
+  margin-left: auto;
+  font-size: 12px;
+  color: ${props => props.theme?.textMuted || '#999'};
+  transition: transform 0.25s ease;
+  transform: rotate(${props => props.$collapsed ? '-90deg' : '0deg'});
+`;
+
+const SectionToolbar = styled.div`
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+`;
+
+const ToolbarButton = styled.button`
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px solid ${props => props.theme?.border || '#e0e0e0'};
+  border-radius: 8px;
+  background: ${props => props.theme?.surface || 'white'};
+  color: ${props => props.theme?.textMuted || '#666'};
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: ${props => props.theme?.background || '#f0f4f8'};
+    color: ${props => props.theme?.text || '#333'};
+  }
 `;
 
 const SectionTitle = styled.h2`
@@ -1081,6 +1147,11 @@ const SectionContent = styled.div`
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow: hidden;
+  max-height: ${props => props.$collapsed ? '0' : '5000px'};
+  opacity: ${props => props.$collapsed ? '0' : '1'};
+  transition: max-height 0.35s ease, opacity 0.25s ease, margin 0.25s ease;
+  margin-top: ${props => props.$collapsed ? '0' : '0'};
 `;
 
 const InfoGrid = styled.div`
