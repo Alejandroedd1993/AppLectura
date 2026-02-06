@@ -4,10 +4,13 @@
  * @version 3.0.0 - Visualización mejorada con labels legibles y objetos formateados
  */
 
-// ─── Campos internos a excluir de las exportaciones ──────────────────
+// ─── Campos internos/técnicos a excluir de las exportaciones ─────────
 const INTERNAL_FIELDS = new Set([
   '_isPreliminary', 'currentTextoId', 'web_enriched', '_raw', '_cached',
   '_timestamp', '_hash', '_version', '_id', '_source',
+  // sync / ids técnicos (ruido para el usuario)
+  'syncType', 'sourceCourseId', 'userId', 'textId', 'textoId', 'lastSync',
+  'SyncType', 'SourceCourseId', 'UserId', 'TextId', 'TextoId', 'LastSync',
 ]);
 
 // ─── Mapeo de nombres técnicos → etiquetas legibles ─────────────────
@@ -64,15 +67,57 @@ const FIELD_LABELS = {
   sesgos: 'Sesgos',
   datos_verificados: 'Datos verificados',
   texto_actualizado: 'Texto actualizado',
+  // Progreso (camelCase/PascalCase)
+  lastResetAt: 'Ultimo reinicio',
+  LastResetAt: 'Ultimo reinicio',
+  lastActivity: 'Ultima actividad',
+  LastActivity: 'Ultima actividad',
+  ultimaActividad: 'Ultima actividad',
+  UltimaActividad: 'Ultima actividad',
+  promedioGlobal: 'Promedio global',
+  PromedioGlobal: 'Promedio global',
+  ultimaPuntuacion: 'Ultima puntuacion',
+  UltimaPuntuacion: 'Ultima puntuacion',
+  porcentaje: 'Progreso (%)',
+  Porcentaje: 'Progreso (%)',
+  activitiesProgress: 'Actividades',
+  ActivitiesProgress: 'Actividades',
+  id: 'ID',
+  Id: 'ID',
 };
 
 /** Convierte snake_case a un label legible */
 const humanizeKey = (key) => {
   if (FIELD_LABELS[key]) return FIELD_LABELS[key];
-  return key
+  const base = String(key)
     .replace(/^_+/, '')
+    // snake_case
     .replace(/_/g, ' ')
-    .replace(/\b\w/, c => c.toUpperCase());
+    // camelCase / PascalCase -> espacios antes de mayúsculas
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return base.replace(/\b\w/g, c => c.toUpperCase());
+};
+
+const isFirestoreTimestampLike = (v) => {
+  if (!v || typeof v !== 'object') return false;
+  // formato que aparece en tu captura: { type: 'firestore/timestamp/1.0', seconds, nanoseconds }
+  if (v.type === 'firestore/timestamp/1.0' && typeof v.seconds === 'number') return true;
+  // formato habitual de Firestore SDK: { seconds, nanoseconds }
+  if (typeof v.seconds === 'number' && typeof v.nanoseconds === 'number') return true;
+  return false;
+};
+
+const formatTimestamp = (v) => {
+  try {
+    const ms = (v.seconds * 1000) + Math.floor((v.nanoseconds || 0) / 1e6);
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleString('es-ES');
+  } catch {
+    return null;
+  }
 };
 
 /** Verifica si un campo debe excluirse */
@@ -242,29 +287,55 @@ const createPDFBuilder = (jsPDF) => {
    * - array de objects → cada uno como sub-bloque
    * - object → sub-labels
    */
-  const renderSmartValue = (key, value, indent = 3) => {
+  const MAX_DEPTH = 4;
+  const MAX_OBJECT_KEYS = 24;
+  const MAX_ARRAY_ITEMS = 10;
+  const MAX_STRING_LEN = 900;
+
+  const truncateString = (s) => {
+    const str = String(s ?? '');
+    if (str.length <= MAX_STRING_LEN) return str;
+    return str.slice(0, MAX_STRING_LEN) + ' ...[truncado]';
+  };
+
+  const renderSmartValue = (key, value, indent = 3, depth = 0) => {
     const label = humanizeKey(key);
 
+    // Timestamp Firestore
+    if (isFirestoreTimestampLike(value)) {
+      const formatted = formatTimestamp(value);
+      if (formatted) {
+        addLabeledValue(label, formatted, indent);
+        return;
+      }
+    }
+
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      addLabeledValue(label, String(value), indent);
+      addLabeledValue(label, truncateString(value), indent);
       return;
     }
 
     if (Array.isArray(value)) {
       if (value.length === 0) return;
       addLabel(label, indent);
-      value.forEach(item => {
+      const slice = value.slice(0, MAX_ARRAY_ITEMS);
+      slice.forEach(item => {
         if (typeof item === 'string' || typeof item === 'number') {
-          addBullet(String(item), indent + 4);
+          addBullet(truncateString(item), indent + 4);
         } else if (typeof item === 'object' && item !== null) {
           // Array de objetos: render cada propiedad como sub-bullet
           const parts = Object.entries(item)
             .filter(([k, v]) => !shouldSkipField(k, v))
             .map(([k, v]) => {
               const l = humanizeKey(k);
-              if (typeof v === 'string' || typeof v === 'number') return `${l}: ${v}`;
-              if (Array.isArray(v)) return `${l}: ${v.filter(Boolean).join(', ')}`;
-              return `${l}: ${JSON.stringify(v)}`;
+              if (isFirestoreTimestampLike(v)) {
+                const formatted = formatTimestamp(v);
+                return `${l}: ${formatted || ''}`;
+              }
+              if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return `${l}: ${truncateString(v)}`;
+              if (Array.isArray(v)) return `${l}: ${truncateString(v.filter(Boolean).join(', '))}`;
+              if (typeof v === 'object' && v !== null) return `${l}: (${Object.keys(v).length} campos)`;
+              return `${l}: ${truncateString(v)}`;
             });
           if (parts.length === 1) {
             addBullet(parts[0], indent + 4);
@@ -274,16 +345,29 @@ const createPDFBuilder = (jsPDF) => {
           }
         }
       });
+      if (value.length > MAX_ARRAY_ITEMS) {
+        addBullet(`... y ${value.length - MAX_ARRAY_ITEMS} mas`, indent + 4);
+      }
       y += 1;
       return;
     }
 
     if (typeof value === 'object' && value !== null) {
+      if (depth >= MAX_DEPTH) {
+        addLabeledValue(label, `(${Object.keys(value).length} campos)`, indent);
+        return;
+      }
+
       addLabel(label, indent);
-      Object.entries(value).forEach(([k, v]) => {
+      const entries = Object.entries(value).filter(([k, v]) => !shouldSkipField(k, v));
+      const slice = entries.slice(0, MAX_OBJECT_KEYS);
+      slice.forEach(([k, v]) => {
         if (shouldSkipField(k, v)) return;
-        renderSmartValue(k, v, indent + 4);
+        renderSmartValue(k, v, indent + 4, depth + 1);
       });
+      if (entries.length > MAX_OBJECT_KEYS) {
+        addBullet(`... y ${entries.length - MAX_OBJECT_KEYS} campos mas`, indent + 4);
+      }
       return;
     }
   };
