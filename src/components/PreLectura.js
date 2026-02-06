@@ -24,7 +24,7 @@ import NextStepCard from './common/NextStepCard';
 import { fetchTermDefinition } from '../services/termDefinitionService';
 import { generateGlossary } from '../services/glossaryService';
 import { downloadGlossaryAsPDF } from '../services/pdfGlossaryService';
-import { exportarResultados } from '../utils/exportUtils';
+import { exportarResultadosPDF } from '../utils/exportUtils';
 import { lightTheme, darkTheme } from '../styles/theme';
 
 const PreLectura = () => {
@@ -140,11 +140,29 @@ const PreLectura = () => {
     setTermDefinition(null);
   }, []);
 
-  const handleExportAnalysis = useCallback(() => {
+  const handleExportAnalysis = useCallback(async () => {
     if (completeAnalysis) {
-      exportarResultados(completeAnalysis, 'prelectura');
+      await exportarResultadosPDF(completeAnalysis, { tipo: 'prelectura' });
     }
   }, [completeAnalysis]);
+
+  const handleResetAnalysis = useCallback(() => {
+    if (!texto || texto.trim().length < 100) return;
+
+    try {
+      const textHash = btoa(encodeURIComponent(texto.substring(0, 500))).substring(0, 32);
+      const cacheKey = `glossary_cache_${textHash}`;
+      localStorage.removeItem(cacheKey);
+    } catch (err) {
+      devWarn('⚠️ Error limpiando caché de glosario:', err);
+    }
+
+    setGlossary([]);
+    setSelectedTerm(null);
+    setTermDefinition(null);
+
+    analyzeDocument(texto, null, { force: true });
+  }, [texto, analyzeDocument]);
 
   // Efecto para generar glosario cuando hay análisis
   useEffect(() => {
@@ -873,8 +891,11 @@ const PreLectura = () => {
 
       {/* Botón de Exportar Análisis Completo */}
       <ExportSection>
+        <ResetButton onClick={handleResetAnalysis} theme={theme}>
+          🔄 Reiniciar análisis
+        </ResetButton>
         <ExportButton onClick={handleExportAnalysis} theme={theme}>
-          📥 Exportar Análisis Completo
+          📄 Exportar Análisis en PDF
         </ExportButton>
       </ExportSection>
 
@@ -1461,7 +1482,33 @@ const FooterText = styled.span`
 const ExportSection = styled.div`
   display: flex;
   justify-content: center;
+  gap: 12px;
   margin: 32px 0;
+  flex-wrap: wrap;
+`;
+
+const ResetButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: ${props => props.theme?.surface || '#ffffff'};
+  color: ${props => props.theme?.text || '#2c3e50'};
+  border: 1px solid ${props => props.theme?.border || '#e0e0e0'};
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: ${props => props.theme?.background || '#f0f4f8'};
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
 `;
 
 const ExportButton = styled.button`
