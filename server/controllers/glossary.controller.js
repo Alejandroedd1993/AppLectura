@@ -116,6 +116,29 @@ function extractCandidateTerms(text) {
     'sin embargo', 'por lo tanto', 'de esta manera', 'en consecuencia'
   ]);
 
+  // --- Detectar nombres propios (autor, fuente, editorial) para excluirlos ---
+  // Nombres de persona: 2-4 palabras capitalizadas consecutivas (ej: "Elias Vante Fuente")
+  const properNameRegex = /\b(?:Dr\.?\s+|Prof\.?\s+)?([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3})\b/g;
+  const properNames = new Set();
+  let nameMatch;
+  while ((nameMatch = properNameRegex.exec(text)) !== null) {
+    const name = nameMatch[1].trim();
+    // Añadir nombre completo y cada parte
+    properNames.add(name.toLowerCase());
+    name.split(/\s+/).forEach(part => {
+      if (part.length > 2) properNames.add(part.toLowerCase());
+    });
+  }
+  // También detectar lo que viene después de "Autor:", "Fuente:", "por " seguido de mayúsculas
+  const authorPatterns = /(?:Autor|Fuente|escrito por|según|señala|afirma|plantea|argumenta)[:.]?\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,3})/gi;
+  while ((nameMatch = authorPatterns.exec(text)) !== null) {
+    const name = nameMatch[1].trim();
+    properNames.add(name.toLowerCase());
+    name.split(/\s+/).forEach(part => {
+      if (part.length > 2) properNames.add(part.toLowerCase());
+    });
+  }
+
   // Combinar y filtrar
   const allTerms = [
     ...capitalizedTerms,
@@ -141,6 +164,14 @@ function extractCandidateTerms(text) {
     // Excluir frases que empiezan con palabras funcionales muy comunes
     const functionalWords = /^(pero|después|nuestro|porque|aunque|también|además|incluso|sin embargo|no obstante)\s/i;
     if (functionalWords.test(trimmed)) return false;
+
+    // Excluir nombres propios detectados (autores, personas, fuentes)
+    if (properNames.has(lowerTrimmed)) return false;
+    // Si el término es multi-palabra y TODAS las palabras son nombres propios → excluir
+    const termParts = lowerTrimmed.split(/\s+/);
+    if (termParts.length > 1 && termParts.every(p => properNames.has(p))) return false;
+    // Si una sola palabra capitalizada coincide con nombre propio detectado → excluir
+    if (termParts.length === 1 && properNames.has(lowerTrimmed) && /^[A-ZÁÉÍÓÚÑ]/.test(trimmed)) return false;
     
     // Preferir palabras únicas o términos técnicos sobre frases
     // Si tiene más de 3 palabras y no termina en sufijo académico, probablemente es una frase común
@@ -166,9 +197,25 @@ const COMMON_SPANISH_WORDS = new Set([
   'sociedad', 'persona', 'personas', 'gobierno', 'sistema', 'proceso', 'cambio', 'momento',
   'tiempo', 'día', 'año', 'años', 'parte', 'manera', 'forma', 'vez', 'veces',
   'mundo', 'país', 'países', 'ciudad', 'ciudades', 'estado', 'estados', 'grupo', 'grupos',
+  // Sustantivos comunes que estaban colándose en el glosario
+  'necesidad', 'pensamiento', 'almacenamiento', 'pasividad', 'conocimiento', 'sentimiento',
+  'movimiento', 'crecimiento', 'nacimiento', 'tratamiento', 'comportamiento', 'funcionamiento',
+  'rendimiento', 'seguimiento', 'mantenimiento', 'establecimiento', 'reconocimiento', 'procedimiento',
+  'entendimiento', 'razonamiento', 'planteamiento', 'descubrimiento', 'acontecimiento',
+  'capacidad', 'posibilidad', 'responsabilidad', 'oportunidad', 'comunidad', 'identidad',
+  'seguridad', 'autoridad', 'voluntad', 'libertad', 'verdad', 'igualdad', 'calidad',
+  'cantidad', 'realidad', 'humanidad', 'dignidad', 'sociedad', 'propiedad', 'enfermedad',
+  'actividad', 'dificultad', 'diversidad', 'universidad', 'curiosidad', 'novedad',
+  'opinión', 'educación', 'evaluación', 'investigación', 'comunicación', 'organización',
+  'participación', 'presentación', 'preparación', 'orientación', 'motivación', 'población',
+  'imaginación', 'generación', 'ocupación', 'observación', 'adaptación',
+  'resultado', 'significado', 'contenido', 'sentido', 'acuerdo', 'recuerdo',
+  'lectura', 'escritura', 'estructura', 'cultura', 'naturaleza', 'enseñanza',
+  'aprendizaje', 'lenguaje', 'mensaje', 'paisaje', 'personaje', 'abordaje',
   // Adjetivos comunes
   'importante', 'principal', 'grande', 'grandes', 'pequeño', 'pequeños', 'bueno', 'buenos',
   'nuevo', 'nuevos', 'diferente', 'diferentes', 'general', 'generales', 'especial', 'especiales',
+  'necesario', 'posible', 'público', 'social', 'digital', 'crítico', 'propio',
   // Verbos comunes (formas infinitivo)
   'tener', 'haber', 'hacer', 'decir', 'estar', 'ser', 'poder', 'saber', 'ver', 'dar',
   'pasar', 'deber', 'querer', 'llegar', 'llevar', 'encontrar', 'llamar', 'parecer'
@@ -272,10 +319,21 @@ function selectBestTerms(candidates, text, maxTerms) {
     if (COMMON_SPANISH_WORDS.has(termLower)) {
       complexityScore -= 35;
     }
+    // PENALIZAR cada palabra del término que sea común
+    for (const w of termWords) {
+      if (COMMON_SPANISH_WORDS.has(w) && termWords.length === 1) {
+        complexityScore -= 25; // Término de una sola palabra común = muy penalizado
+      }
+    }
 
     // PENALIZAR nombres propios simples cortos (-20 puntos)
     if (/^[A-Z]/.test(term) && term.length < 8 && !term.includes(' ')) {
       complexityScore -= 20;
+    }
+
+    // PENALIZAR términos que son solo una palabra básica sin sufijo técnico (-15 puntos)
+    if (termWords.length === 1 && complexityScore < 15 && thematicScore < 15) {
+      complexityScore -= 15;
     }
 
     // PENALIZAR frecuencia muy alta (>15 apariciones = palabra común, no técnica)
@@ -302,8 +360,8 @@ function selectBestTerms(candidates, text, maxTerms) {
     };
   });
 
-  // Filtrar términos con score total negativo
-  const validScored = scored.filter(item => item.score > 0);
+  // Filtrar términos con score insuficiente (mínimo 5 para evitar términos básicos)
+  const validScored = scored.filter(item => item.score >= 5);
 
   // Ordenar por score total descendente
   validScored.sort((a, b) => b.score - a.score);
@@ -330,13 +388,19 @@ async function generateDefinitions(terms, context) {
 
   const contextPreview = context.substring(0, 1000);
   
-  const prompt = `Eres un experto en educación. Genera definiciones claras y concisas para los siguientes términos extraídos de un texto académico.
+  const prompt = `Eres un experto en educación y terminología académica. Genera definiciones claras y concisas para los siguientes términos extraídos de un texto académico.
 
 CONTEXTO DEL TEXTO:
 ${contextPreview}
 
 TÉRMINOS A DEFINIR:
 ${terms.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+INSTRUCCIONES IMPORTANTES:
+- Si algún término es un nombre propio de persona (autor, investigador, político), NO lo incluyas en la respuesta.
+- Si algún término es vocabulario cotidiano/básico (ej: "necesidad", "pensamiento", "almacenamiento"), NO lo incluyas.
+- Solo incluye términos genuinamente técnicos, académicos o especializados que un estudiante necesitaría consultar.
+- Si descartas un término, no lo reemplaces con otro.
 
 Responde SOLO con JSON válido (sin markdown, sin \`\`\`json):
 {
