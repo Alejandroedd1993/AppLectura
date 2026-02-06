@@ -1,13 +1,20 @@
-import { jsPDF } from 'jspdf';
+/* jsPDF se importa dinámicamente para no cargar ~280KB en el bundle principal */
+
+const isDev = process.env.NODE_ENV === 'development';
+const devLog = (...args) => isDev && console.log(...args);
+const devWarn = (...args) => isDev && console.warn(...args);
 
 /**
  * Genera y descarga un PDF profesional del glosario
  * @param {Array} glossary - Array de términos del glosario
  * @param {string} filename - Nombre del archivo (sin extensión)
  */
-export function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectura') {
+export async function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectura') {
   try {
-    console.log('📄 Generando PDF del glosario...');
+    devLog('📄 Generando PDF del glosario...');
+
+    // Importar jsPDF dinámicamente (~280KB solo cuando se necesita)
+    const { jsPDF } = await import('jspdf');
 
     // Crear documento PDF (A4, vertical)
     const doc = new jsPDF({
@@ -55,7 +62,7 @@ export function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectura') {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(24);
     doc.setFont('helvetica', 'bold');
-    doc.text('GLOSARIO DE TERMINOS', pageWidth / 2, 18, { align: 'center' });
+    doc.text('GLOSARIO DE TÉRMINOS', pageWidth / 2, 18, { align: 'center' });
 
     // Subtítulo
     doc.setFontSize(11);
@@ -75,7 +82,7 @@ export function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectura') {
       year: 'numeric'
     });
     
-    doc.text(`Total de terminos: ${glossary.length}`, margin, currentY);
+    doc.text(`Total de términos: ${glossary.length}`, margin, currentY);
     doc.text(`Fecha: ${fecha}`, margin, currentY + 6);
 
     currentY += 16;
@@ -210,11 +217,11 @@ export function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectura') {
     
     doc.save(pdfFilename);
     
-    console.log(`✅ PDF generado exitosamente: ${pdfFilename}`);
+    devLog(`✅ PDF generado exitosamente: ${pdfFilename}`);
     return pdfFilename;
 
   } catch (error) {
-    console.error('❌ Error generando PDF:', error);
+    devWarn('❌ Error generando PDF:', error);
     throw error;
   }
 }
@@ -224,21 +231,39 @@ export function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectura') {
  * @param {Array} glossary - Array de términos
  * @returns {Blob} - Blob del PDF para preview
  */
-export function generateGlossaryPDFBlob(_glossary) {
-  // Similar a downloadGlossaryAsPDF pero retorna blob en vez de descargar
-  // Útil para preview antes de descargar
+export async function generateGlossaryPDFBlob(glossary) {
   try {
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4'
     });
 
-    // ... misma lógica de generación ...
+    // Generar contenido básico para preview
+    doc.setFontSize(18);
+    doc.text('GLOSARIO DE TÉRMINOS', 20, 20);
+    let y = 35;
+    glossary.forEach((term, i) => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${i + 1}. ${term.termino}`, 20, y);
+      y += 7;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      const lines = doc.splitTextToSize(term.definicion, 170);
+      lines.forEach(line => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(line, 22, y);
+        y += 5;
+      });
+      y += 5;
+    });
 
     return doc.output('blob');
   } catch (error) {
-    console.error('❌ Error generando blob PDF:', error);
+    devWarn('❌ Error generando blob PDF:', error);
     throw error;
   }
 }

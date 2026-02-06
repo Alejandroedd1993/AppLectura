@@ -1,5 +1,50 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 
+const isDev = process.env.NODE_ENV === 'development';
+const devLog = (...args) => isDev && console.log(...args);
+const devWarn = (...args) => isDev && console.warn(...args);
+
+// Stopwords a nivel de módulo (evita recrear ~150 strings en cada llamada)
+const _STOPWORDS = [
+  // Adverbios terminados en -mente (obvios)
+  'absolutamente', 'actualmente', 'adecuadamente', 'ampliamente', 'anteriormente',
+  'básicamente', 'claramente', 'completamente', 'constantemente', 'correctamente',
+  'definitivamente', 'directamente', 'especialmente', 'específicamente', 'exactamente',
+  'exclusivamente', 'finalmente', 'frecuentemente', 'fundamentalmente', 'generalmente',
+  'gradualmente', 'igualmente', 'inicialmente', 'intelectualmente', 'intensamente',
+  'internamente', 'lógicamente', 'naturalmente', 'necesariamente', 'normalmente',
+  'objetivamente', 'obviamente', 'ocasionalmente', 'originalmente', 'particularmente',
+  'perfectamente', 'personalmente', 'políticamente', 'posteriormente', 'prácticamente',
+  'precisamente', 'previamente', 'principalmente', 'probablemente', 'progresivamente',
+  'proporcionalmente', 'realmente', 'recientemente', 'relativamente', 'rápidamente',
+  'seriamente', 'significativamente', 'simplemente', 'sistemáticamente', 'solamente',
+  'suficientemente', 'técnicamente', 'temporalmente', 'totalmente', 'tradicionalmente',
+  'típicamente', 'últimamente', 'únicamente', 'usualmente', 'visualmente',
+  // Sustantivos comunes abstractos
+  'actividad', 'actividades', 'aspecto', 'aspectos', 'atención', 'cambio', 'cambios',
+  'capacidad', 'capacidades', 'característica', 'características', 'caso', 'casos',
+  'condición', 'condiciones', 'conocimiento', 'conocimientos', 'consecuencia', 'consecuencias',
+  'contexto', 'cuestión', 'cuestiones', 'desarrollo', 'diferencia', 'diferencias',
+  'dificultad', 'dificultades', 'elemento', 'elementos', 'ejemplo', 'ejemplos',
+  'experiencia', 'experiencias', 'factor', 'factores', 'forma', 'formas',
+  'función', 'funciones', 'habilidad', 'habilidades', 'importancia', 'información',
+  'manera', 'maneras', 'medio', 'medios', 'modelo', 'modelos', 'momento', 'momentos',
+  'necesidad', 'necesidades', 'nivel', 'niveles', 'objetivo', 'objetivos',
+  'oportunidad', 'oportunidades', 'orden', 'parte', 'partes', 'período', 'períodos',
+  'posibilidad', 'posibilidades', 'presencia', 'problema', 'problemas', 'procedimiento',
+  'proceso', 'procesos', 'producto', 'productos', 'proyecto', 'proyectos',
+  'punto', 'puntos', 'razón', 'razones', 'recurso', 'recursos', 'relación', 'relaciones',
+  'representación', 'representaciones', 'requisito', 'requisitos', 'responsabilidad',
+  'responsabilidades', 'resultado', 'resultados', 'sentido', 'servicio', 'servicios',
+  'significado', 'sistema', 'sistemas', 'situación', 'situaciones', 'solución', 'soluciones',
+  'tendencia', 'tendencias', 'término', 'términos', 'tiempo', 'tipo', 'tipos',
+  'trabajo', 'trabajos', 'utilización', 'valor', 'valores', 'ventaja', 'ventajas',
+  // Adjetivos comunes
+  'adecuado', 'anterior', 'diferente', 'diversos', 'efectivo', 'específico',
+  'general', 'importante', 'necesario', 'nuevo', 'particular', 'posible',
+  'presente', 'principal', 'propio', 'público', 'siguiente', 'social'
+];
+
 /**
  * Genera definición individual de un término usando IA (FORMATO COMPLETO PARA PDF)
  * @param {string} term - Término a definir
@@ -51,7 +96,7 @@ IMPORTANTE:
       nivel_complejidad: parsed.nivel_complejidad || 'Intermedio'
     };
   } catch (error) {
-    console.warn(`⚠️ No se pudo generar definición IA para "${term}":`, error.message);
+    devWarn(`⚠️ No se pudo generar definición IA para "${term}":`, error.message);
     return {
       definicion: `Término académico o técnico que aparece en el texto analizado.`,
       contexto: 'Consulta el texto original para ver el contexto completo.',
@@ -70,7 +115,7 @@ IMPORTANTE:
  */
 export async function generateGlossary(fullText, _minComplexity = 5) {
   try {
-    console.log('📚 [GlossaryService] Generando glosario desde backend...');
+    devLog('📚 [GlossaryService] Generando glosario desde backend...');
     
     const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
     // Llamar al backend en vez de hacer la llamada directamente
@@ -91,7 +136,7 @@ export async function generateGlossary(fullText, _minComplexity = 5) {
     }
 
     const data = await response.json();
-    console.log(`✅ [GlossaryService] ${data.terms.length} términos generados`);
+    devLog(`✅ [GlossaryService] ${data.terms.length} términos generados`);
     
     // Mapear al formato esperado por el frontend
     const glossaryTerms = data.terms.map(term => ({
@@ -102,11 +147,11 @@ export async function generateGlossary(fullText, _minComplexity = 5) {
       categoria: 'Académico'
     }));
 
-    console.log(`✅ Glosario generado exitosamente con ${glossaryTerms.length} términos`);
+    devLog(`✅ Glosario generado exitosamente con ${glossaryTerms.length} términos`);
     return glossaryTerms;
 
   } catch (error) {
-    console.error('❌ Error generando glosario:', error.message);
+    devWarn('❌ Error generando glosario:', error.message);
     
     // Fallback: retornar array vacío
     return [];
@@ -117,50 +162,10 @@ export async function generateGlossary(fullText, _minComplexity = 5) {
  * Genera glosario básico sin IA (fallback) - AHORA CON DEFINICIONES IA
  */
 async function _generateFallbackGlossary(text) {
-  console.log('🔄 Generando glosario fallback con definiciones IA...');
+  devLog('🔄 Generando glosario fallback con definiciones IA...');
   
-  // Lista COMPLETA de palabras obvias/comunes a excluir
-  const stopwords = [
-    // Adverbios terminados en -mente (obvios)
-    'absolutamente', 'actualmente', 'adecuadamente', 'ampliamente', 'anteriormente',
-    'básicamente', 'claramente', 'completamente', 'constantemente', 'correctamente',
-    'definitivamente', 'directamente', 'especialmente', 'específicamente', 'exactamente',
-    'exclusivamente', 'finalmente', 'frecuentemente', 'fundamentalmente', 'generalmente',
-    'gradualmente', 'igualmente', 'inicialmente', 'intelectualmente', 'intensamente',
-    'internamente', 'lógicamente', 'naturalmente', 'necesariamente', 'normalmente',
-    'objetivamente', 'obviamente', 'ocasionalmente', 'originalmente', 'particularmente',
-    'perfectamente', 'personalmente', 'políticamente', 'posteriormente', 'prácticamente',
-    'precisamente', 'previamente', 'principalmente', 'probablemente', 'progresivamente',
-    'proporcionalmente', 'realmente', 'recientemente', 'relativamente', 'rápidamente',
-    'seriamente', 'significativamente', 'simplemente', 'sistemáticamente', 'solamente',
-    'suficientemente', 'técnicamente', 'temporalmente', 'totalmente', 'tradicionalmente',
-    'típicamente', 'últimamente', 'únicamente', 'usualmente', 'visualmente',
-    
-    // Sustantivos comunes abstractos
-    'actividad', 'actividades', 'aspecto', 'aspectos', 'atención', 'cambio', 'cambios',
-    'capacidad', 'capacidades', 'característica', 'características', 'caso', 'casos',
-    'condición', 'condiciones', 'conocimiento', 'conocimientos', 'consecuencia', 'consecuencias',
-    'contexto', 'cuestión', 'cuestiones', 'desarrollo', 'diferencia', 'diferencias',
-    'dificultad', 'dificultades', 'elemento', 'elementos', 'ejemplo', 'ejemplos',
-    'experiencia', 'experiencias', 'factor', 'factores', 'forma', 'formas',
-    'función', 'funciones', 'habilidad', 'habilidades', 'importancia', 'información',
-    'manera', 'maneras', 'medio', 'medios', 'modelo', 'modelos', 'momento', 'momentos',
-    'necesidad', 'necesidades', 'nivel', 'niveles', 'objetivo', 'objetivos',
-    'oportunidad', 'oportunidades', 'orden', 'parte', 'partes', 'período', 'períodos',
-    'posibilidad', 'posibilidades', 'presencia', 'problema', 'problemas', 'procedimiento',
-    'proceso', 'procesos', 'producto', 'productos', 'proyecto', 'proyectos',
-    'punto', 'puntos', 'razón', 'razones', 'recurso', 'recursos', 'relación', 'relaciones',
-    'representación', 'representaciones', 'requisito', 'requisitos', 'responsabilidad',
-    'responsabilidades', 'resultado', 'resultados', 'sentido', 'servicio', 'servicios',
-    'significado', 'sistema', 'sistemas', 'situación', 'situaciones', 'solución', 'soluciones',
-    'tendencia', 'tendencias', 'término', 'términos', 'tiempo', 'tipo', 'tipos',
-    'trabajo', 'trabajos', 'utilización', 'valor', 'valores', 'ventaja', 'ventajas',
-    
-    // Adjetivos comunes
-    'adecuado', 'anterior', 'diferente', 'diversos', 'efectivo', 'específico',
-    'general', 'importante', 'necesario', 'nuevo', 'particular', 'posible',
-    'presente', 'principal', 'propio', 'público', 'siguiente', 'social'
-  ];
+  // stopwords se definen a nivel de módulo (_STOPWORDS) para evitar recrear ~150 strings en cada llamada
+  const stopwords = _STOPWORDS;
   
   // Normalizar espaciado (evitar palabras pegadas como "Instruccionespara")
   const normalizedText = text
@@ -201,11 +206,11 @@ async function _generateFallbackGlossary(text) {
     .slice(0, 6); // Reducido a 6 términos selectos
 
   if (uniqueWords.length === 0) {
-    console.log('⚠️ No se encontraron términos válidos en el texto');
+    devLog('⚠️ No se encontraron términos válidos en el texto');
     return [];
   }
 
-  console.log(`🔍 Generando definiciones con IA para ${uniqueWords.length} términos...`);
+  devLog(`🔍 Generando definiciones con IA para ${uniqueWords.length} términos...`);
 
   // Generar definiciones con IA para cada término en paralelo
   const termsWithDefinitions = await Promise.all(
@@ -228,7 +233,7 @@ async function _generateFallbackGlossary(text) {
     })
   );
 
-  console.log(`✅ Definiciones generadas para ${termsWithDefinitions.length} términos`);
+  devLog(`✅ Definiciones generadas para ${termsWithDefinitions.length} términos`);
   return termsWithDefinitions;
 }
 
@@ -355,5 +360,5 @@ export function downloadGlossaryAsFile(glossary, filename = 'glosario') {
   document.body.removeChild(link);
   
   URL.revokeObjectURL(url);
-  console.log(`📥 Glosario descargado: ${link.download}`);
+  devLog(`📥 Glosario descargado: ${link.download}`);
 }

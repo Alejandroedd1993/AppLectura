@@ -1,14 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
 
-const PanelContainer = styled(motion.div)`
+const PanelContainer = styled.div`
   background-color: ${props => props.theme.surface};
   border-radius: 12px;
   padding: 20px;
   margin-top: 20px;
   border: 1px solid ${props => props.theme.border};
   box-shadow: 0 2px 8px ${props => props.theme.shadow};
+  animation: glossaryFadeIn 0.3s ease-out;
+
+  @keyframes glossaryFadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 `;
 
 const Header = styled.div`
@@ -29,9 +38,12 @@ const Title = styled.h4`
   font-size: 1.1rem;
 `;
 
-const ToggleIcon = styled(motion.span)`
+const ToggleIcon = styled.span`
   font-size: 1rem;
   color: ${props => props.theme.textMuted};
+  display: inline-block;
+  transition: transform 0.2s ease;
+  transform: rotate(${props => props.$expanded ? '180deg' : '0deg'});
 `;
 
 const Badge = styled.span`
@@ -121,16 +133,27 @@ const TermsList = styled.div`
   }
 `;
 
-const TermCard = styled(motion.div)`
+const TermCard = styled.div`
   background-color: ${props => props.theme.background};
   border: 1px solid ${props => props.theme.border};
   border-radius: 8px;
   padding: 12px;
   transition: all 0.2s;
-  
+  animation: termSlideIn 0.25s ease-out backwards;
+  animation-delay: ${props => (props.$index || 0) * 0.04}s;
+
+  @keyframes termSlideIn {
+    from { opacity: 0; transform: translateX(-12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
   &:hover {
     border-color: ${props => props.theme.primary}50;
     box-shadow: 0 2px 6px ${props => props.theme.shadow};
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 `;
 
@@ -227,12 +250,20 @@ const GlossaryPanel = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('relevance'); // 'relevance' | 'alphabetical' | 'category'
 
+  const toggleExpanded = useCallback(() => setIsExpanded(prev => !prev), []);
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpanded();
+    }
+  }, [toggleExpanded]);
+
   // Filtrar y ordenar términos
   const processedTerms = useMemo(() => {
-    // Asegurar que todos los términos tengan un ID único
+    // Asegurar que todos los términos tengan un ID único (estable)
     let filtered = glossary.map((term, idx) => ({
       ...term,
-      id: term.id || `term_${idx}_${Date.now()}`
+      id: term.id || `term_${idx}_${term.termino || idx}`
     }));
 
     // Filtrar por búsqueda
@@ -268,11 +299,14 @@ const GlossaryPanel = ({
   return (
     <PanelContainer
       theme={theme}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
     >
-      <Header onClick={() => setIsExpanded(!isExpanded)}>
+      <Header
+        onClick={toggleExpanded}
+        role="button"
+        aria-expanded={isExpanded}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+      >
         <Title theme={theme}>
           📚 Glosario Dinámico
           {glossary.length > 0 && (
@@ -281,22 +315,15 @@ const GlossaryPanel = ({
         </Title>
         <ToggleIcon
           theme={theme}
-          animate={{ rotate: isExpanded ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
+          $expanded={isExpanded}
+          aria-hidden="true"
         >
           ▼
         </ToggleIcon>
       </Header>
 
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            style={{ overflow: 'hidden' }}
-          >
+      {isExpanded && (
+          <div>
             {loading ? (
               <LoadingState theme={theme}>
                 <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⏳</div>
@@ -319,6 +346,7 @@ const GlossaryPanel = ({
                     placeholder="🔍 Buscar en el glosario..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    aria-label="Buscar término en el glosario"
                   />
                   <Button
                     theme={theme}
@@ -348,9 +376,7 @@ const GlossaryPanel = ({
                       <TermCard
                         key={term.id}
                         theme={theme}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.2, delay: index * 0.05 }}
+                        $index={index}
                       >
                         <TermHeader>
                           <TermName 
@@ -389,11 +415,10 @@ const GlossaryPanel = ({
                 )}
               </>
             )}
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
     </PanelContainer>
   );
 };
 
-export default GlossaryPanel;
+export default React.memo(GlossaryPanel);

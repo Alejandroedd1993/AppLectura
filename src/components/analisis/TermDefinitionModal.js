@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
 
-const Overlay = styled(motion.div)`
+const Overlay = styled.div`
   position: fixed;
   top: 0;
   left: 0;
@@ -14,9 +13,19 @@ const Overlay = styled(motion.div)`
   justify-content: center;
   z-index: 9999;
   padding: 20px;
+  animation: overlayFadeIn 0.2s ease-out;
+
+  @keyframes overlayFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 `;
 
-const ModalContainer = styled(motion.div)`
+const ModalContainer = styled.div`
   background-color: ${props => props.theme.background};
   border-radius: 16px;
   padding: 24px;
@@ -26,6 +35,16 @@ const ModalContainer = styled(motion.div)`
   overflow-y: auto;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
   border: 1px solid ${props => props.theme.border};
+  animation: modalScaleIn 0.25s ease-out;
+
+  @keyframes modalScaleIn {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 `;
 
 const Header = styled.div`
@@ -148,84 +167,108 @@ const TermDefinitionModal = ({
   loading,
   theme 
 }) => {
+  const modalRef = useRef(null);
+  const closeButtonRef = useRef(null);
+
+  // Escape key handler
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  }, [onClose]);
+
+  // Focus trap + body scroll lock
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevActive = document.activeElement;
+    // Focus close button on open
+    closeButtonRef.current?.focus();
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+      prevActive?.focus?.();
+    };
+  }, [isOpen, handleKeyDown]);
+
+  if (!isOpen) return null;
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Overlay
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-        >
-          <ModalContainer
+    <Overlay onClick={onClose}>
+      <ModalContainer
+        ref={modalRef}
+        theme={theme}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="term-modal-title"
+      >
+        <Header>
+          <Title theme={theme} id="term-modal-title">
+            📖 {term}
+          </Title>
+          <CloseButton
+            ref={closeButtonRef}
             theme={theme}
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={onClose}
+            aria-label="Cerrar modal de definición"
           >
-            <Header>
-              <Title theme={theme}>
-                📖 {term}
-              </Title>
-              <CloseButton theme={theme} onClick={onClose}>
-                ×
-              </CloseButton>
-            </Header>
+            ×
+          </CloseButton>
+        </Header>
 
-            {loading ? (
-              <LoadingState theme={theme}>
-                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⏳</div>
-                <div>Generando definición contextual...</div>
-              </LoadingState>
-            ) : definition ? (
-              <>
-                {definition.definicion && (
-                  <Section>
-                    <SectionTitle theme={theme}>💡 Definición</SectionTitle>
-                    <Content theme={theme}>{definition.definicion}</Content>
-                  </Section>
-                )}
-
-                {definition.contexto_en_texto && (
-                  <Section>
-                    <SectionTitle theme={theme}>📄 En este texto</SectionTitle>
-                    <Content theme={theme}>{definition.contexto_en_texto}</Content>
-                  </Section>
-                )}
-
-                {definition.conceptos_relacionados && definition.conceptos_relacionados.length > 0 && (
-                  <Section>
-                    <SectionTitle theme={theme}>🔗 Conceptos relacionados</SectionTitle>
-                    <TagContainer>
-                      {definition.conceptos_relacionados.map((concepto, idx) => (
-                        <Tag key={idx} theme={theme}>{concepto}</Tag>
-                      ))}
-                    </TagContainer>
-                  </Section>
-                )}
-
-                {definition.nivel_complejidad && (
-                  <Section>
-                    <SectionTitle theme={theme}>📊 Nivel de complejidad</SectionTitle>
-                    <Content theme={theme}>{definition.nivel_complejidad}</Content>
-                  </Section>
-                )}
-
-                <Section style={{ marginTop: '20px' }}>
-                  <ActionButton theme={theme} onClick={() => onWebSearch(term)}>
-                    🌐 Buscar más información en web
-                  </ActionButton>
-                </Section>
-              </>
-            ) : (
-              <Content theme={theme}>No se pudo cargar la definición.</Content>
+        {loading ? (
+          <LoadingState theme={theme}>
+            <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⏳</div>
+            <div>Generando definición contextual...</div>
+          </LoadingState>
+        ) : definition ? (
+          <>
+            {definition.definicion && (
+              <Section>
+                <SectionTitle theme={theme}>💡 Definición</SectionTitle>
+                <Content theme={theme}>{definition.definicion}</Content>
+              </Section>
             )}
-          </ModalContainer>
-        </Overlay>
-      )}
-    </AnimatePresence>
+
+            {definition.contexto_en_texto && (
+              <Section>
+                <SectionTitle theme={theme}>📄 En este texto</SectionTitle>
+                <Content theme={theme}>{definition.contexto_en_texto}</Content>
+              </Section>
+            )}
+
+            {definition.conceptos_relacionados && definition.conceptos_relacionados.length > 0 && (
+              <Section>
+                <SectionTitle theme={theme}>🔗 Conceptos relacionados</SectionTitle>
+                <TagContainer>
+                  {definition.conceptos_relacionados.map((concepto, idx) => (
+                    <Tag key={idx} theme={theme}>{concepto}</Tag>
+                  ))}
+                </TagContainer>
+              </Section>
+            )}
+
+            {definition.nivel_complejidad && (
+              <Section>
+                <SectionTitle theme={theme}>📊 Nivel de complejidad</SectionTitle>
+                <Content theme={theme}>{definition.nivel_complejidad}</Content>
+              </Section>
+            )}
+
+            <Section style={{ marginTop: '20px' }}>
+              <ActionButton theme={theme} onClick={() => onWebSearch(term)}>
+                🌐 Buscar más información en web
+              </ActionButton>
+            </Section>
+          </>
+        ) : (
+          <Content theme={theme}>No se pudo cargar la definición.</Content>
+        )}
+      </ModalContainer>
+    </Overlay>
   );
 };
 
-export default TermDefinitionModal;
+export default React.memo(TermDefinitionModal);
