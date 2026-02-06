@@ -630,6 +630,50 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
       backendUrl={BACKEND_URL}
     >
       {(api) => {
+        const exportPdf = () => {
+          try {
+            const msgs = api.messages;
+            if (!msgs || !msgs.length) return;
+
+            const rows = msgs.map((m, idx) => {
+              const role = m.role === 'user' ? 'Estudiante' : 'Tutor';
+              return `<div class="msg">
+  <div class="meta">${idx + 1}. ${role}</div>
+  <div class="content">${escapeHtml(m.content).replace(/\n/g, '<br/>')}</div>
+</div>`;
+            }).join('\n');
+
+            const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Conversación Tutor</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+    h1 { margin: 0 0 16px 0; font-size: 18px; }
+    .meta { font-weight: 600; margin-bottom: 4px; }
+    .msg { margin-bottom: 14px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; }
+    .content { line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>Conversación con Tutor Inteligente</h1>
+  <div style="margin-bottom: 10px; font-size: 12px; color: #555;">Exportado: ${new Date().toLocaleString('es-ES')}</div>
+  ${rows}
+</body>
+</html>`;
+
+            const w = window.open('', '_blank', 'width=900,height=1200');
+            if (!w) return;
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
+            w.focus();
+            w.print();
+          } catch (err) {
+            console.error('[TutorDock] Error al exportar PDF:', err);
+          }
+        };
         return (
           <>
             <TutorDockEffects
@@ -779,6 +823,15 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
 
                     {/* ── Fila 3: Exportar y gestión ── */}
                     <SettingsRow>
+                      <ActionButton
+                        onClick={exportPdf}
+                        disabled={!api.messages || api.messages.length === 0}
+                        style={{ background: '#0f766e', color: 'white' }}
+                        title="Exportar conversación como PDF (vista imprimible)"
+                      >
+                        🖨️ Exportar PDF
+                      </ActionButton>
+
                       <ActionButton
                         onClick={() => {
                           try {
