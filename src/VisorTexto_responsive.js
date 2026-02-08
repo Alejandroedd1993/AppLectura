@@ -6,6 +6,7 @@ import { estimarTiempoLectura } from './utils/textAnalysisMetrics';
 import { AppContext } from './context/AppContext';
 import { applyStructureToText } from './services/textStructureService';
 import PDFViewer from './components/PDFViewer';
+import { useReadingTimeTracker } from './hooks/useReadingTimeTracker';
 import './setupPdfWorker';
 // Eliminado sistema de anotaciones persistentes (resaltado)
 
@@ -533,7 +534,15 @@ const ProgressBar = styled.div`
 `;
 
 function VisorTextoResponsive({ texto, onParagraphClick }) {
-  const { textStructure, archivoActual, saveCitation, completeAnalysis, currentTextoId } = useContext(AppContext); // 🆕 Obtener estructura, archivo, análisis y función para guardar citas
+  const { textStructure, archivoActual, saveCitation, completeAnalysis, currentTextoId, currentUser, userData } = useContext(AppContext);
+
+  // 🆕 Bug 6 FIX: Medir tiempo real de lectura (solo estudiantes con texto activo)
+  const isStudent = userData?.role === 'estudiante';
+  useReadingTimeTracker({
+    textoId: currentTextoId,
+    userId: currentUser?.uid,
+    isActive: isStudent && !!texto && !!currentTextoId
+  });
 
   const [_enfoque, setEnfoque] = useState(false);
   const [selectionInfo, setSelectionInfo] = useState(null); // {x,y,text}

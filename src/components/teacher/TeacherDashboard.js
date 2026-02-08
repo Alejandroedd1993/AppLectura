@@ -7,8 +7,9 @@ import {
   backfillCourseProgressSourceCourseId,
   createCourse,
   getCourseMetrics,
-  getCursosDocente,
-  getTextosDocente,
+  subscribeToCursosDocente,
+  subscribeToDocenteTextos,
+  subscribeToCourseStudents,
   uploadTexto,
   deleteTextEverywhere,
   deleteCourse,
@@ -312,26 +313,42 @@ function TeacherDashboard() {
     };
   }, [showFeedback]);
 
-  const loadSetup = useCallback(async () => {
+  // 🔄 Bug 8 FIX: Listeners en tiempo real para cursos y textos
+  // Reemplaza loadSetup one-shot por onSnapshot listeners
+  useEffect(() => {
     if (!docenteUid) return;
     setLoadingCourses(true);
-    try {
-      const [cursos, textosDocente] = await Promise.all([
-        getCursosDocente(docenteUid),
-        getTextosDocente(docenteUid)
-      ]);
+    let initialCursosLoaded = false;
+    let initialTextosLoaded = false;
+
+    const unsubCursos = subscribeToCursosDocente(docenteUid, (cursos) => {
       setCourses(cursos);
-      setTextos(textosDocente);
-      if (cursos.length) {
-        setSelectedCourseId(prev => prev || cursos[0].id);
+      if (!initialCursosLoaded) {
+        initialCursosLoaded = true;
+        if (cursos.length) {
+          setSelectedCourseId(prev => prev || cursos[0].id);
+        }
+        if (initialTextosLoaded) setLoadingCourses(false);
       }
-    } catch (error) {
-      console.error('Error cargando cursos/docente:', error);
-      showFeedback('error', error.message || 'No se pudieron cargar los cursos');
-    } finally {
-      setLoadingCourses(false);
-    }
-  }, [docenteUid, showFeedback]);
+    });
+
+    const unsubTextos = subscribeToDocenteTextos(docenteUid, (textosDocente) => {
+      setTextos(textosDocente);
+      if (!initialTextosLoaded) {
+        initialTextosLoaded = true;
+        if (initialCursosLoaded) setLoadingCourses(false);
+      }
+    });
+
+    // Fallback: si no llegan datos en 8s, desactivar loading
+    const fallbackTimer = setTimeout(() => setLoadingCourses(false), 8000);
+
+    return () => {
+      unsubCursos();
+      unsubTextos();
+      clearTimeout(fallbackTimer);
+    };
+  }, [docenteUid]);
 
   const loadMetrics = useCallback(async (courseId) => {
     if (!courseId) {
@@ -355,14 +372,34 @@ function TeacherDashboard() {
     }
   }, [showFeedback]);
 
+  // 🔄 Bug 8 FIX: Listener en tiempo real para estudiantes del curso seleccionado.
+  // Cuando cambia la subcollection de students, recalcula métricas con debounce.
+  const metricsDebounceRef = useRef(null);
   useEffect(() => {
-    loadSetup();
-  }, [loadSetup]);
-
-  useEffect(() => {
-    if (selectedCourseId) {
-      loadMetrics(selectedCourseId);
+    if (!selectedCourseId) {
+      setCourseMetrics(null);
+      return;
     }
+
+    // Carga inicial inmediata
+    loadMetrics(selectedCourseId);
+
+    // Listener en subcollection de estudiantes
+    let skipFirst = true; // evitar doble carga en el montaje
+    const unsubStudents = subscribeToCourseStudents(selectedCourseId, (_students) => {
+      if (skipFirst) { skipFirst = false; return; }
+      // Debounce de 2s para no recargar métricas en cada micro-cambio
+      clearTimeout(metricsDebounceRef.current);
+      metricsDebounceRef.current = setTimeout(() => {
+        console.log('🔄 [Dashboard] Cambio detectado en estudiantes, recargando métricas...');
+        loadMetrics(selectedCourseId);
+      }, 2000);
+    });
+
+    return () => {
+      unsubStudents();
+      clearTimeout(metricsDebounceRef.current);
+    };
   }, [selectedCourseId, loadMetrics]);
 
   const handleCourseSelect = (courseId) => {
@@ -440,9 +477,7 @@ function TeacherDashboard() {
       setShowUploadModal(false);
       setNewTextForm({ titulo: '', autor: '', genero: '', file: null });
 
-      // Recargar textos
-      const updatedTextos = await getTextosDocente(docenteUid);
-      setTextos(updatedTextos);
+      // 🔄 Los textos se actualizan automáticamente vía listener en tiempo real
 
     } catch (error) {
       console.error('Error subiendo texto:', error);
@@ -1196,8 +1231,8 @@ function TeacherDashboard() {
               <SectionLabel>Mis cursos</SectionLabel>
               <SectionSub>Gestiona tus grupos y códigos</SectionSub>
             </div>
-            <ActionButton type="button" onClick={loadSetup} disabled={loadingCourses}>
-              {loadingCourses ? 'Actualizando...' : 'Actualizar'}
+            <ActionButton type="button" onClick={() => selectedCourseId && loadMetrics(selectedCourseId)} disabled={loadingCourses || loadingMetrics}>
+              {loadingCourses ? 'Actualizando...' : '↻ Actualizar'}
             </ActionButton>
           </SectionHeader>
 

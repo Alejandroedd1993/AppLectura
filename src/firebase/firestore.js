@@ -981,6 +981,53 @@ export async function getEvaluacionesEstudiante(estudianteUid, textoId) {
 }
 
 // ============================================
+// ACTUALIZACIÓN ATÓMICA DE TIEMPO DE LECTURA
+// ============================================
+
+/**
+ * 🆕 Bug 6 FIX: Incrementa atómicamente el tiempo de lectura usando Firestore increment().
+ * Se llama desde useReadingTimeTracker periódicamente y al desmontar el visor.
+ *
+ * @param {string} estudianteUid
+ * @param {string} textoId
+ * @param {number} deltaMinutes – minutos a sumar (puede ser fraccionario, ej. 0.5)
+ */
+export async function updateReadingTime(estudianteUid, textoId, deltaMinutes) {
+  if (!estudianteUid || !textoId || !deltaMinutes || deltaMinutes <= 0) return;
+  if (__firestoreWritesDisabled) return;
+
+  const progressRef = doc(db, 'students', estudianteUid, 'progress', textoId);
+
+  try {
+    await updateDoc(progressRef, {
+      tiempoLecturaTotal: increment(deltaMinutes),
+      tiempoTotal: increment(deltaMinutes),
+      tiempo_total_min: increment(deltaMinutes),
+      ultima_actividad: serverTimestamp()
+    });
+    console.log(`⏱️ [Firestore] Tiempo lectura +${deltaMinutes.toFixed(2)} min → ${textoId}`);
+  } catch (error) {
+    // Si el documento no existe aún, crearlo con merge
+    if (error?.code === 'not-found') {
+      try {
+        await setDoc(progressRef, {
+          tiempoLecturaTotal: deltaMinutes,
+          tiempoTotal: deltaMinutes,
+          tiempo_total_min: deltaMinutes,
+          ultima_actividad: serverTimestamp(),
+          primera_actividad: serverTimestamp()
+        }, { merge: true });
+        console.log(`⏱️ [Firestore] Doc creado con tiempo: ${deltaMinutes.toFixed(2)} min → ${textoId}`);
+      } catch (setError) {
+        console.error('❌ [Firestore] Error creando doc de tiempo:', setError);
+      }
+    } else if (!__isPermissionDeniedError(error)) {
+      console.error('❌ [Firestore] Error actualizando tiempo:', error);
+    }
+  }
+}
+
+// ============================================
 // LISTENERS EN TIEMPO REAL
 // ============================================
 
@@ -1026,6 +1073,53 @@ export function subscribeToDocenteTextos(docenteUid, callback) {
     callback(textos);
   }, (error) => {
     console.error('❌ Error en listener de textos:', error);
+  });
+}
+
+/**
+ * 🆕 Bug 8 FIX: Suscribe a la lista de cursos de un docente (real-time).
+ * Reemplaza getCursosDocente para el dashboard.
+ * @param {string} docenteUid
+ * @param {Function} callback
+ * @returns {Function} unsubscribe
+ */
+export function subscribeToCursosDocente(docenteUid, callback) {
+  const q = query(
+    collection(db, 'courses'),
+    where('docenteUid', '==', docenteUid),
+    orderBy('createdAt', 'desc')
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    const cursos = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+    callback(cursos);
+  }, (error) => {
+    console.error('❌ Error en listener de cursos:', error);
+  });
+}
+
+/**
+ * 🆕 Bug 8 FIX: Suscribe a cambios en la subcollection de estudiantes de un curso.
+ * Útil para detectar inscripciones, aprobaciones y cambios de estado en tiempo real.
+ * @param {string} courseId
+ * @param {Function} callback - recibe array de estudiantes
+ * @returns {Function} unsubscribe
+ */
+export function subscribeToCourseStudents(courseId, callback) {
+  const studentsRef = collection(db, 'courses', courseId, 'students');
+
+  return onSnapshot(studentsRef, (snapshot) => {
+    const students = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      estudianteUid: docSnap.id,
+      ...docSnap.data()
+    }));
+    callback(students);
+  }, (error) => {
+    console.error('❌ Error en listener de estudiantes del curso:', error);
   });
 }
 

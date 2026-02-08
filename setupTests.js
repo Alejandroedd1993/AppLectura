@@ -60,6 +60,7 @@ jest.mock('firebase/firestore', () => ({
   persistentMultipleTabManager: jest.fn(() => ({})),
   connectFirestoreEmulator: jest.fn(),
   collection: jest.fn(() => ({})),
+  collectionGroup: jest.fn(() => ({})),
   doc: jest.fn(() => ({ id: 'test-doc' })),
   getDoc: jest.fn(() => Promise.resolve({ exists: () => false, data: () => ({}) })),
   getDocs: jest.fn(() => Promise.resolve({ docs: [] })),
@@ -67,6 +68,10 @@ jest.mock('firebase/firestore', () => ({
   updateDoc: jest.fn(() => Promise.resolve()),
   deleteDoc: jest.fn(() => Promise.resolve()),
   addDoc: jest.fn(() => Promise.resolve({ id: 'test-doc' })),
+  increment: jest.fn((n) => n),
+  writeBatch: jest.fn(() => ({ set: jest.fn(), update: jest.fn(), delete: jest.fn(), commit: jest.fn(() => Promise.resolve()) })),
+  arrayUnion: jest.fn((...args) => args),
+  arrayRemove: jest.fn((...args) => args),
   runTransaction: jest.fn((db, fn) => fn({
     get: jest.fn(() => Promise.resolve({ exists: () => false, data: () => ({}) })),
     set: jest.fn(),
@@ -74,8 +79,10 @@ jest.mock('firebase/firestore', () => ({
     delete: jest.fn()
   })),
   onSnapshot: jest.fn((docRef, callback) => {
-    // Simular snapshot vacío
-    callback({ exists: () => false, data: () => ({}) });
+    // Simular snapshot vacío (soporta tanto docs individuales como queries)
+    if (typeof callback === 'function') {
+      callback({ exists: () => false, data: () => ({}), docs: [] });
+    }
     return jest.fn(); // unsubscribe
   }),
   query: jest.fn(() => ({})),
