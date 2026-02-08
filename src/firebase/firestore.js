@@ -2373,29 +2373,56 @@ export async function getCourseMetrics(courseId, options = {}) {
             const rubricKey = rubricMapping[artKey];
             const rubric = rubricProgress[rubricKey] || {};
             
-            // Obtener score: prioridad artifact.score > lastScore > rubric.average
+            // 🔧 FIX: Obtener score con prioridad correcta
+            // art.score puede ser 0 por bug legacy → no usar si es 0
+            // Prioridad: submitted score > lastScore > rubric.average > rubric.scores último > summative
             let rubricScore = 0;
-            if (art.score !== undefined) rubricScore = art.score;
-            else if (art.lastScore !== undefined) rubricScore = art.lastScore;
+            if (art.submitted && art.score > 0) rubricScore = art.score;
+            else if (art.lastScore > 0) rubricScore = art.lastScore;
+            else if (art.score > 0) rubricScore = art.score;
             else if (rubric.average > 0) rubricScore = rubric.average;
             else if (rubric.scores?.length > 0) {
               const lastEntry = rubric.scores[rubric.scores.length - 1];
-              rubricScore = typeof lastEntry === 'object' ? lastEntry.score : lastEntry;
+              rubricScore = typeof lastEntry === 'object' ? (lastEntry.score || 0) : (lastEntry || 0);
+            }
+            // 🆕 Fallback: ensayo sumativo (summative) si existe
+            if (rubricScore <= 0 && rubric.summative?.status === 'graded' && rubric.summative?.score > 0) {
+              rubricScore = Number(rubric.summative.score) || 0;
+            }
+            
+            // 🆕 Si el docente hizo override, usar ese como score definitivo
+            if (art.teacherOverrideScore > 0) {
+              rubricScore = art.teacherOverrideScore;
             }
             
             enrichedArtifacts[artKey] = {
               ...art,
               rubricScore: rubricScore || 0,
               attempts: art.attempts || rubric.scores?.length || 0,
-              submitted: art.submitted || false
+              submitted: art.submitted || false,
+              teacherOverrideScore: art.teacherOverrideScore || null
             };
           });
           
+          // 🆕 Incluir ensayo sumativo en lecturaDetails para la vista overview
+          const summativeEssays = [];
+          ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach(rubricKey => {
+            const rubric = rubricProgress[rubricKey] || {};
+            if (rubric.summative?.status === 'graded' && rubric.summative?.score > 0) {
+              summativeEssays.push({
+                rubricId: rubricKey,
+                score: Number(rubric.summative.score) || 0,
+                submitted: true
+              });
+            }
+          });
+
           lecturaDetails[textoId] = {
             avance: data.porcentaje || data.progress || data.avancePorcentaje || 0,
             score: data.score || data.ultimaPuntuacion || 0,
             tiempo: data.tiempoLecturaTotal || data.tiempoTotal || 0,
             artifacts: enrichedArtifacts,
+            summativeEssays,
             lastUpdated: data.lastUpdated || data.lastSync
           };
         });
@@ -3021,14 +3048,24 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
     const getRubricScore = (rubricKey, artifactData) => {
       const rubric = rubricProgress[rubricKey];
       
-      // Prioridad 1: Si el artefacto está entregado, usar su score final
-      if (artifactData?.submitted && artifactData?.score !== undefined) {
+      // Prioridad 1: Si el artefacto está entregado y tiene score válido (>0)
+      if (artifactData?.submitted && artifactData?.score > 0) {
         return artifactData.score;
       }
       
-      // Prioridad 2: lastScore del artefacto (más reciente)
-      if (artifactData?.lastScore !== undefined) {
+      // Prioridad 2: lastScore del artefacto (más reciente, debe ser >0)
+      if (artifactData?.lastScore > 0) {
         return artifactData.lastScore;
+      }
+      
+      // Prioridad 2.5: score del artefacto si es >0 (puede venir de evaluación)
+      if (artifactData?.score > 0) {
+        return artifactData.score;
+      }
+
+      // Prioridad 2.7: teacherOverrideScore (nota editada por el docente)
+      if (artifactData?.teacherOverrideScore > 0) {
+        return artifactData.teacherOverrideScore;
       }
       
       // Prioridad 3: Promedio de la rúbrica

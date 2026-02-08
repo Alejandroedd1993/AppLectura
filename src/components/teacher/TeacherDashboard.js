@@ -77,6 +77,10 @@ function TeacherDashboard() {
   const [teacherComment, setTeacherComment] = useState('');
   const [savingComment, setSavingComment] = useState(false);
 
+  // 🆕 Estados para edición de nota por el docente
+  const [teacherScoreEdit, setTeacherScoreEdit] = useState('');
+  const [savingScore, setSavingScore] = useState(false);
+
   // 🆕 Estados para exportación
   const [exporting, setExporting] = useState(false);
 
@@ -787,9 +791,12 @@ function TeacherDashboard() {
       history,
       submitted: artifact.submitted,
       score: artifact.rubricScore,
-      teacherComment: artifact.teacherComment || ''
+      teacherComment: artifact.teacherComment || '',
+      teacherOverrideScore: artifact.teacherOverrideScore || null,
+      scoreOverrideReason: artifact.scoreOverrideReason || ''
     });
     setTeacherComment(artifact.teacherComment || '');
+    setTeacherScoreEdit(artifact.teacherOverrideScore != null ? String(artifact.teacherOverrideScore) : String(artifact.rubricScore || ''));
 
     // 🆕 FASE 5: Marcar automáticamente como "visto" por el docente
     // Esto hace que desaparezca del contador de "entregas nuevas"
@@ -946,6 +953,106 @@ function TeacherDashboard() {
       showFeedback('error', 'Error al guardar comentario');
     } finally {
       setSavingComment(false);
+    }
+  };
+
+  // 🆕 Human-on-the-loop: Guardar nota editada por el docente
+  const handleSaveTeacherScore = async () => {
+    if (!viewingArtifact || !selectedStudentForReset || !selectedLecturaForReset) return;
+
+    const newScore = parseFloat(teacherScoreEdit);
+    if (isNaN(newScore) || newScore < 0 || newScore > 10) {
+      showFeedback('error', 'La nota debe ser un número entre 0 y 10');
+      return;
+    }
+
+    // El comentario es obligatorio al modificar nota (human-on-the-loop)
+    if (!teacherComment || teacherComment.trim().length < 5) {
+      showFeedback('error', 'Debes dejar un comentario justificando el cambio de nota (mínimo 5 caracteres)');
+      return;
+    }
+
+    setSavingScore(true);
+    try {
+      const { doc, updateDoc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('../../firebase/config');
+
+      const studentUid = selectedStudentForReset.estudianteUid;
+      const textoId = selectedLecturaForReset.textoId;
+      const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
+      const basePath = `activitiesProgress.${textoId}.artifacts.${viewingArtifact.key}`;
+
+      await updateDoc(progressRef, {
+        // Guardar el override score del docente
+        [`${basePath}.teacherOverrideScore`]: newScore,
+        [`${basePath}.score`]: newScore,
+        [`${basePath}.lastScore`]: newScore,
+        [`${basePath}.scoreOverrideReason`]: teacherComment.trim(),
+        [`${basePath}.scoreOverriddenAt`]: new Date().toISOString(),
+        [`${basePath}.scoreOverriddenBy`]: docenteUid,
+        // También guardar el comentario
+        [`${basePath}.teacherComment`]: teacherComment,
+        [`${basePath}.commentedAt`]: new Date().toISOString(),
+        [`${basePath}.commentedBy`]: docenteUid,
+      });
+
+      // También actualizar rubricProgress para que getCourseMetrics lo vea
+      const rubricMapping = {
+        resumenAcademico: 'rubrica1',
+        tablaACD: 'rubrica2',
+        mapaActores: 'rubrica3',
+        respuestaArgumentativa: 'rubrica4',
+        bitacoraEticaIA: 'rubrica5'
+      };
+      const rubricKey = rubricMapping[viewingArtifact.key];
+      if (rubricKey) {
+        await updateDoc(progressRef, {
+          [`rubricProgress.${rubricKey}.teacherOverrideScore`]: newScore,
+          [`rubricProgress.${rubricKey}.average`]: newScore,
+        });
+      }
+
+      // 🔔 Crear notificación para el estudiante
+      try {
+        const notificationId = `score_override_${textoId}_${viewingArtifact.key}_${Date.now()}`;
+        const notificationRef = doc(db, 'students', studentUid, 'notifications', notificationId);
+        
+        await setDoc(notificationRef, {
+          type: 'score_override',
+          artifactKey: viewingArtifact.key,
+          artifactName: viewingArtifact.name,
+          textoId: textoId,
+          lecturaTitle: selectedLecturaForReset.titulo || 'Lectura',
+          oldScore: viewingArtifact.score || 0,
+          newScore: newScore,
+          reason: teacherComment.trim(),
+          docenteUid: docenteUid,
+          docenteNombre: userData?.nombre || 'Tu docente',
+          courseId: selectedCourse,
+          courseName: courseMetrics?.curso?.nombre || '',
+          read: false,
+          createdAt: serverTimestamp(),
+          createdAtMs: Date.now()
+        });
+      } catch (notifError) {
+        console.warn('⚠️ Error creando notificación de cambio de nota:', notifError);
+      }
+
+      showFeedback('success', `✅ Nota actualizada a ${newScore}/10`);
+
+      // Actualizar estado local
+      setViewingArtifact(prev => ({ ...prev, score: newScore, teacherOverrideScore: newScore, teacherComment }));
+
+      // Recargar detalles y métricas
+      const details = await getStudentArtifactDetails(studentUid, textoId);
+      setArtifactDetails(details);
+      if (selectedCourseId) loadMetrics(selectedCourseId);
+
+    } catch (error) {
+      console.error('Error guardando nota:', error);
+      showFeedback('error', 'Error al guardar la nota');
+    } finally {
+      setSavingScore(false);
     }
   };
 
@@ -1596,8 +1703,10 @@ function TeacherDashboard() {
                                     const artifacts = lecturaProgress.artifacts || {};
                                     const artifactCount = Object.keys(artifacts).length;
                                     const submittedCount = Object.values(artifacts).filter(a => a?.submitted).length;
-                                    const avgScore = artifactCount > 0
-                                      ? (Object.values(artifacts).reduce((sum, a) => sum + (a?.rubricScore || 0), 0) / 5).toFixed(1)
+                                    // 🔧 FIX: Calcular promedio solo de artefactos con score real (>0)
+                                    const scoredArtifacts = Object.values(artifacts).filter(a => (a?.rubricScore || 0) > 0);
+                                    const avgScore = scoredArtifacts.length > 0
+                                      ? (scoredArtifacts.reduce((sum, a) => sum + (a?.rubricScore || 0), 0) / scoredArtifacts.length).toFixed(1)
                                       : 0;
 
                                     return (
@@ -1664,6 +1773,20 @@ function TeacherDashboard() {
                                               </ArtifactMiniCard>
                                             );
                                           })}
+                                          {/* 🆕 Ensayo sumativo en la minigrid */}
+                                          {(lecturaProgress.summativeEssays || []).map((essay, idx) => (
+                                            <ArtifactMiniCard
+                                              key={`ensayo-${idx}`}
+                                              $status="submitted"
+                                              title={`Ensayo Integrador - ${essay.score}/10`}
+                                            >
+                                              <span className="icon">✍️</span>
+                                              <span className="status">✅</span>
+                                              {essay.score > 0 && (
+                                                <span className="score">{essay.score}</span>
+                                              )}
+                                            </ArtifactMiniCard>
+                                          ))}
                                         </ArtifactsMinigrid>
                                       </LecturaProgressCard>
                                     );
@@ -1816,7 +1939,10 @@ function TeacherDashboard() {
                     </SummaryBadge>
                     <SummaryBadge $color="#10b981">
                       <span className="number">
-                        {(Object.values(artifactDetails.artifacts || {}).reduce((sum, a) => sum + (a.rubricScore || 0), 0) / 5).toFixed(1)}
+                        {(() => {
+                          const scored = Object.values(artifactDetails.artifacts || {}).filter(a => (a.rubricScore || 0) > 0);
+                          return scored.length > 0 ? (scored.reduce((sum, a) => sum + (a.rubricScore || 0), 0) / scored.length).toFixed(1) : '0';
+                        })()}
                       </span>
                       <span className="label">Promedio</span>
                     </SummaryBadge>
@@ -2011,14 +2137,48 @@ function TeacherDashboard() {
 
                           {viewingArtifact.submitted && (
                             <SubmittedBadge>
-                              ✅ Entregado • Puntaje: {viewingArtifact.score}/10
+                              ✅ Entregado • Puntaje: {viewingArtifact.teacherOverrideScore != null ? viewingArtifact.teacherOverrideScore : viewingArtifact.score}/10
+                              {viewingArtifact.teacherOverrideScore != null && (
+                                <span style={{ fontSize: '0.8em', opacity: 0.7, marginLeft: '0.5em' }}>
+                                  (editado por docente)
+                                </span>
+                              )}
                             </SubmittedBadge>
                           )}
                         </ViewContentBody>
 
                         {!viewingArtifact.isSummativeEssay && (
                           <TeacherCommentSection>
-                            <CommentLabel>💬 Comentario del docente:</CommentLabel>
+                            {/* 🆕 Human-on-the-loop: Edición de nota por el docente */}
+                            <ScoreEditSection>
+                              <CommentLabel>📝 Calificación (editable por docente):</CommentLabel>
+                              <ScoreEditRow>
+                                <ScoreInput
+                                  type="number"
+                                  min="0"
+                                  max="10"
+                                  step="0.5"
+                                  value={teacherScoreEdit}
+                                  onChange={(e) => setTeacherScoreEdit(e.target.value)}
+                                  disabled={savingScore}
+                                />
+                                <span>/10</span>
+                                <SaveScoreButton
+                                  onClick={handleSaveTeacherScore}
+                                  disabled={savingScore || !teacherComment || teacherComment.trim().length < 5}
+                                  title={!teacherComment || teacherComment.trim().length < 5 ? 'Escribe un comentario justificando el cambio (mín. 5 caracteres)' : 'Guardar nota modificada'}
+                                >
+                                  {savingScore ? '⏳...' : '💾 Guardar nota'}
+                                </SaveScoreButton>
+                              </ScoreEditRow>
+                              {viewingArtifact.scoreOverrideReason && (
+                                <ScoreOverrideInfo>
+                                  📌 Nota modificada por docente: "{viewingArtifact.scoreOverrideReason}"
+                                </ScoreOverrideInfo>
+                              )}
+                            </ScoreEditSection>
+
+                            <CommentLabel>💬 Comentario del docente <span style={{ fontSize: '0.8em', opacity: 0.6 }}>(obligatorio al cambiar nota)</span>:</CommentLabel>
                             <CommentTextarea
                               value={teacherComment}
                               onChange={(e) => setTeacherComment(e.target.value)}
@@ -3493,6 +3653,83 @@ const CommentSavedIndicator = styled.span`
   color: #059669;
   font-size: 0.85rem;
   font-weight: 500;
+`;
+
+// 🆕 Styled components para edición de nota por el docente
+const ScoreEditSection = styled.div`
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+`;
+
+const ScoreEditRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  
+  & > span {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #374151;
+  }
+`;
+
+const ScoreInput = styled.input`
+  width: 80px;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-align: center;
+  color: #1f2937;
+  transition: border-color 0.2s ease;
+  
+  &:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    background: #f3f4f6;
+  }
+`;
+
+const SaveScoreButton = styled.button`
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 40px;
+  
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+  }
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+`;
+
+const ScoreOverrideInfo = styled.div`
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #fef3c7;
+  border-left: 3px solid #f59e0b;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: #92400e;
 `;
 
 const NewBadge = styled.span`

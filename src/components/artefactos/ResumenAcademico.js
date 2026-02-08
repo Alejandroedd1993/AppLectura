@@ -153,7 +153,8 @@ const ResumenAcademico = ({ theme }) => {
       // 🆕 Rehidratar estado de entrega
       if (data.submitted) {
         setIsSubmitted(true);
-        console.log('✅ Estado de entrega rehidratado: ENTREGADO');
+        setIsLocked(true); // 🔒 También bloquear la edición
+        console.log('✅ Estado de entrega rehidratado: ENTREGADO + LOCKED');
       }
     }
   });
@@ -283,6 +284,7 @@ const ResumenAcademico = ({ theme }) => {
 
     if (cloudData.submitted) {
       setIsSubmitted(true);
+      setIsLocked(true); // 🔒 También bloquear la edición al rehidratar entrega
     }
 
     // 🆕 Restaurar borrador desde cloud si existe y sessionStorage está vacío
@@ -565,11 +567,11 @@ const ResumenAcademico = ({ theme }) => {
       // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
       if (lectureId && updateActivitiesProgress) {
         updateActivitiesProgress(lectureId, prev => {
-          // Obtener el score previo guardado (lastScore) o usar puntuacion_global
+          // Obtener el score previo guardado (lastScore) o usar scoreGlobal de la evaluación
           const previousArtifact = prev?.artifacts?.resumenAcademico || {};
-          const scoreToUse = previousArtifact.lastScore || evaluacion.puntuacion_global || 0;
+          const scoreToUse = previousArtifact.lastScore || evaluacion.scoreGlobal || 0;
           
-          console.log('📤 [ResumenAcademico] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'puntuacion_global:', evaluacion.puntuacion_global);
+          console.log('📤 [ResumenAcademico] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'scoreGlobal:', evaluacion.scoreGlobal);
           
           return {
             ...prev,
@@ -1004,8 +1006,8 @@ const ResumenAcademico = ({ theme }) => {
           style={isLocked ? { borderColor: theme.success || '#4CAF50' } : {}}
         />
 
-        {/* 🔒 Mensaje cuando está bloqueado después de evaluar */}
-        {isLocked && !viewingVersion && (
+        {/* 🔒 Mensaje cuando está bloqueado después de evaluar (no mostrar si ya entregó) */}
+        {isLocked && !viewingVersion && !isSubmitted && (
           <LockedMessage theme={theme}>
             <LockIcon>🔒</LockIcon>
             <LockText>
