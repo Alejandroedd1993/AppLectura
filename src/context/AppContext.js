@@ -848,6 +848,16 @@ export const AppContextProvider = ({ children }) => {
                 } else if (cloudRubric?.scores?.length) {
                   merged[rubricKey] = cloudRubric;
                 }
+                
+                // 🏆 SIEMPRE preservar teacherOverrideScore del cloud (el docente es la fuente de verdad)
+                if (cloudRubric?.teacherOverrideScore > 0) {
+                  if (!merged[rubricKey]) merged[rubricKey] = localRubric || cloudRubric || {};
+                  merged[rubricKey] = {
+                    ...merged[rubricKey],
+                    teacherOverrideScore: cloudRubric.teacherOverrideScore,
+                    average: cloudRubric.teacherOverrideScore,
+                  };
+                }
               });
               
               console.log('✅ [AppContext] rubricProgress MERGED (cloud+local) para texto:', currentTextoId);

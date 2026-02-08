@@ -186,19 +186,26 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
     return n > 0 ? n : 0;
   };
 
+  // 🏆 Helper: obtener nota efectiva con prioridad a teacherOverrideScore
+  const getEffectiveScore = (data) => {
+    // Prioridad 1: Override del docente
+    if (data?.teacherOverrideScore > 0) return data.teacherOverrideScore;
+    // Prioridad 2: Promedio formativo
+    if (data?.average > 0) return data.average;
+    // Prioridad 3: Nota sumativa
+    const summative = getSummativeScore(data?.summative);
+    return summative > 0 ? summative : 0;
+  };
+
   // Calcular promedio global y dimensiones evaluadas
   const { promedioGlobal, dimensionesEvaluadas } = useMemo(() => {
     const rubricasConDatos = Object.values(rubricProgress || {}).filter(r => {
-      const summativeScore = getSummativeScore(r?.summative);
-      const displayAvg = (r?.average || 0) > 0 ? r.average : summativeScore;
-      return displayAvg > 0;
+      return getEffectiveScore(r) > 0;
     });
     if (rubricasConDatos.length === 0) return { promedioGlobal: 0, dimensionesEvaluadas: 0 };
     
     const suma = rubricasConDatos.reduce((sum, r) => {
-      const summativeScore = getSummativeScore(r?.summative);
-      const displayAvg = (r?.average || 0) > 0 ? r.average : summativeScore;
-      return sum + displayAvg;
+      return sum + getEffectiveScore(r);
     }, 0);
     const promedio = Math.round((suma / rubricasConDatos.length) * 10) / 10;
     
@@ -213,7 +220,8 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
     return Object.values(rubricProgress || {}).some(r => {
       const formativeCount = r?.scores?.length || 0;
       const hasSummative = getSummativeScore(r?.summative) > 0;
-      return formativeCount > 0 || hasSummative;
+      const hasOverride = r?.teacherOverrideScore > 0;
+      return formativeCount > 0 || hasSummative || hasOverride;
     });
   }, [rubricProgress]);
 
@@ -245,7 +253,7 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
           const summativeScore = getSummativeScore(data?.summative);
           const hasSummative = summativeScore > 0;
           const intentos = (data?.scores?.length || 0) + (hasSummative ? 1 : 0);
-          const displayAvg = data.average > 0 ? data.average : (hasSummative ? summativeScore : 0);
+          const displayAvg = getEffectiveScore(data);
           
           return (
             <RubricCard
