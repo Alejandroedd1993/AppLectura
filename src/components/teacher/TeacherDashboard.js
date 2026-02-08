@@ -15,6 +15,7 @@ import {
   deleteCourse,
   deleteStudentFromCourse,
   removeLecturaFromCourse,
+  updateCourseWeights,
   // 🆕 Funciones para reset de artefactos
   resetStudentArtifact,
   resetAllStudentArtifacts,
@@ -83,6 +84,12 @@ function TeacherDashboard() {
 
   // 🆕 Estados para exportación
   const [exporting, setExporting] = useState(false);
+
+  // 🆕 Estados para configuración de ponderación formativa/sumativa
+  const [showWeightsConfig, setShowWeightsConfig] = useState(false);
+  const [pesoFormativa, setPesoFormativa] = useState(70);
+  const [pesoSumativa, setPesoSumativa] = useState(30);
+  const [savingWeights, setSavingWeights] = useState(false);
 
   // 🆕 Estado para expandir estudiante y ver detalle por lectura
   const [expandedStudent, setExpandedStudent] = useState(null);
@@ -368,6 +375,14 @@ function TeacherDashboard() {
       )));
       const assigned = (metrics?.curso?.lecturasAsignadas || []).map(item => item.textoId).filter(Boolean);
       setLecturasSeleccionadas(assigned);
+      // 🆕 Sincronizar pesos de ponderación desde el curso
+      if (metrics?.curso?.pesoFormativa != null) {
+        setPesoFormativa(metrics.curso.pesoFormativa);
+        setPesoSumativa(metrics.curso.pesoSumativa ?? (100 - metrics.curso.pesoFormativa));
+      } else {
+        setPesoFormativa(70);
+        setPesoSumativa(30);
+      }
     } catch (error) {
       console.error('Error cargando métricas:', error);
       showFeedback('error', error.message || 'No se pudieron cargar las métricas');
@@ -923,7 +938,7 @@ function TeacherDashboard() {
             comment: teacherComment,
             docenteUid: docenteUid,
             docenteNombre: userData?.nombre || 'Tu docente',
-            courseId: selectedCourse,
+            courseId: selectedCourseId,
             courseName: courseMetrics?.curso?.nombre || '',
             read: false,
             createdAt: serverTimestamp(),
@@ -1028,7 +1043,7 @@ function TeacherDashboard() {
           reason: teacherComment.trim(),
           docenteUid: docenteUid,
           docenteNombre: userData?.nombre || 'Tu docente',
-          courseId: selectedCourse,
+          courseId: selectedCourseId,
           courseName: courseMetrics?.curso?.nombre || '',
           read: false,
           createdAt: serverTimestamp(),
@@ -1309,6 +1324,90 @@ function TeacherDashboard() {
       console.warn('No se pudo copiar automáticamente', error);
     }
   };
+
+  // 🆕 Guardar ponderación formativa/sumativa
+  const handleSaveWeights = async () => {
+    if (!selectedCourseId) return;
+    const f = parseInt(pesoFormativa, 10);
+    const s = parseInt(pesoSumativa, 10);
+    if (isNaN(f) || isNaN(s) || f + s !== 100 || f < 0 || s < 0) {
+      showFeedback('error', 'Los pesos deben sumar 100% y ser valores positivos');
+      return;
+    }
+    setSavingWeights(true);
+    try {
+      await updateCourseWeights(selectedCourseId, f, s);
+      showFeedback('success', `✅ Ponderación actualizada: Formativa ${f}% / Sumativa ${s}%`);
+      setShowWeightsConfig(false);
+      // Recargar métricas para reflejar el cambio
+      if (selectedCourseId) loadMetrics(selectedCourseId);
+    } catch (error) {
+      console.error('Error guardando ponderación:', error);
+      showFeedback('error', error?.message || 'Error al guardar ponderación');
+    } finally {
+      setSavingWeights(false);
+    }
+  };
+
+  // 🆕 FIX: Al expandir un estudiante, marcar TODOS sus artefactos entregados como vistos
+  const handleExpandStudent = useCallback(async (est) => {
+    const newId = expandedStudent === est.id ? null : est.id;
+    setExpandedStudent(newId);
+
+    // Si estamos expandiendo (no colapsando) y tiene entregas nuevas → marcar como vistas
+    if (newId && est.stats?.entregasRecientes > 0 && selectedCourseId) {
+      try {
+        const { doc: fbDoc, updateDoc: fbUpdateDoc } = await import('firebase/firestore');
+        const { db: fbDb } = await import('../../firebase/config');
+
+        const lecturas = courseMetrics?.curso?.lecturasAsignadas || [];
+        let markedCount = 0;
+
+        for (const lectura of lecturas) {
+          const lecturaProgress = est.lecturaDetails?.[lectura.textoId] || {};
+          const artifacts = lecturaProgress.artifacts || {};
+
+          const updates = {};
+          Object.entries(artifacts).forEach(([artKey, artData]) => {
+            if (artData?.submitted && !artData?.viewedByTeacher) {
+              const basePath = `activitiesProgress.${lectura.textoId}.artifacts.${artKey}`;
+              updates[`${basePath}.viewedByTeacher`] = true;
+              updates[`${basePath}.viewedAt`] = new Date().toISOString();
+              updates[`${basePath}.viewedBy`] = docenteUid;
+              markedCount++;
+            }
+          });
+
+          if (Object.keys(updates).length > 0) {
+            const progressRef = fbDoc(fbDb, 'students', est.estudianteUid, 'progress', lectura.textoId);
+            await fbUpdateDoc(progressRef, updates).catch(() => { /* silencioso */ });
+          }
+        }
+
+        if (markedCount > 0) {
+          console.log(`✅ [TeacherDashboard] ${markedCount} artefactos marcados como vistos para ${est.estudianteNombre}`);
+          // Actualizar contador local inmediatamente
+          setCourseMetrics(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              estudiantes: (prev.estudiantes || []).map(e => {
+                if (e.estudianteUid === est.estudianteUid) {
+                  return {
+                    ...e,
+                    stats: { ...e.stats, entregasRecientes: 0 }
+                  };
+                }
+                return e;
+              })
+            };
+          });
+        }
+      } catch (error) {
+        console.warn('⚠️ Error marcando entregas como vistas:', error);
+      }
+    }
+  }, [expandedStudent, courseMetrics, selectedCourseId, docenteUid]);
 
   const pendingStudents = useMemo(() => {
     return (courseMetrics?.estudiantes || []).filter(est => est.estado === 'pending');
@@ -1593,6 +1692,78 @@ function TeacherDashboard() {
                     </LecturasList>
                   </LecturasPanel>
 
+                  {/* 🆕 Panel de ponderación formativa/sumativa */}
+                  <WeightsPanel>
+                    <PanelHeader>
+                      <div>
+                        <SectionLabel>⚖️ Ponderación de Evaluaciones</SectionLabel>
+                        <SectionSub>
+                          Formativa (5 artefactos): {pesoFormativa}% · Sumativa (ensayo): {pesoSumativa}%
+                        </SectionSub>
+                      </div>
+                      <SecondaryButton type="button" onClick={() => setShowWeightsConfig(!showWeightsConfig)}>
+                        {showWeightsConfig ? 'Cerrar' : '⚙️ Configurar'}
+                      </SecondaryButton>
+                    </PanelHeader>
+
+                    <AnimatePresence>
+                      {showWeightsConfig && (
+                        <WeightsConfigPanel
+                          as={motion.div}
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <WeightsRow>
+                            <WeightInputGroup>
+                              <WeightLabel>📝 Formativa (5 artefactos)</WeightLabel>
+                              <WeightInputRow>
+                                <WeightInput
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  step="5"
+                                  value={pesoFormativa}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    setPesoFormativa(val);
+                                    setPesoSumativa(100 - val);
+                                  }}
+                                />
+                                <WeightValue>{pesoFormativa}%</WeightValue>
+                              </WeightInputRow>
+                            </WeightInputGroup>
+                            <WeightInputGroup>
+                              <WeightLabel>✍️ Sumativa (ensayo integrador)</WeightLabel>
+                              <WeightInputRow>
+                                <WeightInput
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  step="5"
+                                  value={pesoSumativa}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    setPesoSumativa(val);
+                                    setPesoFormativa(100 - val);
+                                  }}
+                                />
+                                <WeightValue>{pesoSumativa}%</WeightValue>
+                              </WeightInputRow>
+                            </WeightInputGroup>
+                          </WeightsRow>
+                          <WeightsPreview>
+                            Nota final = (Promedio formativa × {pesoFormativa}% + Promedio sumativa × {pesoSumativa}%) / 100
+                          </WeightsPreview>
+                          <ActionButton type="button" onClick={handleSaveWeights} disabled={savingWeights} style={{ marginTop: '0.75rem' }}>
+                            {savingWeights ? '⏳ Guardando...' : '💾 Guardar ponderación'}
+                          </ActionButton>
+                        </WeightsConfigPanel>
+                      )}
+                    </AnimatePresence>
+                  </WeightsPanel>
+
                   <StudentsPanel>
                     <PanelHeader>
                       <div>
@@ -1644,7 +1815,7 @@ function TeacherDashboard() {
                       {(courseMetrics?.estudiantes || []).map(est => (
                         <StudentCard key={est.id}>
                           <StudentCardHeader
-                            onClick={() => setExpandedStudent(expandedStudent === est.id ? null : est.id)}
+                            onClick={() => handleExpandStudent(est)}
                           >
                             <StudentMainInfo>
                               <StudentAvatar $active={est.estado === 'active'}>
@@ -1701,13 +1872,31 @@ function TeacherDashboard() {
                                   {(courseMetrics?.curso?.lecturasAsignadas || []).map(lectura => {
                                     const lecturaProgress = est.lecturaDetails?.[lectura.textoId] || {};
                                     const artifacts = lecturaProgress.artifacts || {};
-                                    const artifactCount = Object.keys(artifacts).length;
+                                    const summativeEssays = lecturaProgress.summativeEssays || [];
                                     const submittedCount = Object.values(artifacts).filter(a => a?.submitted).length;
-                                    // 🔧 FIX: Calcular promedio solo de artefactos con score real (>0)
-                                    const scoredArtifacts = Object.values(artifacts).filter(a => (a?.rubricScore || 0) > 0);
-                                    const avgScore = scoredArtifacts.length > 0
-                                      ? (scoredArtifacts.reduce((sum, a) => sum + (a?.rubricScore || 0), 0) / scoredArtifacts.length).toFixed(1)
+
+                                    // 🔧 Calcular nota formativa (promedio de artefactos con score >0)
+                                    const scoredFormative = Object.values(artifacts).filter(a => (a?.rubricScore || 0) > 0);
+                                    const formativeAvg = scoredFormative.length > 0
+                                      ? scoredFormative.reduce((sum, a) => sum + (a?.rubricScore || 0), 0) / scoredFormative.length
                                       : 0;
+
+                                    // 🔧 Calcular nota sumativa (promedio de ensayos con score >0)
+                                    const scoredSummative = summativeEssays.filter(e => (e?.score || 0) > 0);
+                                    const summativeAvg = scoredSummative.length > 0
+                                      ? scoredSummative.reduce((sum, e) => sum + (e?.score || 0), 0) / scoredSummative.length
+                                      : 0;
+
+                                    // 🆕 Nota ponderada: si hay ambas → ponderar; si solo formativa → 100%; si solo sumativa → 100%
+                                    let notaFinal = 0;
+                                    if (formativeAvg > 0 && summativeAvg > 0) {
+                                      notaFinal = (formativeAvg * pesoFormativa + summativeAvg * pesoSumativa) / 100;
+                                    } else if (formativeAvg > 0) {
+                                      notaFinal = formativeAvg;
+                                    } else if (summativeAvg > 0) {
+                                      notaFinal = summativeAvg;
+                                    }
+                                    const displayScore = notaFinal > 0 ? notaFinal.toFixed(1) : '0';
 
                                     return (
                                       <LecturaProgressCard key={lectura.textoId}>
@@ -1721,9 +1910,9 @@ function TeacherDashboard() {
                                               <span className="value">{submittedCount}/5</span>
                                               <span className="label">entregados</span>
                                             </LecturaStat>
-                                            <LecturaStat $type="score" $score={parseFloat(avgScore)}>
-                                              <span className="value">{avgScore}</span>
-                                              <span className="label">promedio</span>
+                                            <LecturaStat $type="score" $score={parseFloat(displayScore)}>
+                                              <span className="value">{displayScore}</span>
+                                              <span className="label">{formativeAvg > 0 && summativeAvg > 0 ? `pond. ${pesoFormativa}/${pesoSumativa}` : 'promedio'}</span>
                                             </LecturaStat>
                                           </LecturaStats>
                                           <LecturaActions>
@@ -2364,7 +2553,6 @@ const CourseCard = styled.div`
   cursor: pointer;
   background: ${props => props.$active ? props.theme.surfaceHover : props.theme.surface};
   box-shadow: ${props => props.$active ? '0 6px 18px rgba(0,0,0,0.12)' : '0 2px 6px rgba(0,0,0,0.06)'};
-  box-shadow: ${props => props.$active ? '0 6px 18px rgba(0,0,0,0.12)' : '0 2px 6px rgba(0,0,0,0.06)'};
   transition: all 0.2s ease;
   position: relative;
 `;
@@ -2615,6 +2803,73 @@ const LecturaItem = styled.label`
   &:last-child {
     border-bottom: none;
   }
+`;
+
+const WeightsPanel = styled.div`
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 16px;
+  padding: 1rem;
+  background: ${props => props.theme.surface};
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+`;
+
+const WeightsConfigPanel = styled.div`
+  overflow: hidden;
+  padding-top: 0.5rem;
+`;
+
+const WeightsRow = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const WeightInputGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+`;
+
+const WeightLabel = styled.span`
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: ${props => props.theme.text};
+`;
+
+const WeightInputRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+`;
+
+const WeightInput = styled.input`
+  flex: 1;
+  accent-color: ${props => props.theme.primary};
+  height: 6px;
+  cursor: pointer;
+`;
+
+const WeightValue = styled.span`
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: ${props => props.theme.primary};
+  min-width: 3rem;
+  text-align: center;
+`;
+
+const WeightsPreview = styled.div`
+  font-size: 0.8rem;
+  color: ${props => props.theme.textMuted};
+  background: ${props => props.theme.surfaceHover || 'rgba(0,0,0,0.03)'};
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+  text-align: center;
 `;
 
 const StudentsPanel = styled.div`

@@ -1857,6 +1857,26 @@ export async function getCursosDocente(docenteUid) {
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
 }
 
+/**
+ * 🆕 Actualizar pesos de evaluación formativa/sumativa del curso
+ * @param {string} courseId - ID del curso
+ * @param {number} pesoFormativa - Peso de evaluación formativa (0-100)
+ * @param {number} pesoSumativa - Peso de evaluación sumativa (0-100)
+ */
+export async function updateCourseWeights(courseId, pesoFormativa, pesoSumativa) {
+  if (!courseId) throw new Error('courseId requerido');
+  if (pesoFormativa + pesoSumativa !== 100) {
+    throw new Error('Los pesos deben sumar 100%');
+  }
+  const courseRef = doc(db, 'courses', courseId);
+  await updateDoc(courseRef, {
+    pesoFormativa,
+    pesoSumativa,
+    updatedAt: serverTimestamp()
+  });
+  console.log(`⚖️ Curso ${courseId} pesos actualizados: F=${pesoFormativa}% S=${pesoSumativa}%`);
+}
+
 export async function assignLecturasToCourse(courseId, lecturas) {
   // 🆕 D13 FIX: Validar límite máximo de lecturas por curso
   const MAX_LECTURAS_POR_CURSO = 30;
@@ -2293,9 +2313,7 @@ export async function getCourseMetrics(courseId, options = {}) {
           acc + (docSnap.data().entregaFinal?.entregados || 0), 0
         );
 
-        // 🆕 Contar entregas recientes (últimas 48h) sin revisar por el docente
-        const ahora = Date.now();
-        const hace48h = ahora - (48 * 60 * 60 * 1000);
+        // 🆕 Contar entregas sin revisar por el docente (sin límite de tiempo)
         let entregasRecientes = 0;
         
         relevantes.forEach(docSnap => {
@@ -2306,18 +2324,9 @@ export async function getCourseMetrics(courseId, options = {}) {
           Object.values(activitiesProgress).forEach(lecProgress => {
             const artifacts = lecProgress?.artifacts || {};
             Object.values(artifacts).forEach(artifact => {
-              if (artifact?.submitted && artifact?.submittedAt) {
-                const submittedTime = typeof artifact.submittedAt === 'number' 
-                  ? artifact.submittedAt 
-                  : new Date(artifact.submittedAt).getTime();
-                
-                // 🆕 FASE 5 FIX: Es "nueva" si:
-                // 1. Fue entregada en las últimas 48h
-                // 2. NO ha sido vista por el docente (viewedByTeacher)
-                // 3. NO tiene comentario del docente (teacherComment) - para compatibilidad
-                if (submittedTime > hace48h && !artifact.viewedByTeacher && !artifact.teacherComment) {
-                  entregasRecientes++;
-                }
+              // Es "nueva" si está entregada y NO ha sido vista por el docente
+              if (artifact?.submitted && !artifact.viewedByTeacher) {
+                entregasRecientes++;
               }
             });
           });
@@ -3047,6 +3056,12 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
     // La estructura real es: { scores: [{score, timestamp}...], average, lastUpdate }
     const getRubricScore = (rubricKey, artifactData) => {
       const rubric = rubricProgress[rubricKey];
+
+      // 🏆 Prioridad MÁXIMA: teacherOverrideScore (nota editada por el docente)
+      // Consistente con getCourseMetrics: el override siempre gana
+      if (artifactData?.teacherOverrideScore > 0) {
+        return artifactData.teacherOverrideScore;
+      }
       
       // Prioridad 1: Si el artefacto está entregado y tiene score válido (>0)
       if (artifactData?.submitted && artifactData?.score > 0) {
@@ -3061,11 +3076,6 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
       // Prioridad 2.5: score del artefacto si es >0 (puede venir de evaluación)
       if (artifactData?.score > 0) {
         return artifactData.score;
-      }
-
-      // Prioridad 2.7: teacherOverrideScore (nota editada por el docente)
-      if (artifactData?.teacherOverrideScore > 0) {
-        return artifactData.teacherOverrideScore;
       }
       
       // Prioridad 3: Promedio de la rúbrica
