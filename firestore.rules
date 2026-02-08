@@ -132,10 +132,13 @@ service cloud.firestore {
     match /students/{studentId}/progress/{textoId} {
       // Leer:
       // - El propio estudiante
-      // - Su docente asignado
-      // - Docente del curso
+      // - Cualquier docente autenticado (visibilidad educativa; filtrado por curso a nivel de app)
+      // - Su docente asignado (legacy)
+      // - Docente del curso (con sourceCourseId)
+      // 🔧 FIX Bug 2: Permite a docentes leer progreso aunque sourceCourseId sea null
       allow read: if isAuthenticated() && (
                     request.auth.uid == studentId || 
+                    isDocente() ||
                     isDocenteOf(studentId) || 
                     (resource.data.sourceCourseId != null && isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
                   );

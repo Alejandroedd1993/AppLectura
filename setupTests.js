@@ -55,6 +55,9 @@ jest.mock('firebase/auth', () => ({
 
 jest.mock('firebase/firestore', () => ({
   getFirestore: jest.fn(() => ({})),
+  initializeFirestore: jest.fn(() => ({})),
+  persistentLocalCache: jest.fn(() => ({})),
+  persistentMultipleTabManager: jest.fn(() => ({})),
   connectFirestoreEmulator: jest.fn(),
   collection: jest.fn(() => ({})),
   doc: jest.fn(() => ({ id: 'test-doc' })),
@@ -64,6 +67,12 @@ jest.mock('firebase/firestore', () => ({
   updateDoc: jest.fn(() => Promise.resolve()),
   deleteDoc: jest.fn(() => Promise.resolve()),
   addDoc: jest.fn(() => Promise.resolve({ id: 'test-doc' })),
+  runTransaction: jest.fn((db, fn) => fn({
+    get: jest.fn(() => Promise.resolve({ exists: () => false, data: () => ({}) })),
+    set: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn()
+  })),
   onSnapshot: jest.fn((docRef, callback) => {
     // Simular snapshot vacío
     callback({ exists: () => false, data: () => ({}) });

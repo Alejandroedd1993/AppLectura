@@ -14,7 +14,7 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import logger from '../utils/logger';
 
@@ -62,7 +62,23 @@ try {
 
 // Inicializar servicios
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// 🔧 FIX Bug 7: Persistencia offline con IndexedDB + soporte multi-tab
+let _firestoreDb;
+try {
+  _firestoreDb = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  });
+  logger.log('✅ Firestore initialized with offline persistence');
+} catch (e) {
+  // Fallback si ya está inicializado o IndexedDB no disponible (ej. modo incógnito)
+  logger.warn('⚠️ Offline persistence unavailable, fallback to default:', e.message);
+  _firestoreDb = getFirestore(app);
+}
+export const db = _firestoreDb;
+
 export const storage = getStorage(app);
 
 // Conectar a emuladores en desarrollo (opcional, para testing local)

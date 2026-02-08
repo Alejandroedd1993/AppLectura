@@ -21,7 +21,8 @@ import {
   writeBatch,
   arrayUnion,
   arrayRemove,
-  collectionGroup
+  collectionGroup,
+  runTransaction
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { auth, db, storage } from './config';
@@ -36,6 +37,31 @@ function __isPermissionDeniedError(error) {
   const code = error?.code || error?.name;
   const message = String(error?.message || '').toLowerCase();
   return code === 'permission-denied' || message.includes('missing or insufficient permissions') || message.includes('permission-denied');
+}
+
+/**
+ * 🔧 FIX Bug 5: Reintentar operaciones con backoff exponencial.
+ * No reintenta errores de permisos (son permanentes).
+ */
+const __RETRY_MAX_ATTEMPTS = 3;
+const __RETRY_BASE_DELAY_MS = 1000;
+
+async function __retryWithBackoff(fn) {
+  let lastError;
+  for (let attempt = 0; attempt < __RETRY_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (__isPermissionDeniedError(error) || attempt >= __RETRY_MAX_ATTEMPTS - 1) {
+        throw error;
+      }
+      const delay = __RETRY_BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 500;
+      console.warn(`⚠️ [Firestore] Reintento ${attempt + 1}/${__RETRY_MAX_ATTEMPTS} en ${Math.round(delay)}ms:`, error.message);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
 }
 
 async function generateUniqueCourseCode(length = 6) {
@@ -468,8 +494,28 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
 
     const progressRef = doc(db, 'students', estudianteUid, 'progress', textoId);
 
+    // 🔧 FIX Bug 4: Resolver sourceCourseId si viene null (fallback desde enrolledCourses)
+    let resolvedSourceCourseId = null;
+    if (!progressData.sourceCourseId) {
+      try {
+        const userProfileRef = doc(db, 'users', estudianteUid);
+        const userProfileSnap = await getDoc(userProfileRef);
+        const enrolled = userProfileSnap.exists() ? (userProfileSnap.data().enrolledCourses || []) : [];
+        if (enrolled.length > 0) {
+          resolvedSourceCourseId = enrolled[enrolled.length - 1]; // Último curso inscrito
+          console.log('🔧 [Firestore] sourceCourseId resuelto desde enrolledCourses:', resolvedSourceCourseId);
+        }
+      } catch (err) {
+        console.warn('⚠️ [Firestore] No se pudo resolver sourceCourseId:', err.message);
+      }
+    }
+
+    // 🔄 FIX Bug 3+5: Transacción atómica con retry para evitar race conditions
+    let _savedFinalData;
+    await __retryWithBackoff(() => runTransaction(db, async (transaction) => {
+
     // Obtener datos existentes para hacer merge inteligente
-    const existingDoc = await getDoc(progressRef);
+    const existingDoc = await transaction.get(progressRef);
     const existingData = existingDoc.exists() ? existingDoc.data() : {};
 
     // 🔄 MERGE INTELIGENTE: Combinar datos nuevos con existentes
@@ -708,8 +754,8 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
         artifacts: artifactsSubmitted,
         fechaEntrega: fechaEntregaFinal ? new Date(fechaEntregaFinal).toISOString() : null
       },
-      // 🆕 CRÍTICO: Preservar sourceCourseId si existe o actualizarlo si viene nuevo
-      sourceCourseId: progressData.sourceCourseId || existingData.sourceCourseId || null,
+      // 🆕 CRÍTICO: Preservar sourceCourseId con fallback desde enrolledCourses (Bug 4)
+      sourceCourseId: progressData.sourceCourseId || existingData.sourceCourseId || resolvedSourceCourseId || null,
       ultima_actividad: serverTimestamp(),
       updatedAt: serverTimestamp(),
       lastSync: progressData.lastSync || new Date().toISOString(),
@@ -727,18 +773,21 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
       finalData.bloqueado = false;
     }
 
-    // Guardar con merge
-    await setDoc(progressRef, finalData, { merge: true });
+    // Guardar con merge (dentro de transacción atómica)
+    _savedFinalData = finalData;
+    transaction.set(progressRef, finalData, { merge: true });
+
+    })); // fin de runTransaction + __retryWithBackoff
 
     __trackFirestoreStat('writeSuccess');
 
     // 🆕 Log detallado para debug de persistencia
-    const rubricKeys = Object.keys(finalData.rubricProgress || {}).filter(k => k.startsWith('rubrica'));
+    const rubricKeys = Object.keys((_savedFinalData?.rubricProgress) || {}).filter(k => k.startsWith('rubrica'));
     console.log('✅ [Firestore] Progreso guardado con merge inteligente:', {
       uid: estudianteUid,
       textoId,
       rubricasGuardadas: rubricKeys,
-      tieneActivities: !!finalData.activitiesProgress,
+      tieneActivities: !!_savedFinalData?.activitiesProgress,
       timestamp: new Date().toISOString()
     });
 
@@ -2440,7 +2489,7 @@ export async function deleteCourse(courseId) {
       for (const lectura of lecturasAsignadas) {
         if (lectura?.textoId) {
           try {
-            const progressRef = doc(db, 'users', studentUid, 'progress', lectura.textoId);
+            const progressRef = doc(db, 'students', studentUid, 'progress', lectura.textoId);
             const progressSnap = await getDoc(progressRef);
 
             // Solo eliminar si el progreso pertenece a este curso
