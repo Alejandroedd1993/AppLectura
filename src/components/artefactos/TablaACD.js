@@ -12,6 +12,7 @@ import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
+import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 
 // ============================================
 // STYLED COMPONENTS
@@ -817,6 +818,7 @@ export default function TablaACD({ theme }) {
   const [history, setHistory] = useState([]); // 🆕 Historial de versiones
   const [viewingVersion, setViewingVersion] = useState(null); // 🆕 Versión en modo lectura
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
   const MAX_ATTEMPTS = 3; // 🆕 Límite de intentos
 
@@ -1126,6 +1128,16 @@ export default function TablaACD({ theme }) {
 
     if (cloudData.submitted) {
       setIsSubmitted(true);
+    }
+
+    // 🆕 Override de nota docente
+    if (cloudData.teacherOverrideScore != null) {
+      setTeacherScoreOverride({
+        teacherOverrideScore: cloudData.teacherOverrideScore,
+        scoreOverrideReason: cloudData.scoreOverrideReason,
+        scoreOverriddenAt: cloudData.scoreOverriddenAt,
+        docenteNombre: cloudData.docenteNombre
+      });
     }
 
     // 🆕 Restaurar borradores desde cloud si sessionStorage está vacío
@@ -1584,6 +1596,9 @@ export default function TablaACD({ theme }) {
           </span>
         </SubmissionBanner>
       )}
+
+      {/* 🆕 Banner de cambio de nota docente */}
+      <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={theme} />
 
       {/* 🆕 Panel lateral de citas guardadas */}
       <AnimatePresence>

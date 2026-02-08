@@ -11,6 +11,7 @@ import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
+import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 
 // ============================================
 // STYLED COMPONENTS (reutilizados de TablaACD con ajustes)
@@ -786,6 +787,7 @@ export default function MapaActores({ theme }) {
   const [history, setHistory] = useState([]); // Historial de versiones { timestamp, content, feedback }
   const [viewingVersion, setViewingVersion] = useState(null); // Versión que se está visualizando (null = actual)
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
   const MAX_ATTEMPTS = 3;
 
@@ -981,6 +983,16 @@ export default function MapaActores({ theme }) {
 
     if (cloudData.attempts) setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
     if (cloudData.submitted) setIsSubmitted(true);
+
+    // 🆕 Override de nota docente
+    if (cloudData.teacherOverrideScore != null) {
+      setTeacherScoreOverride({
+        teacherOverrideScore: cloudData.teacherOverrideScore,
+        scoreOverrideReason: cloudData.scoreOverrideReason,
+        scoreOverriddenAt: cloudData.scoreOverriddenAt,
+        docenteNombre: cloudData.docenteNombre
+      });
+    }
 
     if (cloudData.drafts) {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
@@ -1485,6 +1497,9 @@ export default function MapaActores({ theme }) {
           </span>
         </SubmissionBanner>
       )}
+
+      {/* 🆕 Banner de cambio de nota docente */}
+      <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={theme} />
 
       {/* 🆕 Panel lateral de citas guardadas */}
       <AnimatePresence>

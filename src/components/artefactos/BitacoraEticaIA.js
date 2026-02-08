@@ -19,6 +19,7 @@ import useRateLimit from '../../hooks/useRateLimit';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
+import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 
 // ... (component definition) ...
 
@@ -185,6 +186,7 @@ export default function BitacoraEticaIA({ theme }) {
   const [history, setHistory] = useState([]); // Historial de versiones
   const [viewingVersion, setViewingVersion] = useState(null); // Versión visualizada
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
   const MAX_ATTEMPTS = 3;
 
@@ -470,6 +472,16 @@ export default function BitacoraEticaIA({ theme }) {
 
     if (cloudData.attempts) setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
     if (cloudData.submitted) setIsSubmitted(true);
+
+    // 🆕 Override de nota docente
+    if (cloudData.teacherOverrideScore != null) {
+      setTeacherScoreOverride({
+        teacherOverrideScore: cloudData.teacherOverrideScore,
+        scoreOverrideReason: cloudData.scoreOverrideReason,
+        scoreOverriddenAt: cloudData.scoreOverriddenAt,
+        docenteNombre: cloudData.docenteNombre
+      });
+    }
 
     if (cloudData.drafts) {
       if (cloudData.drafts.verificacionFuentes && !verificacionFuentes) {
@@ -803,6 +815,9 @@ export default function BitacoraEticaIA({ theme }) {
           </span>
         </SubmissionBanner>
       )}
+
+      {/* 🆕 Banner de cambio de nota docente */}
+      <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={effectiveTheme} />
 
       {/* 🆕 Historial y Navegación de Versiones */}
       {history.length > 0 && (

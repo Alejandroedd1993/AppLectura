@@ -80,6 +80,7 @@ function TeacherDashboard() {
 
   // 🆕 Estados para edición de nota por el docente
   const [teacherScoreEdit, setTeacherScoreEdit] = useState('');
+  const [scoreOverrideReason, setScoreOverrideReason] = useState('');
   const [savingScore, setSavingScore] = useState(false);
 
   // 🆕 Estados para exportación
@@ -812,6 +813,7 @@ function TeacherDashboard() {
     });
     setTeacherComment(artifact.teacherComment || '');
     setTeacherScoreEdit(artifact.teacherOverrideScore != null ? String(artifact.teacherOverrideScore) : String(artifact.rubricScore || ''));
+    setScoreOverrideReason(artifact.scoreOverrideReason || '');
 
     // 🆕 FASE 5: Marcar automáticamente como "visto" por el docente
     // Esto hace que desaparezca del contador de "entregas nuevas"
@@ -981,9 +983,9 @@ function TeacherDashboard() {
       return;
     }
 
-    // El comentario es obligatorio al modificar nota (human-on-the-loop)
-    if (!teacherComment || teacherComment.trim().length < 5) {
-      showFeedback('error', 'Debes dejar un comentario justificando el cambio de nota (mínimo 5 caracteres)');
+    // El motivo del cambio es obligatorio e independiente del comentario general
+    if (!scoreOverrideReason || scoreOverrideReason.trim().length < 5) {
+      showFeedback('error', 'Debes escribir el motivo del cambio de nota (mínimo 5 caracteres)');
       return;
     }
 
@@ -1002,13 +1004,10 @@ function TeacherDashboard() {
         [`${basePath}.teacherOverrideScore`]: newScore,
         [`${basePath}.score`]: newScore,
         [`${basePath}.lastScore`]: newScore,
-        [`${basePath}.scoreOverrideReason`]: teacherComment.trim(),
+        [`${basePath}.scoreOverrideReason`]: scoreOverrideReason.trim(),
         [`${basePath}.scoreOverriddenAt`]: new Date().toISOString(),
         [`${basePath}.scoreOverriddenBy`]: docenteUid,
-        // También guardar el comentario
-        [`${basePath}.teacherComment`]: teacherComment,
-        [`${basePath}.commentedAt`]: new Date().toISOString(),
-        [`${basePath}.commentedBy`]: docenteUid,
+        [`${basePath}.docenteNombre`]: userData?.nombre || 'Docente',
       });
 
       // También actualizar rubricProgress para que getCourseMetrics lo vea
@@ -1040,7 +1039,7 @@ function TeacherDashboard() {
           lecturaTitle: selectedLecturaForReset.titulo || 'Lectura',
           oldScore: viewingArtifact.score || 0,
           newScore: newScore,
-          reason: teacherComment.trim(),
+          reason: scoreOverrideReason.trim(),
           docenteUid: docenteUid,
           docenteNombre: userData?.nombre || 'Tu docente',
           courseId: selectedCourseId,
@@ -1056,7 +1055,7 @@ function TeacherDashboard() {
       showFeedback('success', `✅ Nota actualizada a ${newScore}/10`);
 
       // Actualizar estado local
-      setViewingArtifact(prev => ({ ...prev, score: newScore, teacherOverrideScore: newScore, teacherComment }));
+      setViewingArtifact(prev => ({ ...prev, score: newScore, teacherOverrideScore: newScore, scoreOverrideReason: scoreOverrideReason.trim() }));
 
       // Recargar detalles y métricas
       const details = await getStudentArtifactDetails(studentUid, textoId);
@@ -2352,22 +2351,32 @@ function TeacherDashboard() {
                                   disabled={savingScore}
                                 />
                                 <span>/10</span>
-                                <SaveScoreButton
-                                  onClick={handleSaveTeacherScore}
-                                  disabled={savingScore || !teacherComment || teacherComment.trim().length < 5}
-                                  title={!teacherComment || teacherComment.trim().length < 5 ? 'Escribe un comentario justificando el cambio (mín. 5 caracteres)' : 'Guardar nota modificada'}
-                                >
-                                  {savingScore ? '⏳...' : '💾 Guardar nota'}
-                                </SaveScoreButton>
                               </ScoreEditRow>
+                              <CommentLabel style={{ marginTop: '0.5rem' }}>
+                                📌 Motivo del cambio de nota <span style={{ fontSize: '0.8em', color: '#ef4444' }}>(obligatorio)</span>:
+                              </CommentLabel>
+                              <CommentTextarea
+                                value={scoreOverrideReason}
+                                onChange={(e) => setScoreOverrideReason(e.target.value)}
+                                placeholder="Ej: Se ajusta la nota por participación activa en clase y calidad de las evidencias..."
+                                rows={2}
+                                style={{ fontSize: '0.85rem' }}
+                              />
+                              <SaveScoreButton
+                                onClick={handleSaveTeacherScore}
+                                disabled={savingScore || !scoreOverrideReason || scoreOverrideReason.trim().length < 5}
+                                title={!scoreOverrideReason || scoreOverrideReason.trim().length < 5 ? 'Escribe el motivo del cambio (mín. 5 caracteres)' : 'Guardar nota modificada'}
+                              >
+                                {savingScore ? '⏳ Guardando...' : '💾 Guardar nota'}
+                              </SaveScoreButton>
                               {viewingArtifact.scoreOverrideReason && (
                                 <ScoreOverrideInfo>
-                                  📌 Nota modificada por docente: "{viewingArtifact.scoreOverrideReason}"
+                                  📌 Último cambio: "{viewingArtifact.scoreOverrideReason}"
                                 </ScoreOverrideInfo>
                               )}
                             </ScoreEditSection>
 
-                            <CommentLabel>💬 Comentario del docente <span style={{ fontSize: '0.8em', opacity: 0.6 }}>(obligatorio al cambiar nota)</span>:</CommentLabel>
+                            <CommentLabel>💬 Comentario general del docente <span style={{ fontSize: '0.8em', opacity: 0.6 }}>(opcional, independiente de la nota)</span>:</CommentLabel>
                             <CommentTextarea
                               value={teacherComment}
                               onChange={(e) => setTeacherComment(e.target.value)}

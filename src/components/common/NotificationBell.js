@@ -237,7 +237,7 @@ const NotificationBell = ({ theme }) => {
             transition={{ duration: 0.15 }}
           >
             <DropdownHeader theme={theme}>
-              <HeaderTitle>🔔 Comentarios del Docente</HeaderTitle>
+              <HeaderTitle>🔔 Notificaciones del Docente</HeaderTitle>
               <HeaderActions>
                 {unreadCount > 0 && (
                   <MarkAllButton onClick={markAllAsRead} theme={theme}>
@@ -274,7 +274,7 @@ const NotificationBell = ({ theme }) => {
                     whileHover={{ backgroundColor: theme.hover || '#f5f5f5' }}
                   >
                     <NotificationIcon $unread={!notif.read}>
-                      {notif.type === 'teacher_comment' ? '💬' : '📢'}
+                      {notif.type === 'score_override' ? '📝' : notif.type === 'teacher_comment' ? '💬' : '📢'}
                     </NotificationIcon>
                     <NotificationContent>
                       <NotificationTitle theme={theme}>
@@ -287,9 +287,22 @@ const NotificationBell = ({ theme }) => {
                         )}
                         <span className="time">{formatTimeAgo(notif.createdAtMs || notif.createdAt)}</span>
                       </NotificationMeta>
-                      <NotificationComment theme={theme}>
-                        "{notif.comment}"
-                      </NotificationComment>
+                      {notif.type === 'score_override' ? (
+                        <>
+                          <NotificationScoreChange theme={theme}>
+                            Tu docente ha modificado tu nota: <strong>{notif.oldScore}/10</strong> → <strong>{notif.newScore}/10</strong>
+                          </NotificationScoreChange>
+                          {notif.reason && (
+                            <NotificationComment theme={theme}>
+                              Motivo: "{notif.reason}"
+                            </NotificationComment>
+                          )}
+                        </>
+                      ) : (
+                        <NotificationComment theme={theme}>
+                          "{notif.comment}"
+                        </NotificationComment>
+                      )}
                       <NotificationAuthor theme={theme}>
                         — {notif.docenteNombre || 'Tu docente'}
                       </NotificationAuthor>
@@ -529,6 +542,21 @@ const NotificationComment = styled.div`
   color: ${props => props.theme.text || '#333'};
   font-style: italic;
   line-height: 1.4;
+`;
+
+const NotificationScoreChange = styled.div`
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: ${props => `${props.theme.primary || '#3190FC'}12`};
+  border-left: 3px solid ${props => props.theme.primary || '#3190FC'};
+  border-radius: 0 8px 8px 0;
+  font-size: 0.85rem;
+  color: ${props => props.theme.text || '#333'};
+  line-height: 1.4;
+
+  strong {
+    color: ${props => props.theme.primary || '#3190FC'};
+  }
 `;
 
 const NotificationAuthor = styled.div`

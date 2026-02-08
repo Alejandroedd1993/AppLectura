@@ -16,6 +16,7 @@ import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useRateLimit from '../../hooks/useRateLimit';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
+import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import { renderMarkdown } from '../../utils/markdownUtils';
 
 const ResumenAcademico = ({ theme }) => {
@@ -67,6 +68,7 @@ const ResumenAcademico = ({ theme }) => {
   const [history, setHistory] = useState([]); // 🆕 Historial de versiones { timestamp, resumen, evaluacion }
   const [viewingVersion, setViewingVersion] = useState(null); // 🆕 Versión que se está visualizando (null = actual)
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Info de cambio de nota por docente
   const MAX_ATTEMPTS = 3;
 
   // 🆕 Rate limiting: 5s cooldown, máximo 10 evaluaciones/hora
@@ -285,6 +287,16 @@ const ResumenAcademico = ({ theme }) => {
     if (cloudData.submitted) {
       setIsSubmitted(true);
       setIsLocked(true); // 🔒 También bloquear la edición al rehidratar entrega
+    }
+
+    // 🆕 Capturar info de cambio de nota por docente
+    if (cloudData.teacherOverrideScore != null) {
+      setTeacherScoreOverride({
+        teacherOverrideScore: cloudData.teacherOverrideScore,
+        scoreOverrideReason: cloudData.scoreOverrideReason,
+        scoreOverriddenAt: cloudData.scoreOverriddenAt,
+        docenteNombre: cloudData.docenteNombre
+      });
     }
 
     // 🆕 Restaurar borrador desde cloud si existe y sessionStorage está vacío
@@ -770,6 +782,9 @@ const ResumenAcademico = ({ theme }) => {
           </span>
         </SubmissionBanner>
       )}
+
+      {/* 🆕 Banner de cambio de nota por el docente */}
+      <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={theme} />
 
       {/* Guía pedagógica colapsable - estilo expandir/colapsar */}
       <GuideSection theme={theme} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
