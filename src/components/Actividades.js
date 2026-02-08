@@ -946,7 +946,7 @@ export default function Actividades() {
                     fontSize: '0.9rem',
                     lineHeight: 1.6
                   }}>
-                    Descarga tu progreso completo en formato estructurado:
+                    Descarga tu progreso en formatos útiles:
                   </p>
                   <ul style={{
                     margin: '0 0 1rem 1.5rem',
@@ -955,7 +955,7 @@ export default function Actividades() {
                     lineHeight: 1.7
                   }}>
                     <li><strong>CSV:</strong> Ideal para Excel, análisis estadístico y gráficos. Cada fila es una evaluación con fecha, puntuación y nivel.</li>
-                    <li><strong>JSON:</strong> Formato estructurado con resumen general, historial completo y criterios detallados por artefacto.</li>
+                    <li><strong>PDF:</strong> Informe legible para portafolios: resumen + tabla por artefacto + contenido (si existe).</li>
                   </ul>
                   <p style={{
                     margin: '0 0 1rem 0',

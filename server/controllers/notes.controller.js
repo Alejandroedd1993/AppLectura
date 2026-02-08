@@ -7,11 +7,13 @@ import { notesSchema } from '../validators/schemas.js';
  *   texto: string, 
  *   api?: 'openai'|'deepseek'|'gemini',
  *   contexto?: Object, // Contexto enriquecido del análisis académico
- *   nivelAcademico?: 'secundaria'|'pregrado'|'posgrado'|'doctorado' // FASE 3
+ *   nivelAcademico?: 'secundaria'|'pregrado'|'posgrado'|'doctorado', // FASE 3
+ *   tipoTexto?: 'auto'|'narrativo'|'poetico'|'filosofico'|'ensayo',
+ *   numeroTarjetas?: number
  * }
  */
 export async function generarNotas(req, res) {
-  const { texto, api = 'openai', contexto = null, nivelAcademico = 'pregrado' } = req.body || {};
+  const { texto, api = 'openai', contexto = null, nivelAcademico = 'pregrado', tipoTexto = 'auto', numeroTarjetas = undefined } = req.body || {};
 
   if (!texto || typeof texto !== 'string' || texto.trim().length === 0) {
     return res.status(400).json({ error: 'Texto vacío', mensaje: 'Proporciona texto para generar notas' });
@@ -43,13 +45,13 @@ export async function generarNotas(req, res) {
     let result;
     switch (api) {
       case 'openai':
-        result = await generarNotasConOpenAI(texto, contexto, nivelAcademico); // 🆕 Pasar nivel
+        result = await generarNotasConOpenAI(texto, contexto, nivelAcademico, tipoTexto, numeroTarjetas); // 🆕 Pasar nivel
         break;
       case 'deepseek':
-        result = await generarNotasConDeepSeek(texto, contexto, nivelAcademico); // 🆕 Pasar nivel
+        result = await generarNotasConDeepSeek(texto, contexto, nivelAcademico, tipoTexto, numeroTarjetas); // 🆕 Pasar nivel
         break;
       case 'gemini':
-        result = await generarNotasConGemini(texto, contexto, nivelAcademico); // 🆕 Pasar nivel
+        result = await generarNotasConGemini(texto, contexto, nivelAcademico, tipoTexto, numeroTarjetas); // 🆕 Pasar nivel
         break;
       default:
         return res.status(400).json({ error: 'API no soportada', mensaje: `Proveedor no soportado: ${api}` });

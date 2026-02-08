@@ -163,42 +163,23 @@ const RepasoItem = React.memo(({
           e.target.style.boxShadow = tokens.boxShadow.sm;
         }
       }}
+      onFocus={(e) => {
+        if (!completado) {
+          e.target.style.backgroundColor = theme.secondary;
+          e.target.style.transform = 'translateY(-2px)';
+          e.target.style.boxShadow = tokens.boxShadow.md;
+        }
+      }}
+      onBlur={(e) => {
+        if (!completado) {
+          e.target.style.backgroundColor = theme.primary;
+          e.target.style.transform = 'translateY(0)';
+          e.target.style.boxShadow = tokens.boxShadow.sm;
+        }
+      }}
     >
       {completado ? '✓ Completado' : 'Marcar completado'}
     </button>
-    
-    {/* Animaciones CSS */}
-    <style>{`
-      @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
-      }
-      
-      @keyframes slideInRight {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.8; }
-        }
-        
-        @keyframes slideInRight {
-          from, to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-      }
-    `}</style>
   </div>
 ));
 
@@ -341,29 +322,6 @@ const EstadisticasProgreso = React.memo(({ cronograma, notasRepasadas, theme }) 
         )}
       </div>
       
-      {/* Animaciones CSS */}
-      <style>{`
-        @keyframes shine {
-          0% { left: -100%; }
-          100% { left: 200%; }
-        }
-        
-        @keyframes celebrate {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.05); }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          @keyframes shine {
-            0%, 100% { left: 0; opacity: 0.5; }
-            50% { opacity: 1; }
-          }
-          
-          @keyframes celebrate {
-            0%, 100% { transform: scale(1); }
-          }
-        }
-      `}</style>
     </div>
   );
 });
@@ -400,16 +358,6 @@ const CronogramaRepaso = React.memo(({
     !notasRepasadas[index]
   );
   
-  const _repasosCompletados = cronograma.filter((repaso, index) => 
-    repaso.completado || notasRepasadas[index]
-  );
-  
-  const _repasosPendientes = cronograma.filter((repaso, index) => 
-    !repaso.completado && 
-    !notasRepasadas[index] && 
-    new Date(repaso.fecha).toDateString() !== hoy.toDateString()
-  );
-
   return (
     <div style={{ marginTop: tokens.spacing.xl }}>
       <h3 style={{ 

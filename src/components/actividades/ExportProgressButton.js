@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { exportGenericPDF } from '../../utils/exportUtils';
 
 /**
- * 📥 ExportProgressButton - Exporta el progreso del estudiante en CSV/JSON
- * 
+ * 📥 ExportProgressButton - Exporta el progreso del estudiante en CSV/PDF
+ *
  * Funcionalidades:
- * - Exportar todas las evaluaciones con detalles
- * - Formato CSV para análisis en Excel/SPSS
- * - Formato JSON para procesamiento programático
- * - Incluye timestamps, puntuaciones, niveles, criterios
- * - Útil para investigación y seguimiento docente
+ * - Formato CSV para análisis en Excel/SPSS (detalle por intento)
+ * - Formato PDF para portafolio/lectura humana (resumen + tabla)
  */
 
 const ButtonContainer = styled.div`
@@ -246,7 +244,7 @@ export default function ExportProgressButton({
     if (selectedFormat === 'csv') {
       exportCSV();
     } else {
-      exportJSON();
+      exportPDF();
     }
 
     setShowConfirm(false);
@@ -256,23 +254,20 @@ export default function ExportProgressButton({
     const headers = [
       'Fecha y Hora',
       'Artefacto',
-      'Puntuación sobre 10',
-      'Nivel Alcanzado',
+      'Puntuación (sobre 10)',
+      'Nivel Alcanzado (1-4)',
       'Descripción del Nivel',
-      'Número de Intento',
-      'Documento ID',
-      'Rúbrica ID'
+      'Número de Intento'
     ];
 
-    const rows = [];
-
-    // Niveles descriptivos
     const nivelDescripcion = {
       1: 'Inicial - Requiere desarrollo',
       2: 'Básico - En progreso',
       3: 'Competente - Satisfactorio',
       4: 'Avanzado - Excelente'
     };
+
+    const rows = [];
 
     Object.entries(rubricProgress).forEach(([rubricId, data]) => {
       if (data?.scores) {
@@ -292,9 +287,7 @@ export default function ExportProgressButton({
             score.score.toFixed(2),
             nivel,
             nivelDescripcion[nivel] || 'Sin clasificar',
-            index + 1,
-            documentId,
-            rubricId
+            index + 1
           ]);
         });
       }
@@ -303,42 +296,19 @@ export default function ExportProgressButton({
     // Ordenar por fecha (más reciente primero)
     rows.sort((a, b) => new Date(b[0]) - new Date(a[0]));
 
-    const csv = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
+    const titleRow = `"Historial de Evaluaciones — Exportado: ${new Date().toLocaleString('es-ES')}"`;
+    const csv = [titleRow, headers.map(h => `"${h}"`).join(','), ...rows
+      .map(row => row.map(cell => `"${cell}"`).join(','))]
       .join('\n');
 
-    // Agregar BOM UTF-8 para correcta visualización en Excel
     const BOM = '\uFEFF';
     downloadFile(BOM + csv, `progreso_${documentId}_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8');
   };
 
-  const exportJSON = () => {
+  const exportPDF = async () => {
     // 🆕 Cargar contenido de artefactos
     const artefactosContent = loadArtefactosContent();
 
-    const exportData = {
-      metadata: {
-        fechaExportacion: new Date().toLocaleString('es-ES'),
-        documentoID: documentId,
-        lectureId: lectureId,
-        totalEvaluaciones: Object.values(rubricProgress).reduce((sum, r) => sum + (r?.scores?.length || 0), 0),
-        totalInteraccionesTutor: tutorInteractions?.length || 0,
-        totalCitasGuardadas: savedCitations?.length || 0,
-        version: '2.0'
-      },
-      resumen: {
-        dimensionesCompletadas: 0,
-        promedioGeneral: 0,
-        nivelPromedioAlcanzado: 0
-      },
-      artefactos: {}
-    };
-
-    let totalScore = 0;
-    let totalNivel = 0;
-    let artefactosConDatos = 0;
-
-    // Mapeo de rubricId a clave de contenido
     const rubricToContentKey = {
       rubrica1: 'resumenAcademico',
       rubrica2: 'tablaACD',
@@ -347,97 +317,123 @@ export default function ExportProgressButton({
       rubrica5: 'bitacoraEticaIA'
     };
 
-    Object.entries(rubricProgress).forEach(([rubricId, data]) => {
-      if (data?.scores && data.scores.length > 0) {
-        const lastScore = data.scores[data.scores.length - 1];
-        const highestScore = Math.max(...data.scores.map(s => s.score));
-        const lastNivel = lastScore.nivel || Math.ceil(lastScore.score / 2.5);
+    const rubricIds = Object.keys(ARTEFACTO_NAMES);
+    const nivelDescripcion = {
+      1: 'Inicial - Requiere desarrollo',
+      2: 'Básico - En progreso',
+      3: 'Competente - Satisfactorio',
+      4: 'Avanzado - Excelente'
+    };
 
-        artefactosConDatos++;
-        totalScore += lastScore.score;
-        totalNivel += lastNivel;
+    let totalScore = 0;
+    let totalNivel = 0;
+    let artefactosConDatos = 0;
+    let dimensionesCompletadas = 0;
+    let totalEvaluaciones = 0;
 
-        if (lastNivel >= 3) {
-          exportData.resumen.dimensionesCompletadas++;
-        }
+    const rows = rubricIds.map((rubricId) => {
+      const data = rubricProgress?.[rubricId];
+      const scores = data?.scores || [];
+      totalEvaluaciones += scores.length;
 
-        const contentKey = rubricToContentKey[rubricId];
-        const content = contentKey ? artefactosContent[contentKey] : null;
-
-        exportData.artefactos[rubricId] = {
-          nombre: ARTEFACTO_NAMES[rubricId] || rubricId,
-          estado: lastNivel >= 3 ? 'Completado' : 'En Progreso',
-          intentos: data.scores.length,
-          ultimaPuntuacion: lastScore.score.toFixed(2),
-          puntuacionMasAlta: highestScore.toFixed(2),
-          nivelActual: lastNivel,
-          descripcionNivel: {
-            1: 'Inicial - Requiere desarrollo',
-            2: 'Básico - En progreso',
-            3: 'Competente - Satisfactorio',
-            4: 'Avanzado - Excelente'
-          }[lastNivel],
-          // 🆕 Contenido del estudiante
-          contenido: content || null,
-          historial: data.scores.map((score, index) => {
-            const nivel = score.nivel || Math.ceil(score.score / 2.5);
-            return {
-              intento: index + 1,
-              fecha: new Date(score.timestamp).toLocaleString('es-ES'),
-              puntuacion: score.score.toFixed(2),
-              nivel: nivel,
-              descripcionNivel: {
-                1: 'Inicial',
-                2: 'Básico',
-                3: 'Competente',
-                4: 'Avanzado'
-              }[nivel],
-              criterios: score.criterios || {},
-              // 🆕 Feedback detallado si existe
-              feedback: score.feedback || null
-            };
-          })
-        };
+      if (scores.length === 0) {
+        return [ARTEFACTO_NAMES[rubricId] || rubricId, 'Sin datos', '0', '—', '—', '—'];
       }
+
+      const lastScore = scores[scores.length - 1];
+      const highestScore = Math.max(...scores.map(s => Number(s?.score) || 0));
+      const lastNivel = lastScore.nivel || Math.ceil((Number(lastScore.score) || 0) / 2.5);
+
+      artefactosConDatos++;
+      totalScore += Number(lastScore.score) || 0;
+      totalNivel += Number(lastNivel) || 0;
+      if (lastNivel >= 3) dimensionesCompletadas++;
+
+      const estado = lastNivel >= 3 ? 'Completado' : 'En progreso';
+      const ultimaFecha = lastScore.timestamp ? new Date(lastScore.timestamp).toLocaleString('es-ES') : '—';
+
+      return [
+        ARTEFACTO_NAMES[rubricId] || rubricId,
+        estado,
+        String(scores.length),
+        (Number(lastScore.score) || 0).toFixed(2),
+        highestScore.toFixed(2),
+        `${lastNivel} (${nivelDescripcion[lastNivel] || 'Sin clasificar'}) · ${ultimaFecha}`
+      ];
     });
 
-    if (artefactosConDatos > 0) {
-      exportData.resumen.promedioGeneral = (totalScore / artefactosConDatos).toFixed(2);
-      exportData.resumen.nivelPromedioAlcanzado = Math.round(totalNivel / artefactosConDatos);
-    }
+    const promedioGeneral = artefactosConDatos > 0 ? (totalScore / artefactosConDatos).toFixed(2) : '0.00';
+    const nivelPromedioAlcanzado = artefactosConDatos > 0 ? Math.round(totalNivel / artefactosConDatos) : 0;
 
-    // 🆕 Interacciones con el tutor
-    if (tutorInteractions && tutorInteractions.length > 0) {
-      exportData.interaccionesTutor = tutorInteractions.map(interaction => ({
-        fecha: interaction.timestamp ? new Date(interaction.timestamp).toLocaleString('es-ES') : 'Desconocida',
-        tipo: interaction.type || 'chat',
-        preguntaEstudiante: interaction.prompt || interaction.question || '',
-        respuestaTutor: interaction.response || '',
-        contexto: interaction.context || null
-      }));
-    }
+    const contenidoArtefactos = {};
+    rubricIds.forEach(rubricId => {
+      const key = rubricToContentKey[rubricId];
+      if (!key) return;
+      contenidoArtefactos[key] = artefactosContent?.[key];
+    });
 
-    // 🆕 Citas guardadas
-    if (savedCitations && savedCitations.length > 0) {
-      exportData.citasGuardadas = savedCitations.map(cita => ({
-        texto: cita.texto || cita.text || '',
-        posicion: cita.posicion || cita.position || null,
-        fechaGuardado: cita.timestamp ? new Date(cita.timestamp).toLocaleString('es-ES') : null
-      }));
-    }
+    const interaccionesTutorRecientes = Array.isArray(tutorInteractions)
+      ? tutorInteractions
+        .slice(-8)
+        .map(interaction => ({
+          fecha: interaction?.timestamp ? new Date(interaction.timestamp).toLocaleString('es-ES') : null,
+          tipo: interaction?.type || 'chat',
+          preguntaEstudiante: interaction?.prompt || interaction?.question || '',
+          respuestaTutor: interaction?.response || '',
+        }))
+      : [];
 
-    // 🆕 Reflexiones éticas (si existen en bitácora)
-    if (artefactosContent.bitacoraEticaIA) {
-      exportData.reflexionesEticas = {
-        verificacionFuentes: artefactosContent.bitacoraEticaIA.verificacionFuentes || '',
-        procesoUsoIA: artefactosContent.bitacoraEticaIA.procesoUsoIA || '',
-        reflexionEtica: artefactosContent.bitacoraEticaIA.reflexionEtica || '',
-        declaraciones: artefactosContent.bitacoraEticaIA.declaraciones || []
-      };
-    }
+    const citasRecientes = Array.isArray(savedCitations)
+      ? savedCitations
+        .slice(0, 12)
+        .map(cita => ({
+          texto: cita?.texto || cita?.text || '',
+          posicion: cita?.posicion || cita?.position || null,
+          fechaGuardado: cita?.timestamp ? new Date(cita.timestamp).toLocaleString('es-ES') : null
+        }))
+      : [];
 
-    const json = JSON.stringify(exportData, null, 2);
-    downloadFile(json, `progreso_completo_${documentId}_${new Date().toISOString().split('T')[0]}.json`, 'application/json');
+    const datePart = new Date().toISOString().split('T')[0];
+    await exportGenericPDF({
+      title: 'Informe de progreso (Actividades)',
+      fileName: `progreso_${documentId}_${datePart}.pdf`,
+      sections: [
+        {
+          heading: 'Resumen',
+          keyValues: {
+            fechaExportacion: new Date().toLocaleString('es-ES'),
+            documentoID: documentId,
+            lectureId,
+            totalEvaluaciones,
+            dimensionesCompletadas,
+            promedioGeneral,
+            nivelPromedioAlcanzado,
+            totalInteraccionesTutor: tutorInteractions?.length || 0,
+            totalCitasGuardadas: savedCitations?.length || 0,
+          }
+        },
+        {
+          heading: 'Tabla por artefacto',
+          text: 'Detalle por artefacto (estado, intentos y puntuaciones). Para el historial completo de intentos, usa el CSV.',
+          table: {
+            headers: ['Artefacto', 'Estado', 'Intentos', 'Última', 'Máxima', 'Nivel / Fecha'],
+            rows
+          }
+        },
+        {
+          heading: 'Contenido del estudiante (si existe)',
+          keyValues: contenidoArtefactos
+        },
+        {
+          heading: 'Interacciones con tutor (recientes)',
+          list: interaccionesTutorRecientes
+        },
+        {
+          heading: 'Citas guardadas (muestra)',
+          list: citasRecientes
+        }
+      ]
+    });
   };
 
   const downloadFile = (content, filename, mimeType) => {
@@ -473,17 +469,17 @@ export default function ExportProgressButton({
         </ExportButton>
 
         <ExportButton
-          $format="json"
+          $format="pdf"
           onClick={() => {
-            setFormat('json');
+            setFormat('pdf');
             setShowConfirm(true);
           }}
           disabled={!hasData}
           whileHover={{ scale: hasData ? 1.05 : 1 }}
           whileTap={{ scale: hasData ? 0.95 : 1 }}
         >
-          <span className="icon">📦</span>
-          Exportar JSON
+          <span className="icon">📄</span>
+          Exportar PDF
         </ExportButton>
       </ButtonContainer>
 
@@ -503,7 +499,7 @@ export default function ExportProgressButton({
               onClick={(e) => e.stopPropagation()}
             >
               <h3>
-                <span>{format === 'csv' ? '📊' : '📦'}</span>
+                <span>{format === 'csv' ? '📊' : '📄'}</span>
                 Exportar Progreso en {format.toUpperCase()}
               </h3>
 
@@ -528,11 +524,11 @@ export default function ExportProgressButton({
                   </>
                 ) : (
                   <>
-                    <li><strong>Resumen general:</strong> dimensiones completadas, promedio, nivel alcanzado</li>
-                    <li><strong>Por cada artefacto:</strong> estado, intentos, puntuaciones, historial completo</li>
-                    <li><strong>Historial detallado:</strong> cada intento con fecha, puntuación y nivel</li>
-                    <li><strong>Criterios evaluados:</strong> desglose de cada evaluación</li>
-                    <li>Formato estructurado para análisis programático</li>
+                    <li><strong>Resumen general:</strong> dimensiones completadas, promedio y nivel alcanzado</li>
+                    <li><strong>Tabla por artefacto:</strong> estado, intentos, última y máxima puntuación</li>
+                    <li><strong>Contenido (si existe):</strong> respuestas guardadas del estudiante en cada artefacto</li>
+                    <li><strong>Soporte:</strong> muestra de interacciones con el tutor y citas guardadas</li>
+                    <li><strong>Nota:</strong> para el historial completo por intento, usa el CSV</li>
                   </>
                 )}
               </ul>

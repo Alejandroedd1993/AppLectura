@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
-import { exportToCSV, exportToJSON, calculateDetailedStats } from '../../services/analyticsService';
+import { exportToCSV, calculateDetailedStats } from '../../services/analyticsService';
 
 const PanelContainer = styled.div`
   background: ${props => props.theme.surface};

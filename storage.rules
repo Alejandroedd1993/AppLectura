@@ -32,10 +32,6 @@ service firebase.storage {
       return isAuthenticated() && getUserRole(request.auth.uid) == 'docente';
     }
     
-    function isEstudiante() {
-      return isAuthenticated() && getUserRole(request.auth.uid) == 'estudiante';
-    }
-    
     function isValidFileSize(maxSizeMB) {
       return request.resource.size <= maxSizeMB * 1024 * 1024;
     }

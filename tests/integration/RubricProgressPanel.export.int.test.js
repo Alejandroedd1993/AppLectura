@@ -2,8 +2,34 @@
  * Integration test: RubricProgressPanel shows per-dimension summary and allows export
  */
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RubricProgressPanel from '../../src/components/analisis/RubricProgressPanel';
+
+const mockDoc = {
+  internal: {
+    pageSize: {
+      getWidth: () => 210,
+      getHeight: () => 297,
+    }
+  },
+  addPage: () => {},
+  setDrawColor: () => {},
+  setLineWidth: () => {},
+  line: () => {},
+  setFont: () => {},
+  setFontSize: () => {},
+  setTextColor: () => {},
+  text: () => {},
+  splitTextToSize: (txt) => [String(txt)],
+  getTextWidth: () => 40,
+  save: () => {},
+};
+
+function mockJsPDF() {
+  return mockDoc;
+}
+
+jest.mock('jspdf', () => ({ jsPDF: mockJsPDF }));
 
 const rubric = {
   meta: { id: 'critical_literacy_v2', dimensionsOrder: ['comprension', 'argumentacion'] },
@@ -36,6 +62,8 @@ describe('RubricProgressPanel - summary and export', () => {
     // Mock createObjectURL to avoid jsdom errors
     global.URL.createObjectURL = jest.fn(() => 'blob:mock');
     global.URL.revokeObjectURL = jest.fn();
+    // Con resetMocks=true, reinstanciamos el spy por test
+    mockDoc.save = jest.fn();
   });
 
   it('renders per-dimension summary with counts and percentage', () => {
@@ -46,14 +74,12 @@ describe('RubricProgressPanel - summary and export', () => {
     expect(arg.textContent).toMatch(/Argumentación — 1\/1 \(100%\)/);
   });
 
-  it('exports JSON when clicking the export button', () => {
-    const clickSpy = jest.spyOn(document.body, 'appendChild');
+  it('exports PDF when clicking the export button', async () => {
     render(<RubricProgressPanel rubric={rubric} criterionFeedbacks={feedbacks} theme={{}} />);
     const btn = screen.getByTestId('export-rubric-progress');
     fireEvent.click(btn);
-    expect(clickSpy).toHaveBeenCalled();
-    // Validate content shape built by buildExportData indirectly via Blob
-    const blobArg = (window.URL.createObjectURL.mock.calls.length > 0);
-    expect(blobArg).toBe(true);
+    await waitFor(() => {
+      expect(mockDoc.save).toHaveBeenCalled();
+    });
   });
 });

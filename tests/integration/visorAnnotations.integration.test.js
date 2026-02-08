@@ -48,7 +48,7 @@ describe('VisorTexto_responsive - selección sin resaltados', () => {
     expect(screen.getByRole('toolbar', { name: 'seleccion-herramientas' })).toBeInTheDocument();
     expect(screen.getByLabelText('explicar-seleccion')).toBeInTheDocument();
     expect(screen.getByLabelText('guardar-cita-seleccion')).toBeInTheDocument();
-    expect(screen.getByLabelText('abrir-notas-seleccion')).toBeInTheDocument();
+    expect(screen.getByLabelText('anotar-seleccion')).toBeInTheDocument();
     expect(screen.getByLabelText('copiar-seleccion')).toBeInTheDocument();
     expect(screen.getByLabelText('cerrar-toolbar')).toBeInTheDocument();
 

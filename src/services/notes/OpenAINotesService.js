@@ -5,8 +5,7 @@
  * @description Servicio especializado para generar notas de estudio usando OpenAI API
  */
 
-import { OpenAI } from 'openai';
-import StorageService from './StorageService';
+import logger from '../../utils/logger';
 
 /**
  * Servicio de OpenAI para notas de estudio
@@ -32,15 +31,7 @@ class OpenAINotesService {
    * @returns {string|null}
    */
   getUserApiKey() {
-    try {
-      if (typeof window === 'undefined') return null;
-      if (!StorageService?.isStorageAvailable?.()) return null;
-
-      const key = localStorage.getItem(StorageService.keys.API_KEY);
-      return key && typeof key === 'string' && key.trim().length > 0 ? key.trim() : null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   /**
@@ -48,7 +39,7 @@ class OpenAINotesService {
    * @returns {boolean}
    */
   hasUserApiKey() {
-    return !!this.getUserApiKey();
+    return false;
   }
 
   /**
@@ -58,18 +49,9 @@ class OpenAINotesService {
    */
   getClient() {
     try {
-      const key = this.getUserApiKey();
-      
-      if (!key) {
-        throw new Error('No se encontró una clave API de OpenAI (BYOK). Configura tu API key para usar OpenAI directo.');
-      }
-
-      return new OpenAI({
-        apiKey: key,
-        dangerouslyAllowBrowser: true
-      });
+      throw new Error('OpenAI directo está deshabilitado en el frontend. Usa el backend configurado por la app.');
     } catch (error) {
-      console.error('Error al inicializar OpenAI:', error);
+      logger.error('Error al inicializar OpenAI:', error);
       throw new Error(`Error de configuración: ${error.message}`);
     }
   }
@@ -83,9 +65,11 @@ class OpenAINotesService {
   generateCacheKey(prefix, content) {
     if (!content) return '';
     
-    // Crear hash simple del contenido
+    // Crear hash simple del contenido con muestras de inicio y fin
     let hash = 0;
-    const sample = content.substring(0, 200); // Usar muestra del contenido
+    const head = content.substring(0, 500);
+    const tail = content.substring(Math.max(0, content.length - 500));
+    const sample = `${head}::${tail}::${content.length}`;
     
     for (let i = 0; i < sample.length; i++) {
       const char = sample.charCodeAt(i);
@@ -125,12 +109,12 @@ class OpenAINotesService {
     
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        console.log(`[OpenAI] ${operation} - Intento ${attempt}/${this.maxRetries}`);
+        logger.log(`[OpenAI] ${operation} - Intento ${attempt}/${this.maxRetries}`);
         return await apiCall();
         
       } catch (error) {
         lastError = error;
-        console.warn(`[OpenAI] ${operation} falló en intento ${attempt}:`, error.message);
+        logger.warn(`[OpenAI] ${operation} falló en intento ${attempt}:`, error.message);
         
         // Si es el último intento, no esperar
         if (attempt === this.maxRetries) {
@@ -139,7 +123,7 @@ class OpenAINotesService {
         
         // Esperar antes del siguiente intento, con backoff exponencial
         const delay = this.retryDelay * Math.pow(2, attempt - 1);
-        console.log(`[OpenAI] Esperando ${delay}ms antes del siguiente intento...`);
+        logger.log(`[OpenAI] Esperando ${delay}ms antes del siguiente intento...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -160,7 +144,7 @@ class OpenAINotesService {
     // Verificar caché
     const cacheKey = this.generateCacheKey('tipo', texto);
     if (this.cache.has(cacheKey)) {
-      console.log('[OpenAI] Usando tipo de texto desde caché');
+      logger.log('[OpenAI] Usando tipo de texto desde caché');
       return this.cache.get(cacheKey);
     }
 
@@ -194,15 +178,15 @@ ${this.limitTextForAPI(texto)}`;
       if (tiposValidos.includes(tipoDetectado)) {
         // Guardar en caché
         this.cache.set(cacheKey, tipoDetectado);
-        console.log(`[OpenAI] Tipo detectado: ${tipoDetectado}`);
+        logger.log(`[OpenAI] Tipo detectado: ${tipoDetectado}`);
         return tipoDetectado;
       } else {
-        console.warn(`[OpenAI] Tipo no reconocido: "${tipoDetectado}", usando "narrativo" por defecto`);
+        logger.warn(`[OpenAI] Tipo no reconocido: "${tipoDetectado}", usando "narrativo" por defecto`);
         return 'narrativo';
       }
       
     } catch (error) {
-      console.error('[OpenAI] Error en detección de tipo:', error);
+      logger.error('[OpenAI] Error en detección de tipo:', error);
       throw new Error(`No se pudo detectar el tipo de texto: ${error.message}`);
     }
   }
@@ -293,7 +277,7 @@ ESTRUCTURA REQUERIDA (JSON):
     // Verificar caché
     const cacheKey = this.generateCacheKey(`notas_${tipo}`, texto);
     if (this.cache.has(cacheKey)) {
-      console.log('[OpenAI] Usando notas desde caché');
+      logger.log('[OpenAI] Usando notas desde caché');
       return this.cache.get(cacheKey);
     }
 
@@ -330,11 +314,11 @@ ${textoLimitado}`;
       // Guardar en caché
       this.cache.set(cacheKey, notasGeneradas);
       
-      console.log(`[OpenAI] Notas generadas exitosamente para tipo: ${tipo}`);
+      logger.log(`[OpenAI] Notas generadas exitosamente para tipo: ${tipo}`);
       return notasGeneradas;
 
     } catch (error) {
-      console.error('[OpenAI] Error al generar notas:', error);
+      logger.error('[OpenAI] Error al generar notas:', error);
       throw new Error(`Error al generar notas de estudio: ${error.message}`);
     }
   }
@@ -369,8 +353,8 @@ ${textoLimitado}`;
       return notas;
       
     } catch (jsonError) {
-      console.error('[OpenAI] Error al parsear JSON:', jsonError);
-      console.log('[OpenAI] Respuesta recibida:', respuesta);
+      logger.error('[OpenAI] Error al parsear JSON:', jsonError);
+      logger.log('[OpenAI] Respuesta recibida:', respuesta);
       
       // Crear estructura básica de respaldo
       return {
@@ -391,10 +375,10 @@ ${textoLimitado}`;
     if (prefix) {
       const keysToDelete = Array.from(this.cache.keys()).filter(key => key.startsWith(prefix));
       keysToDelete.forEach(key => this.cache.delete(key));
-      console.log(`[OpenAI] Cache limpiado para prefijo: ${prefix}`);
+      logger.log(`[OpenAI] Cache limpiado para prefijo: ${prefix}`);
     } else {
       this.cache.clear();
-      console.log('[OpenAI] Cache completamente limpiado');
+      logger.log('[OpenAI] Cache completamente limpiado');
     }
   }
 

@@ -113,8 +113,9 @@ export default function RubricProgressPanel({ rubric, criterionFeedbacks = {}, t
   const buildCSVData = (onlyDimId) => {
     const rubricId = rubric?.meta?.id || '';
     const delimiter = useSemicolon ? ';' : ',';
-    const headers = ['rubricId','dimensionId','dimensionLabel','criterionId','criterionLabel','nivel','ts','isoDate','justificacion','sugerencia'];
-    const rows = [headers.join(delimiter)];
+    const headers = ['Dimensión', 'Criterio', 'Nivel Alcanzado', 'Fecha de Evaluación', 'Justificación', 'Sugerencia'];
+    const titleRow = [csvEscape(`Progreso de Rúbrica: ${rubricId} — Exportado: ${new Date().toLocaleString('es-ES')}`, delimiter)];
+    const rows = [titleRow.join(delimiter), headers.map(h => csvEscape(h, delimiter)).join(delimiter)];
     dimOrder
       .filter(dimId => !onlyDimId || dimId === onlyDimId)
       .forEach(dimId => {
@@ -123,23 +124,19 @@ export default function RubricProgressPanel({ rubric, criterionFeedbacks = {}, t
       (dim.criteria || []).forEach(c => {
         const entry = lastByCriterion[`${dim.id}:${c.id}`] || {};
         const ts = entry.ts || '';
-        const iso = ts ? new Date(ts).toISOString() : '';
+        const fechaLegible = ts ? new Date(ts).toLocaleString('es-ES') : '';
         const row = [
-          rubricId,
-          dim.id,
-          dim.label,
-          c.id,
-          c.label,
-          entry.nivel || '',
-          ts,
-          iso,
+          dim.label || dim.id,
+          c.label || c.id,
+          entry.nivel || 'Sin evaluar',
+          fechaLegible,
           entry.justificacion || '',
           entry.sugerencia || ''
         ].map(v => csvEscape(v, delimiter)).join(delimiter);
         rows.push(row);
       });
     });
-    return rows.join('\n');
+    return '\uFEFF' + rows.join('\n');
   };
 
   const handleExport = async () => {

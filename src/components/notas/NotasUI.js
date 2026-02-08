@@ -9,6 +9,92 @@ import * as tokens from '../../styles/designTokens';
 import LoadingState from '../ui/LoadingState';
 
 /**
+ * Animaciones globales para notas de estudio
+ */
+export const NotasAnimations = React.memo(() => (
+  <style>{`
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    @keyframes slideInRight {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes shine {
+      0% { left: -100%; }
+      100% { left: 200%; }
+    }
+
+    @keyframes celebrate {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes slideDown {
+        from, to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+      }
+
+      @keyframes slideInRight {
+        from, to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes shine {
+        0%, 100% { left: 0; opacity: 0.5; }
+        50% { opacity: 1; }
+      }
+
+      @keyframes celebrate {
+        0%, 100% { transform: scale(1); }
+      }
+
+      @keyframes fadeIn {
+        from, to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    }
+  `}</style>
+));
+
+/**
  * Componente de error con opción de reintento
  */
 export const ErrorDisplay = React.memo(({ error, onRetry, theme, modoOscuro }) => (
@@ -62,6 +148,14 @@ export const ErrorDisplay = React.memo(({ error, onRetry, theme, modoOscuro }) =
         e.target.style.transform = 'translateY(0)';
         e.target.style.boxShadow = tokens.boxShadow.sm;
       }}
+      onFocus={(e) => {
+        e.target.style.transform = 'translateY(-2px)';
+        e.target.style.boxShadow = tokens.boxShadow.md;
+      }}
+      onBlur={(e) => {
+        e.target.style.transform = 'translateY(0)';
+        e.target.style.boxShadow = tokens.boxShadow.sm;
+      }}
     >
       🔄 Intentar nuevamente
     </button>
@@ -107,6 +201,14 @@ export const ConceptoEtiqueta = React.memo(({ concepto, theme }) => (
     e.target.style.boxShadow = tokens.boxShadow.sm;
   }}
   onMouseOut={(e) => {
+    e.target.style.transform = 'scale(1)';
+    e.target.style.boxShadow = 'none';
+  }}
+  onFocus={(e) => {
+    e.target.style.transform = 'scale(1.05)';
+    e.target.style.boxShadow = tokens.boxShadow.sm;
+  }}
+  onBlur={(e) => {
     e.target.style.transform = 'scale(1)';
     e.target.style.boxShadow = 'none';
   }}>

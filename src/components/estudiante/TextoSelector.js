@@ -727,7 +727,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
           };
 
           const rows = [];
-          docs.slice(0, 8).forEach(([docId, docData], idx) => {
+          docs.slice(0, 8).forEach(([\u005fdocId, docData], idx) => {
             const d = docData && typeof docData === 'object' ? docData : {};
             const prep = (d.preparation && typeof d.preparation === 'object') ? d.preparation : d;
 

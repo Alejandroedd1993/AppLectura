@@ -126,6 +126,30 @@ export function checkUnsaveDrafts(textoId = null, rubricProgress = {}, activitie
     }
   }
 
+  // 🆕 Ensayo Integrador - Detectar borrador en sessionStorage
+  const ensayoDraft = sessionStorage.getItem(key('ensayoIntegrador_text'));
+  if (ensayoDraft && ensayoDraft.trim().length > 0) {
+    // Verificar si ya hay un ensayo calificado para alguna dimensión
+    const dimensionDraft = sessionStorage.getItem(key('ensayoIntegrador_dimension'));
+    const DIMENSION_TO_RUBRIC = {
+      comprension_analitica: 'rubrica1',
+      acd: 'rubrica2',
+      contextualizacion: 'rubrica3',
+      argumentacion: 'rubrica4'
+    };
+    const targetRubricId = dimensionDraft ? DIMENSION_TO_RUBRIC[dimensionDraft] : null;
+    const isGraded = targetRubricId && rubricProgress?.[targetRubricId]?.summative?.status === 'graded';
+
+    if (!isGraded) {
+      hasDrafts = true;
+      details.push({
+        artefacto: 'Ensayo Integrador (Sumativo)',
+        estado: 'Borrador sin enviar',
+        ubicacion: 'Evaluación > Ensayo Integrador'
+      });
+    }
+  }
+
   return { hasDrafts, details };
 }
 

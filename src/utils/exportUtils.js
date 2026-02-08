@@ -454,7 +454,7 @@ export const exportGenericPDF = async ({ title, sections = [], fileName = 'expor
 /**
  * Exporta los resultados de análisis de prelectura a un PDF bien formateado.
  */
-export const exportarResultadosPDF = async (analisis, metadata = {}) => {
+export const exportarResultadosPDF = async (analisis, _metadata = {}) => {
   if (!analisis) {
     return { success: false, error: 'No hay datos de analisis para exportar.' };
   }
@@ -591,7 +591,7 @@ export const exportarResultadosPDF = async (analisis, metadata = {}) => {
         b.addText(Array.isArray(web_summary) ? web_summary.filter(Boolean).join(' ') : web_summary, 3);
       }
       if (Array.isArray(web_sources)) {
-        web_sources.forEach((source, idx) => {
+        web_sources.forEach((source, _idx) => {
           const title = source.title || 'Fuente';
           const url = source.url ? ` - ${source.url}` : '';
           b.addBullet(`${title}${url}`, 6);

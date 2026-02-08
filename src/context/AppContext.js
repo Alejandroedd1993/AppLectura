@@ -1695,6 +1695,7 @@ export const AppContextProvider = ({ children }) => {
       }
 
       const now = Date.now();
+      const isDraft = essayData.status === 'draft';
       const rawScore = essayData.score ?? essayData.finalScore ?? essayData.scoreGlobal ?? null;
       const score = rawScore == null ? null : Number(rawScore);
       const nivel =
@@ -1702,29 +1703,56 @@ export const AppContextProvider = ({ children }) => {
           ? Number(essayData.nivel)
           : (Number.isFinite(score) ? Math.round(score / 2.5) : null);
 
-      const submittedAt = Number(essayData.submittedAt ?? current.summative?.submittedAt ?? now) || now;
-      const gradedAt = Number(essayData.gradedAt ?? current.summative?.gradedAt ?? (score != null ? now : null)) || null;
+      // 🆕 Para borradores: preservar datos existentes de envío/calificación
+      const submittedAt = isDraft
+        ? (current.summative?.submittedAt || null)
+        : (Number(essayData.submittedAt ?? current.summative?.submittedAt ?? now) || now);
+      const gradedAt = isDraft
+        ? (current.summative?.gradedAt || null)
+        : (Number(essayData.gradedAt ?? current.summative?.gradedAt ?? (score != null ? now : null)) || null);
       const status = essayData.status || (score != null ? 'graded' : 'submitted');
 
-      // 🆕 FIX: Activar revisión automáticamente tras primer intento exitoso
-      // Si es el primer intento (attemptsUsed pasará a 1) y tiene score válido, permitir revisión
-      const nextAttemptsUsed = Math.max(Number(current.summative?.attemptsUsed || 0), Number(essayData.attemptsUsed || 1));
-      const shouldEnableRevision = 
-        essayData.allowRevision !== undefined 
-          ? Boolean(essayData.allowRevision)
-          : (nextAttemptsUsed === 1 && score != null) || Boolean(current.summative?.allowRevision);
+      // 🆕 Para borradores: NO incrementar intentos ni cambiar revisión
+      const nextAttemptsUsed = isDraft
+        ? Number(current.summative?.attemptsUsed || 0)
+        : Math.max(Number(current.summative?.attemptsUsed || 0), Number(essayData.attemptsUsed || 1));
+      const shouldEnableRevision = isDraft
+        ? Boolean(current.summative?.allowRevision || false)
+        : (essayData.allowRevision !== undefined 
+            ? Boolean(essayData.allowRevision)
+            : (nextAttemptsUsed === 1 && score != null) || Boolean(current.summative?.allowRevision));
 
-      const nextSummative = {
-        ...(current.summative || {}),
-        ...essayData,
-        score,
-        nivel,
-        status,
-        submittedAt,
-        gradedAt,
-        attemptsUsed: nextAttemptsUsed,
-        allowRevision: shouldEnableRevision
-      };
+      // 🆕 Para borradores: guardar en draftContent sin tocar essayContent (la versión calificada)
+      const nextSummative = isDraft
+        ? {
+            ...(current.summative || {}),
+            draftContent: essayData.essayContent || essayData.draftContent || current.summative?.draftContent || null,
+            draftDimension: essayData.dimension || current.summative?.draftDimension || null,
+            draftSavedAt: now,
+            // Preservar todos los campos calificados existentes
+            score: current.summative?.score ?? null,
+            nivel: current.summative?.nivel ?? null,
+            status: current.summative?.status === 'graded' ? 'graded' : 'draft',
+            submittedAt,
+            gradedAt,
+            attemptsUsed: nextAttemptsUsed,
+            allowRevision: shouldEnableRevision,
+          }
+        : {
+            ...(current.summative || {}),
+            ...essayData,
+            score,
+            nivel,
+            status,
+            submittedAt,
+            gradedAt,
+            attemptsUsed: nextAttemptsUsed,
+            allowRevision: shouldEnableRevision,
+            // Limpiar borrador al enviar oficialmente
+            draftContent: null,
+            draftDimension: null,
+            draftSavedAt: null,
+          };
 
       const finalScore = score != null ? score : (current.finalScore != null ? Number(current.finalScore) : null);
       const certified = Number.isFinite(finalScore) ? finalScore >= 6 : Boolean(current.certified);
@@ -1742,7 +1770,17 @@ export const AppContextProvider = ({ children }) => {
         artefactos: current.artefactos
       };
 
-      if (score != null) {
+      if (isDraft) {
+        // 🆕 Para borradores guardados en nube: disparar sync sin evaluar
+        window.dispatchEvent(new CustomEvent('rubricProgress-draft-saved', {
+          detail: {
+            rubricId,
+            artefacto: 'EnsayoIntegrador',
+            textoIdForSync,
+            rubricProgressOverride: { [rubricId]: updatedRubrica }
+          }
+        }));
+      } else if (score != null) {
         window.dispatchEvent(new CustomEvent('artifact-evaluated', {
           detail: {
             rubricId,
@@ -1804,13 +1842,15 @@ export const AppContextProvider = ({ children }) => {
 
   // 🆕 FUNCIÓN PARA GUARDAR UNA CITA (llamada desde Lectura Guiada)
   const saveCitation = useCallback((citation) => {
-    console.log('💾 [saveCitation] Guardando cita:', citation);
+    console.log('💾 [saveCitation] Guardando entrada:', citation);
 
-    const { documentId, texto, nota = '' } = citation;
+    const { documentId, texto, nota = '', tipo = 'cita' } = citation;
     const targetId = currentTextoId || documentId;
 
-    if (!targetId || !texto || texto.trim().length < 10) {
-      console.warn('⚠️ [saveCitation] Cita inválida (requiere textoId/documentId y texto >10 chars)');
+    // Las reflexiones/comentarios requieren mínimo 5 chars, las citas textuales mínimo 10
+    const minLength = tipo === 'cita' ? 10 : 5;
+    if (!targetId || !texto || texto.trim().length < minLength) {
+      console.warn(`⚠️ [saveCitation] Entrada inválida (requiere textoId/documentId y texto >${minLength} chars)`);
       return false;
     }
 
@@ -1819,13 +1859,13 @@ export const AppContextProvider = ({ children }) => {
     setSavedCitations(prev => {
       const docCitations = prev[targetId] || [];
 
-      // Evitar duplicados (mismos primeros 50 caracteres)
+      // Evitar duplicados (mismos primeros 50 caracteres + mismo tipo)
       const isDuplicate = docCitations.some(
-        c => c.texto.substring(0, 50) === texto.substring(0, 50)
+        c => c.texto.substring(0, 50) === texto.substring(0, 50) && (c.tipo || 'cita') === tipo
       );
 
       if (isDuplicate) {
-        console.warn('⚠️ [saveCitation] Cita duplicada, no se guardará');
+        console.warn('⚠️ [saveCitation] Entrada duplicada, no se guardará');
         return prev;
       }
 
@@ -1833,7 +1873,8 @@ export const AppContextProvider = ({ children }) => {
         id: Date.now(),
         texto: texto.trim(),
         timestamp: Date.now(),
-        nota: nota.trim()
+        nota: nota.trim(),
+        tipo // 'cita' | 'reflexion' | 'comentario' | 'pregunta'
       };
 
       const updated = {
@@ -1841,7 +1882,7 @@ export const AppContextProvider = ({ children }) => {
         [targetId]: [...docCitations, newCitation]
       };
 
-      console.log(`✅ [saveCitation] Cita guardada. Total para documento: ${updated[targetId].length}`);
+      console.log(`✅ [saveCitation] Entrada guardada (${tipo}). Total para documento: ${updated[targetId].length}`);
       return updated;
     });
 
@@ -2142,8 +2183,12 @@ export const AppContextProvider = ({ children }) => {
     };
 
     window.addEventListener('artifact-evaluated', handleArtifactCompleted);
+    window.addEventListener('rubricProgress-draft-saved', handleArtifactCompleted);
 
-    return () => window.removeEventListener('artifact-evaluated', handleArtifactCompleted);
+    return () => {
+      window.removeEventListener('artifact-evaluated', handleArtifactCompleted);
+      window.removeEventListener('rubricProgress-draft-saved', handleArtifactCompleted);
+    };
   }, [currentUser, currentTextoId, saveGlobalProgress, saveProgressViaHook, sourceCourseId, syncRubricProgressToFirestore, useFirestorePersistenceHook, userData?.role]);
 
   // 🆕 SINCRONIZAR rewardsState cuando cambia (tutor, actividades, etc.)

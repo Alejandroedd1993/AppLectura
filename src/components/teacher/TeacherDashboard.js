@@ -1057,9 +1057,10 @@ function TeacherDashboard() {
         return str;
       };
 
+      const BOM = '\uFEFF';
       const csv = rows.map(row => row.map(escapeCSV).join(',')).join('\n');
       const safeName = curso.nombre.toLowerCase().replace(/[^a-z0-9]+/gi, '-');
-      downloadBlob(csv, `${safeName}-detalle-artefactos.csv`, 'text/csv;charset=utf-8;');
+      downloadBlob(BOM + csv, `${safeName}-detalle-artefactos.csv`, 'text/csv;charset=utf-8;');
 
       showFeedback('success', `✅ Exportados ${rows.length - 1} registros`);
 
@@ -1071,46 +1072,81 @@ function TeacherDashboard() {
     }
   };
 
-  const exportMetrics = (format = 'csv') => {
+  const exportMetrics = async (format = 'csv') => {
     if (!courseMetrics?.curso) return;
     const { curso, estudiantes, resumen } = courseMetrics;
     const safeName = curso.nombre.toLowerCase().replace(/[^a-z0-9]+/gi, '-');
 
-    if (format === 'json') {
-      const data = JSON.stringify({ curso, resumen, estudiantes }, null, 2);
-      downloadBlob(data, `${safeName}-reporte.json`, 'application/json');
+    if (format === 'pdf') {
+      try {
+        const { exportGenericPDF } = await import('../../utils/exportUtils');
+        const sections = [
+          {
+            heading: 'Información del curso',
+            keyValues: {
+              'Curso': curso.nombre,
+              'Código de acceso': curso.codigoJoin,
+              'Total estudiantes': resumen?.totalEstudiantes || 0,
+              'Fecha de exportación': new Date().toLocaleString('es-ES'),
+            }
+          },
+          {
+            heading: 'Resumen por estudiante',
+            table: {
+              headers: ['Estudiante', 'Estado', 'Avance %', 'Lecturas', 'Promedio', 'Entregas'],
+              rows: (estudiantes || []).map(est => [
+                est.estudianteNombre || est.nombre || 'Sin nombre',
+                est.estado || '—',
+                `${est.stats?.avancePorcentaje ?? 0}%`,
+                est.stats?.lecturasCompletadas ?? 0,
+                (est.stats?.promedioScore ?? 0).toFixed ? (est.stats?.promedioScore ?? 0).toFixed(2) : (est.stats?.promedioScore ?? 0),
+                est.stats?.entregasCompletas ?? 0,
+              ])
+            }
+          }
+        ];
+        await exportGenericPDF({
+          title: `Reporte del Curso: ${curso.nombre}`,
+          sections,
+          fileName: `${safeName}-reporte.pdf`
+        });
+        showFeedback('success', '✅ PDF exportado');
+      } catch (error) {
+        console.error('Error exportando PDF:', error);
+        showFeedback('error', 'Error al exportar PDF');
+      }
       return;
     }
 
-    // 🆕 D5 FIX: Función de escape CSV correcta
     const escapeCSV = (val) => {
       if (val === null || val === undefined) return '';
       const str = String(val);
-      // Si contiene comillas, comas o saltos de línea, debe ser escapado
       if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
         return `"${str.replace(/"/g, '""')}"`;
       }
       return str;
     };
 
-    const header = ['Estudiante', 'Estado', 'Avance (%)', 'Lecturas completadas', 'Puntaje promedio', 'Tiempo lectura (min)', 'Entregas completas', 'Artefactos entregados'];
+    const header = ['Estudiante', 'Estado', 'Avance (%)', 'Lecturas Completadas', 'Puntaje Promedio', 'Tiempo Lectura (min)', 'Entregas Completas', 'Artefactos Entregados'];
     const rows = (estudiantes || []).map(est => [
       est.estudianteNombre || est.nombre || 'Sin nombre',
-      est.estado,
+      est.estado || '',
       est.stats?.avancePorcentaje ?? 0,
       est.stats?.lecturasCompletadas ?? 0,
-      est.stats?.promedioScore ?? 0,
+      typeof (est.stats?.promedioScore) === 'number' ? est.stats.promedioScore.toFixed(2) : (est.stats?.promedioScore ?? 0),
       est.stats?.tiempoLecturaTotal ?? 0,
       est.stats?.entregasCompletas ?? 0,
       est.stats?.artefactosEntregados ?? 0
     ]);
 
-    rows.unshift(['Curso', curso.nombre, 'Código', curso.codigoJoin, 'Total estudiantes', resumen?.totalEstudiantes || 0]);
+    // Fila de metadatos del curso al inicio
+    const infoRow = [`Curso: ${curso.nombre}`, `Código: ${curso.codigoJoin}`, `Estudiantes: ${resumen?.totalEstudiantes || 0}`, `Exportado: ${new Date().toLocaleString('es-ES')}`];
     rows.unshift(header);
+    rows.unshift(infoRow);
 
-    // 🆕 D5 FIX: Usar escape correcto para cada valor
+    const BOM = '\uFEFF';
     const csv = rows.map(row => row.map(escapeCSV).join(',')).join('\n');
-    downloadBlob(csv, `${safeName}-reporte.csv`, 'text/csv;charset=utf-8;');
+    downloadBlob(BOM + csv, `${safeName}-reporte.csv`, 'text/csv;charset=utf-8;');
   };
 
   const downloadBlob = (content, filename, contentType) => {
@@ -1425,12 +1461,15 @@ function TeacherDashboard() {
                         <ActionButton type="button" onClick={() => exportMetrics('csv')}>
                           📊 CSV Resumen
                         </ActionButton>
+                        <ActionButton type="button" onClick={() => exportMetrics('pdf')}>
+                          📄 PDF Resumen
+                        </ActionButton>
                         <ActionButton
                           type="button"
                           onClick={handleExportCourseData}
                           disabled={exporting}
                         >
-                          {exporting ? '⏳ Exportando...' : '📑 Excel Detallado'}
+                          {exporting ? '⏳ Exportando...' : '📑 CSV Detallado'}
                         </ActionButton>
                       </ActionsRow>
                     </PanelHeader>

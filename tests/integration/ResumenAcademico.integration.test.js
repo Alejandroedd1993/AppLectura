@@ -186,7 +186,7 @@ describe('ResumenAcademico Integration Tests', () => {
     it('debe mostrar panel de citas al hacer click', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
-      const citasButton = screen.getByRole('button', { name: /Mis Citas/i });
+      const citasButton = screen.getByRole('button', { name: /Cuaderno/i });
       fireEvent.click(citasButton);
 
       expect(screen.getByText('Cita guardada 1')).toBeInTheDocument();
@@ -199,7 +199,7 @@ describe('ResumenAcademico Integration Tests', () => {
       const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
 
       // Abrir panel de citas
-      const citasButton = screen.getByRole('button', { name: /Mis Citas/i });
+      const citasButton = screen.getByRole('button', { name: /Cuaderno/i });
       fireEvent.click(citasButton);
 
       // Insertar cita
@@ -214,10 +214,10 @@ describe('ResumenAcademico Integration Tests', () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
       // Abrir panel de citas
-      fireEvent.click(screen.getByRole('button', { name: /Mis Citas/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Cuaderno/i }));
 
       // Eliminar primera cita
-      const deleteButtons = screen.getAllByTitle(/Eliminar cita guardada/i);
+      const deleteButtons = screen.getAllByTitle(/Eliminar entrada/i);
       fireEvent.click(deleteButtons[0]);
 
       expect(mockContextValue.deleteCitation).toHaveBeenCalledWith('test-doc-123', '1');

@@ -14,6 +14,7 @@ export { default as StorageService } from './StorageService';
 import OpenAINotesService from './OpenAINotesService';
 import CronogramaService from './CronogramaService';
 import StorageService from './StorageService';
+import logger from '../../utils/logger';
 
 /**
  * Objeto con todos los servicios de notas
@@ -30,7 +31,7 @@ export const NotesServices = {
  * @returns {Object} Servicios inicializados
  */
 export const initializeNotesServices = () => {
-  console.log('[NotesServices] Inicializando servicios de notas...');
+  logger.log('[NotesServices] Inicializando servicios de notas...');
   
   // Limpiar cache antiguo al inicializar
   StorageService.cleanOldCache();

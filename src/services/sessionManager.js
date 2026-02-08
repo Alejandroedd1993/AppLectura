@@ -898,6 +898,10 @@ export function captureArtifactsDrafts(textoId = null) {
       evidencias: sessionStorage.getItem(key('respuestaArgumentativa_evidencias')) || '',
       contraargumento: sessionStorage.getItem(key('respuestaArgumentativa_contraargumento')) || '',
       refutacion: sessionStorage.getItem(key('respuestaArgumentativa_refutacion')) || ''
+    },
+    ensayoIntegrador: {
+      text: sessionStorage.getItem(key('ensayoIntegrador_text')) || '',
+      dimension: sessionStorage.getItem(key('ensayoIntegrador_dimension')) || ''
     }
   };
 
@@ -972,6 +976,16 @@ export function restoreArtifactsDrafts(artifacts, textoId = null) {
       }
     }
 
+    // 🆕 Restaurar Ensayo Integrador
+    if (artifacts.ensayoIntegrador) {
+      if (artifacts.ensayoIntegrador.text) {
+        sessionStorage.setItem(key('ensayoIntegrador_text'), artifacts.ensayoIntegrador.text);
+      }
+      if (artifacts.ensayoIntegrador.dimension) {
+        sessionStorage.setItem(key('ensayoIntegrador_dimension'), artifacts.ensayoIntegrador.dimension);
+      }
+    }
+
     console.log('✅ [SessionManager] Borradores de artefactos restaurados para textoId:', textoId || 'global');
   } catch (error) {
     console.error('❌ [SessionManager] Error restaurando borradores:', error);
@@ -1007,6 +1021,10 @@ export function clearArtifactsDrafts(textoId = null) {
     sessionStorage.removeItem(key('respuestaArgumentativa_evidencias'));
     sessionStorage.removeItem(key('respuestaArgumentativa_contraargumento'));
     sessionStorage.removeItem(key('respuestaArgumentativa_refutacion'));
+
+    // 🆕 Ensayo Integrador
+    sessionStorage.removeItem(key('ensayoIntegrador_text'));
+    sessionStorage.removeItem(key('ensayoIntegrador_dimension'));
 
     console.log('✅ [SessionManager] Borradores de artefactos limpiados para textoId:', textoId || 'global');
   } catch (error) {

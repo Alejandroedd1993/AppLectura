@@ -5,6 +5,8 @@
  * @description Servicio para crear y gestionar cronogramas basados en la curva del olvido
  */
 
+import logger from '../../utils/logger';
+
 /**
  * Servicio de Cronograma de Repaso Espaciado
  * Implementa algoritmos basados en la curva del olvido de Ebbinghaus
@@ -77,7 +79,7 @@ class CronogramaService {
       }
     };
 
-    console.log(`[CronogramaService] Cronograma generado: ${cronograma.length} repasos en ${duracionDias} días`);
+    logger.log(`[CronogramaService] Cronograma generado: ${cronograma.length} repasos en ${duracionDias} días`);
     return cronogramaCompleto;
   }
 
@@ -267,7 +269,7 @@ class CronogramaService {
     repaso.completado = true;
     repaso.fechaCompletado = (fechaCompletado || new Date()).toISOString();
     
-    console.log(`[CronogramaService] Repaso ${repaso.numero} marcado como completado`);
+    logger.log(`[CronogramaService] Repaso ${repaso.numero} marcado como completado`);
     return repaso;
   }
 
@@ -282,7 +284,7 @@ class CronogramaService {
       delete repaso.fechaCompletado;
     });
     
-    console.log('[CronogramaService] Cronograma reseteado');
+    logger.log('[CronogramaService] Cronograma reseteado');
     return cronograma;
   }
 
@@ -319,11 +321,11 @@ class CronogramaService {
         }
       });
       
-      console.log('[CronogramaService] Cronograma importado exitosamente');
+      logger.log('[CronogramaService] Cronograma importado exitosamente');
       return cronograma;
       
     } catch (error) {
-      console.error('[CronogramaService] Error al importar cronograma:', error);
+      logger.error('[CronogramaService] Error al importar cronograma:', error);
       throw new Error(`Error al importar cronograma: ${error.message}`);
     }
   }

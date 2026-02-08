@@ -8,13 +8,14 @@ import React, { useState, useContext, useMemo, useCallback, useEffect } from 're
 import { AppContext } from '../../context/AppContext';
 // Usar el entrypoint de hooks que exporta el hook estable (useNotasEstudioHook)
 import useNotasEstudio from '../../hooks/notes';
-import { ErrorDisplay, LoadingSpinner, InfoAprendizajeEspaciado } from './NotasUI';
+import { ErrorDisplay, LoadingSpinner, InfoAprendizajeEspaciado, NotasAnimations } from './NotasUI';
 import ConfiguracionPanel from './ConfiguracionPanel';
 import NotasContenido from './NotasContenido';
 import CronogramaRepaso from './CronogramaRepaso';
 import PanelStudyItems from '../PanelStudyItems';
 import useStudyItems from '../../hooks/useStudyItems';
 import DraftWarning from '../common/DraftWarning';
+import logger from '../../utils/logger';
 import * as tokens from '../../styles/designTokens';
 import useMediaQuery from '../../hooks/useMediaQuery';
 
@@ -35,9 +36,12 @@ const NotasEstudio = () => {
     error,
     cronograma,
     notasRepasadas,
+    numeroTarjetas,
+    origenNotas,
     nivelAcademico, // 🆕 FASE 3
     setTipoTexto,
     setDuracionEstudio,
+    setNumeroTarjetas,
     setNivelAcademico, // 🆕 FASE 3
     marcarRepasoCompletado,
     regenerarNotas
@@ -47,17 +51,20 @@ const NotasEstudio = () => {
   const [mostrarConfiguracion, setMostrarConfiguracion] = useState(false);
   const [mostrarPractice, setMostrarPractice] = useState(false);
   const [mostrarNotificacion, setMostrarNotificacion] = useState(false);
+  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
 
   // Hook de study items (mismo texto) para mostrar conteo rápido
   const { dueItems, items } = useStudyItems(texto, currentTextoId);
 
+  const hasCompleteAnalysis = !!completeAnalysis;
+
   // 🆕 FASE 2: Detectar cuando hay análisis disponible y notas no generadas
   useEffect(() => {
-    if (completeAnalysis && notasAutoGeneradas && !notas) {
+    if (hasCompleteAnalysis && notasAutoGeneradas && !notas) {
       setMostrarNotificacion(true);
-      console.log('🎓 [NotasEstudio] Análisis disponible, mostrando notificación');
+      logger.log('🎓 [NotasEstudio] Análisis disponible, mostrando notificación');
     }
-  }, [completeAnalysis, notasAutoGeneradas, notas]);
+  }, [hasCompleteAnalysis, notasAutoGeneradas, notas]);
 
   // Tema basado en modo oscuro
   const theme = useMemo(() => ({
@@ -79,6 +86,30 @@ const NotasEstudio = () => {
   // Función para alternar la visibilidad del panel de configuración
   const toggleConfiguracion = useCallback(() => {
     setMostrarConfiguracion(prev => !prev);
+  }, []);
+
+  // Comprobar si el cronograma tiene repasos completados
+  const tieneProgresoRepaso = useMemo(() => {
+    if (!cronograma || cronograma.length === 0) return false;
+    return cronograma.some(r => r.completado);
+  }, [cronograma]);
+
+  // Regenerar con confirmación si hay progreso
+  const regenerarConConfirmacion = useCallback(() => {
+    if (tieneProgresoRepaso) {
+      setMostrarConfirmacion(true);
+    } else {
+      regenerarNotas();
+    }
+  }, [tieneProgresoRepaso, regenerarNotas]);
+
+  const confirmarRegeneracion = useCallback(() => {
+    setMostrarConfirmacion(false);
+    regenerarNotas();
+  }, [regenerarNotas]);
+
+  const cancelarRegeneracion = useCallback(() => {
+    setMostrarConfirmacion(false);
   }, []);
 
   // Mensaje de estado cuando no hay texto
@@ -107,8 +138,10 @@ const NotasEstudio = () => {
       maxWidth: tokens.containerWidth.lg,
       margin: '0 auto'
     }}>
+      <NotasAnimations />
+
       {/* 🆕 FASE 2: Notificación de notas disponibles - MEJORADO */}
-      {mostrarNotificacion && !notas && completeAnalysis && (
+      {mostrarNotificacion && !notas && hasCompleteAnalysis && (
         <>
           <div style={{
             backgroundColor: theme.secondary,
@@ -182,6 +215,14 @@ const NotasEstudio = () => {
                   e.target.style.transform = 'translateY(0)';
                   e.target.style.boxShadow = tokens.boxShadow.md;
                 }}
+                onFocus={(e) => {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = tokens.boxShadow.lg;
+                }}
+                onBlur={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = tokens.boxShadow.md;
+                }}
               >
                 Generar Notas Ahora
               </button>
@@ -208,34 +249,19 @@ const NotasEstudio = () => {
                   e.target.style.backgroundColor = 'transparent';
                   e.target.style.borderColor = 'rgba(255,255,255,0.5)';
                 }}
+                onFocus={(e) => {
+                  e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  e.target.style.borderColor = 'rgba(255,255,255,0.8)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.backgroundColor = 'transparent';
+                  e.target.style.borderColor = 'rgba(255,255,255,0.5)';
+                }}
               >
                 Ahora no
               </button>
             </div>
           </div>
-          
-          {/* Animación CSS */}
-          <style>{`
-            @keyframes slideDown {
-              from {
-                opacity: 0;
-                transform: translateY(-20px);
-              }
-              to {
-                opacity: 1;
-                transform: translateY(0);
-              }
-            }
-
-            @media (prefers-reduced-motion: reduce) {
-              @keyframes slideDown {
-                from, to {
-                  opacity: 1;
-                  transform: translateY(0);
-                }
-              }
-            }
-          `}</style>
         </>
       )}
       
@@ -267,6 +293,22 @@ const NotasEstudio = () => {
           }}>
             Con aprendizaje espaciado optimizado
           </p>
+          {origenNotas && (
+            <div style={{
+              marginTop: tokens.spacing.xs,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: tokens.spacing.xs,
+              padding: `${tokens.spacing.xs} ${tokens.spacing.sm}`,
+              borderRadius: tokens.borderRadius.full,
+              backgroundColor: origenNotas === 'backend' ? theme.primary : theme.accent,
+              color: '#fff',
+              fontSize: tokens.fontSize.xs,
+              fontWeight: tokens.fontWeight.semibold
+            }}>
+              {origenNotas === 'backend' ? '🤖 Generado con IA' : '📝 Notas básicas (fallback)'}
+            </div>
+          )}
         </div>
         
         <div style={{ 
@@ -341,6 +383,84 @@ const NotasEstudio = () => {
       {/* 🆕 Advertencia de borradores sin evaluar */}
       <DraftWarning theme={theme} />
 
+      {/* Diálogo de confirmación al regenerar con progreso */}
+      {mostrarConfirmacion && (
+        <div style={{
+          backgroundColor: theme.accent + '18',
+          border: `${tokens.borderWidth.normal} solid ${theme.accent}`,
+          borderRadius: tokens.borderRadius.lg,
+          padding: tokens.spacing.lg,
+          marginBottom: tokens.spacing.lg,
+          animation: 'slideDown 0.3s ease-out'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: tokens.spacing.md
+          }}>
+            <span style={{ fontSize: tokens.fontSize['2xl'] }}>⚠️</span>
+            <div style={{ flex: 1 }}>
+              <strong style={{
+                color: theme.text,
+                fontSize: tokens.fontSize.lg,
+                display: 'block',
+                marginBottom: tokens.spacing.sm
+              }}>
+                ¿Regenerar notas?
+              </strong>
+              <p style={{
+                color: theme.text,
+                margin: `0 0 ${tokens.spacing.md} 0`,
+                fontSize: tokens.fontSize.base,
+                lineHeight: tokens.lineHeight.relaxed
+              }}>
+                Tienes repasos completados en el cronograma actual. Al regenerar las notas, el cronograma se preservará solo si mantienes la misma duración de estudio.
+              </p>
+              <div style={{
+                display: 'flex',
+                gap: tokens.spacing.sm,
+                flexWrap: 'wrap'
+              }}>
+                <button
+                  onClick={confirmarRegeneracion}
+                  style={{
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: tokens.borderRadius.md,
+                    padding: `${tokens.spacing.sm} ${tokens.spacing.lg}`,
+                    cursor: 'pointer',
+                    fontWeight: tokens.fontWeight.bold,
+                    fontSize: tokens.fontSize.base,
+                    minHeight: tokens.components.button.minHeight,
+                    transition: tokens.transition.all
+                  }}
+                >
+                  Sí, regenerar
+                </button>
+                <button
+                  onClick={cancelarRegeneracion}
+                  style={{
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    border: `${tokens.borderWidth.normal} solid ${theme.border}`,
+                    borderRadius: tokens.borderRadius.md,
+                    padding: `${tokens.spacing.sm} ${tokens.spacing.lg}`,
+                    cursor: 'pointer',
+                    fontWeight: tokens.fontWeight.medium,
+                    fontSize: tokens.fontSize.base,
+                    minHeight: tokens.components.button.minHeight,
+                    transition: tokens.transition.all
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Panel de configuración */}
       {mostrarConfiguracion && (
         <ConfiguracionPanel 
@@ -349,9 +469,11 @@ const NotasEstudio = () => {
           setTipoTexto={setTipoTexto}
           duracionEstudio={duracionEstudio}
           setDuracionEstudio={setDuracionEstudio}
+          numeroTarjetas={numeroTarjetas}
+          setNumeroTarjetas={setNumeroTarjetas}
           nivelAcademico={nivelAcademico}
           setNivelAcademico={setNivelAcademico}
-          regenerarNotas={regenerarNotas}
+          regenerarNotas={regenerarConConfirmacion}
         />
       )}
 
@@ -397,15 +519,63 @@ const NotasEstudio = () => {
               />
             </>
           ) : (
-            <p style={{ textAlign: 'center', padding: '20px' }}>
-              Configurando notas de estudio...
-            </p>
+            <div style={{
+              textAlign: 'center',
+              padding: tokens.spacing.xl,
+              borderRadius: tokens.borderRadius.lg,
+              border: `${tokens.borderWidth.thin} dashed ${theme.border}`,
+              backgroundColor: theme.cardBg
+            }}>
+              <p style={{
+                margin: `0 0 ${tokens.spacing.md} 0`,
+                color: theme.text,
+                fontSize: tokens.fontSize.base
+              }}>
+                Aún no hay notas generadas para este texto.
+              </p>
+              <button
+                onClick={regenerarConConfirmacion}
+                style={{
+                  backgroundColor: theme.primary,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: tokens.borderRadius.md,
+                  padding: `${tokens.spacing.md} ${tokens.spacing.lg}`,
+                  cursor: 'pointer',
+                  fontWeight: tokens.fontWeight.semibold,
+                  fontSize: tokens.fontSize.base,
+                  minHeight: tokens.components.button.minHeight,
+                  transition: tokens.transition.all,
+                  boxShadow: tokens.boxShadow.sm
+                }}
+                onMouseOver={(e) => {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = tokens.boxShadow.md;
+                }}
+                onMouseOut={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = tokens.boxShadow.sm;
+                }}
+                onFocus={(e) => {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = tokens.boxShadow.md;
+                }}
+                onBlur={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = tokens.boxShadow.sm;
+                }}
+              >
+                ✨ Generar notas
+              </button>
+            </div>
           )}
         </div>
       )}
 
       {/* Información sobre el aprendizaje espaciado */}
-      <InfoAprendizajeEspaciado theme={theme} />
+      {cronograma?.length > 0 && (
+        <InfoAprendizajeEspaciado theme={theme} />
+      )}
     </div>
   );
 };

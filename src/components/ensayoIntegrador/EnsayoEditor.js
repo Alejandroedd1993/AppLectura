@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 
 const Box = styled.div`
@@ -149,6 +149,160 @@ const TipText = styled.span`
   flex: 1;
 `;
 
+// 🆕 Panel de citas guardadas
+const CitationsPanel = styled.div`
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: ${props => props.theme.surface};
+  border: 1px solid ${props => props.theme.primary}30;
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+`;
+
+const CitationsPanelTitle = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+`;
+
+const CitationsLabel = styled.div`
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: ${props => props.theme.text};
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+`;
+
+const CitationCount = styled.span`
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: ${props => props.theme.primary}20;
+  color: ${props => props.theme.primary};
+`;
+
+const CitationItem = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.5rem;
+  background: ${props => props.theme.background};
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  color: ${props => props.theme.text};
+  line-height: 1.4;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const CitationText = styled.div`
+  flex: 1;
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+`;
+
+const CitationTypeBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: ${props => {
+    switch (props.$tipo) {
+      case 'reflexion': return '#8b5cf620';
+      case 'comentario': return '#f59e0b20';
+      case 'pregunta': return '#ef444420';
+      default: return props.theme.primary + '20';
+    }
+  }};
+  color: ${props => {
+    switch (props.$tipo) {
+      case 'reflexion': return '#8b5cf6';
+      case 'comentario': return '#f59e0b';
+      case 'pregunta': return '#ef4444';
+      default: return props.theme.primary;
+    }
+  }};
+  border: 1px solid ${props => {
+    switch (props.$tipo) {
+      case 'reflexion': return '#8b5cf640';
+      case 'comentario': return '#f59e0b40';
+      case 'pregunta': return '#ef444440';
+      default: return props.theme.primary + '40';
+    }
+  }};
+`;
+
+const CitationReference = styled.div`
+  font-size: 0.7rem;
+  color: ${props => props.theme.textMuted};
+  margin-top: 0.2rem;
+  font-style: normal;
+`;
+
+const InsertButton = styled.button`
+  flex-shrink: 0;
+  background: ${props => props.theme.primary}15;
+  color: ${props => props.theme.primary};
+  border: 1px solid ${props => props.theme.primary}40;
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    background: ${props => props.theme.primary}25;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const CitationsToggle = styled.button`
+  background: ${props => props.$active ? props.theme.primary + '20' : 'transparent'};
+  border: 1px solid ${props => props.$active ? props.theme.primary : props.theme.border};
+  color: ${props => props.$active ? props.theme.primary : props.theme.textMuted};
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    border-color: ${props => props.theme.primary};
+    color: ${props => props.theme.primary};
+  }
+`;
+
+const EmptyCitations = styled.div`
+  color: ${props => props.theme.textMuted};
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 0.75rem;
+`;
+
 // Helpers para estadísticas
 function countWords(text) {
   if (!text || typeof text !== 'string') return 0;
@@ -204,10 +358,10 @@ function generateTips(stats, text) {
   }
   
   // Tips basados en citas
-  if (stats.citations === 0 && stats.words > 100) {
+  if (stats.quotesCount === 0 && stats.words > 100) {
     tips.push({ icon: '💬', text: 'Incluye citas textuales del texto entre comillas ("..." o «...») para sustentar tus ideas.' });
-  } else if (stats.citations < MIN_CITATIONS && stats.words > 300) {
-    tips.push({ icon: '📚', text: `Necesitas ${MIN_CITATIONS - stats.citations} cita(s) más. Usa evidencia textual para fortalecer argumentos.` });
+  } else if (stats.quotesCount < MIN_CITATIONS && stats.words > 300) {
+    tips.push({ icon: '📚', text: `Necesitas ${MIN_CITATIONS - stats.quotesCount} cita(s) más. Usa evidencia textual para fortalecer argumentos.` });
   }
   
   // Tips basados en párrafos
@@ -230,18 +384,20 @@ function generateTips(stats, text) {
   return tips.slice(0, 3); // Máximo 3 tips a la vez
 }
 
-export default function EnsayoEditor({ theme, value, onChange, disabled = false }) {
+export default function EnsayoEditor({ theme, value, onChange, disabled = false, citations = [], onInsertCitation }) {
   const [showTips, setShowTips] = useState(true);
+  const [showCitations, setShowCitations] = useState(false);
+  const textareaRef = useRef(null);
   
   const stats = useMemo(() => {
     const words = countWords(value);
     const paragraphs = countParagraphs(value);
-    const citations = countQuotes(value);
+    const quotesCount = countQuotes(value);
 
     return {
       words,
       paragraphs,
-      citations,
+      quotesCount,
       // Estados: 'pending' (vacío/bajo), 'warning' (cerca), 'ok' (cumple)
       wordsStatus: words === 0 ? 'pending' 
         : words < MIN_WORDS * 0.8 ? 'pending'
@@ -251,8 +407,8 @@ export default function EnsayoEditor({ theme, value, onChange, disabled = false 
       paragraphsStatus: paragraphs === 0 ? 'pending'
         : paragraphs < MIN_PARAGRAPHS ? 'pending'
         : 'ok',
-      citationsStatus: citations === 0 ? 'pending'
-        : citations < MIN_CITATIONS ? 'pending'
+      citationsStatus: quotesCount === 0 ? 'pending'
+        : quotesCount < MIN_CITATIONS ? 'pending'
         : 'ok'
     };
   }, [value]);
@@ -270,22 +426,94 @@ export default function EnsayoEditor({ theme, value, onChange, disabled = false 
     <Box theme={theme} role="region" aria-label="Editor del Ensayo Integrador">
       <TitleRow>
         <Title theme={theme}>✍️ Ensayo</Title>
-        <TipsToggle 
-          theme={theme} 
-          $active={showTips}
-          onClick={() => setShowTips(!showTips)}
-          type="button"
-        >
-          💡 Tips {showTips ? 'ON' : 'OFF'}
-        </TipsToggle>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {citations.length > 0 && (
+            <CitationsToggle
+              theme={theme}
+              $active={showCitations}
+              onClick={() => setShowCitations(!showCitations)}
+              type="button"
+            >
+              � Cuaderno ({citations.length}) {showCitations ? '▲' : '▼'}
+            </CitationsToggle>
+          )}
+          <TipsToggle 
+            theme={theme} 
+            $active={showTips}
+            onClick={() => setShowTips(!showTips)}
+            type="button"
+          >
+            💡 Tips {showTips ? 'ON' : 'OFF'}
+          </TipsToggle>
+        </div>
       </TitleRow>
       <Textarea
+        ref={textareaRef}
         theme={theme}
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
         placeholder="Escribe aquí tu Ensayo Integrador…"
         disabled={disabled}
       />
+
+      {/* 🆕 Panel del Cuaderno de Lectura */}
+      {showCitations && citations.length > 0 && (
+        <CitationsPanel theme={theme}>
+          <CitationsPanelTitle>
+            <CitationsLabel theme={theme}>
+              📓 Cuaderno de Lectura
+              <CitationCount theme={theme}>{citations.length}</CitationCount>
+            </CitationsLabel>
+          </CitationsPanelTitle>
+          {citations.map((cit) => {
+            const tipo = cit.tipo || 'cita';
+            const tipoIcons = { cita: '📌', reflexion: '💭', comentario: '📝', pregunta: '❓' };
+            const tipoLabels = { cita: 'Cita', reflexion: 'Reflexión', comentario: 'Comentario', pregunta: 'Pregunta' };
+            const isInsertable = tipo !== 'pregunta';
+            return (
+              <CitationItem key={cit.id} theme={theme}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.2rem' }}>
+                    <CitationTypeBadge theme={theme} $tipo={tipo}>
+                      {tipoIcons[tipo]} {tipoLabels[tipo]}
+                    </CitationTypeBadge>
+                  </div>
+                  <CitationText>
+                    {tipo === 'cita' ? `«${cit.texto}»` : cit.texto}
+                  </CitationText>
+                  {cit.nota && tipo !== 'cita' && (
+                    <CitationReference theme={theme}>
+                      📎 Sobre: «{cit.nota.length > 60 ? cit.nota.substring(0, 60) + '…' : cit.nota}»
+                    </CitationReference>
+                  )}
+                </div>
+                {isInsertable && (
+                  <InsertButton
+                    theme={theme}
+                    type="button"
+                    onClick={() => {
+                      const cursorPos = textareaRef.current?.selectionStart;
+                      onInsertCitation?.(cit.texto, cursorPos, tipo);
+                    }}
+                    disabled={disabled}
+                    title={tipo === 'cita' ? 'Insertar cita textual' : 'Insertar en el ensayo'}
+                  >
+                    ➕ Insertar
+                  </InsertButton>
+                )}
+              </CitationItem>
+            );
+          })}
+        </CitationsPanel>
+      )}
+
+      {showCitations && citations.length === 0 && (
+        <CitationsPanel theme={theme}>
+          <EmptyCitations theme={theme}>
+            No tienes notas aún. En la pestaña de Lectura, selecciona texto y usa 📌 Cita o 📓 Anotar.
+          </EmptyCitations>
+        </CitationsPanel>
+      )}
       
       {/* 🆕 Barra de estadísticas en tiempo real */}
       <StatsBar theme={theme}>
@@ -295,7 +523,7 @@ export default function EnsayoEditor({ theme, value, onChange, disabled = false 
         </StatPill>
         <StatPill theme={theme} $status={stats.citationsStatus} title={`Mínimo ${MIN_CITATIONS} citas entre comillas ("..." o «...»)`}>
           <StatIcon>💬</StatIcon>
-          Citas: {stats.citations}/{MIN_CITATIONS}
+          Citas: {stats.quotesCount}/{MIN_CITATIONS}
         </StatPill>
         <StatPill theme={theme} $status={stats.paragraphsStatus} title={`Mínimo ${MIN_PARAGRAPHS} párrafos separados por líneas en blanco`}>
           <StatIcon>¶</StatIcon>

@@ -18,7 +18,13 @@ const NIVEL_INSTRUCCIONES = {
   doctorado: 'Nivel experto. Enfócate en matices epistemológicos, metodológicos y contribuciones al campo. Rigor académico máximo.'
 };
 
-export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademico = 'pregrado') {
+const normalizarNumeroTarjetas = (valor) => {
+  const num = Number(valor);
+  if (!Number.isFinite(num)) return null;
+  return Math.min(10, Math.max(3, Math.round(num)));
+};
+
+export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademico = 'pregrado', tipoTexto = 'auto', numeroTarjetas = undefined) {
   const openai = getOpenAI();
 
   // ✅ Construir prompt enriquecido con contexto del análisis
@@ -28,6 +34,10 @@ export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademi
   if (NIVEL_INSTRUCCIONES[nivelAcademico]) {
     prompt += `\n\n📚 NIVEL ACADÉMICO: ${nivelAcademico.toUpperCase()}`;
     prompt += `\n${NIVEL_INSTRUCCIONES[nivelAcademico]}`;
+  }
+
+  if (tipoTexto && tipoTexto !== 'auto') {
+    prompt += `\n\n🧭 TIPO DE TEXTO: ${String(tipoTexto).toUpperCase()}`;
   }
   
   if (contexto) {
@@ -40,23 +50,37 @@ export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademi
     
     prompt += `\n\nUSA este contexto para generar notas MÁS RELEVANTES y ESPECÍFICAS al contenido analizado.`;
   }
+
+  const tarjetasObjetivo = normalizarNumeroTarjetas(numeroTarjetas);
+  if (tarjetasObjetivo) {
+    prompt += `\n\nGenera exactamente ${tarjetasObjetivo} tarjetas (flashcards).`;
+  }
   
   prompt += `\n\nTexto:\n"""${texto.slice(0, 6000)}"""\n\nDevuelve solo el JSON:`;
 
   const timeoutMs = settings.openai.timeout || 45000;
-  const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout: La solicitud a OpenAI tardó demasiado')), timeoutMs));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const responsePromise = openai.chat.completions.create({
-    model: settings.openai.model,
-    messages: [
-      { role: 'system', content: notesSystemPrompt },
-      { role: 'user', content: prompt }
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.4,
-  });
-
-  const completion = await Promise.race([responsePromise, timeoutPromise]);
+  let completion;
+  try {
+    completion = await openai.chat.completions.create({
+      model: settings.openai.model,
+      messages: [
+        { role: 'system', content: notesSystemPrompt },
+        { role: 'user', content: prompt }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.4,
+    }, { signal: controller.signal });
+  } catch (e) {
+    if (controller.signal.aborted) {
+      throw new Error('Timeout: La solicitud a OpenAI tardó demasiado');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
   const content = completion.choices?.[0]?.message?.content;
   if (!content) throw new Error('Respuesta vacía de OpenAI');
   try {
@@ -69,12 +93,16 @@ export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademi
 /**
  * Genera notas usando DeepSeek API
  */
-export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcademico = 'pregrado') {
+export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcademico = 'pregrado', tipoTexto = 'auto', numeroTarjetas = undefined) {
   let prompt = `Genera notas de estudio claras y concisas del siguiente texto.`;
   
   // 🆕 FASE 3: Agregar instrucción de complejidad
   if (NIVEL_INSTRUCCIONES[nivelAcademico]) {
     prompt += `\n\n📚 NIVEL: ${nivelAcademico.toUpperCase()} - ${NIVEL_INSTRUCCIONES[nivelAcademico]}`;
+  }
+
+  if (tipoTexto && tipoTexto !== 'auto') {
+    prompt += `\n\n🧭 TIPO DE TEXTO: ${String(tipoTexto).toUpperCase()}`;
   }
   
   if (contexto) {
@@ -82,6 +110,11 @@ export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcade
     if (contexto.genero) prompt += `\n- Género: ${contexto.genero}`;
     if (contexto.tesis_central) prompt += `\n- Tesis: ${contexto.tesis_central}`;
     if (contexto.conceptos_clave?.length) prompt += `\n- Conceptos: ${contexto.conceptos_clave.join(', ')}`;
+  }
+
+  const tarjetasObjetivo = normalizarNumeroTarjetas(numeroTarjetas);
+  if (tarjetasObjetivo) {
+    prompt += `\n\nGenera exactamente ${tarjetasObjetivo} tarjetas (flashcards).`;
   }
   
   prompt += `\n\nTexto: """${texto.slice(0, 6000)}"""\n\nDevuelve solo el JSON con la forma {"resumen":"","notas":[{"titulo":"","contenido":""}],"preguntas":[""],"tarjetas":[{"frente":"","reverso":""}]}:`;
@@ -124,7 +157,8 @@ export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcade
 /**
  * Genera notas usando Gemini API
  */
-export async function generarNotasConGemini(texto, contexto = null, nivelAcademico = 'pregrado') {
+export async function generarNotasConGemini(texto, contexto = null, nivelAcademico = 'pregrado', tipoTexto = 'auto', numeroTarjetas = undefined) {
+  const gemini = getGemini();
   if (!gemini) throw new Error('GEMINI_API_KEY no configurada');
   
   let base = `Genera notas de estudio claras y concisas del siguiente texto.`;
@@ -133,12 +167,21 @@ export async function generarNotasConGemini(texto, contexto = null, nivelAcademi
   if (NIVEL_INSTRUCCIONES[nivelAcademico]) {
     base += `\n\n📚 NIVEL: ${nivelAcademico.toUpperCase()} - ${NIVEL_INSTRUCCIONES[nivelAcademico]}`;
   }
+
+  if (tipoTexto && tipoTexto !== 'auto') {
+    base += `\n\n🧭 TIPO DE TEXTO: ${String(tipoTexto).toUpperCase()}`;
+  }
   
   if (contexto) {
     base += `\n\nCONTEXTO DEL ANÁLISIS:`;
     if (contexto.genero) base += `\n- Género: ${contexto.genero}`;
     if (contexto.tesis_central) base += `\n- Tesis: ${contexto.tesis_central}`;
     if (contexto.conceptos_clave?.length) base += `\n- Conceptos: ${contexto.conceptos_clave.join(', ')}`;
+  }
+
+  const tarjetasObjetivo = normalizarNumeroTarjetas(numeroTarjetas);
+  if (tarjetasObjetivo) {
+    base += `\n\nGenera exactamente ${tarjetasObjetivo} tarjetas (flashcards).`;
   }
   
   base += `\n\nDevuelve exclusivamente un JSON válido con esta forma:\n{
@@ -149,7 +192,13 @@ export async function generarNotasConGemini(texto, contexto = null, nivelAcademi
 }`;
   const user = `Texto:\n"""${texto.slice(0, 6000)}"""`;
   const model = gemini.getGenerativeModel({ model: settings.gemini.model });
-  const result = await model.generateContent(`${base}\n${user}`);
+  const timeoutMs = settings.gemini?.timeout || settings.openai.timeout || 45000;
+  const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout: La solicitud a Gemini tardó demasiado')), timeoutMs));
+
+  const result = await Promise.race([
+    model.generateContent(`${base}\n${user}`),
+    timeoutPromise
+  ]);
   const response = result.response;
   const text = response.text();
   const jsonMatch = text.match(/\{[\s\S]*\}/);

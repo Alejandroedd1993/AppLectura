@@ -5,6 +5,8 @@
  * @description Servicio para gestionar la persistencia de datos en localStorage
  */
 
+import logger from '../../utils/logger';
+
 /**
  * Servicio de Almacenamiento Local
  * Maneja la persistencia de notas, cronogramas y configuración
@@ -24,6 +26,7 @@ class StorageService {
     this.defaultConfig = {
       tipoTexto: 'auto',
       duracionEstudio: 30,
+      numeroTarjetas: 5,
       notificaciones: true,
       modoOscuro: false,
       autoguardado: true
@@ -51,10 +54,10 @@ class StorageService {
         const legacyRaw = localStorage.getItem(baseKey);
         localStorage.setItem(scopedKey, legacyRaw);
         localStorage.removeItem(baseKey);
-        console.log(`[StorageService] Migrada clave legacy ${baseKey} -> ${scopedKey}`);
+        logger.log(`[StorageService] Migrada clave legacy ${baseKey} -> ${scopedKey}`);
       }
     } catch (e) {
-      console.warn('[StorageService] No se pudo migrar clave legacy:', e);
+      logger.warn('[StorageService] No se pudo migrar clave legacy:', e);
     }
   }
 
@@ -66,9 +69,11 @@ class StorageService {
   generarIdTexto(texto) {
     if (!texto) return '';
     
-    // Crear hash simple del contenido
+    // Crear hash simple del contenido con muestras de inicio y fin
     let hash = 0;
-    const content = texto.substring(0, 500); // Usar muestra del texto
+    const head = texto.substring(0, 1000);
+    const tail = texto.substring(Math.max(0, texto.length - 1000));
+    const content = `${head}::${tail}::${texto.length}`;
     
     for (let i = 0; i < content.length; i++) {
       const char = content.charCodeAt(i);
@@ -92,7 +97,7 @@ class StorageService {
       localStorage.removeItem(test);
       return true;
     } catch (error) {
-      console.warn('[StorageService] localStorage no disponible:', error);
+      logger.warn('[StorageService] localStorage no disponible:', error);
       return false;
     }
   }
@@ -105,7 +110,7 @@ class StorageService {
    */
   saveData(key, data) {
     if (!this.isStorageAvailable()) {
-      console.warn('[StorageService] No se puede guardar, localStorage no disponible');
+      logger.warn('[StorageService] No se puede guardar, localStorage no disponible');
       return false;
     }
 
@@ -120,16 +125,16 @@ class StorageService {
       
       // Verificar límite de tamaño
       if (jsonString.length > this.limits.MAX_STORAGE_SIZE) {
-        console.warn('[StorageService] Datos demasiado grandes para guardar');
+        logger.warn('[StorageService] Datos demasiado grandes para guardar');
         return false;
       }
       
       localStorage.setItem(key, jsonString);
-      console.log(`[StorageService] Datos guardados exitosamente: ${key}`);
+      logger.log(`[StorageService] Datos guardados exitosamente: ${key}`);
       return true;
       
     } catch (error) {
-      console.error('[StorageService] Error al guardar datos:', error);
+      logger.error('[StorageService] Error al guardar datos:', error);
       
       // Si es error de cuota, intentar limpiar cache antiguo
       if (error.name === 'QuotaExceededError') {
@@ -139,7 +144,7 @@ class StorageService {
           localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
           return true;
         } catch (retryError) {
-          console.error('[StorageService] Error en segundo intento:', retryError);
+          logger.error('[StorageService] Error en segundo intento:', retryError);
         }
       }
       
@@ -174,7 +179,7 @@ class StorageService {
       return parsedData;
       
     } catch (error) {
-      console.error(`[StorageService] Error al cargar datos para ${key}:`, error);
+      logger.error(`[StorageService] Error al cargar datos para ${key}:`, error);
       return null;
     }
   }
@@ -215,7 +220,7 @@ class StorageService {
     const todoProgreso = this.cargarTodoProgreso(userId);
     
     if (todoProgreso[idTexto]) {
-      console.log(`[StorageService] Progreso cargado para texto: ${idTexto}`);
+      logger.log(`[StorageService] Progreso cargado para texto: ${idTexto}`);
       return todoProgreso[idTexto];
     }
     
@@ -225,7 +230,7 @@ class StorageService {
       .find(entry => entry.textoHash === hashTexto);
     
     if (entradaPorHash) {
-      console.log(`[StorageService] Progreso encontrado por hash: ${hashTexto}`);
+      logger.log(`[StorageService] Progreso encontrado por hash: ${hashTexto}`);
 
       // 🧩 FASE 5: si ahora tenemos textoId estable, migrar la entrada (sin perder legacy)
       if (textoId && !todoProgreso[textoId]) {
@@ -240,7 +245,7 @@ class StorageService {
           this.saveData(storageKey, todoProgreso);
           return todoProgreso[textoId];
         } catch (e) {
-          console.warn('[StorageService] No se pudo migrar progreso a textoId:', e);
+          logger.warn('[StorageService] No se pudo migrar progreso a textoId:', e);
         }
       }
       return entradaPorHash;
@@ -364,7 +369,7 @@ class StorageService {
       progreso[key] = value;
     });
     
-    console.log(`[StorageService] Limpiadas ${entradas.length - entradasAMantener.length} entradas antiguas`);
+    logger.log(`[StorageService] Limpiadas ${entradas.length - entradasAMantener.length} entradas antiguas`);
   }
 
   /**
@@ -387,7 +392,7 @@ class StorageService {
     
     if (limpiezas > 0) {
       this.saveData(storageKey, cache);
-      console.log(`[StorageService] Limpiadas ${limpiezas} entradas de cache antiguas`);
+      logger.log(`[StorageService] Limpiadas ${limpiezas} entradas de cache antiguas`);
     }
     
     return limpiezas;
@@ -434,7 +439,7 @@ class StorageService {
       };
       
     } catch (error) {
-      console.error('[StorageService] Error al obtener información de almacenamiento:', error);
+      logger.error('[StorageService] Error al obtener información de almacenamiento:', error);
       return { available: true, error: error.message };
     }
   }
@@ -480,11 +485,11 @@ class StorageService {
         importados++;
       }
       
-      console.log(`[StorageService] ${importados} conjuntos de datos importados exitosamente`);
+      logger.log(`[StorageService] ${importados} conjuntos de datos importados exitosamente`);
       return true;
       
     } catch (error) {
-      console.error('[StorageService] Error al importar datos:', error);
+      logger.error('[StorageService] Error al importar datos:', error);
       return false;
     }
   }
@@ -504,7 +509,7 @@ class StorageService {
       }
     });
     
-    console.log(`[StorageService] ${eliminados} elementos eliminados`);
+    logger.log(`[StorageService] ${eliminados} elementos eliminados`);
     return eliminados;
   }
 }

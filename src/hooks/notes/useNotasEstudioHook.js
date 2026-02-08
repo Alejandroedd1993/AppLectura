@@ -5,10 +5,11 @@
  * @description Hook que encapsula toda la lógica de notas de estudio con aprendizaje espaciado
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchWithTimeout } from '../../utils/netUtils';
 import { NotesServices } from '../../services/notes';
+import logger from '../../utils/logger';
 
 // ✅ URL del backend
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
@@ -31,6 +32,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
   // Estados de configuración
   const [tipoTexto, setTipoTexto] = useState('auto');
   const [duracionEstudio, setDuracionEstudio] = useState(30);
+  const [numeroTarjetas, setNumeroTarjetas] = useState(5);
   
   // 🆕 FASE 3: Nivel académico para personalización
   const [nivelAcademico, setNivelAcademico] = useState(() => {
@@ -55,9 +57,20 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
   // Estados de UI
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+  const [origenNotas, setOrigenNotas] = useState('');
   
   // Estados internos
   const [inicializado, setInicializado] = useState(false);
+  const abortRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const prevDuracionRef = useRef(duracionEstudio);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      abortRef.current?.abort?.();
+    };
+  }, []);
   const [idTextoActual, setIdTextoActual] = useState('');
 
   // Rehidratar el nivel cuando cambia el usuario
@@ -104,10 +117,11 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
       
       if (config.tipoTexto) setTipoTexto(config.tipoTexto);
       if (config.duracionEstudio) setDuracionEstudio(config.duracionEstudio);
+      if (config.numeroTarjetas) setNumeroTarjetas(config.numeroTarjetas);
       
-      console.log('[useNotasEstudio] Configuración inicial cargada');
+      logger.log('[useNotasEstudio] Configuración inicial cargada');
     } catch (error) {
-      console.error('[useNotasEstudio] Error al cargar configuración inicial:', error);
+      logger.error('[useNotasEstudio] Error al cargar configuración inicial:', error);
     }
   }, [userId]);
 
@@ -121,7 +135,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
       const progreso = NotesServices.Storage.cargarProgresoNotas(textoParam, textoId, userId);
       
       if (progreso) {
-        console.log('[useNotasEstudio] Datos guardados encontrados');
+        logger.log('[useNotasEstudio] Datos guardados encontrados');
         
         if (progreso.notas) {
           setNotas(progreso.notas);
@@ -143,9 +157,11 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
         // Actualizar configuración si está guardada
         if (progreso.tipoTexto) setTipoTexto(progreso.tipoTexto);
         if (progreso.duracionEstudio) setDuracionEstudio(progreso.duracionEstudio);
+        if (progreso.numeroTarjetas) setNumeroTarjetas(progreso.numeroTarjetas);
+        if (progreso.origenNotas) setOrigenNotas(progreso.origenNotas);
       }
     } catch (error) {
-      console.error('[useNotasEstudio] Error al cargar datos guardados:', error);
+      logger.error('[useNotasEstudio] Error al cargar datos guardados:', error);
     }
   }, [textoId, userId]);
 
@@ -161,50 +177,67 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
         cronograma: cronogramaParam || cronograma,
         tipoTexto,
         duracionEstudio,
+        numeroTarjetas,
         notasRepasadas,
+        origenNotas,
         ultimaActualizacion: Date.now()
       };
 
       const guardado = NotesServices.Storage.guardarProgresoNotas(texto, progreso, textoId, userId);
       
       if (guardado) {
-        console.log('[useNotasEstudio] Progreso guardado exitosamente');
+        logger.log('[useNotasEstudio] Progreso guardado exitosamente');
       } else {
-        console.warn('[useNotasEstudio] No se pudo guardar el progreso');
+        logger.warn('[useNotasEstudio] No se pudo guardar el progreso');
       }
     } catch (error) {
-      console.error('[useNotasEstudio] Error al guardar progreso:', error);
+      logger.error('[useNotasEstudio] Error al guardar progreso:', error);
     }
-  }, [texto, notas, cronograma, tipoTexto, duracionEstudio, notasRepasadas, textoId, userId]);
+  }, [texto, notas, cronograma, tipoTexto, duracionEstudio, numeroTarjetas, notasRepasadas, origenNotas, textoId, userId]);
 
-  /**
-   * Genera notas de estudio usando OpenAI
-   */
-  const _generarNotas = useCallback(async (textoParam, tipoParam) => {
-    if (!textoParam) {
-      throw new Error('No hay texto para analizar');
-    }
-
-    try {
-      console.log(`[useNotasEstudio] Generando notas para tipo: ${tipoParam}`);
-      
-      let tipoDetectado = tipoParam;
-      
-      // Detectar tipo automáticamente si es necesario
-      if (tipoParam === 'auto') {
-        tipoDetectado = await NotesServices.OpenAI.detectarTipoTexto(textoParam);
-        console.log(`[useNotasEstudio] Tipo detectado automáticamente: ${tipoDetectado}`);
-      }
-      
-      // Generar notas según el tipo
-      const notasGeneradas = await NotesServices.OpenAI.generarNotasSegunTipo(textoParam, tipoDetectado);
-      
-      return notasGeneradas;
-    } catch (error) {
-      console.error('[useNotasEstudio] Error al generar notas:', error);
-      throw error;
-    }
+  const normalizarNumeroTarjetas = useCallback((valor) => {
+    const num = Number(valor);
+    if (!Number.isFinite(num)) return 5;
+    return Math.min(10, Math.max(3, Math.round(num)));
   }, []);
+
+  const ajustarTarjetas = useCallback((notasBase, textoParam, contextoEnriquecido, objetivo) => {
+    if (!notasBase || typeof notasBase !== 'object') return notasBase;
+
+    const tarjetasObjetivo = normalizarNumeroTarjetas(objetivo);
+    const tarjetasActuales = Array.isArray(notasBase.tarjetas) ? [...notasBase.tarjetas] : [];
+
+    if (tarjetasActuales.length > tarjetasObjetivo) {
+      return { ...notasBase, tarjetas: tarjetasActuales.slice(0, tarjetasObjetivo) };
+    }
+
+    if (tarjetasActuales.length < tarjetasObjetivo) {
+      const frases = (textoParam || '')
+        .split(/[.!?]/)
+        .filter(Boolean)
+        .map(s => s.trim())
+        .slice(0, 6);
+
+      const conceptos = Array.isArray(contextoEnriquecido?.conceptos_clave)
+        ? contextoEnriquecido.conceptos_clave
+        : [];
+
+      const extras = [
+        ...conceptos.map(c => ({ frente: c, reverso: 'Concepto clave del texto' })),
+        ...frases.map((f, i) => ({ frente: `Idea ${i + 1}`, reverso: f }))
+      ];
+
+      const existentes = new Set(tarjetasActuales.map(t => t?.frente).filter(Boolean));
+      for (const extra of extras) {
+        if (tarjetasActuales.length >= tarjetasObjetivo) break;
+        if (!extra?.frente || existentes.has(extra.frente)) continue;
+        tarjetasActuales.push(extra);
+        existentes.add(extra.frente);
+      }
+    }
+
+    return { ...notasBase, tarjetas: tarjetasActuales };
+  }, [normalizarNumeroTarjetas]);
 
   /**
    * Genera cronograma de repaso
@@ -214,7 +247,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
       const cronogramaData = NotesServices.Cronograma.generarCronograma(duracionDias);
       return cronogramaData.cronograma;
     } catch (error) {
-      console.error('[useNotasEstudio] Error al generar cronograma:', error);
+      logger.error('[useNotasEstudio] Error al generar cronograma:', error);
       throw error;
     }
   }, []);
@@ -264,14 +297,13 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
    * Generación unificada: backend (Zod) -> OpenAI -> fallback local
    * MEJORADO: Ahora aprovecha completeAnalysis para generar notas contextualizadas
    */
-  const generarNotasUnificado = useCallback(async (textoParam, tipoParam, analysis = null) => {
+  const generarNotasUnificado = useCallback(async (textoParam, tipoParam, analysis = null, signal = undefined) => {
     if (!textoParam) throw new Error('No hay texto para analizar');
 
     // Extraer contexto del análisis académico
     const contextoEnriquecido = extraerContextoDelAnalisis(analysis);
-    const tipoDetectado = contextoEnriquecido?.genero || tipoParam;
 
-    console.log('[useNotasEstudio] Generando notas con contexto enriquecido:', {
+    logger.log('[useNotasEstudio] Generando notas con contexto enriquecido:', {
       genero: contextoEnriquecido?.genero,
       tiene_tesis: !!contextoEnriquecido?.tesis_central,
       tiene_conceptos: !!contextoEnriquecido?.conceptos_clave,
@@ -286,54 +318,37 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
         // ✅ Enviar contexto del análisis
         contexto: contextoEnriquecido,
         // 🆕 FASE 3: Enviar nivel académico para personalización
-        nivelAcademico
+        nivelAcademico,
+        tipoTexto: tipoParam,
+        numeroTarjetas: normalizarNumeroTarjetas(numeroTarjetas)
       };
 
       const res = await fetchWithTimeout(`${BACKEND_URL}/api/notes/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal
       }, 45000);
       
       if (res.ok) {
         const notasGeneradas = await res.json();
-        console.log('[useNotasEstudio] Notas generadas con contexto del backend');
-        return notasGeneradas;
+        logger.log('[useNotasEstudio] Notas generadas con contexto del backend');
+        setOrigenNotas('backend');
+        return ajustarTarjetas(notasGeneradas, textoParam, contextoEnriquecido, numeroTarjetas);
       } else {
         const msg = await res.text();
         throw new Error(msg || `HTTP ${res.status}`);
       }
     } catch (errBackend) {
-      console.warn('[useNotasEstudio] Backend no disponible, evaluando fallback:', errBackend?.message);
+      logger.warn('[useNotasEstudio] Backend no disponible, evaluando fallback:', errBackend?.message);
     }
 
-    // 2) OpenAI directo (con contexto enriquecido)
-    if (!NotesServices?.OpenAI?.hasUserApiKey?.()) {
-      console.log('[useNotasEstudio] OpenAI directo omitido: no hay API key BYOK configurada');
-    } else {
-      try {
-        let tipo = tipoDetectado;
-
-        // Solo detectar tipo si no está en el análisis
-        if (!contextoEnriquecido?.genero && tipoParam === 'auto') {
-          tipo = await NotesServices.OpenAI.detectarTipoTexto(textoParam);
-          console.log(`[useNotasEstudio] Tipo detectado automáticamente: ${tipo}`);
-        } else if (contextoEnriquecido?.genero) {
-          console.log(`[useNotasEstudio] Usando tipo del análisis: ${tipo}`);
-        }
-
-        return await NotesServices.OpenAI.generarNotasSegunTipo(textoParam, tipo);
-      } catch (errOpenAI) {
-        console.warn('[useNotasEstudio] OpenAI directo falló, usando fallback local:', errOpenAI?.message);
-      }
-    }
-
-    // 3) Fallback local mejorado con contexto
-    console.log('[useNotasEstudio] Usando fallback local con contexto del análisis');
+    // 2) Fallback local mejorado con contexto
+    logger.log('[useNotasEstudio] Usando fallback local con contexto del análisis');
     
     const frases = textoParam.split(/[.!?]/).filter(Boolean).slice(0, 3).map(s => s.trim());
     
-    return {
+    const notasFallback = {
       resumen: contextoEnriquecido?.resumen_previo || (textoParam.slice(0, 400) + (textoParam.length > 400 ? '...' : '')),
       notas: [
         ...(contextoEnriquecido?.tesis_central ? [{
@@ -357,9 +372,11 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
           reverso: `Concepto clave identificado en el análisis del texto`
         })) || []),
         ...frases.slice(0, 2).map((f, i) => ({ frente: `Concepto ${i + 1}`, reverso: f }))
-      ].slice(0, 5)
+      ]
     };
-  }, [extraerContextoDelAnalisis, nivelAcademico]);
+    setOrigenNotas('fallback');
+    return ajustarTarjetas(notasFallback, textoParam, contextoEnriquecido, numeroTarjetas);
+  }, [ajustarTarjetas, extraerContextoDelAnalisis, nivelAcademico, normalizarNumeroTarjetas, numeroTarjetas]);
 
   /**
    * Inicializa o regenera las notas de estudio
@@ -372,39 +389,56 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
       return;
     }
 
-    setCargando(true);
-    setError('');
+    abortRef.current?.abort?.();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    if (isMountedRef.current) {
+      setCargando(true);
+      setError('');
+    }
 
     try {
       // Generar notas (flujo unificado: backend -> OpenAI -> local) con contexto del análisis
-      const notasGeneradas = await generarNotasUnificado(texto, tipoTexto, completeAnalysis);
+      const notasGeneradas = await generarNotasUnificado(texto, tipoTexto, completeAnalysis, controller.signal);
+      if (!isMountedRef.current || controller.signal.aborted) return;
       setNotas(notasGeneradas);
 
-      // Generar cronograma
-      const cronogramaGenerado = generarCronograma(duracionEstudio);
-      setCronograma(cronogramaGenerado);
+      // Generar o conservar cronograma
+      const debeRegenerarCronograma = !cronograma.length || duracionEstudio !== prevDuracionRef.current;
+      let cronogramaGenerado = cronograma;
+      if (debeRegenerarCronograma) {
+        cronogramaGenerado = generarCronograma(duracionEstudio);
+        setCronograma(cronogramaGenerado);
+        setNotasRepasadas({});
+      }
 
-      // Resetear repasos completados
-      setNotasRepasadas({});
+      prevDuracionRef.current = duracionEstudio;
 
       // Guardar progreso
       guardarProgreso(notasGeneradas, cronogramaGenerado);
 
-      console.log('[useNotasEstudio] Notas inicializadas exitosamente');
+      logger.log('[useNotasEstudio] Notas inicializadas exitosamente');
     } catch (err) {
+      if (!isMountedRef.current || controller.signal.aborted) return;
       const errorMessage = `No se pudieron generar las notas de estudio: ${err.message}`;
       setError(errorMessage);
-      console.error('[useNotasEstudio] Error en inicialización:', err);
+      logger.error('[useNotasEstudio] Error en inicialización:', err);
     } finally {
-      setCargando(false);
+      if (isMountedRef.current && !controller.signal.aborted) {
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
+        setCargando(false);
+      }
     }
-  }, [texto, tipoTexto, duracionEstudio, notas, completeAnalysis, generarNotasUnificado, generarCronograma, guardarProgreso]);
+  }, [texto, tipoTexto, duracionEstudio, notas, completeAnalysis, generarNotasUnificado, generarCronograma, guardarProgreso, cronograma]);
 
   /**
    * Regenera las notas con nueva configuración
    */
   const regenerarNotas = useCallback(async () => {
-    console.log('[useNotasEstudio] Regenerando notas...');
+    logger.log('[useNotasEstudio] Regenerando notas...');
     await inicializarNotas(true);
   }, [inicializarNotas]);
 
@@ -414,16 +448,24 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
   const marcarRepasoCompletado = useCallback((indice) => {
     try {
       // Actualizar cronograma
-      const nuevoCronograma = [...cronograma];
-      NotesServices.Cronograma.marcarRepasoCompletado(nuevoCronograma, indice);
-      setCronograma(nuevoCronograma);
+      let cronogramaActualizado = null;
+      setCronograma(prevCronograma => {
+        const nuevoCronograma = [...prevCronograma];
+        if (nuevoCronograma[indice]) {
+          nuevoCronograma[indice] = { ...nuevoCronograma[indice] };
+        }
+        NotesServices.Cronograma.marcarRepasoCompletado(nuevoCronograma, indice);
+        cronogramaActualizado = nuevoCronograma;
+        return nuevoCronograma;
+      });
 
       // Actualizar estado de repasos
-      const nuevosRepasados = { ...notasRepasadas, [indice]: true };
-      setNotasRepasadas(nuevosRepasados);
+      setNotasRepasadas(prev => ({ ...prev, [indice]: true }));
 
       // Guardar progreso
-      guardarProgreso(notas, nuevoCronograma);
+      if (cronogramaActualizado) {
+        guardarProgreso(notas, cronogramaActualizado);
+      }
 
       // Actualizar estadísticas
       const stats = NotesServices.Storage.cargarEstadisticas(userId);
@@ -432,12 +474,12 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
         repasosCompletados: (stats.repasosCompletados || 0) + 1
       }, userId);
 
-      console.log(`[useNotasEstudio] Repaso ${indice + 1} marcado como completado`);
+      logger.log(`[useNotasEstudio] Repaso ${indice + 1} marcado como completado`);
     } catch (error) {
-      console.error('[useNotasEstudio] Error al marcar repaso completado:', error);
+      logger.error('[useNotasEstudio] Error al marcar repaso completado:', error);
       setError('No se pudo marcar el repaso como completado');
     }
-  }, [cronograma, notasRepasadas, notas, guardarProgreso, userId]);
+  }, [notas, guardarProgreso, userId]);
 
   /**
    * Actualiza configuración y guarda en localStorage
@@ -447,15 +489,16 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
       const config = {
         tipoTexto,
         duracionEstudio,
+        numeroTarjetas,
         ...nuevaConfig
       };
 
       NotesServices.Storage.guardarConfiguracion(config, userId);
-      console.log('[useNotasEstudio] Configuración actualizada');
+      logger.log('[useNotasEstudio] Configuración actualizada');
     } catch (error) {
-      console.error('[useNotasEstudio] Error al actualizar configuración:', error);
+      logger.error('[useNotasEstudio] Error al actualizar configuración:', error);
     }
-  }, [tipoTexto, duracionEstudio, userId]);
+  }, [tipoTexto, duracionEstudio, numeroTarjetas, userId]);
 
   /**
    * Estadísticas del progreso calculadas
@@ -527,7 +570,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
     if (inicializado) {
       actualizarConfiguracion({});
     }
-  }, [tipoTexto, duracionEstudio, inicializado, actualizarConfiguracion]);
+  }, [tipoTexto, duracionEstudio, numeroTarjetas, inicializado, actualizarConfiguracion]);
 
   // Retornar el estado y funciones públicas
   return {
@@ -539,6 +582,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
     // Estados de configuración
     tipoTexto,
     duracionEstudio,
+    numeroTarjetas,
     nivelAcademico, // 🆕 FASE 3
     
     // Estados de UI
@@ -551,6 +595,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
     // Funciones de configuración
     setTipoTexto,
     setDuracionEstudio,
+    setNumeroTarjetas,
     setNivelAcademico, // 🆕 FASE 3
     
     // Funciones principales
@@ -564,7 +609,8 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
     // Estados computados
     tieneNotas: Boolean(notas),
     tieneCronograma: cronograma.length > 0,
-    textoActivo: Boolean(texto)
+    textoActivo: Boolean(texto),
+    origenNotas
   };
 };
 

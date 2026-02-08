@@ -1,8 +1,9 @@
-import React, { useContext, useMemo, useState, useCallback } from 'react';
+import React, { useContext, useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { AppContext } from '../../context/AppContext';
 import { validateEssayFormat } from '../../services/essayFormatValidator';
 import { evaluateEssayDual, EssayEvaluationError } from '../../services/ensayoIntegrador.service';
+import { getDraftKey } from '../../services/sessionManager';
 import EnsayoDimensionSelector from './EnsayoDimensionSelector';
 import EnsayoPrerequisites from './EnsayoPrerequisites';
 import EnsayoGuidelines from './EnsayoGuidelines';
@@ -198,6 +199,33 @@ const StepLabel = styled.div`
   font-weight: 600;
 `;
 
+const DraftBadge = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: ${props => props.$cloud ? props.theme.primary + '15' : props.theme.success + '15'};
+  color: ${props => props.$cloud ? props.theme.primary : props.theme.success};
+  border: 1px solid ${props => props.$cloud ? props.theme.primary + '30' : props.theme.success + '30'};
+  transition: opacity 0.3s ease;
+`;
+
+const CloudButton = styled(Button)`
+  background: ${props => props.theme.primary}15;
+  color: ${props => props.theme.primary};
+  border: 1px solid ${props => props.theme.primary}40;
+  font-size: 0.85rem;
+
+  &:hover:not(:disabled) {
+    background: ${props => props.theme.primary}25;
+  }
+`;
+
+const DRAFT_SAVE_DELAY = 800; // ms debounce para auto-guardado
+
 const ProgressHint = styled.div`
   font-size: 0.85rem;
   color: ${props => props.theme.textMuted};
@@ -217,7 +245,8 @@ export default function EnsayoIntegrador({ theme }) {
     rubricProgress,
     currentTextoId,
     checkEssayPrerequisites,
-    submitSummativeEssay
+    submitSummativeEssay,
+    getCitations
   } = useContext(AppContext);
 
   const [dimension, setDimension] = useState(null);
@@ -225,11 +254,138 @@ export default function EnsayoIntegrador({ theme }) {
   const [formatErrors, setFormatErrors] = useState([]);
   const [submitError, setSubmitError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [evaluationPhase, setEvaluationPhase] = useState(null); // 🆕 'validating' | 'evaluating' | 'combining' | null
+  const [evaluationPhase, setEvaluationPhase] = useState(null);
   const [evaluation, setEvaluation] = useState(null);
   const [prefillBlocked, setPrefillBlocked] = useState(false);
   const [prefillHint, setPrefillHint] = useState(null);
   const [partialEvaluation, setPartialEvaluation] = useState(null);
+  const [draftStatus, setDraftStatus] = useState(null); // 'saving' | 'saved-local' | 'saved-cloud' | null
+  const [cloudSaving, setCloudSaving] = useState(false);
+
+  const draftTimerRef = useRef(null);
+  const draftStatusTimerRef = useRef(null);
+  const initialDraftLoadedRef = useRef(false);
+
+  // 🆕 Citas guardadas del documento actual
+  const citations = useMemo(() => {
+    if (!getCitations || !currentTextoId) return [];
+    try {
+      return getCitations(currentTextoId) || [];
+    } catch {
+      return [];
+    }
+  }, [getCitations, currentTextoId]);
+
+  // --- Helper: claves de sessionStorage namespaced ---
+  const draftTextKey = useMemo(() => getDraftKey('ensayoIntegrador_text', currentTextoId), [currentTextoId]);
+  const draftDimKey = useMemo(() => getDraftKey('ensayoIntegrador_dimension', currentTextoId), [currentTextoId]);
+
+  // rubricId necesita estar antes de los callbacks que lo usan
+  const rubricId = dimension ? DIMENSION_TO_RUBRIC[dimension] : null;
+
+  // --- Cleanup de todos los timers al desmontar ---
+  useEffect(() => {
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      if (draftStatusTimerRef.current) clearTimeout(draftStatusTimerRef.current);
+    };
+  }, []);
+
+  // --- Auto-guardar en sessionStorage con debounce ---
+  useEffect(() => {
+    // No guardar en draft durante carga inicial ni si está vacío
+    if (!initialDraftLoadedRef.current) return;
+    if (!essayText.trim() && !dimension) return;
+
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        sessionStorage.setItem(draftTextKey, essayText);
+        if (dimension) sessionStorage.setItem(draftDimKey, dimension);
+        setDraftStatus('saved-local');
+        // Auto-ocultar badge después de 3s
+        if (draftStatusTimerRef.current) clearTimeout(draftStatusTimerRef.current);
+        draftStatusTimerRef.current = setTimeout(() => setDraftStatus(null), 3000);
+      } catch (e) {
+        console.warn('⚠️ [EnsayoIntegrador] Error guardando borrador local:', e);
+      }
+    }, DRAFT_SAVE_DELAY);
+
+    return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
+  }, [essayText, dimension, draftTextKey, draftDimKey]);
+
+  // --- Cargar borrador de sessionStorage al montar / cambiar textoId ---
+  useEffect(() => {
+    // Resetear estado al cambiar de texto para evitar stale closures
+    initialDraftLoadedRef.current = false;
+    setEssayText('');
+    setDimension(null);
+    setPrefillBlocked(false);
+    setPrefillHint(null);
+    setEvaluation(null);
+    setSubmitError(null);
+    setFormatErrors([]);
+    setDraftStatus(null);
+
+    try {
+      const savedText = sessionStorage.getItem(draftTextKey);
+      const savedDim = sessionStorage.getItem(draftDimKey);
+
+      if (savedDim) {
+        setDimension(savedDim);
+      }
+      if (savedText && savedText.trim().length > 0) {
+        setEssayText(savedText);
+        setPrefillHint('Se restauró tu borrador local guardado.');
+      }
+    } catch (e) {
+      console.warn('⚠️ [EnsayoIntegrador] Error cargando borrador local:', e);
+    }
+    // Marcar que ya se intentó cargar el draft inicial
+    initialDraftLoadedRef.current = true;
+  }, [draftTextKey, draftDimKey]);
+
+  // --- Guardar borrador en la nube (explícito) ---
+  const handleSaveDraftToCloud = useCallback(() => {
+    if (!dimension || !rubricId || !essayText.trim() || cloudSaving || !submitSummativeEssay) return;
+
+    setCloudSaving(true);
+    setDraftStatus('saving');
+
+    try {
+      submitSummativeEssay(rubricId, {
+        textoId: currentTextoId || null,
+        status: 'draft',
+        essayContent: essayText,
+        dimension,
+      });
+
+      setDraftStatus('saved-cloud');
+      if (draftStatusTimerRef.current) clearTimeout(draftStatusTimerRef.current);
+      draftStatusTimerRef.current = setTimeout(() => setDraftStatus(null), 4000);
+    } catch (e) {
+      console.error('❌ [EnsayoIntegrador] Error guardando borrador en nube:', e);
+      setDraftStatus(null);
+    } finally {
+      setCloudSaving(false);
+    }
+  }, [dimension, rubricId, essayText, cloudSaving, submitSummativeEssay, currentTextoId]);
+
+  // --- Insertar entrada del cuaderno en el editor (posición del cursor gestionada por EnsayoEditor) ---
+  const handleInsertCitation = useCallback((citationText, cursorPos, tipo = 'cita') => {
+    setEssayText(prev => {
+      // Citas textuales van entre «», reflexiones/comentarios van como texto directo
+      const formatted = tipo === 'cita' ? `«${citationText}»` : citationText;
+      // Si se proporciona posición del cursor, insertar ahí; si no, al final
+      if (typeof cursorPos === 'number' && cursorPos >= 0 && cursorPos <= prev.length) {
+        return prev.slice(0, cursorPos) + formatted + prev.slice(cursorPos);
+      }
+      const separator = prev.trim().length > 0 ? '\n\n' : '';
+      return prev + separator + formatted;
+    });
+    if (formatErrors.length) setFormatErrors([]);
+  }, [formatErrors]);
 
   const prereq = useMemo(() => {
     try {
@@ -238,8 +394,6 @@ export default function EnsayoIntegrador({ theme }) {
       return null;
     }
   }, [checkEssayPrerequisites, rubricProgress]);
-
-  const rubricId = dimension ? DIMENSION_TO_RUBRIC[dimension] : null;
 
   const attemptsUsed = useMemo(() => {
     if (!rubricId) return 0;
@@ -264,9 +418,15 @@ export default function EnsayoIntegrador({ theme }) {
   }, [rubricProgress, rubricId]);
 
   const savedEssayContent = useMemo(() => {
-    const content = savedSummative?.essayContent;
+    // Priorizar borrador de nube sobre versión calificada
+    // Solo usar draft si la dimensión coincide con la actual
+    const draft = savedSummative?.draftContent;
+    const draftDim = savedSummative?.draftDimension;
+    const submitted = savedSummative?.essayContent;
+    const useDraft = typeof draft === 'string' && draft.trim() && draftDim === dimension;
+    const content = useDraft ? draft : submitted;
     return typeof content === 'string' ? content : '';
-  }, [savedSummative]);
+  }, [savedSummative, dimension]);
 
   const savedEvaluation = useMemo(() => {
     if (!savedSummative) return null;
@@ -320,7 +480,8 @@ export default function EnsayoIntegrador({ theme }) {
     && !isLockedByAttempts
   );
 
-  // ✅ Prefill SOLO lectura: si hay ensayo guardado y el editor está vacío, cargarlo.
+  // ✅ Prefill: si hay ensayo guardado y el editor está vacío, cargarlo.
+  // Prioridad: sessionStorage draft > cloud draft > submitted essay
   // - No sobrescribe si ya hay texto.
   // - Si el usuario hace "Limpiar", no se vuelve a precargar hasta cambiar de dimensión.
   React.useEffect(() => {
@@ -334,27 +495,38 @@ export default function EnsayoIntegrador({ theme }) {
     setPrefillHint(null);
   }, [rubricId]);
 
+  // Ref para evitar re-ejecutar prefill en cada keystroke
+  const essayTextRef = useRef(essayText);
+  essayTextRef.current = essayText;
+
   React.useEffect(() => {
     if (!rubricId) return;
     if (prefillBlocked) return;
     if (loading) return;
-    if (essayText.trim() !== '') return;
+    if (essayTextRef.current.trim() !== '') return;
+
+    // sessionStorage ya se cargó en el efecto de arriba, solo precargar desde cloud/submitted
+    const localDraft = sessionStorage.getItem(draftTextKey);
+    if (localDraft && localDraft.trim().length > 0) return; // Ya cargado desde sessionStorage
 
     if (savedEssayContent.trim() !== '') {
       setEssayText(savedEssayContent);
+      const source = savedSummative?.draftContent ? 'borrador en la nube' : 'versión anterior calificada';
       setPrefillHint(
         isRevisionContext
-          ? 'Modo revisión: se cargó tu versión anterior guardada.'
-          : 'Se cargó tu versión anterior guardada para esta dimensión.'
+          ? `Modo revisión: se cargó tu ${source}.`
+          : `Se cargó tu ${source} para esta dimensión.`
       );
     }
-  }, [rubricId, prefillBlocked, loading, essayText, savedEssayContent, isRevisionContext]);
+  }, [rubricId, prefillBlocked, loading, savedEssayContent, isRevisionContext, draftTextKey, savedSummative?.draftContent]);
 
   const onGoToActivities = useCallback(() => {
     window.dispatchEvent(new CustomEvent('app-change-tab', { detail: { tabId: 'actividades' } }));
   }, []);
 
   const handleSubmit = useCallback(async () => {
+    // Cancelar auto-save pendiente para evitar race condition con limpieza de sessionStorage
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     setSubmitError(null);
     setFormatErrors([]);
     setEvaluationPhase('validating'); // 🆕 Fase 1
@@ -428,6 +600,12 @@ export default function EnsayoIntegrador({ theme }) {
           evaluators: result.evaluators,
           dimension: result.dimension
         });
+
+        // 🆕 Limpiar borrador local tras envío exitoso
+        try {
+          sessionStorage.removeItem(draftTextKey);
+          sessionStorage.removeItem(draftDimKey);
+        } catch (e) { /* ignore */ }
       }
     } catch (err) {
       // 🆕 Usar mensaje amigable si es EssayEvaluationError
@@ -446,7 +624,7 @@ export default function EnsayoIntegrador({ theme }) {
       setLoading(false);
       setEvaluationPhase(null);
     }
-  }, [canAccess, dimension, rubricId, isLockedByAttempts, essayText, texto, submitSummativeEssay, currentTextoId, attemptsUsed, maxAttempts]);
+  }, [canAccess, dimension, rubricId, isLockedByAttempts, essayText, texto, submitSummativeEssay, currentTextoId, attemptsUsed, maxAttempts, draftTextKey, draftDimKey]);
 
   const handleReset = useCallback(() => {
     setEssayText('');
@@ -456,7 +634,13 @@ export default function EnsayoIntegrador({ theme }) {
     setPrefillBlocked(true);
     setPrefillHint(null);
     setPartialEvaluation(null);
-  }, []);
+    setDraftStatus(null);
+    // 🆕 Limpiar borrador local
+    try {
+      sessionStorage.removeItem(draftTextKey);
+      // No limpiar la dimensión — el usuario puede querer mantenerla
+    } catch (e) { /* ignore */ }
+  }, [draftTextKey]);
 
   return (
     <Section aria-label="Ensayo Integrador" theme={theme}>
@@ -497,6 +681,8 @@ export default function EnsayoIntegrador({ theme }) {
             if (formatErrors.length) setFormatErrors([]);
           }}
           disabled={!canAccess || loading || isLockedByAttempts}
+          citations={citations}
+          onInsertCitation={handleInsertCitation}
         />
 
         {isLockedByAttempts && (
@@ -540,6 +726,22 @@ export default function EnsayoIntegrador({ theme }) {
           )}
 
           <ButtonGroup>
+            {draftStatus && (
+              <DraftBadge theme={theme} $cloud={draftStatus === 'saved-cloud'}>
+                {draftStatus === 'saving' && '⏳ Guardando...'}
+                {draftStatus === 'saved-local' && '💾 Borrador local guardado'}
+                {draftStatus === 'saved-cloud' && '☁️ Guardado en la nube'}
+              </DraftBadge>
+            )}
+            <CloudButton
+              theme={theme}
+              type="button"
+              onClick={handleSaveDraftToCloud}
+              disabled={loading || cloudSaving || !dimension || !essayText.trim() || isLockedByAttempts}
+              title="Guardar borrador en la nube"
+            >
+              ☁️ Guardar
+            </CloudButton>
             <Secondary theme={theme} type="button" onClick={handleReset} disabled={loading}>
               Limpiar
             </Secondary>

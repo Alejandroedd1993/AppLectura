@@ -283,13 +283,12 @@ export function exportToCSV(rubricProgress) {
   
   const headers = [
     'Artefacto',
-    'Promedio sobre 10',
-    'Nivel Alcanzado',
+    'Promedio (sobre 10)',
+    'Nivel Alcanzado (1-4)',
     'Descripción del Nivel',
     'Número de Intentos',
     'Mejor Puntuación',
-    'Última Puntuación',
-    'ID Técnico'
+    'Última Puntuación'
   ];
   
   const rows = Object.entries(rubricProgress).map(([id, data]) => {
@@ -306,22 +305,24 @@ export function exportToCSV(rubricProgress) {
       nivelDescripcion[nivel] || 'Sin clasificar',
       scores.length,
       bestScore.toFixed(2),
-      lastScore.toFixed(2),
-      id
+      lastScore.toFixed(2)
     ];
   });
 
+  const dateRow = `"Evaluación de Rúbricas — Exportado: ${new Date().toLocaleString('es-ES')}"`;
   const csvContent = [
-    headers.join(','),
+    dateRow,
+    headers.map(h => `"${h}"`).join(','),
     ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
   ].join('\n');
 
-  // Agregar BOM UTF-8 para correcta visualización en Excel
+  // BOM UTF-8 para correcta visualización en Excel
   return '\uFEFF' + csvContent;
 }
 
 /**
- * Exporta datos a JSON
+ * @deprecated Ya no se usa directamente — las exportaciones usan PDF (exportGenericPDF).
+ * Se mantiene por compatibilidad.
  */
 export function exportToJSON(rubricProgress, stats) {
   const rubricNames = {

@@ -19,6 +19,8 @@ const ConfiguracionPanel = React.memo(({
   setTipoTexto, 
   duracionEstudio, 
   setDuracionEstudio,
+  numeroTarjetas,
+  setNumeroTarjetas,
   regenerarNotas,
   nivelAcademico,
   setNivelAcademico
@@ -213,6 +215,62 @@ const ConfiguracionPanel = React.memo(({
           <span>90 días (máximo)</span>
         </div>
       </div>
+
+      {/* Control de número de tarjetas */}
+      <div style={{
+        marginBottom: tokens.spacing.lg,
+        padding: tokens.spacing.md,
+        backgroundColor: theme.background,
+        borderRadius: tokens.borderRadius.md,
+        border: `${tokens.borderWidth.thin} solid ${theme.border}`
+      }}>
+        <label 
+          htmlFor="numero-tarjetas" 
+          style={{ 
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: tokens.spacing.md,
+            color: theme.text,
+            fontWeight: tokens.fontWeight.semibold,
+            fontSize: tokens.fontSize.base
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: tokens.spacing.xs }}>
+            🎴 Número de tarjetas (flashcards)
+          </span>
+          <span style={{ 
+            color: theme.primary,
+            fontWeight: tokens.fontWeight.bold,
+            fontSize: tokens.fontSize.lg
+          }}>
+            {numeroTarjetas} tarjetas
+          </span>
+        </label>
+        <input 
+          id="numero-tarjetas"
+          type="range"
+          min="3"
+          max="10"
+          value={numeroTarjetas}
+          onChange={(e) => setNumeroTarjetas(parseInt(e.target.value, 10))}
+          style={{ 
+            width: '100%',
+            cursor: 'pointer',
+            marginBottom: tokens.spacing.sm
+          }}
+        />
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between',
+          color: theme.lightText,
+          fontSize: tokens.fontSize.sm
+        }}>
+          <span>3 (mínimo)</span>
+          <span>5 (recomendado)</span>
+          <span>10 (máximo)</span>
+        </div>
+      </div>
       
       {/* Botón de regeneración */}
       <button 
@@ -236,6 +294,14 @@ const ConfiguracionPanel = React.memo(({
           e.target.style.boxShadow = tokens.boxShadow.md;
         }}
         onMouseOut={(e) => {
+          e.target.style.transform = 'translateY(0)';
+          e.target.style.boxShadow = tokens.boxShadow.sm;
+        }}
+        onFocus={(e) => {
+          e.target.style.transform = 'translateY(-2px)';
+          e.target.style.boxShadow = tokens.boxShadow.md;
+        }}
+        onBlur={(e) => {
           e.target.style.transform = 'translateY(0)';
           e.target.style.boxShadow = tokens.boxShadow.sm;
         }}

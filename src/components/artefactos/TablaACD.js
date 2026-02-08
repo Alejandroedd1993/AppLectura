@@ -411,47 +411,52 @@ const LoadingText = styled.p`
 
 // 🆕 Styled Components para Sistema de Citas
 const CitasButton = styled.button`
-  padding: 0.75rem 1.25rem;
+  position: fixed;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  right: calc(1.25rem + env(safe-area-inset-right));
+  z-index: 1001;
+  padding: 0.7rem 1.2rem;
   background: ${props => props.$active ? props.theme.warning || '#f59e0b' : props.theme.cardBg || '#fff'};
   color: ${props => props.$active ? '#fff' : props.theme.textPrimary};
   border: 2px solid ${props => props.$active ? props.theme.warning || '#f59e0b' : props.theme.border};
-  border-radius: 8px;
+  border-radius: 50px;
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  position: relative;
-  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
   
-  /* Indicador de notificación cuando hay citas guardadas */
   ${props => props.$hasNotification && !props.$active && `
     &:after {
       content: '';
       position: absolute;
-      top: -6px;
-      right: -6px;
+      top: -4px;
+      right: -4px;
       width: 12px;
       height: 12px;
       background: ${props.theme.success || '#4CAF50'};
       border: 2px solid ${props.theme.cardBg || '#fff'};
       border-radius: 50%;
-      animation: pulse 2s ease-in-out infinite;
+      animation: fabPulse 2s ease-in-out infinite;
     }
-    
-    @keyframes pulse {
+    @keyframes fabPulse {
       0%, 100% { transform: scale(1); opacity: 1; }
       50% { transform: scale(1.2); opacity: 0.8; }
     }
   `}
   
   &:hover {
-    background: ${props => props.$active ? props.theme.warningHover || '#f59e0b' : props.theme.hoverBg || '#f5f5f5'};
-    border-color: ${props => props.theme.warning || '#f59e0b'};
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    border-color: ${props => props.theme.warning || '#f59e0b'};
+  }
+
+  &:focus-visible {
+    outline: 3px solid ${props => props.theme.primary || '#3190FC'};
+    outline-offset: 2px;
   }
   
   &:active {
@@ -459,8 +464,10 @@ const CitasButton = styled.button`
   }
   
   @media (max-width: 768px) {
+    bottom: calc(4rem + env(safe-area-inset-bottom));
+    right: calc(1rem + env(safe-area-inset-right));
     padding: 0.6rem 1rem;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
   }
 `;
 
@@ -468,13 +475,16 @@ const CitasPanel = styled.div`
   position: fixed;
   right: 0;
   top: 0;
-  width: 400px;
-  height: 100vh;
+  bottom: 0;
+  width: 380px;
+  max-width: 90vw;
   background: ${props => props.theme.surface};
-  border-left: 1px solid ${props => props.theme.border};
-  box-shadow: -4px 0 20px rgba(0,0,0,0.1);
-  overflow-y: auto;
-  z-index: 99;
+  border-left: 2px solid ${props => props.theme.border};
+  box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   
   @media (max-width: 768px) {
     width: 100%;
@@ -495,6 +505,8 @@ const CitasList = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  overflow-y: auto;
+  flex: 1;
 `;
 
 const CitaItem = styled.div`
@@ -1270,8 +1282,8 @@ export default function TablaACD({ theme }) {
   }, [lectureId, getCitations]);
 
   // 🆕 Insertar cita en posición del cursor
-  const insertarCita = useCallback((textoCita, campo) => {
-    const citaFormateada = `"${textoCita}" `;
+  const insertarCita = useCallback((textoCita, campo, tipo = 'cita') => {
+    const citaFormateada = tipo === 'cita' ? `"${textoCita}" ` : `${textoCita} `;
 
     const refMap = {
       marco: marcoRef,
@@ -1585,10 +1597,10 @@ export default function TablaACD({ theme }) {
             theme={theme}
           >
             <CitasPanelHeader theme={theme}>
-              <h3 style={{ margin: 0 }}>📋 Mis Citas Guardadas</h3>
+              <h3 style={{ margin: 0 }}>� Cuaderno de Lectura</h3>
               <p style={{ fontSize: '0.85rem', margin: '0.5rem 0 0 0', opacity: 0.8 }}>
                 {citasGuardadas.length === 0
-                  ? 'Selecciona texto en "Lectura Guiada" y guarda citas'
+                  ? 'Guarda citas y anotaciones desde "Lectura Guiada"'
                   : 'Selecciona el campo y haz clic en "Insertar"'}
               </p>
             </CitasPanelHeader>
@@ -1596,46 +1608,68 @@ export default function TablaACD({ theme }) {
             <CitasList>
               {citasGuardadas.length === 0 ? (
                 <EmptyCitasMessage theme={theme}>
-                  <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>💡</div>
-                  <p><strong>¿Cómo guardar citas?</strong></p>
+                  <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📓</div>
+                  <p><strong>Tu cuaderno está vacío</strong></p>
                   <ol style={{ textAlign: 'left', lineHeight: 1.6 }}>
                     <li>Ve a "Lectura Guiada"</li>
-                    <li>Selecciona texto importante</li>
-                    <li>Clic en "💾 Guardar Cita"</li>
-                    <li>Regresa aquí para usar</li>
+                    <li>Selecciona texto y usa 📌 Cita o 📓 Anotar</li>
+                    <li>Regresa aquí para insertar en tu tabla</li>
                   </ol>
                 </EmptyCitasMessage>
               ) : (
-                citasGuardadas.map((cita) => (
-                  <CitaItem key={cita.id} theme={theme}>
-                    <CitaTexto theme={theme}>{cita.texto}</CitaTexto>
-                    <CitaFooter>
-                      <CitaInfo theme={theme}>
-                        {new Date(cita.timestamp).toLocaleDateString('es-ES', {
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </CitaInfo>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <InsertarButton onClick={() => insertarCita(cita.texto, 'marco')} theme={theme}>
-                          Marco
-                        </InsertarButton>
-                        <InsertarButton onClick={() => insertarCita(cita.texto, 'estrategias')} theme={theme}>
-                          Estrategias
-                        </InsertarButton>
-                        <InsertarButton onClick={() => insertarCita(cita.texto, 'presentes')} theme={theme}>
-                          Presentes
-                        </InsertarButton>
-                        <InsertarButton onClick={() => insertarCita(cita.texto, 'silenciadas')} theme={theme}>
-                          Silenciadas
-                        </InsertarButton>
-                        <EliminarButton onClick={() => handleEliminarCita(cita.id)} theme={theme}>
-                          🗑️
-                        </EliminarButton>
+                citasGuardadas.map((cita) => {
+                  const tipo = cita.tipo || 'cita';
+                  const isInsertable = tipo !== 'pregunta';
+                  const badgeColors = { cita: '#3190fc', reflexion: '#8b5cf6', comentario: '#f59e0b', pregunta: '#ef4444' };
+                  const badgeLabels = { cita: '📌 Cita', reflexion: '💭 Reflexión', comentario: '💬 Comentario', pregunta: '❓ Pregunta' };
+                  return (
+                    <CitaItem key={cita.id} theme={theme}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                        <span style={{
+                          fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px',
+                          background: badgeColors[tipo] + '22', color: badgeColors[tipo], fontWeight: 600
+                        }}>{badgeLabels[tipo]}</span>
                       </div>
-                    </CitaFooter>
-                  </CitaItem>
-                ))
+                      <CitaTexto theme={theme}>
+                        {tipo === 'cita' ? `«${cita.texto}»` : cita.texto}
+                      </CitaTexto>
+                      {tipo !== 'cita' && cita.nota && (
+                        <div style={{ fontSize: '0.75rem', opacity: 0.7, fontStyle: 'italic', margin: '0.25rem 0' }}>
+                          Ref: «{cita.nota.substring(0, 60)}{cita.nota.length > 60 ? '…' : ''}»
+                        </div>
+                      )}
+                      <CitaFooter>
+                        <CitaInfo theme={theme}>
+                          {new Date(cita.timestamp).toLocaleDateString('es-ES', {
+                            month: 'short',
+                            day: 'numeric'
+                          })}
+                        </CitaInfo>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          {isInsertable && (
+                            <>
+                              <InsertarButton onClick={() => insertarCita(cita.texto, 'marco', tipo)} theme={theme}>
+                                Marco
+                              </InsertarButton>
+                              <InsertarButton onClick={() => insertarCita(cita.texto, 'estrategias', tipo)} theme={theme}>
+                                Estrategias
+                              </InsertarButton>
+                              <InsertarButton onClick={() => insertarCita(cita.texto, 'presentes', tipo)} theme={theme}>
+                                Presentes
+                              </InsertarButton>
+                              <InsertarButton onClick={() => insertarCita(cita.texto, 'silenciadas', tipo)} theme={theme}>
+                                Silenciadas
+                              </InsertarButton>
+                            </>
+                          )}
+                          <EliminarButton onClick={() => handleEliminarCita(cita.id)} theme={theme}>
+                            🗑️
+                          </EliminarButton>
+                        </div>
+                      </CitaFooter>
+                    </CitaItem>
+                  );
+                })
               )}
             </CitasList>
           </CitasPanel>
@@ -1854,18 +1888,19 @@ export default function TablaACD({ theme }) {
             </ValidationMessage>
           )}
 
+          {/* FAB Cuaderno de Lectura */}
+          <CitasButton
+            onClick={() => setShowCitasPanel(!showCitasPanel)}
+            theme={theme}
+            $active={showCitasPanel}
+            title="Cuaderno de Lectura"
+            $hasNotification={citasGuardadas.length > 0}
+          >
+            {showCitasPanel ? '✕ Cerrar' : `📓 Cuaderno (${citasGuardadas.length})`}
+          </CitasButton>
+
           {/* Botones */}
           <ButtonGroup>
-            <CitasButton
-              onClick={() => setShowCitasPanel(!showCitasPanel)}
-              theme={theme}
-              $active={showCitasPanel}
-              title="Ver mis citas guardadas del texto"
-              $hasNotification={citasGuardadas.length > 0}
-            >
-              {showCitasPanel ? '✕ Cerrar Citas' : `📋 Mis Citas (${citasGuardadas.length})`}
-            </CitasButton>
-
             <PrimaryButton
               onClick={handleEvaluate}
               disabled={(!isValid && !viewingVersion) || loading || !rateLimit.canProceed || evaluationAttempts >= MAX_ATTEMPTS || isReadOnly}

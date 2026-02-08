@@ -364,6 +364,118 @@ const SaveSuccessToast = styled.div`
   }
 `;
 
+const AnnotationForm = styled.div`
+  position: fixed;
+  top: ${p => Math.min(p.y, typeof window !== 'undefined' ? window.innerHeight - 320 : p.y)}px;
+  left: ${p => {
+    const w = typeof window !== 'undefined' ? window.innerWidth : 800;
+    return Math.max(172, Math.min(p.x, w - 172));
+  }}px;
+  transform: translateX(-50%) translateY(-110%);
+  background: ${p => p.theme?.name === 'dark' ? 'rgba(27, 34, 48, 0.96)' : 'rgba(255, 255, 255, 0.98)'};
+  backdrop-filter: blur(16px);
+  border: 1px solid ${p => p.theme?.name === 'dark' ? 'rgba(91, 165, 253, 0.3)' : 'rgba(49, 144, 252, 0.25)'};
+  border-radius: 12px;
+  padding: 12px;
+  box-sizing: border-box;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  z-index: 10001;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+  animation: toolbarSlideIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 80px;
+    padding: 8px;
+    border: 1px solid ${p => p.theme?.border || '#ddd'};
+    border-radius: 8px;
+    background: ${p => p.theme?.background || '#fff'};
+    color: ${p => p.theme?.text || '#000'};
+    font-size: 0.85rem;
+    line-height: 1.4;
+    resize: vertical;
+    font-family: inherit;
+    margin-top: 8px;
+    &:focus { outline: none; border-color: ${p => p.theme?.primary || '#3190FC'}; }
+  }
+
+  .annotation-header {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: ${p => p.theme?.text || '#000'};
+    margin-bottom: 4px;
+  }
+
+  .annotation-quote {
+    font-size: 0.75rem;
+    color: ${p => p.theme?.textMuted || '#607D8B'};
+    font-style: italic;
+    line-height: 1.3;
+    max-height: 40px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 6px;
+  }
+
+  .annotation-types {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .annotation-type-btn {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid ${p => p.theme?.border || '#ddd'};
+    background: transparent;
+    color: ${p => p.theme?.textMuted || '#607D8B'};
+    cursor: pointer;
+    transition: all 0.15s;
+    &:hover { border-color: ${p => p.theme?.primary || '#3190FC'}; color: ${p => p.theme?.primary || '#3190FC'}; }
+    &.active {
+      background: ${p => p.theme?.primary || '#3190FC'};
+      color: #fff;
+      border-color: ${p => p.theme?.primary || '#3190FC'};
+    }
+  }
+
+  .annotation-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .annotation-actions button {
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+  }
+
+  .annotation-cancel {
+    background: ${p => p.theme?.name === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
+    color: ${p => p.theme?.textMuted || '#607D8B'};
+  }
+
+  .annotation-save {
+    background: ${p => p.theme?.primary || '#3190FC'};
+    color: #fff;
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+
+  @media (max-width: 640px) {
+    width: calc(100vw - 24px);
+    left: 50%;
+  }
+`;
+
 const ToolsBar = styled.div`
   position: sticky;
   top: 6px; /* debajo de la barra de progreso sticky */
@@ -426,6 +538,8 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   const [_enfoque, setEnfoque] = useState(false);
   const [selectionInfo, setSelectionInfo] = useState(null); // {x,y,text}
   const [showSaveSuccess, setShowSaveSuccess] = useState(false); // 🆕 Feedback visual al guardar cita
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState('💾 ¡Cita guardada!');
+  const [annotationMode, setAnnotationMode] = useState(null); // null | { text, x, y, tipo, nota }
   const _lockRef = useRef(false);
   const virtuosoRef = useRef(null);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
@@ -564,35 +678,68 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
 
   const handleParagraphClick = useCallback((idx, contenido) => { if (onParagraphClick) onParagraphClick(idx, contenido); }, [onParagraphClick]);
 
-  // 🆕 Función para guardar una cita seleccionada (usando selectionInfo)
+  // Helper para resolver documentId
+  const resolveDocumentId = useCallback(() => {
+    return currentTextoId || completeAnalysis?.metadata?.document_id ||
+      (texto ? `doc_${texto.substring(0, 50).replace(/\s+/g, '_')}` : 'documento_sin_id');
+  }, [currentTextoId, completeAnalysis, texto]);
+
+  // Guardar una cita textual directa (selección rápida)
   const handleSaveCitation = useCallback(() => {
     if (!selectionInfo?.text || selectionInfo.text.trim().length < 10) {
       console.warn('⚠️ [VisorTexto] Cita muy corta (mínimo 10 caracteres)');
       return;
     }
 
-    // 🆕 FASE 2 FIX: Usar textoId estable para aislar por lectura
-    // Fallbacks se mantienen por compatibilidad si aún no hay currentTextoId.
-    const documentId = currentTextoId || completeAnalysis?.metadata?.document_id ||
-      (texto ? `doc_${texto.substring(0, 50).replace(/\s+/g, '_')}` : 'documento_sin_id');
-
     const success = saveCitation({
-      documentId,
+      documentId: resolveDocumentId(),
       texto: selectionInfo.text.trim(),
-      nota: '' // El usuario puede agregar notas después en el panel
+      nota: '',
+      tipo: 'cita'
     });
 
     if (success !== false) {
-      console.log(`✅ [VisorTexto] Cita guardada para documento: ${documentId}`);
+      setSaveSuccessMsg('📌 ¡Cita textual guardada!');
       setShowSaveSuccess(true);
       setTimeout(() => setShowSaveSuccess(false), 2000);
     }
 
-    // Cerrar toolbar después de guardar
-    setTimeout(() => {
-      setSelectionInfo(null);
-    }, 100);
-  }, [selectionInfo, texto, saveCitation, completeAnalysis, currentTextoId]);
+    setTimeout(() => { setSelectionInfo(null); }, 100);
+  }, [selectionInfo, saveCitation, resolveDocumentId]);
+
+  // Abrir formulario de anotación (reflexión/comentario/pregunta)
+  const handleOpenAnnotation = useCallback(() => {
+    if (!selectionInfo?.text || selectionInfo.text.trim().length < 3) return;
+    setAnnotationMode({
+      text: selectionInfo.text.trim(),
+      x: selectionInfo.x,
+      y: selectionInfo.y,
+      tipo: 'reflexion',
+      nota: ''
+    });
+    setSelectionInfo(null);
+  }, [selectionInfo]);
+
+  // Guardar anotación (reflexión, comentario o pregunta)
+  const handleSaveAnnotation = useCallback(() => {
+    if (!annotationMode?.nota?.trim()) return;
+
+    const success = saveCitation({
+      documentId: resolveDocumentId(),
+      texto: annotationMode.nota.trim(),
+      nota: annotationMode.text, // El fragmento original queda como referencia
+      tipo: annotationMode.tipo
+    });
+
+    if (success !== false) {
+      const labels = { reflexion: '💭 ¡Reflexión guardada!', comentario: '📝 ¡Comentario guardado!', pregunta: '❓ ¡Pregunta guardada!' };
+      setSaveSuccessMsg(labels[annotationMode.tipo] || '✅ ¡Guardado!');
+      setShowSaveSuccess(true);
+      setTimeout(() => setShowSaveSuccess(false), 2000);
+    }
+
+    setAnnotationMode(null);
+  }, [annotationMode, saveCitation, resolveDocumentId]);
 
   // Función para emitir acciones desde SelectionToolbar
   const dispatchAction = useCallback((action) => {
@@ -1217,11 +1364,11 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   return (
     <VisorWrapper style={isPDF ? undefined : { fontSize: `${fontSize}px` }}>
       <div ref={visorContainerRef} role="document" aria-label="contenido-lectura">{body}</div>
-      {selectionInfo && (
+      {selectionInfo && !annotationMode && (
         <SelectionToolbar x={selectionInfo.x} y={selectionInfo.y} role="toolbar" aria-label="seleccion-herramientas">
           <button aria-label="explicar-seleccion" onClick={() => dispatchAction('explain')}>💡 Explicar</button>
-          <button aria-label="guardar-cita-seleccion" onClick={handleSaveCitation}>💾 Guardar Cita</button>
-          <button aria-label="abrir-notas-seleccion" onClick={() => dispatchAction('notes')}>📓 Notas</button>
+          <button aria-label="guardar-cita-seleccion" onClick={handleSaveCitation}>📌 Cita</button>
+          <button aria-label="anotar-seleccion" onClick={handleOpenAnnotation}>📓 Anotar</button>
           <button aria-label="copiar-seleccion" onClick={() => {
             try {
               navigator.clipboard.writeText(selectionInfo.text || '');
@@ -1233,11 +1380,40 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
           <button aria-label="cerrar-toolbar" onClick={() => clearSelection(true)}>✖</button>
         </SelectionToolbar>
       )}
+      {annotationMode && (
+        <AnnotationForm x={annotationMode.x} y={annotationMode.y} role="dialog" aria-label="formulario-anotacion">
+          <div className="annotation-header">📓 Anotar sobre selección</div>
+          <div className="annotation-quote">«{annotationMode.text.length > 80 ? annotationMode.text.substring(0, 80) + '…' : annotationMode.text}»</div>
+          <div className="annotation-types">
+            {[{ key: 'reflexion', label: '💭 Reflexión' }, { key: 'comentario', label: '📝 Comentario' }, { key: 'pregunta', label: '❓ Pregunta' }].map(t => (
+              <button key={t.key} type="button"
+                className={`annotation-type-btn ${annotationMode.tipo === t.key ? 'active' : ''}`}
+                onClick={() => setAnnotationMode(prev => ({ ...prev, tipo: t.key }))}
+              >{t.label}</button>
+            ))}
+          </div>
+          <textarea
+            placeholder={annotationMode.tipo === 'reflexion' ? '¿Qué te hace pensar este fragmento?'
+              : annotationMode.tipo === 'pregunta' ? '¿Qué pregunta te surge?'
+              : 'Escribe tu comentario sobre este fragmento…'}
+            value={annotationMode.nota}
+            onChange={e => setAnnotationMode(prev => ({ ...prev, nota: e.target.value }))}
+            onPaste={e => e.preventDefault()}
+            autoFocus
+          />
+          <div className="annotation-actions">
+            <button type="button" className="annotation-cancel" onClick={() => setAnnotationMode(null)}>Cancelar</button>
+            <button type="button" className="annotation-save" onClick={handleSaveAnnotation}
+              disabled={!annotationMode.nota?.trim()}
+            >Guardar</button>
+          </div>
+        </AnnotationForm>
+      )}
       {copied && (
         <CopyToast role="status" aria-live="polite">✅ Copiado</CopyToast>
       )}
       {showSaveSuccess && (
-        <SaveSuccessToast role="status" aria-live="polite">💾 ¡Cita guardada!</SaveSuccessToast>
+        <SaveSuccessToast role="status" aria-live="polite">{saveSuccessMsg}</SaveSuccessToast>
       )}
     </VisorWrapper>
   );
