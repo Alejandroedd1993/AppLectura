@@ -894,6 +894,8 @@ function TeacherDashboard() {
       submitted: true,
       score: typeof essay?.score === 'number' ? essay.score : Number(essay?.score) || 0,
       teacherComment: '',
+      teacherOverrideScore: essay?.teacherOverrideScore ?? null,
+      scoreOverrideReason: essay?.scoreOverrideReason || '',
       isSummativeEssay: true,
       rubricId: rubricId || null,
       gradedAt: essay?.gradedAt || null,
@@ -901,6 +903,8 @@ function TeacherDashboard() {
       attemptsUsed: essay?.attemptsUsed ?? null
     });
     setTeacherComment('');
+    setTeacherScoreEdit(essay?.teacherOverrideScore != null ? String(essay.teacherOverrideScore) : String(essay?.score || ''));
+    setScoreOverrideReason(essay?.scoreOverrideReason || '');
   };
 
   // 🆕 Guardar comentario del docente
@@ -997,33 +1001,53 @@ function TeacherDashboard() {
       const studentUid = selectedStudentForReset.estudianteUid;
       const textoId = selectedLecturaForReset.textoId;
       const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
-      const basePath = `activitiesProgress.${textoId}.artifacts.${viewingArtifact.key}`;
+      if (viewingArtifact.isSummativeEssay) {
+        const rubricKey = viewingArtifact.rubricId;
+        if (!rubricKey) {
+          showFeedback('error', 'No se encontró la rúbrica del ensayo sumativo');
+          return;
+        }
 
-      await updateDoc(progressRef, {
-        // Guardar el override score del docente
-        [`${basePath}.teacherOverrideScore`]: newScore,
-        [`${basePath}.score`]: newScore,
-        [`${basePath}.lastScore`]: newScore,
-        [`${basePath}.scoreOverrideReason`]: scoreOverrideReason.trim(),
-        [`${basePath}.scoreOverriddenAt`]: new Date().toISOString(),
-        [`${basePath}.scoreOverriddenBy`]: docenteUid,
-        [`${basePath}.docenteNombre`]: userData?.nombre || 'Docente',
-      });
-
-      // También actualizar rubricProgress para que getCourseMetrics lo vea
-      const rubricMapping = {
-        resumenAcademico: 'rubrica1',
-        tablaACD: 'rubrica2',
-        mapaActores: 'rubrica3',
-        respuestaArgumentativa: 'rubrica4',
-        bitacoraEticaIA: 'rubrica5'
-      };
-      const rubricKey = rubricMapping[viewingArtifact.key];
-      if (rubricKey) {
+        const summativePath = `rubricProgress.${rubricKey}.summative`;
         await updateDoc(progressRef, {
-          [`rubricProgress.${rubricKey}.teacherOverrideScore`]: newScore,
-          [`rubricProgress.${rubricKey}.average`]: newScore,
+          [`${summativePath}.teacherOverrideScore`]: newScore,
+          [`${summativePath}.score`]: newScore,
+          [`${summativePath}.scoreOverrideReason`]: scoreOverrideReason.trim(),
+          [`${summativePath}.scoreOverriddenAt`]: new Date().toISOString(),
+          [`${summativePath}.scoreOverriddenBy`]: docenteUid,
+          [`${summativePath}.docenteNombre`]: userData?.nombre || 'Docente',
+          [`${summativePath}.status`]: 'graded',
+          [`${summativePath}.gradedAt`]: Date.now(),
         });
+      } else {
+        const basePath = `activitiesProgress.${textoId}.artifacts.${viewingArtifact.key}`;
+
+        await updateDoc(progressRef, {
+          // Guardar el override score del docente
+          [`${basePath}.teacherOverrideScore`]: newScore,
+          [`${basePath}.score`]: newScore,
+          [`${basePath}.lastScore`]: newScore,
+          [`${basePath}.scoreOverrideReason`]: scoreOverrideReason.trim(),
+          [`${basePath}.scoreOverriddenAt`]: new Date().toISOString(),
+          [`${basePath}.scoreOverriddenBy`]: docenteUid,
+          [`${basePath}.docenteNombre`]: userData?.nombre || 'Docente',
+        });
+
+        // También actualizar rubricProgress para que getCourseMetrics lo vea
+        const rubricMapping = {
+          resumenAcademico: 'rubrica1',
+          tablaACD: 'rubrica2',
+          mapaActores: 'rubrica3',
+          respuestaArgumentativa: 'rubrica4',
+          bitacoraEticaIA: 'rubrica5'
+        };
+        const rubricKey = rubricMapping[viewingArtifact.key];
+        if (rubricKey) {
+          await updateDoc(progressRef, {
+            [`rubricProgress.${rubricKey}.teacherOverrideScore`]: newScore,
+            [`rubricProgress.${rubricKey}.average`]: newScore,
+          });
+        }
       }
 
       // 🔔 Crear notificación para el estudiante
@@ -2335,78 +2359,80 @@ function TeacherDashboard() {
                           )}
                         </ViewContentBody>
 
-                        {!viewingArtifact.isSummativeEssay && (
-                          <TeacherCommentSection>
-                            {/* 🆕 Human-on-the-loop: Edición de nota por el docente */}
-                            <ScoreEditSection>
-                              <CommentLabel>📝 Calificación (editable por docente):</CommentLabel>
-                              <ScoreEditRow>
-                                <ScoreInput
-                                  type="number"
-                                  min="0"
-                                  max="10"
-                                  step="0.5"
-                                  value={teacherScoreEdit}
-                                  onChange={(e) => setTeacherScoreEdit(e.target.value)}
-                                  disabled={savingScore}
-                                />
-                                <span>/10</span>
-                              </ScoreEditRow>
-                              <CommentLabel style={{ marginTop: '0.5rem' }}>
-                                📌 Motivo del cambio de nota <span style={{ fontSize: '0.8em', color: '#ef4444' }}>(obligatorio)</span>:
-                              </CommentLabel>
-                              <CommentTextarea
-                                value={scoreOverrideReason}
-                                onChange={(e) => setScoreOverrideReason(e.target.value)}
-                                placeholder="Ej: Se ajusta la nota por participación activa en clase y calidad de las evidencias..."
-                                rows={2}
-                                style={{ fontSize: '0.85rem' }}
+                        <TeacherCommentSection>
+                          {/* 🆕 Human-on-the-loop: Edición de nota por el docente */}
+                          <ScoreEditSection>
+                            <CommentLabel>📝 Calificación (editable por docente):</CommentLabel>
+                            <ScoreEditRow>
+                              <ScoreInput
+                                type="number"
+                                min="0"
+                                max="10"
+                                step="0.5"
+                                value={teacherScoreEdit}
+                                onChange={(e) => setTeacherScoreEdit(e.target.value)}
+                                disabled={savingScore}
                               />
-                              <SaveScoreButton
-                                onClick={handleSaveTeacherScore}
-                                disabled={savingScore || !scoreOverrideReason || scoreOverrideReason.trim().length < 5}
-                                title={!scoreOverrideReason || scoreOverrideReason.trim().length < 5 ? 'Escribe el motivo del cambio (mín. 5 caracteres)' : 'Guardar nota modificada'}
-                              >
-                                {savingScore ? '⏳ Guardando...' : '💾 Guardar nota'}
-                              </SaveScoreButton>
-                              {viewingArtifact.scoreOverrideReason && (
-                                <ScoreOverrideInfo>
-                                  📌 Último cambio: "{viewingArtifact.scoreOverrideReason}"
-                                </ScoreOverrideInfo>
-                              )}
-                            </ScoreEditSection>
-
-                            <CommentLabel>💬 Comentario general del docente <span style={{ fontSize: '0.8em', opacity: 0.6 }}>(opcional, independiente de la nota)</span>:</CommentLabel>
+                              <span>/10</span>
+                            </ScoreEditRow>
+                            <CommentLabel style={{ marginTop: '0.5rem' }}>
+                              📌 Motivo del cambio de nota <span style={{ fontSize: '0.8em', color: '#ef4444' }}>(obligatorio)</span>:
+                            </CommentLabel>
                             <CommentTextarea
-                              value={teacherComment}
-                              onChange={(e) => setTeacherComment(e.target.value)}
-                              placeholder="Escribe un comentario para el estudiante sobre su trabajo..."
-                              rows={3}
+                              value={scoreOverrideReason}
+                              onChange={(e) => setScoreOverrideReason(e.target.value)}
+                              placeholder="Ej: Se ajusta la nota por participación activa en clase y calidad de las evidencias..."
+                              rows={2}
+                              style={{ fontSize: '0.85rem' }}
                             />
-                            <CommentActions>
-                              <SaveCommentButton
-                                onClick={handleSaveTeacherComment}
-                                disabled={savingComment || teacherComment === viewingArtifact.teacherComment}
-                              >
-                                {savingComment ? '⏳ Guardando...' : '💾 Guardar comentario'}
-                              </SaveCommentButton>
-                              {viewingArtifact.teacherComment && (
-                                <>
-                                  <DeleteCommentButton
-                                    onClick={handleDeleteTeacherComment}
-                                    disabled={savingComment}
-                                    title="Borrar comentario y notificación del estudiante"
-                                  >
-                                    🗑️ Borrar
-                                  </DeleteCommentButton>
-                                  <CommentSavedIndicator>
-                                    ✅ Comentario guardado anteriormente
-                                  </CommentSavedIndicator>
-                                </>
-                              )}
-                            </CommentActions>
-                          </TeacherCommentSection>
-                        )}
+                            <SaveScoreButton
+                              onClick={handleSaveTeacherScore}
+                              disabled={savingScore || !scoreOverrideReason || scoreOverrideReason.trim().length < 5}
+                              title={!scoreOverrideReason || scoreOverrideReason.trim().length < 5 ? 'Escribe el motivo del cambio (mín. 5 caracteres)' : 'Guardar nota modificada'}
+                            >
+                              {savingScore ? '⏳ Guardando...' : '💾 Guardar nota'}
+                            </SaveScoreButton>
+                            {viewingArtifact.scoreOverrideReason && (
+                              <ScoreOverrideInfo>
+                                📌 Último cambio: "{viewingArtifact.scoreOverrideReason}"
+                              </ScoreOverrideInfo>
+                            )}
+                          </ScoreEditSection>
+
+                          {!viewingArtifact.isSummativeEssay && (
+                            <>
+                              <CommentLabel>💬 Comentario general del docente <span style={{ fontSize: '0.8em', opacity: 0.6 }}>(opcional, independiente de la nota)</span>:</CommentLabel>
+                              <CommentTextarea
+                                value={teacherComment}
+                                onChange={(e) => setTeacherComment(e.target.value)}
+                                placeholder="Escribe un comentario para el estudiante sobre su trabajo..."
+                                rows={3}
+                              />
+                              <CommentActions>
+                                <SaveCommentButton
+                                  onClick={handleSaveTeacherComment}
+                                  disabled={savingComment || teacherComment === viewingArtifact.teacherComment}
+                                >
+                                  {savingComment ? '⏳ Guardando...' : '💾 Guardar comentario'}
+                                </SaveCommentButton>
+                                {viewingArtifact.teacherComment && (
+                                  <>
+                                    <DeleteCommentButton
+                                      onClick={handleDeleteTeacherComment}
+                                      disabled={savingComment}
+                                      title="Borrar comentario y notificación del estudiante"
+                                    >
+                                      🗑️ Borrar
+                                    </DeleteCommentButton>
+                                    <CommentSavedIndicator>
+                                      ✅ Comentario guardado anteriormente
+                                    </CommentSavedIndicator>
+                                  </>
+                                )}
+                              </CommentActions>
+                            </>
+                          )}
+                        </TeacherCommentSection>
                       </ViewContentPanel>
                     )}
                   </AnimatePresence>

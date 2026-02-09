@@ -2417,11 +2417,16 @@ export async function getCourseMetrics(courseId, options = {}) {
           const summativeEssays = [];
           ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach(rubricKey => {
             const rubric = rubricProgress[rubricKey] || {};
-            if (rubric.summative?.status === 'graded' && rubric.summative?.score > 0) {
+            const summativeScore = rubric.summative?.teacherOverrideScore ?? rubric.summative?.score;
+            if (rubric.summative?.status === 'graded' && summativeScore > 0) {
               summativeEssays.push({
                 rubricId: rubricKey,
-                score: Number(rubric.summative.score) || 0,
-                submitted: true
+                score: Number(summativeScore) || 0,
+                submitted: true,
+                teacherOverrideScore: rubric.summative?.teacherOverrideScore ?? null,
+                scoreOverrideReason: rubric.summative?.scoreOverrideReason ?? null,
+                scoreOverriddenAt: rubric.summative?.scoreOverriddenAt ?? null,
+                docenteNombre: rubric.summative?.docenteNombre ?? null
               });
             }
           });
@@ -3103,14 +3108,18 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
       ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach((rubricId) => {
         const r = rubricProgress?.[rubricId];
         const s = r?.summative;
-        if (!s || s.status !== 'graded' || s.score == null) return;
+        if (!s || s.status !== 'graded' || (s.score == null && s.teacherOverrideScore == null)) return;
 
-        const scoreNum = Number(s.score);
+        const scoreNum = Number(s.teacherOverrideScore ?? s.score);
         if (!Number.isFinite(scoreNum) || scoreNum <= 0) return;
 
         essays.push({
           rubricId,
           score: scoreNum,
+          teacherOverrideScore: s.teacherOverrideScore ?? null,
+          scoreOverrideReason: s.scoreOverrideReason ?? null,
+          scoreOverriddenAt: s.scoreOverriddenAt ?? null,
+          docenteNombre: s.docenteNombre ?? null,
           nivel: s.nivel ?? null,
           essayContent: s.essayContent ?? null,
           submittedAt: s.submittedAt ?? null,
