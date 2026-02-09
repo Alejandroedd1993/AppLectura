@@ -1903,7 +1903,7 @@ export default function TablaACD({ theme }) {
           </FormSection>
 
           {/* Validación */}
-          {!viewingVersion && (
+          {!viewingVersion && !isSubmitted && (
             <ValidationMessage
               $valid={isValid}
               initial={{ opacity: 0, y: -10 }}

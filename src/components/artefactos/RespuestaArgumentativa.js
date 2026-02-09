@@ -1776,13 +1776,15 @@ export default function RespuestaArgumentativa({ theme }) {
           </FormSection>
 
           {/* Validación */}
-          <ValidationMessage
-            $valid={isValid}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            {validationMessage}
-          </ValidationMessage>
+          {!viewingVersion && !isSubmitted && (
+            <ValidationMessage
+              $valid={isValid}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              {validationMessage}
+            </ValidationMessage>
+          )}
 
           {/* FAB Cuaderno de Lectura */}
           <CitasButton

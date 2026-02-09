@@ -1163,7 +1163,7 @@ export default function BitacoraEticaIA({ theme }) {
       </Section>
 
       {/* Botón de Evaluación Criterial */}
-      {!feedbackCriterial && !viewingVersion && (
+      {!feedbackCriterial && !viewingVersion && !isSubmitted && (
         <EvaluationButtonSection>
           <EvaluationValidation theme={effectiveTheme} $valid={isValidForEvaluation}>
             {isValidForEvaluation

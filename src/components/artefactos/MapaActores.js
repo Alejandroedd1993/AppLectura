@@ -1779,7 +1779,7 @@ export default function MapaActores({ theme }) {
           </FormSection>
 
           {/* Validación */}
-          {!viewingVersion && (
+          {!viewingVersion && !isSubmitted && (
             <ValidationMessage
               $valid={isValid}
               initial={{ opacity: 0, y: -10 }}
