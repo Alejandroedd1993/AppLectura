@@ -893,7 +893,7 @@ function TeacherDashboard() {
       history: [],
       submitted: true,
       score: typeof essay?.score === 'number' ? essay.score : Number(essay?.score) || 0,
-      teacherComment: '',
+      teacherComment: essay?.teacherComment || '',
       teacherOverrideScore: essay?.teacherOverrideScore ?? null,
       scoreOverrideReason: essay?.scoreOverrideReason || '',
       isSummativeEssay: true,
@@ -902,7 +902,7 @@ function TeacherDashboard() {
       submittedAt: essay?.submittedAt || null,
       attemptsUsed: essay?.attemptsUsed ?? null
     });
-    setTeacherComment('');
+    setTeacherComment(essay?.teacherComment || '');
     setTeacherScoreEdit(essay?.teacherOverrideScore != null ? String(essay.teacherOverrideScore) : String(essay?.score || ''));
     setScoreOverrideReason(essay?.scoreOverrideReason || '');
   };
@@ -910,7 +910,6 @@ function TeacherDashboard() {
   // 🆕 Guardar comentario del docente
   const handleSaveTeacherComment = async () => {
     if (!viewingArtifact || !selectedStudentForReset || !selectedLecturaForReset) return;
-    if (viewingArtifact.isSummativeEssay) return;
 
     setSavingComment(true);
     try {
@@ -920,14 +919,27 @@ function TeacherDashboard() {
 
       const progressRef = doc(db, 'students', selectedStudentForReset.estudianteUid, 'progress', selectedLecturaForReset.textoId);
 
-      // Guardar el comentario en el artefacto correspondiente
-      const updatePath = `activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${viewingArtifact.key}.teacherComment`;
+      if (viewingArtifact.isSummativeEssay) {
+        const rubricKey = viewingArtifact.rubricId;
+        if (!rubricKey) throw new Error('Rúbrica de ensayo no encontrada');
 
-      await updateDoc(progressRef, {
-        [updatePath]: teacherComment,
-        [`activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${viewingArtifact.key}.commentedAt`]: new Date().toISOString(),
-        [`activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${viewingArtifact.key}.commentedBy`]: docenteUid
-      });
+        const summativePath = `rubricProgress.${rubricKey}.summative`;
+        await updateDoc(progressRef, {
+          [`${summativePath}.teacherComment`]: teacherComment,
+          [`${summativePath}.commentedAt`]: new Date().toISOString(),
+          [`${summativePath}.commentedBy`]: docenteUid,
+          [`${summativePath}.docenteNombre`]: userData?.nombre || 'Docente'
+        });
+      } else {
+        // Guardar el comentario en el artefacto correspondiente
+        const updatePath = `activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${viewingArtifact.key}.teacherComment`;
+
+        await updateDoc(progressRef, {
+          [updatePath]: teacherComment,
+          [`activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${viewingArtifact.key}.commentedAt`]: new Date().toISOString(),
+          [`activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${viewingArtifact.key}.commentedBy`]: docenteUid
+        });
+      }
 
       // 🆕 FASE 5: Crear notificación para el estudiante
       if (teacherComment && teacherComment.trim().length > 0) {
@@ -937,7 +949,7 @@ function TeacherDashboard() {
           
           await setDoc(notificationRef, {
             type: 'teacher_comment',
-            artifactKey: viewingArtifact.key,
+            artifactKey: viewingArtifact.isSummativeEssay ? `ensayoIntegrador:${viewingArtifact.rubricId || 'unknown'}` : viewingArtifact.key,
             artifactName: viewingArtifact.name,
             textoId: selectedLecturaForReset.textoId,
             lecturaTitle: selectedLecturaForReset.titulo || 'Lectura',
@@ -1097,7 +1109,6 @@ function TeacherDashboard() {
   // 🆕 Borrar comentario del docente y notificación del estudiante
   const handleDeleteTeacherComment = async () => {
     if (!viewingArtifact || !selectedStudentForReset || !selectedLecturaForReset) return;
-    if (viewingArtifact.isSummativeEssay) return;
     
     const confirmMsg = '¿Estás seguro de borrar este comentario?\n\nTambién se eliminará la notificación enviada al estudiante.';
     if (!window.confirm(confirmMsg)) return;
@@ -1109,24 +1120,35 @@ function TeacherDashboard() {
 
       const progressRef = doc(db, 'students', selectedStudentForReset.estudianteUid, 'progress', selectedLecturaForReset.textoId);
 
-      // Borrar el comentario del artefacto
-      const updatePath = `activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${viewingArtifact.key}`;
-      
-      await updateDoc(progressRef, {
-        [`${updatePath}.teacherComment`]: deleteField(),
-        [`${updatePath}.commentedAt`]: deleteField(),
-        [`${updatePath}.commentedBy`]: deleteField()
-      });
+      if (viewingArtifact.isSummativeEssay) {
+        const rubricKey = viewingArtifact.rubricId;
+        if (!rubricKey) throw new Error('Rúbrica de ensayo no encontrada');
+        const summativePath = `rubricProgress.${rubricKey}.summative`;
+        await updateDoc(progressRef, {
+          [`${summativePath}.teacherComment`]: deleteField(),
+          [`${summativePath}.commentedAt`]: deleteField(),
+          [`${summativePath}.commentedBy`]: deleteField()
+        });
+      } else {
+        // Borrar el comentario del artefacto
+        const updatePath = `activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${viewingArtifact.key}`;
+        
+        await updateDoc(progressRef, {
+          [`${updatePath}.teacherComment`]: deleteField(),
+          [`${updatePath}.commentedAt`]: deleteField(),
+          [`${updatePath}.commentedBy`]: deleteField()
+        });
+      }
 
       // Buscar y borrar la notificación correspondiente del estudiante
       try {
         const notificationsRef = collection(db, 'students', selectedStudentForReset.estudianteUid, 'notifications');
-        const q = query(
-          notificationsRef,
-          where('textoId', '==', selectedLecturaForReset.textoId),
-          where('artifactKey', '==', viewingArtifact.key),
-          where('docenteUid', '==', docenteUid)
-        );
+          const q = query(
+            notificationsRef,
+            where('textoId', '==', selectedLecturaForReset.textoId),
+            where('artifactKey', '==', viewingArtifact.isSummativeEssay ? `ensayoIntegrador:${viewingArtifact.rubricId || 'unknown'}` : viewingArtifact.key),
+            where('docenteUid', '==', docenteUid)
+          );
         
         const snapshot = await getDocs(q);
         const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
@@ -2399,39 +2421,37 @@ function TeacherDashboard() {
                             )}
                           </ScoreEditSection>
 
-                          {!viewingArtifact.isSummativeEssay && (
-                            <>
-                              <CommentLabel>💬 Comentario general del docente <span style={{ fontSize: '0.8em', opacity: 0.6 }}>(opcional, independiente de la nota)</span>:</CommentLabel>
-                              <CommentTextarea
-                                value={teacherComment}
-                                onChange={(e) => setTeacherComment(e.target.value)}
-                                placeholder="Escribe un comentario para el estudiante sobre su trabajo..."
-                                rows={3}
-                              />
-                              <CommentActions>
-                                <SaveCommentButton
-                                  onClick={handleSaveTeacherComment}
-                                  disabled={savingComment || teacherComment === viewingArtifact.teacherComment}
-                                >
-                                  {savingComment ? '⏳ Guardando...' : '💾 Guardar comentario'}
-                                </SaveCommentButton>
-                                {viewingArtifact.teacherComment && (
-                                  <>
-                                    <DeleteCommentButton
-                                      onClick={handleDeleteTeacherComment}
-                                      disabled={savingComment}
-                                      title="Borrar comentario y notificación del estudiante"
-                                    >
-                                      🗑️ Borrar
-                                    </DeleteCommentButton>
-                                    <CommentSavedIndicator>
-                                      ✅ Comentario guardado anteriormente
-                                    </CommentSavedIndicator>
-                                  </>
-                                )}
-                              </CommentActions>
-                            </>
-                          )}
+                          <>
+                            <CommentLabel>💬 Comentario general del docente <span style={{ fontSize: '0.8em', opacity: 0.6 }}>(opcional, independiente de la nota)</span>:</CommentLabel>
+                            <CommentTextarea
+                              value={teacherComment}
+                              onChange={(e) => setTeacherComment(e.target.value)}
+                              placeholder="Escribe un comentario para el estudiante sobre su trabajo..."
+                              rows={3}
+                            />
+                            <CommentActions>
+                              <SaveCommentButton
+                                onClick={handleSaveTeacherComment}
+                                disabled={savingComment || teacherComment === viewingArtifact.teacherComment}
+                              >
+                                {savingComment ? '⏳ Guardando...' : '💾 Guardar comentario'}
+                              </SaveCommentButton>
+                              {viewingArtifact.teacherComment && (
+                                <>
+                                  <DeleteCommentButton
+                                    onClick={handleDeleteTeacherComment}
+                                    disabled={savingComment}
+                                    title="Borrar comentario y notificación del estudiante"
+                                  >
+                                    🗑️ Borrar
+                                  </DeleteCommentButton>
+                                  <CommentSavedIndicator>
+                                    ✅ Comentario guardado anteriormente
+                                  </CommentSavedIndicator>
+                                </>
+                              )}
+                            </CommentActions>
+                          </>
                         </TeacherCommentSection>
                       </ViewContentPanel>
                     )}

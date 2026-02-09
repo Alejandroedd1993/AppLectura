@@ -458,6 +458,20 @@ export default function EnsayoIntegrador({ theme }) {
     };
   }, [savedSummative]);
 
+  const teacherCommentData = useMemo(() => {
+    if (!savedSummative?.teacherComment) return null;
+    const timestamp = savedSummative.commentedAt;
+    const formattedDate = timestamp
+      ? new Date(timestamp).toLocaleString('es-CL', { dateStyle: 'medium', timeStyle: 'short' })
+      : null;
+
+    return {
+      comment: savedSummative.teacherComment,
+      docenteNombre: savedSummative.docenteNombre,
+      commentedAt: formattedDate
+    };
+  }, [savedSummative]);
+
   const canAccess = Boolean(prereq?.canAccess);
 
   const attemptSummary = useMemo(() => {
@@ -829,6 +843,18 @@ export default function EnsayoIntegrador({ theme }) {
         )}
 
         <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={theme} />
+
+        {teacherCommentData && (
+          <InfoBox theme={theme} style={{ borderLeftColor: theme.primary || '#2563eb' }}>
+            💬 <strong>Comentario del docente{teacherCommentData.docenteNombre ? ` (${teacherCommentData.docenteNombre})` : ''}:</strong>
+            <div style={{ marginTop: '0.35rem' }}>{teacherCommentData.comment}</div>
+            {teacherCommentData.commentedAt && (
+              <div style={{ marginTop: '0.35rem', fontSize: '0.85rem', opacity: 0.75 }}>
+                {teacherCommentData.commentedAt}
+              </div>
+            )}
+          </InfoBox>
+        )}
 
         <EssayFeedbackPanel theme={theme} evaluation={displayEvaluation} />
       </Grid>
