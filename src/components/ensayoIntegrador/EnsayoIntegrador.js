@@ -9,6 +9,7 @@ import EnsayoPrerequisites from './EnsayoPrerequisites';
 import EnsayoGuidelines from './EnsayoGuidelines';
 import EnsayoEditor from './EnsayoEditor';
 import EssayFeedbackPanel from './EssayFeedbackPanel';
+import TeacherScoreOverrideBanner from '../artefactos/TeacherScoreOverrideBanner';
 
 const Section = styled.section`
   margin-top: 1.5rem;
@@ -435,7 +436,7 @@ export default function EnsayoIntegrador({ theme }) {
     const feedback = savedSummative.feedback || {};
     return {
       __source: 'saved',
-      score: savedSummative.score,
+      score: savedSummative.teacherOverrideScore ?? savedSummative.score,
       nivel: savedSummative.nivel,
       fortalezas: feedback.fortalezas,
       debilidades: feedback.debilidades,
@@ -444,6 +445,16 @@ export default function EnsayoIntegrador({ theme }) {
       submittedAt: savedSummative.submittedAt,
       gradedAt: savedSummative.gradedAt,
       attemptsUsed: savedSummative.attemptsUsed
+    };
+  }, [savedSummative]);
+
+  const teacherScoreOverride = useMemo(() => {
+    if (!savedSummative || savedSummative.teacherOverrideScore == null) return null;
+    return {
+      teacherOverrideScore: savedSummative.teacherOverrideScore,
+      scoreOverrideReason: savedSummative.scoreOverrideReason,
+      scoreOverriddenAt: savedSummative.scoreOverriddenAt,
+      docenteNombre: savedSummative.docenteNombre
     };
   }, [savedSummative]);
 
@@ -471,7 +482,15 @@ export default function EnsayoIntegrador({ theme }) {
     return 'Enviar ensayo';
   }, [rubricId, loading, allowRevision, attemptsUsed, isLockedByAttempts]);
 
-  const displayEvaluation = evaluation || savedEvaluation;
+  const displayEvaluation = useMemo(() => {
+    const base = evaluation || savedEvaluation;
+    if (!base) return null;
+    const overrideScore = savedSummative?.teacherOverrideScore;
+    if (overrideScore > 0) {
+      return { ...base, score: overrideScore };
+    }
+    return base;
+  }, [evaluation, savedEvaluation, savedSummative]);
 
   const showRevisionTip = Boolean(
     displayEvaluation?.__source === 'saved'
@@ -808,6 +827,8 @@ export default function EnsayoIntegrador({ theme }) {
             El puntaje se calculó con el evaluador disponible.
           </InfoBox>
         )}
+
+        <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={theme} />
 
         <EssayFeedbackPanel theme={theme} evaluation={displayEvaluation} />
       </Grid>
