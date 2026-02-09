@@ -816,7 +816,7 @@ export default function BitacoraEticaIA({ theme }) {
         </SubmissionBanner>
       )}
 
-      {isSubmitted && (
+      {!isSubmitted && (
         <EvaluationValidation theme={effectiveTheme} $valid>
           ✅ Bitácora completa. Solicita evaluación criterial con IA dual.
         </EvaluationValidation>

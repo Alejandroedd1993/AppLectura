@@ -1498,7 +1498,7 @@ export default function MapaActores({ theme }) {
         </SubmissionBanner>
       )}
 
-      {isSubmitted && (
+      {!isSubmitted && (
         <ValidationMessage
           $valid
           initial={{ opacity: 0, y: -10 }}
