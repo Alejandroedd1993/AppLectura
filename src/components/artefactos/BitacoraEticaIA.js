@@ -816,6 +816,12 @@ export default function BitacoraEticaIA({ theme }) {
         </SubmissionBanner>
       )}
 
+      {isSubmitted && (
+        <EvaluationValidation theme={effectiveTheme} $valid>
+          ✅ Bitácora completa. Solicita evaluación criterial con IA dual.
+        </EvaluationValidation>
+      )}
+
       {/* 🆕 Banner de cambio de nota docente */}
       <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={effectiveTheme} />
 

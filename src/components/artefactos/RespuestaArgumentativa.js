@@ -1497,6 +1497,16 @@ export default function RespuestaArgumentativa({ theme }) {
         </SubmissionBanner>
       )}
 
+      {isSubmitted && (
+        <ValidationMessage
+          $valid
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          ✅ Argumento completo. Solicita evaluación criterial.
+        </ValidationMessage>
+      )}
+
       {/* 🆕 Banner de cambio de nota docente */}
       <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={theme} />
 
