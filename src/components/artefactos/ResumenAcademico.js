@@ -240,6 +240,7 @@ const ResumenAcademico = ({ theme }) => {
       setEvaluacion(null);
       setResumen('');
       setViewingVersion(null);
+      setTeacherScoreOverride(null); // Limpiar override docente tras reset
       
       // Limpiar sessionStorage
       import('../../services/sessionManager').then(({ getDraftKey }) => {
@@ -708,7 +709,7 @@ const ResumenAcademico = ({ theme }) => {
 
   // 🆕 Restaurar versión antigua como actual
   const handleRestoreVersion = useCallback(() => {
-    if (!viewingVersion) return;
+    if (!viewingVersion || isSubmitted) return;
 
     // Restaurar contenido
     setResumen(viewingVersion.content.resumen);
@@ -725,7 +726,7 @@ const ResumenAcademico = ({ theme }) => {
     setTimeout(() => persistence.saveManual(), 100);
 
     console.log('rewind ⏪ Versión restaurada exitosamente');
-  }, [viewingVersion, persistence]);
+  }, [viewingVersion, persistence, isSubmitted]);
 
   // Determine what to show: Current state or specific version
   const displayedResumen = viewingVersion ? viewingVersion.content.resumen : resumen;

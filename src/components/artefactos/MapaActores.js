@@ -792,10 +792,9 @@ export default function MapaActores({ theme }) {
   const MAX_ATTEMPTS = 3;
 
   // 🆕 Rate Limiting
-  const rateLimit = useRateLimit({
-    maxRequests: 10,
-    windowMinutes: 60,
-    key: 'mapaActores_eval' // Clave única para rate limit
+  const rateLimit = useRateLimit('mapaActores_eval', {
+    cooldownMs: 5000,
+    maxPerHour: 10
   });
 
   // 🆕 Estados para sistema de citas
@@ -958,6 +957,7 @@ export default function MapaActores({ theme }) {
       setConexiones('');
       setConsecuencias('');
       setViewingVersion(null);
+      setTeacherScoreOverride(null); // Limpiar override docente tras reset
       
       // Limpiar sessionStorage
       import('../../services/sessionManager').then(({ getDraftKey }) => {
@@ -1107,7 +1107,7 @@ export default function MapaActores({ theme }) {
   }, []);
 
   const handleRestoreVersion = useCallback(() => {
-    if (!viewingVersion) return;
+    if (!viewingVersion || isSubmitted) return;
 
     // Restaurar contenido
     setActores(viewingVersion.content.actores || '');
@@ -1125,7 +1125,7 @@ export default function MapaActores({ theme }) {
     setTimeout(() => persistence.saveManual(), 100);
 
     console.log('rewind ⏪ Versión restaurada exitosamente');
-  }, [viewingVersion, persistence]);
+  }, [viewingVersion, persistence, isSubmitted]);
 
   // Validación
   const isValid = useMemo(() => {
@@ -1288,18 +1288,24 @@ export default function MapaActores({ theme }) {
 
   // Evaluación
   const handleEvaluate = useCallback(async () => {
-    // 🆕 Verificaciones de límites
-    if (!rateLimit.canProceed) {
-      setError(`⏳ Por favor espera ${rateLimit.remaining} segundos antes de intentar nuevamente.`);
-      return;
-    }
+    if (!isValid || !texto) return;
 
+    // 🆕 Verificar límite de intentos
     if (evaluationAttempts >= MAX_ATTEMPTS) {
       setError(`🚫 Has agotado tus ${MAX_ATTEMPTS} intentos de evaluación para este artefacto.`);
       return;
     }
 
-    if (!isValid || !texto) return;
+    // ✅ Verificar rate limit y registrar operación
+    const rateLimitResult = rateLimit.attemptOperation();
+    if (!rateLimitResult.allowed) {
+      if (rateLimitResult.reason === 'cooldown') {
+        setError(`⏱️ Por favor espera ${rateLimitResult.waitSeconds} segundos antes de evaluar nuevamente.`);
+      } else if (rateLimitResult.reason === 'hourly_limit') {
+        setError(`🚦 Has alcanzado el límite de 10 evaluaciones por hora. Intenta más tarde.`);
+      }
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -1460,7 +1466,7 @@ export default function MapaActores({ theme }) {
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
-  }, [isValid, texto, actores, contextoHistorico, conexiones, consecuencias, setError, evaluationAttempts, rateLimit, rewards, rewardsResourceId]);
+  }, [isValid, texto, actores, contextoHistorico, conexiones, consecuencias, setError, evaluationAttempts, rateLimit, rewards, rewardsResourceId, updateRubricScore, lectureId, updateActivitiesProgress, history, persistence, currentTextoId]);
 
   // Verificar si hay texto
   if (!texto) {
@@ -1496,16 +1502,6 @@ export default function MapaActores({ theme }) {
             <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
           </span>
         </SubmissionBanner>
-      )}
-
-      {!isSubmitted && (
-        <ValidationMessage
-          $valid
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          ✅ Análisis completo. Solicita evaluación criterial.
-        </ValidationMessage>
       )}
 
       {/* 🆕 Banner de cambio de nota docente */}

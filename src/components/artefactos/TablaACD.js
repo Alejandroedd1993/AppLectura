@@ -1092,6 +1092,7 @@ export default function TablaACD({ theme }) {
       setVocesPresentes('');
       setVocesSilenciadas('');
       setViewingVersion(null);
+      setTeacherScoreOverride(null); // Limpiar override docente tras reset
       
       // Limpiar sessionStorage
       import('../../services/sessionManager').then(({ getDraftKey }) => {
@@ -1228,7 +1229,7 @@ export default function TablaACD({ theme }) {
 
   // 🆕 Restaurar versión antigua como actual
   const handleRestoreVersion = useCallback(() => {
-    if (!viewingVersion) return;
+    if (!viewingVersion || isSubmitted) return;
 
     // Restaurar contenido (todos los campos)
     if (viewingVersion.content) {
@@ -1250,7 +1251,7 @@ export default function TablaACD({ theme }) {
     setTimeout(() => persistence.saveManual(), 100);
 
     console.log('rewind ⏪ Versión restaurada exitosamente');
-  }, [viewingVersion, persistence]);
+  }, [viewingVersion, persistence, isSubmitted]);
 
   // Determine what to show: Current state or specific version
   const displayedContent = useMemo(() => {
@@ -1559,7 +1560,7 @@ export default function TablaACD({ theme }) {
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
-  }, [isValid, texto, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, setError, evaluationAttempts, rateLimit, currentTextoId, rewards, rewardsResourceId]);
+  }, [isValid, texto, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, setError, evaluationAttempts, rateLimit, currentTextoId, rewards, rewardsResourceId, updateRubricScore, lectureId, updateActivitiesProgress, history, persistence]);
 
   // Verificar si hay texto
   if (!texto) {
@@ -1595,16 +1596,6 @@ export default function TablaACD({ theme }) {
             <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
           </span>
         </SubmissionBanner>
-      )}
-
-      {!isSubmitted && (
-        <ValidationMessage
-          $valid
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          ✅ Análisis completo. Solicita evaluación criterial.
-        </ValidationMessage>
       )}
 
       {/* 🆕 Banner de cambio de nota docente */}

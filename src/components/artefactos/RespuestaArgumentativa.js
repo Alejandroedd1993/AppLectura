@@ -1076,6 +1076,7 @@ export default function RespuestaArgumentativa({ theme }) {
       setContraargumento('');
       setRefutacion('');
       setViewingVersion(null);
+      setTeacherScoreOverride(null); // Limpiar override docente tras reset
       
       // Limpiar sessionStorage
       import('../../services/sessionManager').then(({ getDraftKey }) => {
@@ -1143,7 +1144,7 @@ export default function RespuestaArgumentativa({ theme }) {
   }, []);
 
   const handleRestoreVersion = useCallback(() => {
-    if (!viewingVersion) return;
+    if (!viewingVersion || isSubmitted) return;
 
     setTesis(viewingVersion.content.tesis);
     setEvidencias(viewingVersion.content.evidencias);
@@ -1153,7 +1154,7 @@ export default function RespuestaArgumentativa({ theme }) {
     setViewingVersion(null);
 
     setTimeout(() => persistence.saveManual(), 100);
-  }, [viewingVersion, persistence]);
+  }, [viewingVersion, persistence, isSubmitted]);
 
   // 🆕 Handle submission
   const handleSubmit = useCallback(() => {
@@ -1290,13 +1291,20 @@ export default function RespuestaArgumentativa({ theme }) {
   const handleEvaluate = useCallback(async () => {
     if (!isValid || !texto) return;
 
-    // 🆕 Verificar límites
-    if (!rateLimit.canProceed) {
-      setError(`⏳ ${Math.ceil(rateLimit.nextAvailableIn / 1000)}s para nuevo intento`);
-      return;
-    }
+    // 🆕 Verificar límite de intentos
     if (evaluationAttempts >= MAX_ATTEMPTS) {
       setError(`⚠️ Límite de ${MAX_ATTEMPTS} intentos alcanzado`);
+      return;
+    }
+
+    // ✅ Verificar rate limit y registrar operación
+    const rateLimitResult = rateLimit.attemptOperation();
+    if (!rateLimitResult.allowed) {
+      if (rateLimitResult.reason === 'cooldown') {
+        setError(`⏱️ Por favor espera ${rateLimitResult.waitSeconds} segundos antes de evaluar nuevamente.`);
+      } else if (rateLimitResult.reason === 'hourly_limit') {
+        setError(`🚦 Has alcanzado el límite de 10 evaluaciones por hora. Intenta más tarde.`);
+      }
       return;
     }
 
@@ -1459,7 +1467,7 @@ export default function RespuestaArgumentativa({ theme }) {
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
-  }, [isValid, texto, tesis, evidencias, contraargumento, refutacion, setError, rewards, rewardsResourceId]);
+  }, [isValid, texto, tesis, evidencias, contraargumento, refutacion, setError, rewards, rewardsResourceId, evaluationAttempts, rateLimit, updateRubricScore, lectureId, updateActivitiesProgress, history, persistence, currentTextoId]);
 
   // Verificar si hay texto
   if (!texto) {
@@ -1495,16 +1503,6 @@ export default function RespuestaArgumentativa({ theme }) {
             <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
           </span>
         </SubmissionBanner>
-      )}
-
-      {!isSubmitted && (
-        <ValidationMessage
-          $valid
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          ✅ Argumento completo. Solicita evaluación criterial.
-        </ValidationMessage>
       )}
 
       {/* 🆕 Banner de cambio de nota docente */}
@@ -1804,7 +1802,7 @@ export default function RespuestaArgumentativa({ theme }) {
               disabled={!isValid || loading || evaluationAttempts >= MAX_ATTEMPTS || !rateLimit.canProceed || isReadOnly}
             >
               {loading ? '⏳ Evaluando...' :
-                !rateLimit.canProceed ? `⏳ Espera ${Math.ceil(rateLimit.nextAvailableIn / 1000)}s` :
+                !rateLimit.canProceed ? `⏳ Espera ${rateLimit.nextAvailableIn}s` :
                   `💭 Solicitar Evaluación (${MAX_ATTEMPTS - evaluationAttempts} restantes)`}
             </PrimaryButton>
 

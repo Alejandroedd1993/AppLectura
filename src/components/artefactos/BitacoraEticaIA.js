@@ -272,7 +272,8 @@ export default function BitacoraEticaIA({ theme }) {
         procesoUsoIA: viewingVersion.content.procesoUsoIA || '',
         reflexionEtica: viewingVersion.content.reflexionEtica || '',
         declaraciones: viewingVersion.content.declaraciones || declaraciones,
-        interactions: viewingVersion.content.tutorInteractions || []
+        interactions: viewingVersion.content.tutorInteractions || [],
+        feedback: viewingVersion.feedback || null
       };
     }
     return {
@@ -280,10 +281,12 @@ export default function BitacoraEticaIA({ theme }) {
       procesoUsoIA,
       reflexionEtica,
       declaraciones,
-      interactions: tutorInteractions
+      interactions: tutorInteractions,
+      feedback: feedbackCriterial
     };
-  }, [viewingVersion, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, tutorInteractions]);
+  }, [viewingVersion, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, tutorInteractions, feedbackCriterial]);
 
+  // Feedback se muestra via displayedContent.feedback en el JSX
   const _displayedFeedback = React.useMemo(() => {
     if (viewingVersion) return viewingVersion.feedback;
     return feedbackCriterial;
@@ -308,7 +311,7 @@ export default function BitacoraEticaIA({ theme }) {
   }, []);
 
   const handleRestoreVersion = useCallback(() => {
-    if (!viewingVersion) return;
+    if (!viewingVersion || isSubmitted) return;
 
     setVerificacionFuentes(viewingVersion.content.verificacionFuentes || '');
     setProcesoUsoIA(viewingVersion.content.procesoUsoIA || '');
@@ -321,7 +324,7 @@ export default function BitacoraEticaIA({ theme }) {
 
     setFeedbackCriterial(viewingVersion.feedback);
     setViewingVersion(null);
-  }, [viewingVersion]);
+  }, [viewingVersion, isSubmitted]);
 
   // Cargar reflexiones guardadas (interacciones del tutor ahora se manejan en AppContext)
 
@@ -454,8 +457,9 @@ export default function BitacoraEticaIA({ theme }) {
       setVerificacionFuentes('');
       setProcesoUsoIA('');
       setReflexionEtica('');
-      setDeclaraciones({ usaIA: null, verificaFuentes: null, citaFuentes: null });
+      setDeclaraciones({ respuestasPropias: false, verificacionRealizada: false, usoTransparente: false, contrasteMultifuente: false });
       setViewingVersion(null);
+      setTeacherScoreOverride(null); // Limpiar override docente tras reset
       
       if (persistence?.clearResults) persistence.clearResults();
       
@@ -661,12 +665,18 @@ export default function BitacoraEticaIA({ theme }) {
 
     // 🆕 Verificaciones de Límite y Rate Limit
     if (evaluationAttempts >= MAX_ATTEMPTS) {
-      alert('Has alcanzado el número máximo de intentos para esta actividad.');
+      setError('Has alcanzado el número máximo de intentos para esta actividad.');
       return;
     }
 
-    if (!rateLimit.canProceed) {
-      alert(`Por favor espera ${Math.ceil(rateLimit.nextAvailableIn / 1000)}s antes de intentar nuevamente.`);
+    // ✅ Verificar rate limit y registrar operación
+    const rateLimitResult = rateLimit.attemptOperation();
+    if (!rateLimitResult.allowed) {
+      if (rateLimitResult.reason === 'cooldown') {
+        setError(`⏱️ Por favor espera ${rateLimitResult.waitSeconds} segundos antes de evaluar nuevamente.`);
+      } else if (rateLimitResult.reason === 'hourly_limit') {
+        setError(`🚦 Has alcanzado el límite de 10 evaluaciones por hora. Intenta más tarde.`);
+      }
       return;
     }
 
@@ -676,7 +686,6 @@ export default function BitacoraEticaIA({ theme }) {
 
     // 🆕 Incrementar intentos
     setEvaluationAttempts(prev => prev + 1);
-    rateLimit.attemptOperation();
 
     // 🆕 Programar pasos de evaluación
     const timeouts = [
@@ -768,7 +777,7 @@ export default function BitacoraEticaIA({ theme }) {
       setLoadingEvaluation(false);
       setCurrentEvaluationStep(null);
     }
-  }, [isValidForEvaluation, evaluationAttempts, MAX_ATTEMPTS, rateLimit, tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, setError, updateRubricScore]);
+  }, [isValidForEvaluation, evaluationAttempts, MAX_ATTEMPTS, rateLimit, tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, setError, updateRubricScore, lectureId, updateActivitiesProgress, persistence]);
 
   useEffect(() => {
     handleEvaluateCriterialRef.current = handleEvaluateCriterial;
@@ -1178,7 +1187,7 @@ export default function BitacoraEticaIA({ theme }) {
           >
             {loadingEvaluation ? '⏳ Evaluando con IA Dual...' :
               evaluationAttempts >= MAX_ATTEMPTS ? '🔒 Límite de Intentos Alcanzado' :
-                !rateLimit.canProceed ? `⏳ Espera ${Math.ceil(rateLimit.nextAvailableIn / 1000)} s` :
+                !rateLimit.canProceed ? `⏳ Espera ${rateLimit.nextAvailableIn}s` :
                   `🤖 Solicitar Evaluación (${MAX_ATTEMPTS - evaluationAttempts} restantes)`}
           </EvaluationButton>
         </EvaluationButtonSection>
