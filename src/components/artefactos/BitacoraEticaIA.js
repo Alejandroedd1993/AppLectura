@@ -20,6 +20,8 @@ import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
+import ConfirmModal from '../common/ConfirmModal';
+import logger from '../../utils/logger';
 
 // ... (component definition) ...
 
@@ -196,6 +198,8 @@ export default function BitacoraEticaIA({ theme }) {
   const [history, setHistory] = useState([]); // Historial de versiones
   const [viewingVersion, setViewingVersion] = useState(null); // Versión visualizada
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
+  const [showClearLogConfirm, setShowClearLogConfirm] = useState(false); // 🆕 Modal de confirmación de borrar historial
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
   const MAX_ATTEMPTS = 3;
@@ -231,7 +235,7 @@ export default function BitacoraEticaIA({ theme }) {
 
   useKeyboardShortcuts({
     'ctrl+s': (_e) => {
-      console.log('⌨️ Ctrl+S: Guardando borrador BitacoraEticaIA...');
+      logger.log('⌨️ Ctrl+S: Guardando borrador BitacoraEticaIA...');
       // Guardar reflexiones manualmente
       const reflections = {
         verificacionFuentes,
@@ -244,13 +248,13 @@ export default function BitacoraEticaIA({ theme }) {
       timersRef.current.push(setTimeout(() => setShowSaveHint(false), 2000));
     },
     'ctrl+enter': (_e) => {
-      console.log('⌨️ Ctrl+Enter: Evaluando Bitácora Ética IA...');
+      logger.log('⌨️ Ctrl+Enter: Evaluando Bitácora Ética IA...');
       if (!loadingEvaluation && rateLimit.canProceed && evaluationAttempts < MAX_ATTEMPTS && !isSubmitted && !viewingVersion) {
         handleEvaluarBitacora();
       }
     },
     'escape': (_e) => {
-      console.log('⌨️ Esc: Cerrando paneles...');
+      logger.log('⌨️ Esc: Cerrando paneles...');
       if (viewingVersion) {
         setViewingVersion(null);
       }
@@ -306,7 +310,7 @@ export default function BitacoraEticaIA({ theme }) {
 
   // 🆕 Función para desbloquear y seguir editando después de recibir feedback
   const handleSeguirEditando = useCallback(() => {
-    console.log('✏️ [BitacoraEticaIA] Desbloqueando para editar...');
+    logger.log('✏️ [BitacoraEticaIA] Desbloqueando para editar...');
     setIsLocked(false);
     setFeedbackCriterial(null); // Ocultar evaluación anterior para enfocarse en editar
   }, []);
@@ -454,8 +458,8 @@ export default function BitacoraEticaIA({ theme }) {
         return;
       }
       
-      console.log('🔄 [BitacoraEticaIA] Detectado RESET por docente, limpiando estado local...');
-      console.log('🔄 [BitacoraEticaIA] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
+      logger.log('🔄 [BitacoraEticaIA] Detectado RESET por docente, limpiando estado local...');
+      logger.log('🔄 [BitacoraEticaIA] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
       resetProcessedRef.current = resetKey; // Marcar como procesado
       
       // Limpiar estados
@@ -473,14 +477,14 @@ export default function BitacoraEticaIA({ theme }) {
       
       if (persistence?.clearResults) persistence.clearResults();
       
-      console.log('🧹 [BitacoraEticaIA] Estado local limpiado tras reset');
+      logger.log('🧹 [BitacoraEticaIA] Estado local limpiado tras reset');
       return;
     }
     
     if (!cloudData) return;
 
     if (cloudData.history && Array.isArray(cloudData.history)) {
-      console.log('☁️ [BitacoraEticaIA] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
+      logger.log('☁️ [BitacoraEticaIA] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
       setHistory(prev => prev.length >= cloudData.history.length ? prev : cloudData.history);
     }
 
@@ -507,60 +511,62 @@ export default function BitacoraEticaIA({ theme }) {
       if (cloudData.drafts.reflexionEtica && !reflexionEtica) {
         setReflexionEtica(cloudData.drafts.reflexionEtica);
       }
-      console.log('☁️ [BitacoraEticaIA] Borradores restaurados desde Firestore');
+      logger.log('☁️ [BitacoraEticaIA] Borradores restaurados desde Firestore');
     }
   }, [lectureId, activitiesProgress, verificacionFuentes, procesoUsoIA, reflexionEtica, persistence]);
 
-  // 🆕 Handle submission
+  // 🆕 Handle submission confirmada
+  const handleConfirmedSubmit = useCallback(() => {
+    setShowSubmitConfirm(false);
+    setIsSubmitted(true);
+
+    // ✅ Forzar guardado inmediato con saveManual
+    timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
+
+    // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
+    if (lectureId && updateActivitiesProgress) {
+      updateActivitiesProgress(lectureId, prev => {
+        // Obtener el score previo guardado (lastScore) o calcular desde feedback
+        const previousArtifact = prev?.artifacts?.bitacoraEticaIA || {};
+        const scoreToUse = previousArtifact.lastScore || (feedbackCriterial.nivel_global ? feedbackCriterial.nivel_global * 2.5 : 0);
+        
+        logger.log('📤 [BitacoraEticaIA] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedbackCriterial.nivel_global);
+        
+        return {
+          ...prev,
+          artifacts: {
+            ...(prev?.artifacts || {}),
+            bitacoraEticaIA: {
+              ...previousArtifact,
+              submitted: true,
+              submittedAt: Date.now(),
+              score: scoreToUse,
+              nivel: feedbackCriterial.nivel_global || previousArtifact.lastNivel || 0,
+              history: history,
+              attempts: evaluationAttempts,
+              finalContent: { verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones }
+            }
+          }
+        };
+      });
+    }
+
+    const event = new CustomEvent('evaluation-complete', {
+      detail: {
+        artefacto: 'BitacoraEticaIA',
+        score: feedbackCriterial.nivel_global * 2.5,
+        submitted: true
+      }
+    });
+    window.dispatchEvent(event);
+
+    logger.log('✅ [BitacoraEticaIA] Tarea entregada y sincronizada con Dashboard');
+  }, [feedbackCriterial, persistence, lectureId, updateActivitiesProgress, history, evaluationAttempts, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones]);
+
   const handleSubmit = useCallback(() => {
     if (!feedbackCriterial) return;
-
-    if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
-      setIsSubmitted(true);
-
-      // ✅ Forzar guardado inmediato con saveManual
-      timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
-
-      // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
-      if (lectureId && updateActivitiesProgress) {
-        updateActivitiesProgress(lectureId, prev => {
-          // Obtener el score previo guardado (lastScore) o calcular desde feedback
-          const previousArtifact = prev?.artifacts?.bitacoraEticaIA || {};
-          const scoreToUse = previousArtifact.lastScore || (feedbackCriterial.nivel_global ? feedbackCriterial.nivel_global * 2.5 : 0);
-          
-          console.log('📤 [BitacoraEticaIA] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedbackCriterial.nivel_global);
-          
-          return {
-            ...prev,
-            artifacts: {
-              ...(prev?.artifacts || {}),
-              bitacoraEticaIA: {
-                ...previousArtifact,
-                submitted: true,
-                submittedAt: Date.now(),
-                score: scoreToUse,
-                nivel: feedbackCriterial.nivel_global || previousArtifact.lastNivel || 0,
-                history: history,
-                attempts: evaluationAttempts,
-                finalContent: { verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones }
-              }
-            }
-          };
-        });
-      }
-
-      const event = new CustomEvent('evaluation-complete', {
-        detail: {
-          artefacto: 'BitacoraEticaIA',
-          score: feedbackCriterial.nivel_global * 2.5,
-          submitted: true
-        }
-      });
-      window.dispatchEvent(event);
-
-      console.log('✅ [BitacoraEticaIA] Tarea entregada y sincronizada con Dashboard');
-    }
-  }, [feedbackCriterial, persistence, lectureId, updateActivitiesProgress, history, evaluationAttempts, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones]);
+    setShowSubmitConfirm(true);
+  }, [feedbackCriterial]);
 
   // Guardar reflexiones en localStorage legacy (compatibilidad)
   useEffect(() => {
@@ -586,13 +592,16 @@ export default function BitacoraEticaIA({ theme }) {
   };
 
   // Usar función del contexto global para limpiar log del tutor
-  const clearTutorLog = useCallback(() => {
-    if (window.confirm('¿Estás seguro de que quieres borrar todo el historial de interacciones con el tutor IA?')) {
-      clearGlobalTutorLog();
-      // Legacy (por si existía)
-      localStorage.removeItem('tutorInteractionsLog');
-    }
+  const handleConfirmedClearLog = useCallback(() => {
+    setShowClearLogConfirm(false);
+    clearGlobalTutorLog();
+    // Legacy (por si existía)
+    localStorage.removeItem('tutorInteractionsLog');
   }, [clearGlobalTutorLog]);
+
+  const clearTutorLog = useCallback(() => {
+    setShowClearLogConfirm(true);
+  }, []);
 
   const exportBitacora = useCallback(async () => {
     try {
@@ -754,7 +763,7 @@ export default function BitacoraEticaIA({ theme }) {
             }
           }
         }));
-        console.log('☁️ [BitacoraEticaIA] Historial sincronizado con Firestore');
+        logger.log('☁️ [BitacoraEticaIA] Historial sincronizado con Firestore');
       }
 
       // 🆕 Actualizar progreso global de rúbrica
@@ -1363,6 +1372,30 @@ export default function BitacoraEticaIA({ theme }) {
           Descarga un registro completo de tu uso ético de IA para incluir en tu portafolio de aprendizaje.
         </ExportHint>
       </ExportSection>
+
+      <ConfirmModal
+        open={showSubmitConfirm}
+        title="¿Entregar tarea?"
+        message="Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones."
+        confirmText="📤 Sí, Entregar"
+        cancelText="Cancelar"
+        variant="warning"
+        onConfirm={handleConfirmedSubmit}
+        onCancel={() => setShowSubmitConfirm(false)}
+        theme={effectiveTheme}
+      />
+
+      <ConfirmModal
+        open={showClearLogConfirm}
+        title="¿Borrar historial del tutor?"
+        message="Se eliminará todo el historial de interacciones con el tutor IA."
+        confirmText="🗑️ Sí, Borrar"
+        cancelText="Cancelar"
+        variant="danger"
+        onConfirm={handleConfirmedClearLog}
+        onCancel={() => setShowClearLogConfirm(false)}
+        theme={effectiveTheme}
+      />
     </Container>
   );
 }

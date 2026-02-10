@@ -5,7 +5,7 @@
  * OPTIMIZACIÓN: Lazy loading de artefactos para reducir bundle inicial
  */
 
-import React, { useState, useContext, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useContext, useCallback, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../context/AppContext';
@@ -14,6 +14,7 @@ import NextStepCard from './common/NextStepCard';
 import DraftWarning from './common/DraftWarning';
 import ErrorBoundary from './common/ErrorBoundary';
 import EstimatedTimeBadge from './ui/EstimatedTimeBadge';
+import logger from '../utils/logger';
 
 // ✅ EAGER: Componentes ligeros que se usan siempre
 import PreguntasPersonalizadas from './actividades/PreguntasPersonalizadas';
@@ -334,7 +335,7 @@ export default function Actividades() {
   React.useEffect(() => {
     const artefactosSections = ['resumen', 'tabla-acd', 'mapa-actores', 'respuesta-argumentativa', 'bitacora-etica'];
     if (!preparacionCompletada && artefactosSections.includes(activeSection)) {
-      console.log('🚫 [Actividades] Acceso denegado a artefacto sin preparación, redirigiendo...');
+      logger.log('🚫 [Actividades] Acceso denegado a artefacto sin preparación, redirigiendo...');
       setActiveSection('preparacion');
     }
   }, [preparacionCompletada, activeSection]);
@@ -342,7 +343,7 @@ export default function Actividades() {
   // 🆕 Escuchar evento de completación de ejercicios
   React.useEffect(() => {
     const handleExercisesCompleted = () => {
-      console.log('✅ [Actividades] Preparación completada, desbloqueando artefactos');
+      logger.log('✅ [Actividades] Preparación completada, desbloqueando artefactos');
       if (lectureId && markPreparationProgress) {
         markPreparationProgress(lectureId, { completed: true });
       }
@@ -420,7 +421,7 @@ export default function Actividades() {
     );
   }
 
-  const theme = {
+  const theme = useMemo(() => ({
     background: modoOscuro ? '#1a1a1a' : '#f8f9fa',
     cardBg: modoOscuro ? '#2a2a2a' : '#ffffff',
     surface: modoOscuro ? '#333' : '#f5f5f5',
@@ -431,16 +432,35 @@ export default function Actividades() {
     success: '#4CAF50',
     warning: '#FF9800',
     danger: '#F44336',
-  };
+  }), [modoOscuro]);
 
-  // 🆕 Calcular progreso general
-  const artefactosCompletados = ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4', 'rubrica5']
-    .filter(rubricId => {
-      const status = getArtefactoStatus(rubricId);
-      return status.icon !== '';
-    }).length;
+  // Pre-computar status de cada artefacto (evita 30+ llamadas en JSX)
+  const artefactoStatuses = useMemo(() => ({
+    rubrica1: getArtefactoStatus('rubrica1'),
+    rubrica2: getArtefactoStatus('rubrica2'),
+    rubrica3: getArtefactoStatus('rubrica3'),
+    rubrica4: getArtefactoStatus('rubrica4'),
+    rubrica5: getArtefactoStatus('rubrica5'),
+  }), [getArtefactoStatus]);
+
+  // Calcular progreso general
+  const artefactosCompletados = useMemo(() => 
+    Object.values(artefactoStatuses).filter(s => s.icon !== '').length,
+  [artefactoStatuses]);
 
   const progresoGeneral = Math.round((artefactosCompletados / 5) * 100);
+
+  // ARIA: Cerrar modal con Escape
+  const cancelBtnRef = useRef(null);
+  useEffect(() => {
+    if (!showResetConfirm) return;
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setShowResetConfirm(false);
+    };
+    document.addEventListener('keydown', handleEscape);
+    cancelBtnRef.current?.focus();
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showResetConfirm]);
 
   return (
     <Container theme={theme}>
@@ -477,9 +497,12 @@ export default function Actividades() {
       <DraftWarning theme={theme} />
 
       {/* Navegación por pestañas - ORDEN PEDAGÓGICO ÓPTIMO */}
-      <TabsContainer>
+      <TabsContainer role="tablist" aria-label="Actividades de literacidad crítica">
         {/* 1️⃣ PRIMERO: Preparación obligatoria */}
         <Tab
+          role="tab"
+          aria-selected={activeSection === 'preparacion'}
+          aria-controls="panel-preparacion"
           $active={activeSection === 'preparacion'}
           onClick={() => setActiveSection('preparacion')}
           theme={theme}
@@ -491,6 +514,9 @@ export default function Actividades() {
 
         {/* 🎮 Práctica guiada (sin bloqueo) */}
         <Tab
+          role="tab"
+          aria-selected={activeSection === 'practica'}
+          aria-controls="panel-practica"
           $active={activeSection === 'practica'}
           onClick={() => setActiveSection('practica')}
           theme={theme}
@@ -501,108 +527,106 @@ export default function Actividades() {
 
         {/* 2️⃣-6️⃣ LUEGO: Artefactos de las 5 rúbricas (bloqueados hasta completar preparación) */}
         <Tab
+          role="tab"
+          aria-selected={activeSection === 'resumen'}
+          aria-controls="panel-resumen"
           $active={activeSection === 'resumen'}
           onClick={() => preparacionCompletada && setActiveSection('resumen')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{
-            opacity: preparacionCompletada ? 1 : 0.5,
-            cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
-          }}
         >
           <span>📚</span>
           Resumen Académico
           <EstimatedTimeBadge minutes={15} theme={theme} compact />
           {!preparacionCompletada && ' 🔒'}
-          {getArtefactoStatus('rubrica1').icon && preparacionCompletada && (
-            <StatusBadge $status={getArtefactoStatus('rubrica1').status} $color={getArtefactoStatus('rubrica1').color}>
-              {getArtefactoStatus('rubrica1').icon} {getArtefactoStatus('rubrica1').label}
+          {artefactoStatuses.rubrica1.icon && preparacionCompletada && (
+            <StatusBadge $status={artefactoStatuses.rubrica1.status} $color={artefactoStatuses.rubrica1.color}>
+              {artefactoStatuses.rubrica1.icon} {artefactoStatuses.rubrica1.label}
             </StatusBadge>
           )}
         </Tab>
         <Tab
+          role="tab"
+          aria-selected={activeSection === 'tabla-acd'}
+          aria-controls="panel-tabla-acd"
           $active={activeSection === 'tabla-acd'}
           onClick={() => preparacionCompletada && setActiveSection('tabla-acd')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{
-            opacity: preparacionCompletada ? 1 : 0.5,
-            cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
-          }}
         >
           <span>🔍</span>
           Análisis del Discurso
           <EstimatedTimeBadge minutes={18} theme={theme} compact />
           {!preparacionCompletada && ' 🔒'}
-          {getArtefactoStatus('rubrica2').icon && preparacionCompletada && (
-            <StatusBadge $status={getArtefactoStatus('rubrica2').status} $color={getArtefactoStatus('rubrica2').color}>
-              {getArtefactoStatus('rubrica2').icon} {getArtefactoStatus('rubrica2').label}
+          {artefactoStatuses.rubrica2.icon && preparacionCompletada && (
+            <StatusBadge $status={artefactoStatuses.rubrica2.status} $color={artefactoStatuses.rubrica2.color}>
+              {artefactoStatuses.rubrica2.icon} {artefactoStatuses.rubrica2.label}
             </StatusBadge>
           )}
         </Tab>
         <Tab
+          role="tab"
+          aria-selected={activeSection === 'mapa-actores'}
+          aria-controls="panel-mapa-actores"
           $active={activeSection === 'mapa-actores'}
           onClick={() => preparacionCompletada && setActiveSection('mapa-actores')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{
-            opacity: preparacionCompletada ? 1 : 0.5,
-            cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
-          }}
         >
           <span>🗺️</span>
           Mapa de Actores
           <EstimatedTimeBadge minutes={12} theme={theme} compact />
           {!preparacionCompletada && ' 🔒'}
-          {getArtefactoStatus('rubrica3').icon && preparacionCompletada && (
-            <StatusBadge $status={getArtefactoStatus('rubrica3').status} $color={getArtefactoStatus('rubrica3').color}>
-              {getArtefactoStatus('rubrica3').icon} {getArtefactoStatus('rubrica3').label}
+          {artefactoStatuses.rubrica3.icon && preparacionCompletada && (
+            <StatusBadge $status={artefactoStatuses.rubrica3.status} $color={artefactoStatuses.rubrica3.color}>
+              {artefactoStatuses.rubrica3.icon} {artefactoStatuses.rubrica3.label}
             </StatusBadge>
           )}
         </Tab>
         <Tab
+          role="tab"
+          aria-selected={activeSection === 'respuesta-argumentativa'}
+          aria-controls="panel-respuesta-argumentativa"
           $active={activeSection === 'respuesta-argumentativa'}
           onClick={() => preparacionCompletada && setActiveSection('respuesta-argumentativa')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{
-            opacity: preparacionCompletada ? 1 : 0.5,
-            cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
-          }}
         >
           <span>💭</span>
           Respuesta Argumentativa
           <EstimatedTimeBadge minutes={20} theme={theme} compact />
           {!preparacionCompletada && ' 🔒'}
-          {getArtefactoStatus('rubrica4').icon && preparacionCompletada && (
-            <StatusBadge $status={getArtefactoStatus('rubrica4').status} $color={getArtefactoStatus('rubrica4').color}>
-              {getArtefactoStatus('rubrica4').icon} {getArtefactoStatus('rubrica4').label}
+          {artefactoStatuses.rubrica4.icon && preparacionCompletada && (
+            <StatusBadge $status={artefactoStatuses.rubrica4.status} $color={artefactoStatuses.rubrica4.color}>
+              {artefactoStatuses.rubrica4.icon} {artefactoStatuses.rubrica4.label}
             </StatusBadge>
           )}
         </Tab>
         <Tab
+          role="tab"
+          aria-selected={activeSection === 'bitacora-etica'}
+          aria-controls="panel-bitacora-etica"
           $active={activeSection === 'bitacora-etica'}
           onClick={() => preparacionCompletada && setActiveSection('bitacora-etica')}
           disabled={!preparacionCompletada}
           theme={theme}
-          style={{
-            opacity: preparacionCompletada ? 1 : 0.5,
-            cursor: preparacionCompletada ? 'pointer' : 'not-allowed'
-          }}
         >
           <span>🤖</span>
           Bitácora Ética IA
           <EstimatedTimeBadge minutes={10} theme={theme} compact />
           {!preparacionCompletada && ' 🔒'}
-          {getArtefactoStatus('rubrica5').icon && preparacionCompletada && (
-            <StatusBadge $status={getArtefactoStatus('rubrica5').status} $color={getArtefactoStatus('rubrica5').color}>
-              {getArtefactoStatus('rubrica5').icon} {getArtefactoStatus('rubrica5').label}
+          {artefactoStatuses.rubrica5.icon && preparacionCompletada && (
+            <StatusBadge $status={artefactoStatuses.rubrica5.status} $color={artefactoStatuses.rubrica5.color}>
+              {artefactoStatuses.rubrica5.icon} {artefactoStatuses.rubrica5.label}
             </StatusBadge>
           )}
         </Tab>
 
         {/* 7️⃣ DESPUÉS: Metacognición y progreso */}
         <Tab
+          role="tab"
+          aria-selected={activeSection === 'progreso'}
+          aria-controls="panel-progreso"
           $active={activeSection === 'progreso'}
           onClick={() => setActiveSection('progreso')}
           theme={theme}
@@ -631,7 +655,7 @@ export default function Actividades() {
               <ErrorBoundary
                 theme={theme}
                 componentName="Resumen Académico"
-                onReset={() => console.log('🔄 Reseteando Resumen Académico')}
+                onReset={() => logger.log('🔄 Reseteando Resumen Académico')}
               >
                 <ResumenAcademico theme={theme} />
               </ErrorBoundary>
@@ -667,7 +691,7 @@ export default function Actividades() {
               <ErrorBoundary
                 theme={theme}
                 componentName="Tabla ACD"
-                onReset={() => console.log('🔄 Reseteando Tabla ACD')}
+                onReset={() => logger.log('🔄 Reseteando Tabla ACD')}
               >
                 <TablaACD theme={theme} />
               </ErrorBoundary>
@@ -703,7 +727,7 @@ export default function Actividades() {
               <ErrorBoundary
                 theme={theme}
                 componentName="Mapa de Actores"
-                onReset={() => console.log('🔄 Reseteando Mapa de Actores')}
+                onReset={() => logger.log('🔄 Reseteando Mapa de Actores')}
               >
                 <MapaActores theme={theme} />
               </ErrorBoundary>
@@ -739,7 +763,7 @@ export default function Actividades() {
               <ErrorBoundary
                 theme={theme}
                 componentName="Respuesta Argumentativa"
-                onReset={() => console.log('🔄 Reseteando Respuesta Argumentativa')}
+                onReset={() => logger.log('🔄 Reseteando Respuesta Argumentativa')}
               >
                 <RespuestaArgumentativa theme={theme} />
               </ErrorBoundary>
@@ -775,7 +799,7 @@ export default function Actividades() {
               <ErrorBoundary
                 theme={theme}
                 componentName="Bitácora Ética IA"
-                onReset={() => console.log('🔄 Reseteando Bitácora Ética')}
+                onReset={() => logger.log('🔄 Reseteando Bitácora Ética')}
               >
                 <BitacoraEticaIA theme={theme} />
               </ErrorBoundary>
@@ -859,7 +883,7 @@ export default function Actividades() {
 
                     const targetSection = rubricToSection[rubricId];
                     if (targetSection) {
-                      console.log(`📍 Navegando a artefacto: ${targetSection}`);
+                      logger.log(`📍 Navegando a artefacto: ${targetSection}`);
                       setActiveSection(targetSection);
                     }
                   }}
@@ -977,9 +1001,14 @@ export default function Actividades() {
 
       {/* 🆕 Diálogo de confirmación de reseteo */}
       {showResetConfirm && (
-        <ConfirmDialog onClick={() => setShowResetConfirm(false)}>
+        <ConfirmDialog
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-dialog-title"
+          onClick={() => setShowResetConfirm(false)}
+        >
           <ConfirmCard theme={theme} onClick={(e) => e.stopPropagation()}>
-            <ConfirmTitle theme={theme}>
+            <ConfirmTitle id="reset-dialog-title" theme={theme}>
               <span>⚠️</span>
               ¿Resetear todo el progreso?
             </ConfirmTitle>
@@ -991,6 +1020,7 @@ export default function Actividades() {
             </ConfirmText>
             <ConfirmActions>
               <ResetButtonSecondary
+                ref={cancelBtnRef}
                 onClick={() => setShowResetConfirm(false)}
                 theme={theme}
               >

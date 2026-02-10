@@ -12,6 +12,8 @@ import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
+import ConfirmModal from '../common/ConfirmModal';
+import logger from '../../utils/logger';
 
 // ============================================
 // STYLED COMPONENTS (reutilizados de TablaACD con ajustes)
@@ -767,7 +769,7 @@ export default function MapaActores({ theme }) {
       setConexiones(readAndMigrateLegacy('mapaActores_conexiones'));
       setConsecuencias(readAndMigrateLegacy('mapaActores_consecuencias'));
 
-      console.log('📂 [MapaActores] Borradores cargados para textoId:', currentTextoId);
+      logger.log('📂 [MapaActores] Borradores cargados para textoId:', currentTextoId);
     }).catch(() => {});
 
     return () => {
@@ -786,6 +788,7 @@ export default function MapaActores({ theme }) {
   const [history, setHistory] = useState([]); // Historial de versiones { timestamp, content, feedback }
   const [viewingVersion, setViewingVersion] = useState(null); // Versión que se está visualizando (null = actual)
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
   const MAX_ATTEMPTS = 3;
@@ -817,7 +820,7 @@ export default function MapaActores({ theme }) {
 
   useKeyboardShortcuts({
     'ctrl+s': (_e) => {
-      console.log('⌨️ Ctrl+S: Guardando borrador MapaActores...');
+      logger.log('⌨️ Ctrl+S: Guardando borrador MapaActores...');
       if (!currentTextoId) return;
       import('../../services/sessionManager').then(({ getDraftKey }) => {
         const getKey = (base) => getDraftKey(base, currentTextoId);
@@ -831,13 +834,13 @@ export default function MapaActores({ theme }) {
       timersRef.current.push(saveHintTimerId);
     },
     'ctrl+enter': (_e) => {
-      console.log('⌨️ Ctrl+Enter: Evaluando Mapa de Actores...');
+      logger.log('⌨️ Ctrl+Enter: Evaluando Mapa de Actores...');
       if (!loading && isValid && rateLimit.canProceed && evaluationAttempts < MAX_ATTEMPTS && !isSubmitted && !viewingVersion) {
         handleEvaluate();
       }
     },
     'escape': (_e) => {
-      console.log('⌨️ Esc: Cerrando paneles...');
+      logger.log('⌨️ Esc: Cerrando paneles...');
       if (showCitasPanel) {
         setShowCitasPanel(false);
       } else if (pasteError) {
@@ -942,8 +945,8 @@ export default function MapaActores({ theme }) {
         return;
       }
       
-      console.log('🔄 [MapaActores] Detectado RESET por docente, limpiando estado local...');
-      console.log('🔄 [MapaActores] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
+      logger.log('🔄 [MapaActores] Detectado RESET por docente, limpiando estado local...');
+      logger.log('🔄 [MapaActores] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
       resetProcessedRef.current = resetKey; // Marcar como procesado
       
       // Limpiar estados
@@ -966,7 +969,7 @@ export default function MapaActores({ theme }) {
         sessionStorage.removeItem(getKey('mapaActores_contextoHistorico'));
         sessionStorage.removeItem(getKey('mapaActores_conexiones'));
         sessionStorage.removeItem(getKey('mapaActores_consecuencias'));
-        console.log('🧹 [MapaActores] Borradores locales limpiados tras reset');
+        logger.log('🧹 [MapaActores] Borradores locales limpiados tras reset');
       }).catch(() => {});
       
       if (persistence?.clearResults) persistence.clearResults();
@@ -977,7 +980,7 @@ export default function MapaActores({ theme }) {
     if (!cloudData) return;
 
     if (cloudData.history && Array.isArray(cloudData.history)) {
-      console.log('☁️ [MapaActores] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
+      logger.log('☁️ [MapaActores] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
       setHistory(prev => prev.length >= cloudData.history.length ? prev : cloudData.history);
     }
 
@@ -1014,61 +1017,63 @@ export default function MapaActores({ theme }) {
           sessionStorage.setItem(getKey('mapaActores_consecuencias'), cloudData.drafts.consecuencias);
           setConsecuencias(cloudData.drafts.consecuencias);
         }
-        console.log('☁️ [MapaActores] Borradores restaurados desde Firestore');
+        logger.log('☁️ [MapaActores] Borradores restaurados desde Firestore');
       }).catch(() => {});
     }
   }, [lectureId, activitiesProgress, persistence]);
 
-  // 🆕 Handle submission
+  // 🆕 Handle submission confirmada
+  const handleConfirmedSubmit = useCallback(() => {
+    setShowSubmitConfirm(false);
+    setIsSubmitted(true);
+    const submitSaveTimerId = setTimeout(() => persistence.saveManual(), 100);
+    timersRef.current.push(submitSaveTimerId);
+
+    // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
+    if (lectureId && updateActivitiesProgress) {
+      updateActivitiesProgress(lectureId, prev => {
+        // Obtener el score previo guardado (lastScore) o calcular desde feedback
+        const previousArtifact = prev?.artifacts?.mapaActores || {};
+        const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
+        
+        logger.log('📤 [MapaActores] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
+        
+        return {
+          ...prev,
+          artifacts: {
+            ...(prev?.artifacts || {}),
+            mapaActores: {
+              ...previousArtifact,
+              submitted: true,
+              submittedAt: Date.now(),
+              score: scoreToUse,
+              nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
+              history: history,
+              attempts: evaluationAttempts,
+              finalContent: { actores, contextoHistorico, conexiones, consecuencias }
+            }
+          }
+        };
+      });
+    } else {
+      logger.warn('⚠️ [MapaActores] No se pudo sincronizar - lectureId:', lectureId, 'updateActivitiesProgress:', !!updateActivitiesProgress);
+    }
+
+    if (rewards) {
+      rewards.recordEvent('ARTIFACT_SUBMITTED', {
+        artefacto: 'MapaActores',
+        level: feedback.nivel_global,
+        resourceId: rewardsResourceId
+      });
+    }
+
+    logger.log('✅ [MapaActores] Tarea entregada y sincronizada con Dashboard');
+  }, [feedback, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, actores, contextoHistorico, conexiones, consecuencias]);
+
   const handleSubmit = useCallback(() => {
     if (!feedback) return;
-
-    if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
-      setIsSubmitted(true);
-      const submitSaveTimerId = setTimeout(() => persistence.saveManual(), 100);
-      timersRef.current.push(submitSaveTimerId);
-
-      // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
-      if (lectureId && updateActivitiesProgress) {
-        updateActivitiesProgress(lectureId, prev => {
-          // Obtener el score previo guardado (lastScore) o calcular desde feedback
-          const previousArtifact = prev?.artifacts?.mapaActores || {};
-          const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
-          
-          console.log('📤 [MapaActores] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
-          
-          return {
-            ...prev,
-            artifacts: {
-              ...(prev?.artifacts || {}),
-              mapaActores: {
-                ...previousArtifact,
-                submitted: true,
-                submittedAt: Date.now(),
-                score: scoreToUse,
-                nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
-                history: history,
-                attempts: evaluationAttempts,
-                finalContent: { actores, contextoHistorico, conexiones, consecuencias }
-              }
-            }
-          };
-        });
-      } else {
-        console.warn('⚠️ [MapaActores] No se pudo sincronizar - lectureId:', lectureId, 'updateActivitiesProgress:', !!updateActivitiesProgress);
-      }
-
-      if (rewards) {
-        rewards.recordEvent('ARTIFACT_SUBMITTED', {
-          artefacto: 'MapaActores',
-          level: feedback.nivel_global,
-          resourceId: rewardsResourceId
-        });
-      }
-
-      console.log('✅ [MapaActores] Tarea entregada y sincronizada con Dashboard');
-    }
-  }, [feedback, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, actores, contextoHistorico, conexiones, consecuencias]);
+    setShowSubmitConfirm(true);
+  }, [feedback]);
 
   // 🆕 Variables para visualizar contenido (Actual o Histórico)
   const displayedContent = useMemo(() => {
@@ -1092,7 +1097,7 @@ export default function MapaActores({ theme }) {
 
   // 🆕 Función para desbloquear y seguir editando después de recibir feedback
   const handleSeguirEditando = useCallback(() => {
-    console.log('✏️ [MapaActores] Desbloqueando para editar...');
+    logger.log('✏️ [MapaActores] Desbloqueando para editar...');
     setIsLocked(false);
     setFeedback(null); // Ocultar evaluación anterior para enfocarse en editar
   }, []);
@@ -1104,7 +1109,7 @@ export default function MapaActores({ theme }) {
       return;
     }
     setViewingVersion(entry);
-    console.log(`📜 Visualizando versión: Intento ${entry.attemptNumber}`);
+    logger.log(`📜 Visualizando versión: Intento ${entry.attemptNumber}`);
   }, []);
 
   const handleRestoreVersion = useCallback(() => {
@@ -1126,7 +1131,7 @@ export default function MapaActores({ theme }) {
     const restoreSaveTimerId = setTimeout(() => persistence.saveManual(), 100);
     timersRef.current.push(restoreSaveTimerId);
 
-    console.log('rewind ⏪ Versión restaurada exitosamente');
+    logger.log('rewind ⏪ Versión restaurada exitosamente');
   }, [viewingVersion, persistence, isSubmitted]);
 
   // Validación
@@ -1161,7 +1166,7 @@ export default function MapaActores({ theme }) {
       if (conexiones) sessionStorage.setItem(getKey('mapaActores_conexiones'), conexiones);
       if (consecuencias) sessionStorage.setItem(getKey('mapaActores_consecuencias'), consecuencias);
 
-      console.log('💾 [MapaActores] Borradores guardados para textoId:', currentTextoId);
+      logger.log('💾 [MapaActores] Borradores guardados para textoId:', currentTextoId);
     }).catch(() => {});
   }, [actores, contextoHistorico, conexiones, consecuencias, currentTextoId]);
 
@@ -1198,7 +1203,7 @@ export default function MapaActores({ theme }) {
         if (restoredConsecuencias !== consecuencias) setConsecuencias(restoredConsecuencias);
 
         if (restoredActores || restoredContexto || restoredConexiones || restoredConsecuencias) {
-          console.log('🔄 [MapaActores] Borradores restaurados desde sesión');
+          logger.log('🔄 [MapaActores] Borradores restaurados desde sesión');
         }
       }).catch(() => {});
     };
@@ -1355,7 +1360,7 @@ export default function MapaActores({ theme }) {
       };
 
       setHistory(prev => [...prev, newHistoryEntry]);
-      console.log('📜 [MapaActores] Versión archivada en historial');
+      logger.log('📜 [MapaActores] Versión archivada en historial');
 
       // 🆕 CLOUD SYNC: Sincronizar historial y borradores con Firestore
       if (lectureId && updateActivitiesProgress) {
@@ -1377,7 +1382,7 @@ export default function MapaActores({ theme }) {
             }
           }
         }));
-        console.log('☁️ [MapaActores] Historial sincronizado con Firestore');
+        logger.log('☁️ [MapaActores] Historial sincronizado con Firestore');
       }
 
       // 🆕 Limpiar borrador temporal tras éxito
@@ -1457,7 +1462,7 @@ export default function MapaActores({ theme }) {
           });
         }
 
-        console.log('🎮 [MapaActores] Recompensas registradas');
+        logger.log('🎮 [MapaActores] Recompensas registradas');
       }
 
     } catch (error) {
@@ -2000,6 +2005,18 @@ export default function MapaActores({ theme }) {
           </FeedbackSection>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        open={showSubmitConfirm}
+        title="¿Entregar tarea?"
+        message="Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones."
+        confirmText="📤 Sí, Entregar"
+        cancelText="Cancelar"
+        variant="warning"
+        onConfirm={handleConfirmedSubmit}
+        onCancel={() => setShowSubmitConfirm(false)}
+        theme={theme}
+      />
     </Container>
   );
 }

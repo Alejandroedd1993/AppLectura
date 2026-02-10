@@ -8,11 +8,13 @@ import { evaluateRespuestaArgumentativa } from '../../services/respuestaArgument
 import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useRateLimit from '../../hooks/useRateLimit'; // 🆕 Rate Limiting
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
+import logger from '../../utils/logger';
 
 import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
+import ConfirmModal from '../common/ConfirmModal';
 
 // ============================================
 // STYLED COMPONENTS
@@ -775,7 +777,7 @@ export default function RespuestaArgumentativa({ theme }) {
       setContraargumento(readAndMigrateLegacy('respuestaArgumentativa_contraargumento'));
       setRefutacion(readAndMigrateLegacy('respuestaArgumentativa_refutacion'));
 
-      console.log('📂 [RespuestaArgumentativa] Borradores cargados para textoId:', currentTextoId);
+      logger.log('📂 [RespuestaArgumentativa] Borradores cargados para textoId:', currentTextoId);
     }).catch(() => {});
 
     return () => {
@@ -791,6 +793,7 @@ export default function RespuestaArgumentativa({ theme }) {
   const [history, setHistory] = useState([]); // 🆕 Historial de versiones
   const [viewingVersion, setViewingVersion] = useState(null); // 🆕 Versión en modo lectura
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
   const [showGuide, setShowGuide] = useState(true);
@@ -816,7 +819,7 @@ export default function RespuestaArgumentativa({ theme }) {
 
   useKeyboardShortcuts({
     'ctrl+s': (_e) => {
-      console.log('⌨️ Ctrl+S: Guardando borrador RespuestaArgumentativa...');
+      logger.log('⌨️ Ctrl+S: Guardando borrador RespuestaArgumentativa...');
       if (!currentTextoId) return;
       import('../../services/sessionManager').then(({ getDraftKey }) => {
         const getKey = (base) => getDraftKey(base, currentTextoId);
@@ -829,13 +832,13 @@ export default function RespuestaArgumentativa({ theme }) {
       timersRef.current.push(setTimeout(() => setShowSaveHint(false), 2000));
     },
     'ctrl+enter': (_e) => {
-      console.log('⌨️ Ctrl+Enter: Evaluando Respuesta Argumentativa...');
+      logger.log('⌨️ Ctrl+Enter: Evaluando Respuesta Argumentativa...');
       if (!loading && isValid && rateLimit.canProceed && evaluationAttempts < MAX_ATTEMPTS && !isSubmitted && !viewingVersion) {
         handleEvaluate();
       }
     },
     'escape': (_e) => {
-      console.log('⌨️ Esc: Cerrando paneles...');
+      logger.log('⌨️ Esc: Cerrando paneles...');
       if (showCitasPanel) {
         setShowCitasPanel(false);
       } else if (pasteError) {
@@ -873,7 +876,7 @@ export default function RespuestaArgumentativa({ theme }) {
 
   // 🆕 Función para desbloquear y seguir editando después de recibir feedback
   const handleSeguirEditando = useCallback(() => {
-    console.log('✏️ [RespuestaArgumentativa] Desbloqueando para editar...');
+    logger.log('✏️ [RespuestaArgumentativa] Desbloqueando para editar...');
     setIsLocked(false);
     setFeedback(null); // Ocultar evaluación anterior para enfocarse en editar
   }, []);
@@ -910,7 +913,7 @@ export default function RespuestaArgumentativa({ theme }) {
       if (contraargumento) sessionStorage.setItem(getKey('respuestaArgumentativa_contraargumento'), contraargumento);
       if (refutacion) sessionStorage.setItem(getKey('respuestaArgumentativa_refutacion'), refutacion);
 
-      console.log('💾 [RespuestaArgumentativa] Borradores guardados para textoId:', currentTextoId);
+      logger.log('💾 [RespuestaArgumentativa] Borradores guardados para textoId:', currentTextoId);
     }).catch(() => {});
   }, [tesis, evidencias, contraargumento, refutacion, currentTextoId]);
 
@@ -961,7 +964,7 @@ export default function RespuestaArgumentativa({ theme }) {
         if (restoredRefutacion !== refutacion) setRefutacion(restoredRefutacion);
 
         if (restoredTesis || restoredEvidencias || restoredContra || restoredRefutacion) {
-          console.log('🔄 [RespuestaArgumentativa] Borradores restaurados desde sesión');
+          logger.log('🔄 [RespuestaArgumentativa] Borradores restaurados desde sesión');
         }
       }).catch(() => {});
     };
@@ -1061,8 +1064,8 @@ export default function RespuestaArgumentativa({ theme }) {
         return;
       }
       
-      console.log('🔄 [RespuestaArgumentativa] Detectado RESET por docente, limpiando estado local...');
-      console.log('🔄 [RespuestaArgumentativa] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
+      logger.log('🔄 [RespuestaArgumentativa] Detectado RESET por docente, limpiando estado local...');
+      logger.log('🔄 [RespuestaArgumentativa] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
       resetProcessedRef.current = resetKey; // Marcar como procesado
       
       // Limpiar estados
@@ -1085,7 +1088,7 @@ export default function RespuestaArgumentativa({ theme }) {
         sessionStorage.removeItem(getKey('respuestaArgumentativa_evidencias'));
         sessionStorage.removeItem(getKey('respuestaArgumentativa_contraargumento'));
         sessionStorage.removeItem(getKey('respuestaArgumentativa_refutacion'));
-        console.log('🧹 [RespuestaArgumentativa] Borradores locales limpiados tras reset');
+        logger.log('🧹 [RespuestaArgumentativa] Borradores locales limpiados tras reset');
       }).catch(() => {});
       
       if (persistence?.clearResults) persistence.clearResults();
@@ -1096,7 +1099,7 @@ export default function RespuestaArgumentativa({ theme }) {
     if (!cloudData) return;
 
     if (cloudData.history && Array.isArray(cloudData.history)) {
-      console.log('☁️ [RespuestaArgumentativa] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
+      logger.log('☁️ [RespuestaArgumentativa] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
       setHistory(prev => prev.length >= cloudData.history.length ? prev : cloudData.history);
     }
 
@@ -1133,7 +1136,7 @@ export default function RespuestaArgumentativa({ theme }) {
           sessionStorage.setItem(getKey('respuestaArgumentativa_refutacion'), cloudData.drafts.refutacion);
           setRefutacion(cloudData.drafts.refutacion);
         }
-        console.log('☁️ [RespuestaArgumentativa] Borradores restaurados desde Firestore');
+        logger.log('☁️ [RespuestaArgumentativa] Borradores restaurados desde Firestore');
       }).catch(() => {});
     }
   }, [lectureId, activitiesProgress, persistence]);
@@ -1156,56 +1159,58 @@ export default function RespuestaArgumentativa({ theme }) {
     timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
   }, [viewingVersion, persistence, isSubmitted]);
 
-  // 🆕 Handle submission
+  // 🆕 Handle submission confirmada
+  const handleConfirmedSubmit = useCallback(() => {
+    setShowSubmitConfirm(false);
+    setIsSubmitted(true);
+
+    // ✅ Forzar guardado inmediato con saveManual
+    timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
+
+    // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
+    if (lectureId && updateActivitiesProgress) {
+      updateActivitiesProgress(lectureId, prev => {
+        // Obtener el score previo guardado (lastScore) o calcular desde feedback
+        const previousArtifact = prev?.artifacts?.respuestaArgumentativa || {};
+        const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
+        
+        logger.log('📤 [RespuestaArgumentativa] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
+        
+        return {
+          ...prev,
+          artifacts: {
+            ...(prev?.artifacts || {}),
+            respuestaArgumentativa: {
+              ...previousArtifact,
+              submitted: true,
+              submittedAt: Date.now(),
+              score: scoreToUse,
+              nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
+              history: history,
+              attempts: evaluationAttempts,
+              finalContent: { tesis, evidencias, contraargumento, refutacion }
+            }
+          }
+        };
+      });
+    }
+
+    const event = new CustomEvent('evaluation-complete', {
+      detail: {
+        artefacto: 'RespuestaArgumentativa',
+        score: feedback.nivel_global * 2.5,
+        submitted: true
+      }
+    });
+    window.dispatchEvent(event);
+
+    logger.log('✅ [RespuestaArgumentativa] Tarea entregada y sincronizada con Dashboard');
+  }, [feedback, persistence, lectureId, updateActivitiesProgress, history, evaluationAttempts, tesis, evidencias, contraargumento, refutacion]);
+
   const handleSubmit = useCallback(() => {
     if (!feedback) return;
-
-    if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
-      setIsSubmitted(true);
-
-      // ✅ Forzar guardado inmediato con saveManual
-      timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
-
-      // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
-      if (lectureId && updateActivitiesProgress) {
-        updateActivitiesProgress(lectureId, prev => {
-          // Obtener el score previo guardado (lastScore) o calcular desde feedback
-          const previousArtifact = prev?.artifacts?.respuestaArgumentativa || {};
-          const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
-          
-          console.log('📤 [RespuestaArgumentativa] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
-          
-          return {
-            ...prev,
-            artifacts: {
-              ...(prev?.artifacts || {}),
-              respuestaArgumentativa: {
-                ...previousArtifact,
-                submitted: true,
-                submittedAt: Date.now(),
-                score: scoreToUse,
-                nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
-                history: history,
-                attempts: evaluationAttempts,
-                finalContent: { tesis, evidencias, contraargumento, refutacion }
-              }
-            }
-          };
-        });
-      }
-
-      const event = new CustomEvent('evaluation-complete', {
-        detail: {
-          artefacto: 'RespuestaArgumentativa',
-          score: feedback.nivel_global * 2.5,
-          submitted: true
-        }
-      });
-      window.dispatchEvent(event);
-
-      console.log('✅ [RespuestaArgumentativa] Tarea entregada y sincronizada con Dashboard');
-    }
-  }, [feedback, persistence, lectureId, updateActivitiesProgress, history, evaluationAttempts, tesis, evidencias, contraargumento, refutacion]);
+    setShowSubmitConfirm(true);
+  }, [feedback]);
 
   // Rúbrica
   const rubricDimension = useMemo(() => getDimension('argumentacion'), []);
@@ -1370,7 +1375,7 @@ export default function RespuestaArgumentativa({ theme }) {
             }
           }
         }));
-        console.log('☁️ [RespuestaArgumentativa] Historial sincronizado con Firestore');
+        logger.log('☁️ [RespuestaArgumentativa] Historial sincronizado con Firestore');
       }
 
       // 🆕 Limpiar drafts
@@ -1454,7 +1459,7 @@ export default function RespuestaArgumentativa({ theme }) {
           });
         }
 
-        console.log('🎮 [RespuestaArgumentativa] Recompensas registradas');
+        logger.log('🎮 [RespuestaArgumentativa] Recompensas registradas');
       }
 
     } catch (error) {
@@ -1980,6 +1985,18 @@ export default function RespuestaArgumentativa({ theme }) {
           </FeedbackSection>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        open={showSubmitConfirm}
+        title="¿Entregar tarea?"
+        message="Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones."
+        confirmText="📤 Sí, Entregar"
+        cancelText="Cancelar"
+        variant="warning"
+        onConfirm={handleConfirmedSubmit}
+        onCancel={() => setShowSubmitConfirm(false)}
+        theme={theme}
+      />
     </Container>
   );
 }

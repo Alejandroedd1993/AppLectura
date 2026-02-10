@@ -13,6 +13,8 @@ import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
+import ConfirmModal from '../common/ConfirmModal';
+import logger from '../../utils/logger';
 
 // ============================================
 // STYLED COMPONENTS
@@ -777,7 +779,7 @@ export default function TablaACD({ theme }) {
       setVocesPresentes(readAndMigrateLegacy('tablaACD_vocesPresentes'));
       setVocesSilenciadas(readAndMigrateLegacy('tablaACD_vocesSilenciadas'));
 
-      console.log('📂 [TablaACD] Borradores cargados para textoId:', currentTextoId);
+      logger.log('📂 [TablaACD] Borradores cargados para textoId:', currentTextoId);
     }).catch(() => {});
 
     return () => {
@@ -798,6 +800,7 @@ export default function TablaACD({ theme }) {
   const [history, setHistory] = useState([]); // 🆕 Historial de versiones
   const [viewingVersion, setViewingVersion] = useState(null); // 🆕 Versión en modo lectura
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
   const MAX_ATTEMPTS = 3; // 🆕 Límite de intentos
@@ -813,7 +816,7 @@ export default function TablaACD({ theme }) {
 
   useKeyboardShortcuts({
     'ctrl+s': (_e) => {
-      console.log('⌨️ Ctrl+S: Guardando borrador TablaACD...');
+      logger.log('⌨️ Ctrl+S: Guardando borrador TablaACD...');
       if (!currentTextoId) return;
 
       // Guardar manualmente en sessionStorage (namespaced por textoId)
@@ -829,13 +832,13 @@ export default function TablaACD({ theme }) {
       timersRef.current.push(setTimeout(() => setShowSaveHint(false), 2000));
     },
     'ctrl+enter': (_e) => {
-      console.log('⌨️ Ctrl+Enter: Evaluando tabla ACD...');
+      logger.log('⌨️ Ctrl+Enter: Evaluando tabla ACD...');
       if (!loading && isValid && rateLimit.canProceed && evaluationAttempts < MAX_ATTEMPTS && !isSubmitted && !viewingVersion) {
         handleEvaluate();
       }
     },
     'escape': (_e) => {
-      console.log('⌨️ Esc: Cerrando paneles...');
+      logger.log('⌨️ Esc: Cerrando paneles...');
       if (showCitasPanel) {
         setShowCitasPanel(false);
       } else if (pasteError) {
@@ -889,7 +892,7 @@ export default function TablaACD({ theme }) {
       if (vocesPresentes) sessionStorage.setItem(getKey('tablaACD_vocesPresentes'), vocesPresentes);
       if (vocesSilenciadas) sessionStorage.setItem(getKey('tablaACD_vocesSilenciadas'), vocesSilenciadas);
 
-      console.log('💾 [TablaACD] Borradores guardados para textoId:', currentTextoId);
+      logger.log('💾 [TablaACD] Borradores guardados para textoId:', currentTextoId);
     }).catch(() => {});
   }, [marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, currentTextoId]);
 
@@ -940,7 +943,7 @@ export default function TablaACD({ theme }) {
         if (restoredSilenciadas !== vocesSilenciadas) setVocesSilenciadas(restoredSilenciadas);
 
         if (restoredMarco || restoredEstrategias || restoredPresentes || restoredSilenciadas) {
-          console.log('🔄 [TablaACD] Borradores restaurados desde sesión');
+          logger.log('🔄 [TablaACD] Borradores restaurados desde sesión');
         }
       }).catch(() => {});
     };
@@ -1057,8 +1060,8 @@ export default function TablaACD({ theme }) {
         return;
       }
       
-      console.log('🔄 [TablaACD] Detectado RESET por docente, limpiando estado local...');
-      console.log('🔄 [TablaACD] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
+      logger.log('🔄 [TablaACD] Detectado RESET por docente, limpiando estado local...');
+      logger.log('🔄 [TablaACD] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
       resetProcessedRef.current = resetKey; // Marcar como procesado
       
       // Limpiar estados
@@ -1081,7 +1084,7 @@ export default function TablaACD({ theme }) {
         sessionStorage.removeItem(getKey('tablaACD_estrategiasRetoricas'));
         sessionStorage.removeItem(getKey('tablaACD_vocesPresentes'));
         sessionStorage.removeItem(getKey('tablaACD_vocesSilenciadas'));
-        console.log('🧹 [TablaACD] Borradores locales limpiados tras reset');
+        logger.log('🧹 [TablaACD] Borradores locales limpiados tras reset');
       }).catch(() => {});
       
       // Limpiar localStorage (persistence)
@@ -1096,7 +1099,7 @@ export default function TablaACD({ theme }) {
 
     // Priorizar datos de cloud sobre localStorage
     if (cloudData.history && Array.isArray(cloudData.history)) {
-      console.log('☁️ [TablaACD] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
+      logger.log('☁️ [TablaACD] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
       setHistory(prev => {
         if (prev.length >= cloudData.history.length) return prev;
         return cloudData.history;
@@ -1142,60 +1145,62 @@ export default function TablaACD({ theme }) {
           sessionStorage.setItem(getKey('tablaACD_vocesSilenciadas'), cloudData.drafts.vocesSilenciadas);
           setVocesSilenciadas(cloudData.drafts.vocesSilenciadas);
         }
-        console.log('☁️ [TablaACD] Borradores restaurados desde Firestore');
+        logger.log('☁️ [TablaACD] Borradores restaurados desde Firestore');
       }).catch(() => {});
     }
   }, [lectureId, activitiesProgress, persistence]);
 
-  // 🆕 Handle submission
+  // 🆕 Handle submission confirmada
+  const handleConfirmedSubmit = useCallback(() => {
+    setShowSubmitConfirm(false);
+    setIsSubmitted(true);
+
+    // ✅ Forzar guardado inmediato con saveManual
+    timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
+
+    // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
+    if (lectureId && updateActivitiesProgress) {
+      updateActivitiesProgress(lectureId, prev => {
+        // Obtener el score previo guardado (lastScore) o calcular desde feedback
+        const previousArtifact = prev?.artifacts?.tablaACD || {};
+        const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
+        
+        logger.log('📤 [TablaACD] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
+        
+        return {
+          ...prev,
+          artifacts: {
+            ...(prev?.artifacts || {}),
+            tablaACD: {
+              ...previousArtifact,
+              submitted: true,
+              submittedAt: Date.now(),
+              score: scoreToUse,
+              nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
+              history: history,
+              attempts: evaluationAttempts,
+              finalContent: { marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas }
+            }
+          }
+        };
+      });
+    }
+
+    if (rewards) {
+      rewards.recordEvent('ARTIFACT_SUBMITTED', {
+        artefacto: 'TablaACD',
+        level: feedback.nivel_global,
+        resourceId: rewardsResourceId
+      });
+    }
+
+    logger.log('✅ [TablaACD] Tarea entregada y sincronizada con Dashboard');
+  }, [feedback, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas]);
+
   const handleSubmit = useCallback(() => {
     if (!feedback) return;
-
-    if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
-      setIsSubmitted(true);
-
-      // ✅ Forzar guardado inmediato con saveManual
-      timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
-
-      // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
-      if (lectureId && updateActivitiesProgress) {
-        updateActivitiesProgress(lectureId, prev => {
-          // Obtener el score previo guardado (lastScore) o calcular desde feedback
-          const previousArtifact = prev?.artifacts?.tablaACD || {};
-          const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
-          
-          console.log('📤 [TablaACD] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
-          
-          return {
-            ...prev,
-            artifacts: {
-              ...(prev?.artifacts || {}),
-              tablaACD: {
-                ...previousArtifact,
-                submitted: true,
-                submittedAt: Date.now(),
-                score: scoreToUse,
-                nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
-                history: history,
-                attempts: evaluationAttempts,
-                finalContent: { marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas }
-              }
-            }
-          };
-        });
-      }
-
-      if (rewards) {
-        rewards.recordEvent('ARTIFACT_SUBMITTED', {
-          artefacto: 'TablaACD',
-          level: feedback.nivel_global,
-          resourceId: rewardsResourceId
-        });
-      }
-
-      console.log('✅ [TablaACD] Tarea entregada y sincronizada con Dashboard');
-    }
-  }, [feedback, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas]);
+    setShowSubmitConfirm(true);
+  }, [feedback]);
 
   // 🆕 Visualizar una versión histórica
   const handleViewVersion = useCallback((entry) => {
@@ -1204,7 +1209,7 @@ export default function TablaACD({ theme }) {
       return;
     }
     setViewingVersion(entry);
-    console.log(`📜 Visualizando versión: Intento ${entry.attemptNumber}`);
+    logger.log(`📜 Visualizando versión: Intento ${entry.attemptNumber}`);
   }, []);
 
   // 🆕 Restaurar versión antigua como actual
@@ -1230,7 +1235,7 @@ export default function TablaACD({ theme }) {
     // Guardar inmediatamente este cambio de estado
     timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
 
-    console.log('rewind ⏪ Versión restaurada exitosamente');
+    logger.log('rewind ⏪ Versión restaurada exitosamente');
   }, [viewingVersion, persistence, isSubmitted]);
 
   // Determine what to show: Current state or specific version
@@ -1263,7 +1268,7 @@ export default function TablaACD({ theme }) {
 
   // 🆕 Función para desbloquear y seguir editando después de recibir feedback
   const handleSeguirEditando = useCallback(() => {
-    console.log('✏️ [TablaACD] Desbloqueando para editar...');
+    logger.log('✏️ [TablaACD] Desbloqueando para editar...');
     setIsLocked(false);
     setFeedback(null); // Ocultar evaluación anterior para enfocarse en editar
   }, []);
@@ -1421,7 +1426,7 @@ export default function TablaACD({ theme }) {
       };
 
       setHistory(prev => [...prev, newHistoryEntry]);
-      console.log('📜 [TablaACD] Versión archivada en historial');
+      logger.log('📜 [TablaACD] Versión archivada en historial');
 
       // 🆕 CLOUD SYNC: Sincronizar historial y borradores con Firestore
       if (lectureId && updateActivitiesProgress) {
@@ -1443,7 +1448,7 @@ export default function TablaACD({ theme }) {
             }
           }
         }));
-        console.log('☁️ [TablaACD] Historial sincronizado con Firestore');
+        logger.log('☁️ [TablaACD] Historial sincronizado con Firestore');
       }
 
       // 🧹 Limpiar borradores tras evaluación exitosa (scoped + legacy)
@@ -1525,7 +1530,7 @@ export default function TablaACD({ theme }) {
           });
         }
 
-        console.log('🎮 [TablaACD] Recompensas registradas');
+        logger.log('🎮 [TablaACD] Recompensas registradas');
       }
 
     } catch (error) {
@@ -2097,6 +2102,18 @@ export default function TablaACD({ theme }) {
           </FeedbackSection>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        open={showSubmitConfirm}
+        title="¿Entregar tarea?"
+        message="Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones."
+        confirmText="📤 Sí, Entregar"
+        cancelText="Cancelar"
+        variant="warning"
+        onConfirm={handleConfirmedSubmit}
+        onCancel={() => setShowSubmitConfirm(false)}
+        theme={theme}
+      />
     </Container>
   );
 }

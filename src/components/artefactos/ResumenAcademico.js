@@ -18,6 +18,8 @@ import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import { renderMarkdown } from '../../utils/markdownUtils';
+import ConfirmModal from '../common/ConfirmModal';
+import logger from '../../utils/logger';
 
 const ResumenAcademico = ({ theme }) => {
   const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation, updateActivitiesProgress, sourceCourseId, currentTextoId, activitiesProgress } = useContext(AppContext);
@@ -57,9 +59,9 @@ const ResumenAcademico = ({ theme }) => {
       const savedDraft = sessionStorage.getItem(key);
       if (savedDraft) {
         if (!cancelled) setResumen(savedDraft);
-        console.log('📂 [ResumenAcademico] Borrador cargado para lectureId:', lectureId);
+        logger.log('📂 [ResumenAcademico] Borrador cargado para lectureId:', lectureId);
       } else {
-        console.log('📝 [ResumenAcademico] Sin borrador para lectureId:', lectureId);
+        logger.log('📝 [ResumenAcademico] Sin borrador para lectureId:', lectureId);
       }
     }).catch(() => {});
 
@@ -76,6 +78,7 @@ const ResumenAcademico = ({ theme }) => {
   const [history, setHistory] = useState([]); // 🆕 Historial de versiones { timestamp, resumen, evaluacion }
   const [viewingVersion, setViewingVersion] = useState(null); // 🆕 Versión que se está visualizando (null = actual)
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Info de cambio de nota por docente
   const MAX_ATTEMPTS = 3;
 
@@ -90,7 +93,7 @@ const ResumenAcademico = ({ theme }) => {
 
   useKeyboardShortcuts({
     'ctrl+s': (_e) => {
-      console.log('⌨️ Ctrl+S: Guardando borrador manualmente...');
+      logger.log('⌨️ Ctrl+S: Guardando borrador manualmente...');
       persistence.saveManual();
       // Mostrar feedback visual
       setShowShortcutsHint(true);
@@ -98,13 +101,13 @@ const ResumenAcademico = ({ theme }) => {
       timersRef.current.push(hintTimer);
     },
     'ctrl+enter': (_e) => {
-      console.log('⌨️ Ctrl+Enter: Evaluando resumen...');
+      logger.log('⌨️ Ctrl+Enter: Evaluando resumen...');
       if (!loading && validacion.valid && rateLimit.canProceed && evaluationAttempts < MAX_ATTEMPTS) {
         handleEvaluar();
       }
     },
     'escape': (_e) => {
-      console.log('⌨️ Esc: Cerrando paneles...');
+      logger.log('⌨️ Esc: Cerrando paneles...');
       if (showCitasPanel) {
         setShowCitasPanel(false);
       } else if (pasteError) {
@@ -131,7 +134,7 @@ const ResumenAcademico = ({ theme }) => {
     history, // 🆕 Persistir historial
     submitted: isSubmitted, // 🆕 Persistir estado de entrega
     onRehydrate: (data) => {
-      console.log('📦 [ResumenAcademico] Rehidratando datos...', {
+      logger.log('📦 [ResumenAcademico] Rehidratando datos...', {
         documentId,
         hasResumen: !!data.student_answers?.resumen,
         hasEvaluacion: !!data.ai_feedbacks?.evaluacion,
@@ -142,30 +145,30 @@ const ResumenAcademico = ({ theme }) => {
       // ✅ Rehidratación robusta
       if (data.student_answers?.resumen) {
         setResumen(data.student_answers.resumen);
-        console.log(`✅ Resumen rehidratado: ${data.student_answers.resumen.substring(0, 50)}...`);
+        logger.log(`✅ Resumen rehidratado: ${data.student_answers.resumen.substring(0, 50)}...`);
       }
       if (data.ai_feedbacks?.evaluacion) {
         setEvaluacion(data.ai_feedbacks.evaluacion);
-        console.log('✅ Evaluación rehidratada');
+        logger.log('✅ Evaluación rehidratada');
       }
 
       // 🆕 Rehidratar intentos
       if (typeof data.attempts === 'number') {
         setEvaluationAttempts(data.attempts);
-        console.log(`✅ Intentos rehidratados: ${data.attempts}`);
+        logger.log(`✅ Intentos rehidratados: ${data.attempts}`);
       }
 
       // 🆕 Rehidratar historial
       if (Array.isArray(data.history)) {
         setHistory(data.history);
-        console.log(`✅ Historial rehidratado: ${data.history.length} versiones`);
+        logger.log(`✅ Historial rehidratado: ${data.history.length} versiones`);
       }
 
       // 🆕 Rehidratar estado de entrega
       if (data.submitted) {
         setIsSubmitted(true);
         setIsLocked(true); // 🔒 También bloquear la edición
-        console.log('✅ Estado de entrega rehidratado: ENTREGADO + LOCKED');
+        logger.log('✅ Estado de entrega rehidratado: ENTREGADO + LOCKED');
       }
     }
   });
@@ -193,7 +196,7 @@ const ResumenAcademico = ({ theme }) => {
     const cloudData = findCloudArtifact('resumenAcademico');
     
     // � DEBUG: Ver datos del cloud para diagnóstico
-    console.log('🔍 [ResumenAcademico] Cloud data check:', {
+    logger.log('🔍 [ResumenAcademico] Cloud data check:', {
       hasCloudData: !!cloudData,
       resetBy: cloudData?.resetBy,
       resetAt: cloudData?.resetAt,
@@ -237,8 +240,8 @@ const ResumenAcademico = ({ theme }) => {
         return;
       }
       
-      console.log('🔄 [ResumenAcademico] Detectado RESET por docente, limpiando estado local...');
-      console.log('🔄 [ResumenAcademico] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
+      logger.log('🔄 [ResumenAcademico] Detectado RESET por docente, limpiando estado local...');
+      logger.log('🔄 [ResumenAcademico] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
       resetProcessedRef.current = resetKey; // Marcar como procesado
       
       // Limpiar estados
@@ -255,7 +258,7 @@ const ResumenAcademico = ({ theme }) => {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
         const key = getDraftKey('resumenAcademico_draft', lectureId);
         sessionStorage.removeItem(key);
-        console.log('🧹 [ResumenAcademico] Borrador sessionStorage limpiado tras reset');
+        logger.log('🧹 [ResumenAcademico] Borrador sessionStorage limpiado tras reset');
       }).catch(() => {});
       
       // Limpiar localStorage (persistence storage key)
@@ -269,10 +272,10 @@ const ResumenAcademico = ({ theme }) => {
         );
         storageKeys.forEach(k => {
           localStorage.removeItem(k);
-          console.log('🧹 [ResumenAcademico] localStorage key limpiada:', k);
+          logger.log('🧹 [ResumenAcademico] localStorage key limpiada:', k);
         });
       } catch (e) {
-        console.warn('Error limpiando localStorage:', e);
+        logger.warn('Error limpiando localStorage:', e);
       }
       
       return; // No procesar más, ya reseteamos
@@ -282,7 +285,7 @@ const ResumenAcademico = ({ theme }) => {
 
     // Priorizar datos de cloud sobre localStorage
     if (cloudData.history && Array.isArray(cloudData.history)) {
-      console.log('☁️ [ResumenAcademico] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
+      logger.log('☁️ [ResumenAcademico] Cargando historial desde Firestore:', cloudData.history.length, 'versiones');
       setHistory(prev => {
         // Merge: mantener el que tenga más versiones o timestamps más recientes
         if (prev.length >= cloudData.history.length) return prev;
@@ -317,7 +320,7 @@ const ResumenAcademico = ({ theme }) => {
         if (!localDraft || localDraft.length === 0) {
           sessionStorage.setItem(key, cloudData.draft);
           setResumen(cloudData.draft);
-          console.log('☁️ [ResumenAcademico] Borrador restaurado desde Firestore');
+          logger.log('☁️ [ResumenAcademico] Borrador restaurado desde Firestore');
         }
       }).catch(() => {});
     }
@@ -340,7 +343,7 @@ const ResumenAcademico = ({ theme }) => {
 
       const key = getDraftKey('resumenAcademico_draft', lectureId);
       sessionStorage.setItem(key, resumen);
-      console.log('💾 [ResumenAcademico] Borrador guardado para lectureId:', lectureId);
+      logger.log('💾 [ResumenAcademico] Borrador guardado para lectureId:', lectureId);
 
       // 🆕 Trigger cloud sync (debounced)
       timeoutId = setTimeout(() => {
@@ -368,7 +371,7 @@ const ResumenAcademico = ({ theme }) => {
           const legacy = sessionStorage.getItem('resumenAcademico_draft');
           const picked = scoped || legacy;
           if (picked && picked !== resumen) {
-            console.log('🔄 [ResumenAcademico] Restaurando borrador desde sesión...');
+            logger.log('🔄 [ResumenAcademico] Restaurando borrador desde sesión...');
             setResumen(picked);
             // Normalizar: si venía de legacy, copiar a namespaced
             if (!scoped && legacy) {
@@ -381,7 +384,7 @@ const ResumenAcademico = ({ theme }) => {
 
       restoredDraft = sessionStorage.getItem('resumenAcademico_draft');
       if (restoredDraft && restoredDraft !== resumen) {
-        console.log('🔄 [ResumenAcademico] Restaurando borrador desde sesión...');
+        logger.log('🔄 [ResumenAcademico] Restaurando borrador desde sesión...');
         setResumen(restoredDraft);
       }
     };
@@ -430,7 +433,7 @@ const ResumenAcademico = ({ theme }) => {
     setCurrentEvaluationStep({ label: 'Iniciando evaluación...', icon: '🚀', duration: 2 });
 
     try {
-      console.log(`📝 [ResumenAcademico] Solicitando evaluación dual (Intento ${evaluationAttempts + 1}/${MAX_ATTEMPTS})...`);
+      logger.log(`📝 [ResumenAcademico] Solicitando evaluación dual (Intento ${evaluationAttempts + 1}/${MAX_ATTEMPTS})...`);
 
       // Simular pasos para feedback visual
       const stepTimeouts = [
@@ -446,7 +449,7 @@ const ResumenAcademico = ({ theme }) => {
         textoOriginal: texto
       });
 
-      console.log('✅ [ResumenAcademico] Evaluación recibida:', result);
+      logger.log('✅ [ResumenAcademico] Evaluación recibida:', result);
       setEvaluacion(result);
       setIsLocked(true);
       setEvaluationAttempts(prev => prev + 1); // Incrementar solo tras éxito // 🔒 Bloquear textarea después de evaluar
@@ -470,7 +473,7 @@ const ResumenAcademico = ({ theme }) => {
       };
 
       setHistory(prev => [...prev, newHistoryEntry]);
-      console.log('📜 [ResumenAcademico] Versión archivada en historial');
+      logger.log('📜 [ResumenAcademico] Versión archivada en historial');
 
       // 🔄 CLOUD SYNC: Sincronizar historial y borrador con Firestore para cross-browser
       if (lectureId && updateActivitiesProgress) {
@@ -492,7 +495,7 @@ const ResumenAcademico = ({ theme }) => {
             }
           }
         }));
-        console.log('☁️ [ResumenAcademico] Historial sincronizado con Firestore');
+        logger.log('☁️ [ResumenAcademico] Historial sincronizado con Firestore');
       }
 
       // �🎮 REGISTRAR RECOMPENSAS
@@ -542,7 +545,7 @@ const ResumenAcademico = ({ theme }) => {
           });
         }
 
-        console.log('🎮 [ResumenAcademico] Recompensas registradas');
+        logger.log('🎮 [ResumenAcademico] Recompensas registradas');
       }
 
       // 🗑️ Limpiar sessionStorage para eliminar advertencia de borrador
@@ -574,60 +577,62 @@ const ResumenAcademico = ({ theme }) => {
     }
   }, [resumen, texto, validacion.valid, evaluationAttempts, rateLimit, rewards, rewardsResourceId, setError, updateRubricScore, persistence, lectureId, updateActivitiesProgress]);
 
-  // 🆕 Función para entrega final
+  // 🆕 Función para entrega final confirmada
+  const handleConfirmedSubmit = useCallback(() => {
+    setShowSubmitConfirm(false);
+    setIsSubmitted(true);
+
+    // Guardar inmediatamente
+    setTimeout(() => persistence.saveManual(), 100);
+
+    // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
+    if (lectureId && updateActivitiesProgress) {
+      updateActivitiesProgress(lectureId, prev => {
+        // Obtener el score previo guardado (lastScore) o usar scoreGlobal de la evaluación
+        const previousArtifact = prev?.artifacts?.resumenAcademico || {};
+        const scoreToUse = previousArtifact.lastScore || evaluacion.scoreGlobal || 0;
+        
+        logger.log('📤 [ResumenAcademico] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'scoreGlobal:', evaluacion.scoreGlobal);
+        
+        return {
+          ...prev,
+          artifacts: {
+            ...(prev?.artifacts || {}),
+            resumenAcademico: {
+              ...previousArtifact,
+              submitted: true,
+              submittedAt: Date.now(),
+              score: scoreToUse,
+              nivel: evaluacion.nivel || previousArtifact.lastNivel || 'Sin evaluar',
+              history: history,
+              attempts: evaluationAttempts,
+              finalContent: resumen
+            }
+          }
+        };
+      });
+    }
+
+    // Registrar evento de recompensa
+    if (rewards) {
+      rewards.recordEvent('ARTIFACT_SUBMITTED', {
+        artefacto: 'ResumenAcademico',
+        level: evaluacion.nivel,
+        resourceId: rewardsResourceId
+      });
+    }
+
+    logger.log('✅ [ResumenAcademico] Tarea entregada y sincronizada con Dashboard');
+  }, [evaluacion, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, resumen]);
+
   const handleSubmit = useCallback(() => {
     if (!evaluacion) return;
-
-    if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
-      setIsSubmitted(true);
-
-      // Guardar inmediatamente
-      setTimeout(() => persistence.saveManual(), 100);
-
-      // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
-      if (lectureId && updateActivitiesProgress) {
-        updateActivitiesProgress(lectureId, prev => {
-          // Obtener el score previo guardado (lastScore) o usar scoreGlobal de la evaluación
-          const previousArtifact = prev?.artifacts?.resumenAcademico || {};
-          const scoreToUse = previousArtifact.lastScore || evaluacion.scoreGlobal || 0;
-          
-          console.log('📤 [ResumenAcademico] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'scoreGlobal:', evaluacion.scoreGlobal);
-          
-          return {
-            ...prev,
-            artifacts: {
-              ...(prev?.artifacts || {}),
-              resumenAcademico: {
-                ...previousArtifact,
-                submitted: true,
-                submittedAt: Date.now(),
-                score: scoreToUse,
-                nivel: evaluacion.nivel || previousArtifact.lastNivel || 'Sin evaluar',
-                history: history,
-                attempts: evaluationAttempts,
-                finalContent: resumen
-              }
-            }
-          };
-        });
-      }
-
-      // Registrar evento de recompensa
-      if (rewards) {
-        rewards.recordEvent('ARTIFACT_SUBMITTED', {
-          artefacto: 'ResumenAcademico',
-          level: evaluacion.nivel,
-          resourceId: rewardsResourceId
-        });
-      }
-
-      console.log('✅ [ResumenAcademico] Tarea entregada y sincronizada con Dashboard');
-    }
-  }, [evaluacion, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, resumen]);
+    setShowSubmitConfirm(true);
+  }, [evaluacion]);
 
   // 🆕 Función para desbloquear y seguir editando después de recibir feedback
   const handleSeguirEditando = useCallback(() => {
-    console.log('✏️ [ResumenAcademico] Desbloqueando para editar...');
+    logger.log('✏️ [ResumenAcademico] Desbloqueando para editar...');
     setIsLocked(false);
     setEvaluacion(null); // Ocultar evaluación anterior para enfocarse en editar
   }, []);
@@ -647,14 +652,14 @@ const ResumenAcademico = ({ theme }) => {
       return prev + (prev && !prev.endsWith(' ') ? ' ' : '') + textoFormateado;
     });
     setShowCitasPanel(false);
-    console.log(`✅ Entrada (${tipo}) insertada en el resumen`);
+    logger.log(`✅ Entrada (${tipo}) insertada en el resumen`);
   }, []);
 
   // 🆕 Eliminar cita guardada
   const handleEliminarCita = useCallback((citaId) => {
     if (lectureId) {
       deleteCitation(lectureId, citaId);
-      console.log(`🗑️ Cita ${citaId} eliminada`);
+      logger.log(`🗑️ Cita ${citaId} eliminada`);
     }
   }, [lectureId, deleteCitation]);
 
@@ -669,7 +674,7 @@ const ResumenAcademico = ({ theme }) => {
       const message = `⚠️ Solo puedes pegar hasta 40 palabras (intentaste pegar ${wordCount}). Escribe con tus propias palabras o usa citas guardadas.`;
       setPasteError(message);
       setTimeout(() => setPasteError(null), 5000);
-      console.warn('🚫 Intento de pegado bloqueado (excede 40 palabras)');
+      logger.warn('🚫 Intento de pegado bloqueado (excede 40 palabras)');
       return;
     }
 
@@ -689,7 +694,7 @@ const ResumenAcademico = ({ theme }) => {
     // pero lo básico es que inserte el texto.)
     setResumen(newText);
 
-    console.log(`✅ Paste permitido: ${wordCount} palabras`);
+    logger.log(`✅ Paste permitido: ${wordCount} palabras`);
     setPasteError(null); // Limpiar error si lo hubiera
   }, [resumen]);
 
@@ -711,7 +716,7 @@ const ResumenAcademico = ({ theme }) => {
       return;
     }
     setViewingVersion(entry);
-    console.log(`📜 Visualizando versión: Intento ${entry.attemptNumber}`);
+    logger.log(`📜 Visualizando versión: Intento ${entry.attemptNumber}`);
   }, []);
 
   // 🆕 Restaurar versión antigua como actual
@@ -732,7 +737,7 @@ const ResumenAcademico = ({ theme }) => {
     // Nota: No incrementamos intentos ni borramos historial, solo "rebobinamos" el presente
     setTimeout(() => persistence.saveManual(), 100);
 
-    console.log('rewind ⏪ Versión restaurada exitosamente');
+    logger.log('rewind ⏪ Versión restaurada exitosamente');
   }, [viewingVersion, persistence, isSubmitted]);
 
   // Determine what to show: Current state or specific version
@@ -1217,6 +1222,18 @@ const ResumenAcademico = ({ theme }) => {
           </ResultsSection>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        open={showSubmitConfirm}
+        title="¿Entregar tarea?"
+        message="Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones."
+        confirmText="📤 Sí, Entregar"
+        cancelText="Cancelar"
+        variant="warning"
+        onConfirm={handleConfirmedSubmit}
+        onCancel={() => setShowSubmitConfirm(false)}
+        theme={theme}
+      />
     </Container >
   );
 };
