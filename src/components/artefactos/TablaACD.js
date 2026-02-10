@@ -162,27 +162,6 @@ const Textarea = styled.textarea`
   }
 `;
 
-const _Input = styled.input`
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid ${props => props.theme.border};
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 0.95rem;
-  color: ${props => props.theme.text};
-  background: ${props => props.theme.background};
-  transition: border-color 0.2s;
-
-  &:focus {
-    outline: none;
-    border-color: ${props => props.theme.primary || '#2196F3'};
-  }
-
-  &::placeholder {
-    color: ${props => props.theme.textMuted};
-    opacity: 0.6;
-  }
-`;
 
 const HintText = styled.p`
   margin: 0.5rem 0 0 0;
@@ -244,16 +223,6 @@ const PrimaryButton = styled(Button)`
     background: ${props => props.theme.primaryHover || props.theme.primaryDark || props.theme.primary || '#1976D2'};
     transform: translateY(-2px);
     box-shadow: 0 4px 12px ${props => `${props.theme.primary || '#2196F3'}40`};
-  }
-`;
-
-const _SecondaryButton = styled(Button)`
-  background: ${props => props.theme.surface};
-  color: ${props => props.theme.text};
-  border: 1px solid ${props => props.theme.border};
-
-  &:hover:not(:disabled) {
-    background: ${props => props.theme.border};
   }
 `;
 
@@ -756,6 +725,17 @@ export default function TablaACD({ theme }) {
   // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
   const resetProcessedRef = useRef(null);
 
+  // 🆕 Ref para rastrear todos los timers activos y limpiarlos al desmontar
+  const timersRef = useRef([]);
+
+  // Limpiar todos los timers pendientes al desmontar
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(t => clearTimeout(t));
+      timersRef.current = [];
+    };
+  }, []);
+
   // 🆕 FASE 1 FIX: Estados con carga dinámica por textoId
   const [marcoIdeologico, setMarcoIdeologico] = useState('');
   const [estrategiasRetoricas, setEstrategiasRetoricas] = useState('');
@@ -798,7 +778,7 @@ export default function TablaACD({ theme }) {
       setVocesSilenciadas(readAndMigrateLegacy('tablaACD_vocesSilenciadas'));
 
       console.log('📂 [TablaACD] Borradores cargados para textoId:', currentTextoId);
-    });
+    }).catch(() => {});
 
     return () => {
       cancelled = true;
@@ -843,10 +823,10 @@ export default function TablaACD({ theme }) {
         if (estrategiasRetoricas) sessionStorage.setItem(getKey('tablaACD_estrategiasRetoricas'), estrategiasRetoricas);
         if (vocesPresentes) sessionStorage.setItem(getKey('tablaACD_vocesPresentes'), vocesPresentes);
         if (vocesSilenciadas) sessionStorage.setItem(getKey('tablaACD_vocesSilenciadas'), vocesSilenciadas);
-      });
+      }).catch(() => {});
       // Feedback visual
       setShowSaveHint(true);
-      setTimeout(() => setShowSaveHint(false), 2000);
+      timersRef.current.push(setTimeout(() => setShowSaveHint(false), 2000));
     },
     'ctrl+enter': (_e) => {
       console.log('⌨️ Ctrl+Enter: Evaluando tabla ACD...');
@@ -910,7 +890,7 @@ export default function TablaACD({ theme }) {
       if (vocesSilenciadas) sessionStorage.setItem(getKey('tablaACD_vocesSilenciadas'), vocesSilenciadas);
 
       console.log('💾 [TablaACD] Borradores guardados para textoId:', currentTextoId);
-    });
+    }).catch(() => {});
   }, [marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, currentTextoId]);
 
   // 🆕 Sincronización en la nube de borradores (debounced)
@@ -921,7 +901,7 @@ export default function TablaACD({ theme }) {
       const timer = setTimeout(() => {
         import('../../services/sessionManager').then(({ updateCurrentSession, captureArtifactsDrafts }) => {
           updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
-        });
+        }).catch(() => {});
       }, 4000);
       return () => clearTimeout(timer);
     }
@@ -962,7 +942,7 @@ export default function TablaACD({ theme }) {
         if (restoredMarco || restoredEstrategias || restoredPresentes || restoredSilenciadas) {
           console.log('🔄 [TablaACD] Borradores restaurados desde sesión');
         }
-      });
+      }).catch(() => {});
     };
 
     window.addEventListener('session-restored', handleSessionRestored);
@@ -1102,7 +1082,7 @@ export default function TablaACD({ theme }) {
         sessionStorage.removeItem(getKey('tablaACD_vocesPresentes'));
         sessionStorage.removeItem(getKey('tablaACD_vocesSilenciadas'));
         console.log('🧹 [TablaACD] Borradores locales limpiados tras reset');
-      });
+      }).catch(() => {});
       
       // Limpiar localStorage (persistence)
       if (persistence?.clearResults) {
@@ -1163,7 +1143,7 @@ export default function TablaACD({ theme }) {
           setVocesSilenciadas(cloudData.drafts.vocesSilenciadas);
         }
         console.log('☁️ [TablaACD] Borradores restaurados desde Firestore');
-      });
+      }).catch(() => {});
     }
   }, [lectureId, activitiesProgress, persistence]);
 
@@ -1175,7 +1155,7 @@ export default function TablaACD({ theme }) {
       setIsSubmitted(true);
 
       // ✅ Forzar guardado inmediato con saveManual
-      setTimeout(() => persistence.saveManual(), 100);
+      timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
 
       // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
       if (lectureId && updateActivitiesProgress) {
@@ -1248,7 +1228,7 @@ export default function TablaACD({ theme }) {
     // pero al restaurar el feedback se muestra la evaluación.
 
     // Guardar inmediatamente este cambio de estado
-    setTimeout(() => persistence.saveManual(), 100);
+    timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
 
     console.log('rewind ⏪ Versión restaurada exitosamente');
   }, [viewingVersion, persistence, isSubmitted]);
@@ -1326,13 +1306,13 @@ export default function TablaACD({ theme }) {
         const newText = before + citaFormateada + after;
 
         // Actualizar cursor después de la inserción
-        setTimeout(() => {
+        timersRef.current.push(setTimeout(() => {
           if (textarea) {
             const newPosition = start + citaFormateada.length;
             textarea.focus();
             textarea.setSelectionRange(newPosition, newPosition);
           }
-        }, 0);
+        }, 0));
 
         return newText;
       });
@@ -1363,7 +1343,7 @@ export default function TablaACD({ theme }) {
       document.execCommand('insertText', false, pastedText);
     } else {
       setPasteError(`⚠️ Solo puedes pegar hasta 40 palabras (intentaste pegar ${wordCount}). Escribe con tus propias palabras o usa citas guardadas.`);
-      setTimeout(() => setPasteError(null), 5000);
+      timersRef.current.push(setTimeout(() => setPasteError(null), 5000));
     }
   }, []);
 
@@ -1395,14 +1375,16 @@ export default function TablaACD({ theme }) {
     setError(null);
     setCurrentEvaluationStep({ label: 'Iniciando análisis crítico...', icon: '🔍', duration: 2 });
 
+    const stepTimeouts = [];
     try {
       // Simular pasos para feedback visual
-      const stepTimeouts = [
+      stepTimeouts.push(
         setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando marco ideológico...', icon: '📊', duration: 6 }), 1000),
         setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con DeepSeek...', icon: '🤖', duration: 12 }), 4000),
         setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), 16000),
         setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando análisis...', icon: '🔧', duration: 4 }), 28000)
-      ];
+      );
+      timersRef.current.push(...stepTimeouts);
 
       const result = await evaluateTablaACD({
         text: texto,
@@ -1411,9 +1393,6 @@ export default function TablaACD({ theme }) {
         vocesPresentes,
         vocesSilenciadas
       });
-
-      // Cancelar timeouts pendientes si la evaluación terminó antes
-      stepTimeouts.forEach(timeout => clearTimeout(timeout));
 
       setFeedback(result);
       setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
@@ -1485,7 +1464,7 @@ export default function TablaACD({ theme }) {
           sessionStorage.removeItem('tablaACD_vocesSilenciadas');
 
           updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
-        });
+        }).catch(() => {});
       }
 
       // 🎮 REGISTRAR RECOMPENSAS
@@ -1553,6 +1532,7 @@ export default function TablaACD({ theme }) {
       console.error('Error evaluando Tabla ACD:', error);
       setError(error.message || 'Error al evaluar el análisis');
     } finally {
+      stepTimeouts.forEach(t => clearTimeout(t));
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
@@ -1997,8 +1977,10 @@ export default function TablaACD({ theme }) {
               <strong>{displayedFeedback.dimension_label}:</strong> {displayedFeedback.dimension_description}
             </DimensionLabel>
 
+            {displayedFeedback.criterios && (
             <CriteriosGrid>
               {/* Marco Ideológico */}
+              {displayedFeedback.criterios.marco_ideologico && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Marco Ideológico</CriterioTitle>
@@ -2033,8 +2015,10 @@ export default function TablaACD({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
 
               {/* Estrategias Retóricas */}
+              {displayedFeedback.criterios.estrategias_retoricas && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Estrategias Retóricas</CriterioTitle>
@@ -2069,8 +2053,10 @@ export default function TablaACD({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
 
               {/* Voces y Silencios */}
+              {displayedFeedback.criterios.voces_silencios && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Voces y Silencios</CriterioTitle>
@@ -2105,7 +2091,9 @@ export default function TablaACD({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
             </CriteriosGrid>
+            )}
           </FeedbackSection>
         )}
       </AnimatePresence>

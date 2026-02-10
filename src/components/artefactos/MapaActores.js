@@ -310,16 +310,6 @@ const PrimaryButton = styled(Button)`
   }
 `;
 
-const _SecondaryButton = styled(Button)`
-  background: ${props => props.theme.surface};
-  color: ${props => props.theme.text};
-  border: 1px solid ${props => props.theme.border};
-
-  &:hover:not(:disabled) {
-    background: ${props => props.theme.border};
-  }
-`;
-
 const FeedbackSection = styled(motion.div)`
   background: ${props => props.theme.surface};
   border: 1px solid ${props => props.theme.border};
@@ -726,6 +716,15 @@ export default function MapaActores({ theme }) {
 
   // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
   const resetProcessedRef = useRef(null);
+  const timersRef = useRef([]); // 🧹 Track all setTimeout IDs for cleanup
+
+  // 🧹 Cleanup all tracked timers on unmount
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+    };
+  }, []);
 
   // 🆕 FASE 1 FIX: Estados con carga dinámica por textoId
   const [actores, setActores] = useState('');
@@ -769,7 +768,7 @@ export default function MapaActores({ theme }) {
       setConsecuencias(readAndMigrateLegacy('mapaActores_consecuencias'));
 
       console.log('📂 [MapaActores] Borradores cargados para textoId:', currentTextoId);
-    });
+    }).catch(() => {});
 
     return () => {
       cancelled = true;
@@ -826,9 +825,10 @@ export default function MapaActores({ theme }) {
         if (contextoHistorico) sessionStorage.setItem(getKey('mapaActores_contextoHistorico'), contextoHistorico);
         if (conexiones) sessionStorage.setItem(getKey('mapaActores_conexiones'), conexiones);
         if (consecuencias) sessionStorage.setItem(getKey('mapaActores_consecuencias'), consecuencias);
-      });
+      }).catch(() => {});
       setShowSaveHint(true);
-      setTimeout(() => setShowSaveHint(false), 2000);
+      const saveHintTimerId = setTimeout(() => setShowSaveHint(false), 2000);
+      timersRef.current.push(saveHintTimerId);
     },
     'ctrl+enter': (_e) => {
       console.log('⌨️ Ctrl+Enter: Evaluando Mapa de Actores...');
@@ -967,7 +967,7 @@ export default function MapaActores({ theme }) {
         sessionStorage.removeItem(getKey('mapaActores_conexiones'));
         sessionStorage.removeItem(getKey('mapaActores_consecuencias'));
         console.log('🧹 [MapaActores] Borradores locales limpiados tras reset');
-      });
+      }).catch(() => {});
       
       if (persistence?.clearResults) persistence.clearResults();
       
@@ -1015,7 +1015,7 @@ export default function MapaActores({ theme }) {
           setConsecuencias(cloudData.drafts.consecuencias);
         }
         console.log('☁️ [MapaActores] Borradores restaurados desde Firestore');
-      });
+      }).catch(() => {});
     }
   }, [lectureId, activitiesProgress, persistence]);
 
@@ -1025,7 +1025,8 @@ export default function MapaActores({ theme }) {
 
     if (window.confirm('¿Estás seguro que deseas entregar tu tarea? Una vez entregada, no podrás realizar más cambios ni solicitar nuevas evaluaciones.')) {
       setIsSubmitted(true);
-      setTimeout(() => persistence.saveManual(), 100);
+      const submitSaveTimerId = setTimeout(() => persistence.saveManual(), 100);
+      timersRef.current.push(submitSaveTimerId);
 
       // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
       if (lectureId && updateActivitiesProgress) {
@@ -1122,7 +1123,8 @@ export default function MapaActores({ theme }) {
     setViewingVersion(null);
 
     // Guardar cambio
-    setTimeout(() => persistence.saveManual(), 100);
+    const restoreSaveTimerId = setTimeout(() => persistence.saveManual(), 100);
+    timersRef.current.push(restoreSaveTimerId);
 
     console.log('rewind ⏪ Versión restaurada exitosamente');
   }, [viewingVersion, persistence, isSubmitted]);
@@ -1160,7 +1162,7 @@ export default function MapaActores({ theme }) {
       if (consecuencias) sessionStorage.setItem(getKey('mapaActores_consecuencias'), consecuencias);
 
       console.log('💾 [MapaActores] Borradores guardados para textoId:', currentTextoId);
-    });
+    }).catch(() => {});
   }, [actores, contextoHistorico, conexiones, consecuencias, currentTextoId]);
 
   // 🆕 Sincronización en la nube de borradores (debounced)
@@ -1171,7 +1173,7 @@ export default function MapaActores({ theme }) {
       const timer = setTimeout(() => {
         import('../../services/sessionManager').then(({ updateCurrentSession, captureArtifactsDrafts }) => {
           updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
-        });
+        }).catch(() => {});
       }, 4000);
       return () => clearTimeout(timer);
     }
@@ -1198,7 +1200,7 @@ export default function MapaActores({ theme }) {
         if (restoredActores || restoredContexto || restoredConexiones || restoredConsecuencias) {
           console.log('🔄 [MapaActores] Borradores restaurados desde sesión');
         }
-      });
+      }).catch(() => {});
     };
 
     window.addEventListener('session-restored', handleSessionRestored);
@@ -1242,13 +1244,14 @@ export default function MapaActores({ theme }) {
         const after = prev.substring(end);
         const newText = before + citaFormateada + after;
 
-        setTimeout(() => {
+        const focusTimerId = setTimeout(() => {
           if (textarea) {
             const newPosition = start + citaFormateada.length;
             textarea.focus();
             textarea.setSelectionRange(newPosition, newPosition);
           }
         }, 0);
+        timersRef.current.push(focusTimerId);
 
         return newText;
       });
@@ -1279,7 +1282,8 @@ export default function MapaActores({ theme }) {
       document.execCommand('insertText', false, pastedText);
     } else {
       setPasteError(`⚠️ Solo puedes pegar hasta 40 palabras (intentaste pegar ${wordCount}). Escribe con tus propias palabras o usa citas guardadas.`);
-      setTimeout(() => setPasteError(null), 5000);
+      const pasteErrorTimerId = setTimeout(() => setPasteError(null), 5000);
+      timersRef.current.push(pasteErrorTimerId);
     }
   }, []);
 
@@ -1312,12 +1316,14 @@ export default function MapaActores({ theme }) {
     setCurrentEvaluationStep({ label: 'Iniciando análisis socio-histórico...', icon: '🔍', duration: 2 });
 
     // 🆕 Programar pasos de evaluación
-    const timeouts = [
+    let stepTimeouts = [];
+    stepTimeouts = [
       setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando actores y contexto...', icon: '👥', duration: 5 }), 1000),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con DeepSeek...', icon: '🤖', duration: 12 }), 3500),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), 15500),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando feedback...', icon: '🔧', duration: 4 }), 27500)
     ];
+    timersRef.current.push(...stepTimeouts);
 
     try {
       const result = await evaluateMapaActores({
@@ -1327,9 +1333,6 @@ export default function MapaActores({ theme }) {
         conexiones,
         consecuencias
       });
-
-      // Limpiar timeouts
-      timeouts.forEach(clearTimeout);
 
       setFeedback(result);
       setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
@@ -1395,7 +1398,7 @@ export default function MapaActores({ theme }) {
           sessionStorage.removeItem('mapaActores_consecuencias');
 
           updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
-        });
+        }).catch(() => {});
       }
 
       // Notificar completitud
@@ -1460,9 +1463,9 @@ export default function MapaActores({ theme }) {
     } catch (error) {
       console.error('Error evaluando Mapa de Actores:', error);
       setError(error.message || 'Error al evaluar el análisis');
-      // Limpiar timeouts en caso de error
-      timeouts.forEach(clearTimeout);
     } finally {
+      // 🧹 Limpiar step timeouts en todos los casos (éxito, error, cancelación)
+      stepTimeouts.forEach(clearTimeout);
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
@@ -1877,8 +1880,10 @@ export default function MapaActores({ theme }) {
               <strong>{displayedFeedback.dimension_label}:</strong> {displayedFeedback.dimension_description}
             </DimensionLabel>
 
+            {displayedFeedback.criterios && (
             <CriteriosGrid>
               {/* Actores y Contexto */}
+              {displayedFeedback.criterios.actores_contexto && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Actores y Contexto</CriterioTitle>
@@ -1913,8 +1918,10 @@ export default function MapaActores({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
 
               {/* Conexiones e Intereses */}
+              {displayedFeedback.criterios.conexiones_intereses && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Conexiones e Intereses</CriterioTitle>
@@ -1949,8 +1956,10 @@ export default function MapaActores({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
 
               {/* Impacto y Consecuencias */}
+              {displayedFeedback.criterios.impacto_consecuencias && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Impacto y Consecuencias</CriterioTitle>
@@ -1985,7 +1994,9 @@ export default function MapaActores({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
             </CriteriosGrid>
+            )}
           </FeedbackSection>
         )}
       </AnimatePresence>

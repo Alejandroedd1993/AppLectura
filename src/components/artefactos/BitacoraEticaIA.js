@@ -156,11 +156,21 @@ export default function BitacoraEticaIA({ theme }) {
   // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
   const resetProcessedRef = useRef(null);
 
+  // 🆕 Ref para rastrear todos los setTimeout y evitar memory leaks
+  const timersRef = useRef([]);
+
   // 🤖 Consumir interacciones del tutor desde el contexto global (con fallback local)
   const [localTutorInteractions, setLocalTutorInteractions] = useState([]);
   const tutorInteractions = (globalTutorInteractions && globalTutorInteractions.length > 0)
     ? globalTutorInteractions
     : localTutorInteractions;
+
+  // 🆕 Cleanup de todos los timers al desmontar
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   // Datos de diagnóstico disponibles si se necesitan
   // textoId: currentTextoId, interacciones: globalTutorInteractions?.length
@@ -231,7 +241,7 @@ export default function BitacoraEticaIA({ theme }) {
       };
       localStorage.setItem(reflectionsStorageKey, JSON.stringify(reflections));
       setShowSaveHint(true);
-      setTimeout(() => setShowSaveHint(false), 2000);
+      timersRef.current.push(setTimeout(() => setShowSaveHint(false), 2000));
     },
     'ctrl+enter': (_e) => {
       console.log('⌨️ Ctrl+Enter: Evaluando Bitácora Ética IA...');
@@ -509,7 +519,7 @@ export default function BitacoraEticaIA({ theme }) {
       setIsSubmitted(true);
 
       // ✅ Forzar guardado inmediato con saveManual
-      setTimeout(() => persistence.saveManual(), 100);
+      timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
 
       // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
       if (lectureId && updateActivitiesProgress) {
@@ -685,12 +695,14 @@ export default function BitacoraEticaIA({ theme }) {
     setCurrentEvaluationStep({ label: 'Iniciando evaluación ética...', icon: '🔍', duration: 2 });
 
     // 🆕 Programar pasos de evaluación
-    const timeouts = [
+    let stepTimeouts = [];
+    stepTimeouts = [
       setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando transparencia...', icon: '📝', duration: 5 }), 1000),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con DeepSeek...', icon: '🤖', duration: 12 }), 3500),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), 15500),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando feedback...', icon: '🔧', duration: 4 }), 27500)
     ];
+    stepTimeouts.forEach(id => timersRef.current.push(id));
 
     try {
       const result = await evaluateBitacoraEticaIA({
@@ -700,9 +712,6 @@ export default function BitacoraEticaIA({ theme }) {
         reflexionEtica,
         declaraciones
       });
-
-      // Limpiar timeouts
-      timeouts.forEach(clearTimeout);
 
       setFeedbackCriterial(result);
       setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
@@ -769,9 +778,9 @@ export default function BitacoraEticaIA({ theme }) {
     } catch (error) {
       console.error('Error evaluando Bitácora Ética de IA:', error);
       setError(error.message || 'Error al evaluar la bitácora');
-      // Limpiar timeouts en caso de error
-      timeouts.forEach(clearTimeout);
     } finally {
+      // Limpiar step timeouts en cualquier caso (éxito o error)
+      stepTimeouts.forEach(clearTimeout);
       setLoadingEvaluation(false);
       setCurrentEvaluationStep(null);
     }
@@ -1228,8 +1237,10 @@ export default function BitacoraEticaIA({ theme }) {
               <strong>{displayedContent.feedback.dimension_label}:</strong> {displayedContent.feedback.dimension_description}
             </FeedbackDimension>
 
+            {displayedContent.feedback.criterios && (
             <CriteriosGrid>
               {/* Criterio 1 */}
+              {displayedContent.feedback.criterios.registro_transparencia && (
               <CriterioCard theme={effectiveTheme}>
                 <CriterioHeader>
                   <CriterioTitle theme={effectiveTheme}>Registro y Transparencia</CriterioTitle>
@@ -1260,8 +1271,10 @@ export default function BitacoraEticaIA({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
 
               {/* Criterio 2 */}
+              {displayedContent.feedback.criterios.evaluacion_critica_herramienta && (
               <CriterioCard theme={effectiveTheme}>
                 <CriterioHeader>
                   <CriterioTitle theme={effectiveTheme}>Evaluación Crítica de la Herramienta</CriterioTitle>
@@ -1292,8 +1305,10 @@ export default function BitacoraEticaIA({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
 
               {/* Criterio 3 */}
+              {displayedContent.feedback.criterios.agencia_responsabilidad && (
               <CriterioCard theme={effectiveTheme}>
                 <CriterioHeader>
                   <CriterioTitle theme={effectiveTheme}>Agencia y Responsabilidad</CriterioTitle>
@@ -1324,7 +1339,9 @@ export default function BitacoraEticaIA({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
             </CriteriosGrid>
+            )}
 
             {!viewingVersion && (
               <FeedbackFooter>
@@ -1729,13 +1746,6 @@ const CharCount = styled.div`
   text-align: right;
   font-size: 0.8rem;
   color: ${props => props.theme.textMuted};
-`;
-
-const _DeclaracionesContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
 `;
 
 const DeclaracionItem = styled.div`

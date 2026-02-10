@@ -328,30 +328,7 @@ export default function Actividades() {
     ? activitiesProgress?.[lectureId]?.preparation?.completed || false
     : false;
 
-  // Log para debugging
-  React.useEffect(() => {
-    if (lectureId) {
-      if (preparacionCompletada) {
-        console.log('✅ [Actividades] Preparación completada para documento:', lectureId);
-      } else {
-        console.log('🆕 [Actividades] Preparación pendiente para documento:', lectureId);
-      }
-    }
-  }, [lectureId, preparacionCompletada]);
 
-  // 🔄 LISTENER: Reaccionar a cambios de sincronización desde Firestore (nube / otra pestaña)
-  React.useEffect(() => {
-    const handleProgressUpdate = () => {
-      console.log('🔔 [Actividades] Progreso actualizado desde Firestore, recalculando...');
-      // El estado se actualizará automáticamente porque activitiesProgress viene del contexto
-      // que ya está siendo actualizado por el listener de AppContext
-    };
-
-    // Escuchar evento custom cuando AppContext sincroniza desde Firestore
-    window.addEventListener('progress-synced-from-cloud', handleProgressUpdate);
-
-    return () => window.removeEventListener('progress-synced-from-cloud', handleProgressUpdate);
-  }, []);
 
   // 🔒 Redirigir a preparación si se intenta acceder a artefactos sin completarla
   React.useEffect(() => {
@@ -800,13 +777,13 @@ export default function Actividades() {
                 componentName="Bitácora Ética IA"
                 onReset={() => console.log('🔄 Reseteando Bitácora Ética')}
               >
-                <BitacoraEticaIA />
+                <BitacoraEticaIA theme={theme} />
               </ErrorBoundary>
             </Suspense>
 
             {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso según flujo pedagógico */}
             <NextStepCard
-              icon="�"
+              icon="📊"
               title="Siguiente Paso: Revisa tu Progreso"
               description="Has completado las 5 rúbricas de literacidad crítica. Ahora visualiza tu progreso y reflexiona sobre tu evolución en las diferentes dimensiones del análisis crítico."
               actionLabel="Ver Mi Progreso →"

@@ -28,6 +28,14 @@ const ResumenAcademico = ({ theme }) => {
 
   // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
   const resetProcessedRef = useRef(null);
+  const timersRef = useRef([]);
+
+  // 🧹 Cleanup de todos los timers al desmontar
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   // Estados con recuperación de sessionStorage como respaldo
   // 🆕 FASE 1 FIX: Usa claves namespaced por textoId (se re-evalúa cuando currentTextoId cambia)
@@ -53,7 +61,7 @@ const ResumenAcademico = ({ theme }) => {
       } else {
         console.log('📝 [ResumenAcademico] Sin borrador para lectureId:', lectureId);
       }
-    });
+    }).catch(() => {});
 
     return () => { cancelled = true; };
   }, [lectureId]);
@@ -86,7 +94,8 @@ const ResumenAcademico = ({ theme }) => {
       persistence.saveManual();
       // Mostrar feedback visual
       setShowShortcutsHint(true);
-      setTimeout(() => setShowShortcutsHint(false), 2000);
+      const hintTimer = setTimeout(() => setShowShortcutsHint(false), 2000);
+      timersRef.current.push(hintTimer);
     },
     'ctrl+enter': (_e) => {
       console.log('⌨️ Ctrl+Enter: Evaluando resumen...');
@@ -247,7 +256,7 @@ const ResumenAcademico = ({ theme }) => {
         const key = getDraftKey('resumenAcademico_draft', lectureId);
         sessionStorage.removeItem(key);
         console.log('🧹 [ResumenAcademico] Borrador sessionStorage limpiado tras reset');
-      });
+      }).catch(() => {});
       
       // Limpiar localStorage (persistence storage key)
       if (persistence?.clearResults) {
@@ -310,7 +319,7 @@ const ResumenAcademico = ({ theme }) => {
           setResumen(cloudData.draft);
           console.log('☁️ [ResumenAcademico] Borrador restaurado desde Firestore');
         }
-      });
+      }).catch(() => {});
     }
   }, [lectureId, activitiesProgress, persistence]);
 
@@ -338,7 +347,7 @@ const ResumenAcademico = ({ theme }) => {
         if (cancelled) return;
         updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(lectureId) });
       }, 4000);
-    });
+    }).catch(() => {});
 
     return () => {
       cancelled = true;
@@ -366,7 +375,7 @@ const ResumenAcademico = ({ theme }) => {
               sessionStorage.setItem(key, legacy);
             }
           }
-        });
+        }).catch(() => {});
         return;
       }
 
@@ -430,14 +439,12 @@ const ResumenAcademico = ({ theme }) => {
         setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 10 }), 15000),
         setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando feedback...', icon: '🔧', duration: 3 }), 25000)
       ];
+      timersRef.current = stepTimeouts;
 
       const result = await evaluarResumenAcademico({
         resumen,
         textoOriginal: texto
       });
-
-      // Cancelar timeouts pendientes si la evaluación terminó antes
-      stepTimeouts.forEach(timeout => clearTimeout(timeout));
 
       console.log('✅ [ResumenAcademico] Evaluación recibida:', result);
       setEvaluacion(result);
@@ -544,7 +551,7 @@ const ResumenAcademico = ({ theme }) => {
           import('../../services/sessionManager').then(({ getDraftKey }) => {
             const key = getDraftKey('resumenAcademico_draft', lectureId);
             sessionStorage.removeItem(key);
-          });
+          }).catch(() => {});
         }
       } catch { /* noop */ }
       // Legacy (compat)
@@ -560,6 +567,8 @@ const ResumenAcademico = ({ theme }) => {
       console.error('❌ [ResumenAcademico] Error:', error);
       setError(`Error al evaluar: ${error.message}`);
     } finally {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
@@ -1644,22 +1653,6 @@ const EvaluateButton = styled.button`
   }
 `;
 
-const _SecondaryButton = styled.button`
-  padding: 0.9rem 1.8rem;
-  background: transparent;
-  color: ${props => props.theme.primary || '#2196F3'};
-  border: 2px solid ${props => props.theme.primary || '#2196F3'};
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    background: ${props => `${props.theme.primary || '#2196F3'}10`};
-    transform: translateY(-2px);
-  }
-`;
 
 const ResultsSection = styled.div`
   background: ${props => props.theme.cardBg || '#ffffff'};
@@ -1971,26 +1964,6 @@ const CitaInfo = styled.span`
   color: ${props => props.theme.textMuted};
 `;
 
-const _CopiarButton = styled.button`
-  padding: 0.4rem 0.8rem;
-  background: ${props => props.theme.primary};
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    background: ${props => props.theme.primaryHover};
-    transform: scale(1.05);
-  }
-  
-  &:active {
-    transform: scale(0.95);
-  }
-`;
 
 const AutoSaveMessage = styled.div`
   padding: 0.75rem 1rem;

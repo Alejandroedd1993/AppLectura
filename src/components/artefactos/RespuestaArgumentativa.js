@@ -225,16 +225,6 @@ const PrimaryButton = styled(Button)`
   }
 `;
 
-const _SecondaryButton = styled(Button)`
-  background: ${props => props.theme.surface};
-  color: ${props => props.theme.text};
-  border: 1px solid ${props => props.theme.border};
-
-  &:hover:not(:disabled) {
-    background: ${props => props.theme.border};
-  }
-`;
-
 const FeedbackSection = styled(motion.div)`
   background: ${props => props.theme.surface};
   border: 1px solid ${props => props.theme.border};
@@ -734,6 +724,16 @@ export default function RespuestaArgumentativa({ theme }) {
   // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
   const resetProcessedRef = useRef(null);
 
+  // 🆕 Ref para rastrear todos los setTimeout y evitar memory leaks
+  const timersRef = useRef([]);
+
+  // 🆕 Cleanup de todos los timers al desmontar
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
   // 🆕 FASE 1 FIX: Estados con carga dinámica por textoId
   const [tesis, setTesis] = useState('');
   const [evidencias, setEvidencias] = useState('');
@@ -776,7 +776,7 @@ export default function RespuestaArgumentativa({ theme }) {
       setRefutacion(readAndMigrateLegacy('respuestaArgumentativa_refutacion'));
 
       console.log('📂 [RespuestaArgumentativa] Borradores cargados para textoId:', currentTextoId);
-    });
+    }).catch(() => {});
 
     return () => {
       cancelled = true;
@@ -824,9 +824,9 @@ export default function RespuestaArgumentativa({ theme }) {
         if (evidencias) sessionStorage.setItem(getKey('respuestaArgumentativa_evidencias'), evidencias);
         if (contraargumento) sessionStorage.setItem(getKey('respuestaArgumentativa_contraargumento'), contraargumento);
         if (refutacion) sessionStorage.setItem(getKey('respuestaArgumentativa_refutacion'), refutacion);
-      });
+      }).catch(() => {});
       setShowSaveHint(true);
-      setTimeout(() => setShowSaveHint(false), 2000);
+      timersRef.current.push(setTimeout(() => setShowSaveHint(false), 2000));
     },
     'ctrl+enter': (_e) => {
       console.log('⌨️ Ctrl+Enter: Evaluando Respuesta Argumentativa...');
@@ -911,7 +911,7 @@ export default function RespuestaArgumentativa({ theme }) {
       if (refutacion) sessionStorage.setItem(getKey('respuestaArgumentativa_refutacion'), refutacion);
 
       console.log('💾 [RespuestaArgumentativa] Borradores guardados para textoId:', currentTextoId);
-    });
+    }).catch(() => {});
   }, [tesis, evidencias, contraargumento, refutacion, currentTextoId]);
 
   // 🆕 Sincronización en la nube de borradores (debounced)
@@ -922,7 +922,7 @@ export default function RespuestaArgumentativa({ theme }) {
       const timer = setTimeout(() => {
         import('../../services/sessionManager').then(({ updateCurrentSession, captureArtifactsDrafts }) => {
           updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
-        });
+        }).catch(() => {});
       }, 4000);
       return () => clearTimeout(timer);
     }
@@ -963,7 +963,7 @@ export default function RespuestaArgumentativa({ theme }) {
         if (restoredTesis || restoredEvidencias || restoredContra || restoredRefutacion) {
           console.log('🔄 [RespuestaArgumentativa] Borradores restaurados desde sesión');
         }
-      });
+      }).catch(() => {});
     };
 
     window.addEventListener('session-restored', handleSessionRestored);
@@ -1086,7 +1086,7 @@ export default function RespuestaArgumentativa({ theme }) {
         sessionStorage.removeItem(getKey('respuestaArgumentativa_contraargumento'));
         sessionStorage.removeItem(getKey('respuestaArgumentativa_refutacion'));
         console.log('🧹 [RespuestaArgumentativa] Borradores locales limpiados tras reset');
-      });
+      }).catch(() => {});
       
       if (persistence?.clearResults) persistence.clearResults();
       
@@ -1134,7 +1134,7 @@ export default function RespuestaArgumentativa({ theme }) {
           setRefutacion(cloudData.drafts.refutacion);
         }
         console.log('☁️ [RespuestaArgumentativa] Borradores restaurados desde Firestore');
-      });
+      }).catch(() => {});
     }
   }, [lectureId, activitiesProgress, persistence]);
 
@@ -1153,7 +1153,7 @@ export default function RespuestaArgumentativa({ theme }) {
     setFeedback(viewingVersion.feedback);
     setViewingVersion(null);
 
-    setTimeout(() => persistence.saveManual(), 100);
+    timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
   }, [viewingVersion, persistence, isSubmitted]);
 
   // 🆕 Handle submission
@@ -1164,7 +1164,7 @@ export default function RespuestaArgumentativa({ theme }) {
       setIsSubmitted(true);
 
       // ✅ Forzar guardado inmediato con saveManual
-      setTimeout(() => persistence.saveManual(), 100);
+      timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
 
       // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
       if (lectureId && updateActivitiesProgress) {
@@ -1247,13 +1247,13 @@ export default function RespuestaArgumentativa({ theme }) {
         const newText = before + citaFormateada + after;
 
         // Refocus y reposicionar cursor después de la inserción
-        setTimeout(() => {
+        timersRef.current.push(setTimeout(() => {
           if (textarea) {
             const newPosition = start + citaFormateada.length;
             textarea.focus();
             textarea.setSelectionRange(newPosition, newPosition);
           }
-        }, 0);
+        }, 0));
 
         return newText;
       });
@@ -1283,7 +1283,7 @@ export default function RespuestaArgumentativa({ theme }) {
       document.execCommand('insertText', false, pastedText);
     } else {
       setPasteError(`⚠️ Solo puedes pegar hasta 40 palabras (intentaste pegar ${wordCount}). Escribe con tus propias palabras o usa citas guardadas.`);
-      setTimeout(() => setPasteError(null), 5000);
+      timersRef.current.push(setTimeout(() => setPasteError(null), 5000));
     }
   }, []);
 
@@ -1313,12 +1313,14 @@ export default function RespuestaArgumentativa({ theme }) {
     setCurrentEvaluationStep({ label: 'Iniciando análisis argumentativo...', icon: '🔍', duration: 2 });
 
     // 🆕 Programar pasos de evaluación
-    const timeouts = [
+    let stepTimeouts = [];
+    stepTimeouts = [
       setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando estructura de la tesis...', icon: '💡', duration: 5 }), 1000),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con DeepSeek...', icon: '🤖', duration: 12 }), 3500),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), 15500),
       setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando feedback...', icon: '🔧', duration: 4 }), 27500)
     ];
+    stepTimeouts.forEach(id => timersRef.current.push(id));
 
     try {
       const result = await evaluateRespuestaArgumentativa({
@@ -1328,9 +1330,6 @@ export default function RespuestaArgumentativa({ theme }) {
         contraargumento,
         refutacion
       });
-
-      // Limpiar timeouts
-      timeouts.forEach(clearTimeout);
 
       setFeedback(result);
       setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
@@ -1392,7 +1391,7 @@ export default function RespuestaArgumentativa({ theme }) {
           sessionStorage.removeItem('respuestaArgumentativa_refutacion');
 
           updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
-        });
+        }).catch(() => {});
       }
 
       // 🆕 Actualizar progreso global de rúbrica
@@ -1461,9 +1460,9 @@ export default function RespuestaArgumentativa({ theme }) {
     } catch (error) {
       console.error('Error evaluando Respuesta Argumentativa:', error);
       setError(error.message || 'Error al evaluar el argumento');
-      // Limpiar timeouts en caso de error
-      timeouts.forEach(clearTimeout);
     } finally {
+      // Limpiar step timeouts en cualquier caso (éxito o error)
+      stepTimeouts.forEach(clearTimeout);
       setLoading(false);
       setCurrentEvaluationStep(null);
     }
@@ -1861,8 +1860,10 @@ export default function RespuestaArgumentativa({ theme }) {
               <strong>{displayedContent.feedback.dimension_label}:</strong> {displayedContent.feedback.dimension_description}
             </DimensionLabel>
 
+            {displayedContent.feedback.criterios && (
             <CriteriosGrid>
               {/* Solidez de la Tesis */}
+              {displayedContent.feedback.criterios.solidez_tesis && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Solidez de la Tesis</CriterioTitle>
@@ -1897,8 +1898,10 @@ export default function RespuestaArgumentativa({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
 
               {/* Uso de Evidencia */}
+              {displayedContent.feedback.criterios.uso_evidencia && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Uso de Evidencia</CriterioTitle>
@@ -1933,8 +1936,10 @@ export default function RespuestaArgumentativa({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
 
               {/* Manejo del Contraargumento */}
+              {displayedContent.feedback.criterios.manejo_contraargumento && (
               <CriterioCard theme={theme}>
                 <CriterioHeader>
                   <CriterioTitle theme={theme}>Manejo del Contraargumento</CriterioTitle>
@@ -1969,7 +1974,9 @@ export default function RespuestaArgumentativa({ theme }) {
                   </ListSection>
                 )}
               </CriterioCard>
+              )}
             </CriteriosGrid>
+            )}
           </FeedbackSection>
         )}
       </AnimatePresence>
