@@ -420,9 +420,6 @@ const ResumenAcademico = ({ theme }) => {
     setError(null);
     setCurrentEvaluationStep({ label: 'Iniciando evaluación...', icon: '🚀', duration: 2 });
 
-    // 🆕 Incrementar intentos inmediatamente
-    setEvaluationAttempts(prev => prev + 1);
-
     try {
       console.log(`📝 [ResumenAcademico] Solicitando evaluación dual (Intento ${evaluationAttempts + 1}/${MAX_ATTEMPTS})...`);
 
@@ -444,7 +441,8 @@ const ResumenAcademico = ({ theme }) => {
 
       console.log('✅ [ResumenAcademico] Evaluación recibida:', result);
       setEvaluacion(result);
-      setIsLocked(true); // 🔒 Bloquear textarea después de evaluar
+      setIsLocked(true);
+      setEvaluationAttempts(prev => prev + 1); // Incrementar solo tras éxito // 🔒 Bloquear textarea después de evaluar
 
       // 🆕 Actualizar progreso global de rúbrica
       updateRubricScore('rubrica1', {
@@ -1012,12 +1010,12 @@ const ResumenAcademico = ({ theme }) => {
 
         <Textarea
           value={displayedResumen}
-          onChange={(e) => !viewingVersion && !isSubmitted && setResumen(e.target.value)}
+          onChange={(e) => !viewingVersion && !isSubmitted && !isLocked && setResumen(e.target.value)}
           onPaste={handlePaste}
           placeholder="Escribe tu resumen académico aquí..."
           rows={12}
           theme={theme}
-          disabled={loading || !!viewingVersion || isSubmitted}
+          disabled={loading || !!viewingVersion || isSubmitted || isLocked}
           spellCheck="false"
           style={isLocked ? { borderColor: theme.success || '#4CAF50' } : {}}
         />
@@ -1193,13 +1191,13 @@ const ResumenAcademico = ({ theme }) => {
             </CriteriosGrid>
 
             {/* Siguientes pasos */}
-            {Array.isArray(evaluacion?.siguientesPasos) && evaluacion.siguientesPasos.length > 0 && (
+            {Array.isArray(displayedEvaluacion?.siguientesPasos) && displayedEvaluacion.siguientesPasos.length > 0 && (
               <SiguientesPasosCard theme={theme}>
                 <SiguientesPasosTitle theme={theme}>
                   🚀 Siguientes pasos para mejorar
                 </SiguientesPasosTitle>
                 <SiguientesPasosList>
-                  {evaluacion.siguientesPasos.map((paso, i) => (
+                  {displayedEvaluacion.siguientesPasos.map((paso, i) => (
                     <PasoItem key={i} theme={theme}>
                       {i + 1}. {renderMarkdown(paso)}
                     </PasoItem>

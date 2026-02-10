@@ -684,9 +684,6 @@ export default function BitacoraEticaIA({ theme }) {
     setError(null);
     setCurrentEvaluationStep({ label: 'Iniciando evaluación ética...', icon: '🔍', duration: 2 });
 
-    // 🆕 Incrementar intentos
-    setEvaluationAttempts(prev => prev + 1);
-
     // 🆕 Programar pasos de evaluación
     const timeouts = [
       setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando transparencia...', icon: '📝', duration: 5 }), 1000),
@@ -709,6 +706,7 @@ export default function BitacoraEticaIA({ theme }) {
 
       setFeedbackCriterial(result);
       setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
+      setEvaluationAttempts(prev => prev + 1); // Incrementar solo tras éxito
 
       // 🆕 Archivar en Historial
       const newHistoryEntry = {
@@ -823,12 +821,6 @@ export default function BitacoraEticaIA({ theme }) {
             <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
           </span>
         </SubmissionBanner>
-      )}
-
-      {!isSubmitted && (
-        <EvaluationValidation theme={effectiveTheme} $valid>
-          ✅ Bitácora completa. Solicita evaluación criterial con IA dual.
-        </EvaluationValidation>
       )}
 
       {/* 🆕 Banner de cambio de nota docente */}
@@ -1596,85 +1588,85 @@ const QuestionLabel = styled.div`
 `;
 
 const QuestionText = styled.div`
-color: ${props => props.theme.textPrimary};
-line - height: 1.5;
-margin - bottom: 0.75rem;
+  color: ${props => props.theme.textPrimary};
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
 `;
 
 const ContextLabel = styled.div`
-font - size: 0.75rem;
-font - weight: 700;
-color: ${props => props.theme.textSecondary};
-text - transform: uppercase;
-letter - spacing: 0.5px;
-margin - bottom: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: ${props => props.theme.textSecondary};
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.5rem;
 `;
 
 const ContextText = styled.div`
-color: ${props => props.theme.textSecondary};
-font - size: 0.9rem;
-line - height: 1.4;
-font - style: italic;
+  color: ${props => props.theme.textSecondary};
+  font-size: 0.9rem;
+  line-height: 1.4;
+  font-style: italic;
 `;
 
 const ModeTag = styled.span`
-display: inline - block;
-margin - top: 0.5rem;
-padding: 0.25rem 0.6rem;
-background: ${props => props.theme.success} 20;
-color: ${props => props.theme.success};
-border - radius: 6px;
-font - size: 0.75rem;
-font - weight: 600;
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  background: ${props => props.theme.success}20;
+  color: ${props => props.theme.success};
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
 `;
 
 const StatsBar = styled.div`
-display: flex;
-gap: 1.5rem;
-padding: 1rem;
-background: ${props => props.theme.surface};
-border - radius: 8px;
-flex - wrap: wrap;
+  display: flex;
+  gap: 1.5rem;
+  padding: 1rem;
+  background: ${props => props.theme.surface};
+  border-radius: 8px;
+  flex-wrap: wrap;
 `;
 
 const StatItem = styled.div`
-display: flex;
-align - items: center;
-gap: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 `;
 
 const StatLabel = styled.span`
-color: ${props => props.theme.textSecondary};
-font - size: 0.9rem;
+  color: ${props => props.theme.textSecondary};
+  font-size: 0.9rem;
 `;
 
 const StatValue = styled.span`
-color: ${props => props.theme.primary};
-font - weight: 700;
-font - size: 1.1rem;
+  color: ${props => props.theme.primary};
+  font-weight: 700;
+  font-size: 1.1rem;
 `;
 
 const EmptyState = styled.div`
-text - align: center;
-padding: 3rem 1rem;
-color: ${props => props.theme.textSecondary};
+  text-align: center;
+  padding: 3rem 1rem;
+  color: ${props => props.theme.textSecondary};
 `;
 
 const EmptyIcon = styled.div`
-font - size: 3rem;
-margin - bottom: 1rem;
+  font-size: 3rem;
+  margin-bottom: 1rem;
 `;
 
 const EmptyText = styled.div`
-font - size: 1.1rem;
-font - weight: 600;
-margin - bottom: 0.5rem;
-color: ${props => props.theme.textPrimary};
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: ${props => props.theme.textPrimary};
 `;
 
 const EmptyHint = styled.div`
-font - size: 0.9rem;
-font - style: italic;
+  font-size: 0.9rem;
+  font-style: italic;
 `;
 
 const ReflectionQuestion = styled.div`
@@ -1733,158 +1725,158 @@ const ReflectionTextarea = styled.textarea`
 `;
 
 const CharCount = styled.div`
-margin - top: 0.5rem;
-text - align: right;
-font - size: 0.8rem;
-color: ${props => props.theme.textMuted};
+  margin-top: 0.5rem;
+  text-align: right;
+  font-size: 0.8rem;
+  color: ${props => props.theme.textMuted};
 `;
 
 const _DeclaracionesContainer = styled.div`
-display: flex;
-flex - direction: column;
-gap: 1rem;
-margin - bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
 `;
 
 const DeclaracionItem = styled.div`
-display: flex;
-align - items: flex - start;
-gap: 1rem;
-padding: 1rem;
-background: ${props => props.$checked ? props.theme.success + '10' : props.theme.surface};
-border: 2px solid ${props => props.$checked ? props.theme.success : props.theme.border};
-border - radius: 8px;
-cursor: pointer;
-transition: all 0.3s ease;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  background: ${props => props.$checked ? props.theme.success + '10' : props.theme.surface};
+  border: 2px solid ${props => props.$checked ? props.theme.success : props.theme.border};
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
   
   &:hover {
-  background: ${props => props.$checked ? props.theme.success + '15' : props.theme.primary + '05'};
-  border - color: ${props => props.$checked ? props.theme.success : props.theme.primary};
-}
+    background: ${props => props.$checked ? props.theme.success + '15' : props.theme.primary + '05'};
+    border-color: ${props => props.$checked ? props.theme.success : props.theme.primary};
+  }
 `;
 
 const Checkbox = styled.div`
-width: 24px;
-height: 24px;
-min - width: 24px;
-border: 2px solid ${props => props.$checked ? props.theme.success : props.theme.border};
-border - radius: 6px;
-background: ${props => props.$checked ? props.theme.success : 'transparent'};
-color: white;
-display: flex;
-align - items: center;
-justify - content: center;
-font - weight: 700;
-font - size: 0.9rem;
-transition: all 0.2s ease;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border: 2px solid ${props => props.$checked ? props.theme.success : props.theme.border};
+  border-radius: 6px;
+  background: ${props => props.$checked ? props.theme.success : 'transparent'};
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
 `;
 
 const DeclaracionLabel = styled.div`
-flex: 1;
+  flex: 1;
 `;
 
 const DeclaracionDesc = styled.div`
-margin - top: 0.5rem;
-font - size: 0.85rem;
-color: ${props => props.theme.textSecondary};
-line - height: 1.4;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: ${props => props.theme.textSecondary};
+  line-height: 1.4;
 `;
 
 const DeclaracionesProgress = styled.div`
-display: flex;
-align - items: center;
-gap: 1rem;
-padding: 1rem;
-background: ${props => props.theme.surface};
-border - radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: ${props => props.theme.surface};
+  border-radius: 8px;
 `;
 
 const ProgressLabel = styled.span`
-font - size: 0.9rem;
-font - weight: 600;
-color: ${props => props.theme.textPrimary};
-white - space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: ${props => props.theme.textPrimary};
+  white-space: nowrap;
 `;
 
 const ProgressBar = styled.div`
-flex: 1;
-height: 12px;
-background: ${props => props.theme.border};
-border - radius: 6px;
-overflow: hidden;
+  flex: 1;
+  height: 12px;
+  background: ${props => props.theme.border};
+  border-radius: 6px;
+  overflow: hidden;
 `;
 
 const ProgressFill = styled.div`
-height: 100 %;
-width: ${props => props.$percentage}%;
-background: linear - gradient(90deg, ${props => props.theme.success}, ${props => props.theme.primary});
-transition: width 0.5s ease;
+  height: 100%;
+  width: ${props => props.$percentage}%;
+  background: linear-gradient(90deg, ${props => props.theme.success}, ${props => props.theme.primary});
+  transition: width 0.5s ease;
 `;
 
 const ProgressText = styled.span`
-font - size: 0.9rem;
-font - weight: 700;
-color: ${props => props.theme.primary};
-white - space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: ${props => props.theme.primary};
+  white-space: nowrap;
 `;
 
 const ExportSection = styled.div`
-display: flex;
-flex - direction: column;
-align - items: center;
-gap: 0.75rem;
-padding: 2rem 1rem;
-background: ${props => props.theme.surface};
-border - radius: 12px;
-border: 2px dashed ${props => props.theme.border};
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  background: ${props => props.theme.surface};
+  border-radius: 12px;
+  border: 2px dashed ${props => props.theme.border};
 `;
 
 const ExportButton = styled.button`
-padding: 1rem 2rem;
-background: ${props => props.theme.purple};
-color: white;
-border: none;
-border - radius: 8px;
-font - size: 1rem;
-font - weight: 600;
-cursor: pointer;
-transition: all 0.3s ease;
-box - shadow: 0 4px 12px ${props => props.theme.purple} 40;
+  padding: 1rem 2rem;
+  background: ${props => props.theme.purple};
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px ${props => props.theme.purple}40;
   
   &:hover {
-  background: ${props => props.theme.purple} dd;
-  transform: translateY(-2px);
-  box - shadow: 0 6px 20px ${props => props.theme.purple} 50;
-}
+    background: ${props => props.theme.purple}dd;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px ${props => props.theme.purple}50;
+  }
 `;
 
 const ExportHint = styled.p`
-margin: 0;
-font - size: 0.85rem;
-color: ${props => props.theme.textSecondary};
-text - align: center;
-font - style: italic;
+  margin: 0;
+  font-size: 0.85rem;
+  color: ${props => props.theme.textSecondary};
+  text-align: center;
+  font-style: italic;
 `;
 
 // Nuevos styled components para evaluación criterial
 const EvaluationButtonSection = styled.div`
-display: flex;
-flex - direction: column;
-align - items: center;
-gap: 1rem;
-margin - bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
 `;
 
 const EvaluationValidation = styled.div`
-padding: 0.75rem 1rem;
-border - radius: 6px;
-background: ${props => props.$valid ? '#dcfce7' : '#fee2e2'};
-border: 1px solid ${props => props.$valid ? '#86efac' : '#fca5a5'};
-color: ${props => props.$valid ? '#166534' : '#991b1b'};
-font - size: 0.9rem;
-text - align: center;
-width: 100 %;
-max - width: 600px;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background: ${props => props.$valid ? '#dcfce7' : '#fee2e2'};
+  border: 1px solid ${props => props.$valid ? '#86efac' : '#fca5a5'};
+  color: ${props => props.$valid ? '#166534' : '#991b1b'};
+  font-size: 0.9rem;
+  text-align: center;
+  width: 100%;
+  max-width: 600px;
 `;
 
 const EvaluationButton = styled.button`
@@ -1913,28 +1905,28 @@ const EvaluationButton = styled.button`
 `;
 
 const FeedbackCriterialSection = styled.div`
-background: ${props => props.theme.cardBg};
-border: 2px solid ${props => props.theme.purple};
-border - radius: 12px;
-padding: 1.5rem;
-margin - bottom: 1.5rem;
-box - shadow: 0 4px 20px ${props => props.theme.purple} 20;
+  background: ${props => props.theme.cardBg};
+  border: 2px solid ${props => props.theme.purple};
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 20px ${props => props.theme.purple}20;
 `;
 
 const FeedbackHeader = styled.div`
-display: flex;
-align - items: center;
-justify - content: space - between;
-margin - bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
 `;
 
 const NivelGlobalBadge = styled.div`
-display: inline - flex;
-align - items: center;
-gap: 0.5rem;
-padding: 0.5rem 1rem;
-border - radius: 20px;
-background: ${props => {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  background: ${props => {
     switch (props.$nivel) {
       case 1: return '#fee2e2';
       case 2: return '#fed7aa';
@@ -1944,7 +1936,7 @@ background: ${props => {
     }
   }
   };
-color: ${props => {
+  color: ${props => {
     switch (props.$nivel) {
       case 1: return '#991b1b';
       case 2: return '#c2410c';
@@ -1954,49 +1946,49 @@ color: ${props => {
     }
   }
   };
-font - weight: 700;
-font - size: 1rem;
+  font-weight: 700;
+  font-size: 1rem;
 `;
 
 const FeedbackDimension = styled.p`
-margin: 0 0 1.5rem 0;
-color: ${props => props.theme.textSecondary};
-font - size: 0.9rem;
-line - height: 1.5;
+  margin: 0 0 1.5rem 0;
+  color: ${props => props.theme.textSecondary};
+  font-size: 0.9rem;
+  line-height: 1.5;
 `;
 
 const CriteriosGrid = styled.div`
-display: grid;
-gap: 1.5rem;
-margin - bottom: 1.5rem;
+  display: grid;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
 `;
 
 const CriterioCard = styled.div`
-background: ${props => props.theme.surface};
-border: 1px solid ${props => props.theme.border};
-border - radius: 8px;
-padding: 1rem;
+  background: ${props => props.theme.surface};
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 8px;
+  padding: 1rem;
 `;
 
 const CriterioHeader = styled.div`
-display: flex;
-align - items: center;
-justify - content: space - between;
-margin - bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
 `;
 
 const CriterioTitle = styled.h4`
-margin: 0;
-color: ${props => props.theme.textPrimary};
-font - size: 0.95rem;
+  margin: 0;
+  color: ${props => props.theme.textPrimary};
+  font-size: 0.95rem;
 `;
 
 const CriterioNivel = styled.span`
-padding: 0.25rem 0.75rem;
-border - radius: 12px;
-font - size: 0.8rem;
-font - weight: 600;
-background: ${props => {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: ${props => {
     switch (props.$nivel) {
       case 1: return '#fee2e2';
       case 2: return '#fed7aa';
@@ -2006,7 +1998,7 @@ background: ${props => {
     }
   }
   };
-color: ${props => {
+  color: ${props => {
     switch (props.$nivel) {
       case 1: return '#991b1b';
       case 2: return '#c2410c';
@@ -2019,52 +2011,52 @@ color: ${props => {
 `;
 
 const ListSection = styled.div`
-margin - top: 0.75rem;
+  margin-top: 0.75rem;
 `;
 
 const ListTitle = styled.p`
-margin: 0 0 0.5rem 0;
-color: ${props => props.theme.textPrimary};
-font - weight: 600;
-font - size: 0.85rem;
+  margin: 0 0 0.5rem 0;
+  color: ${props => props.theme.textPrimary};
+  font-weight: 600;
+  font-size: 0.85rem;
 `;
 
 const List = styled.ul`
-list - style: none;
-padding: 0;
-margin: 0;
-display: flex;
-flex - direction: column;
-gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 `;
 
 const ListItem = styled.li`
-color: ${props => props.theme.textSecondary};
-font - size: 0.85rem;
-line - height: 1.4;
+  color: ${props => props.theme.textSecondary};
+  font-size: 0.85rem;
+  line-height: 1.4;
 `;
 
 const FeedbackFooter = styled.div`
-display: flex;
-justify - content: center;
-padding - top: 1rem;
-border - top: 1px solid ${props => props.theme.border};
+  display: flex;
+  justify-content: center;
+  padding-top: 1rem;
+  border-top: 1px solid ${props => props.theme.border};
 `;
 
 const SecondaryButton = styled.button`
-padding: 0.75rem 1.5rem;
-background: ${props => props.theme.surface};
-color: ${props => props.theme.textPrimary};
-border: 1px solid ${props => props.theme.border};
-border - radius: 8px;
-font - size: 0.9rem;
-font - weight: 600;
-cursor: pointer;
-transition: all 0.2s ease;
+  padding: 0.75rem 1.5rem;
+  background: ${props => props.theme.surface};
+  color: ${props => props.theme.textPrimary};
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
 
   &:hover {
-  background: ${props => props.theme.border};
-}
+    background: ${props => props.theme.border};
+  }
 `;
 
 // 🆕 Componentes para Bloqueo y Seguir Editando

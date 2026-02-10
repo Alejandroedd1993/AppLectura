@@ -1308,7 +1308,6 @@ export default function RespuestaArgumentativa({ theme }) {
       return;
     }
 
-    setEvaluationAttempts(prev => prev + 1); // 🆕 Incrementar intentos
     setLoading(true);
     setError(null);
     setCurrentEvaluationStep({ label: 'Iniciando análisis argumentativo...', icon: '🔍', duration: 2 });
@@ -1335,6 +1334,7 @@ export default function RespuestaArgumentativa({ theme }) {
 
       setFeedback(result);
       setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
+      setEvaluationAttempts(prev => prev + 1); // Incrementar solo tras éxito
 
       // 🆕 Guardar en historial
       const newHistoryEntry = {

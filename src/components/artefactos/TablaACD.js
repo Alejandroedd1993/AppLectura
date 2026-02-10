@@ -1395,9 +1395,6 @@ export default function TablaACD({ theme }) {
     setError(null);
     setCurrentEvaluationStep({ label: 'Iniciando análisis crítico...', icon: '🔍', duration: 2 });
 
-    // 🆕 Incrementar intentos inmediatamente
-    setEvaluationAttempts(prev => prev + 1);
-
     try {
       // Simular pasos para feedback visual
       const stepTimeouts = [
@@ -1420,8 +1417,7 @@ export default function TablaACD({ theme }) {
 
       setFeedback(result);
       setIsLocked(true); // 🔒 Bloquear formulario después de evaluar
-
-      // 🆕 Actualizar progreso global de rúbrica
+      setEvaluationAttempts(prev => prev + 1); // Incrementar solo tras éxito
       updateRubricScore('rubrica2', {
         score: result.nivel_global * 2.5, // Convertir nivel 1-4 a escala 2.5-10
         nivel: result.nivel_global,

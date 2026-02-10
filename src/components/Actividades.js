@@ -507,7 +507,7 @@ export default function Actividades() {
           onClick={() => setActiveSection('preparacion')}
           theme={theme}
         >
-          <span>�</span>
+          <span>📋</span>
           Preparación
           {preparacionCompletada && ' ✅'}
         </Tab>
