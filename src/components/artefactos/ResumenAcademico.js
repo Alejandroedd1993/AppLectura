@@ -22,6 +22,47 @@ import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import ConfirmModal from '../common/ConfirmModal';
 import logger from '../../utils/logger';
+import {
+  AutoSaveMessage,
+  CitaFooter,
+  CitaInfo,
+  CitaItem,
+  CitaTexto,
+  CitasButton,
+  CitasList,
+  CitasPanel,
+  CitasPanelHeader,
+  Container,
+  CriterioCard,
+  CriterioHeader,
+  CriteriosGrid,
+  EliminarButton,
+  EmptyCitasMessage,
+  FeedbackSection,
+  GuideContent,
+  GuideHeader,
+  GuideQuestion as GuideItem,
+  GuideQuestions as GuideList,
+  GuideSection,
+  GuideTitle,
+  Header,
+  HeaderDescription,
+  HeaderTitle,
+  InsertarButton,
+  Label,
+  LockIcon,
+  LockText,
+  LockedMessage,
+  PasteErrorMessage,
+  RestoreBanner,
+  RestoreButton,
+  ShortcutsHint,
+  SubmissionBanner,
+  SubmitButton,
+  Textarea,
+  ToggleIcon,
+  UnlockButton
+} from './shared';
 
 const ResumenAcademico = ({ theme }) => {
   const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation, updateActivitiesProgress, sourceCourseId, currentTextoId, activitiesProgress } = useContext(AppContext);
@@ -1217,134 +1258,6 @@ const ResumenAcademico = ({ theme }) => {
   );
 };
 
-// ============================================================
-// STYLED COMPONENTS
-// ============================================================
-
-const Container = styled.div`
-  padding: clamp(1rem, 3vw, 1.5rem);
-  max-width: 900px;
-  margin: 0 auto;
-`;
-
-const Header = styled.div`
-  text-align: center;
-  margin-bottom: 2rem;
-  padding: clamp(1rem, 3vw, 1.5rem);
-  background: linear-gradient(135deg, ${props => props.theme.primary || '#2196F3'} 0%, ${props => props.theme.primaryDark || props.theme.primary || '#1976D2'} 100%);
-  border-radius: 12px;
-  color: white;
-`;
-
-const HeaderTitle = styled.h2`
-  margin: 0 0 0.5rem 0;
-  font-size: clamp(1.25rem, 3vw, 1.6rem);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  color: white;
-`;
-
-const HeaderDescription = styled.p`
-  margin: 0;
-  font-size: clamp(0.85rem, 2.2vw, 0.95rem);
-  opacity: 0.9;
-  line-height: 1.5;
-  color: white;
-`;
-
-// 🆕 Guía pedagógica estilo expandir/colapsar (consistente con otros artefactos)
-const GuideSection = styled(motion.div)`
-  background: ${props => props.theme.surface || '#ffffff'};
-  border: 1px solid ${props => props.theme.border || '#e0e0e0'};
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-`;
-
-const GuideHeader = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  user-select: none;
-`;
-
-const GuideTitle = styled.h4`
-  margin: 0;
-  color: ${props => props.theme.text || '#333'};
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1rem;
-`;
-
-const ToggleIcon = styled.span`
-  transition: transform 0.3s ease;
-  transform: ${props => props.$expanded ? 'rotate(180deg)' : 'rotate(0deg)'};
-`;
-
-const GuideContent = styled.div`
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid ${props => props.theme.border || '#e0e0e0'};
-`;
-
-const GuideList = styled.ul`
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-`;
-
-const GuideItem = styled.li`
-  color: ${props => props.theme.textMuted || '#666'};
-  font-size: 0.9rem;
-  padding-left: 1.5rem;
-  position: relative;
-  line-height: 1.5;
-
-  &::before {
-    content: '💡';
-    position: absolute;
-    left: 0;
-  }
-`;
-
-
-
-const RestoreBanner = styled(motion.div)`
-  background: ${props => props.theme.warning}15;
-  border: 1px solid ${props => props.theme.warning};
-  color: ${props => props.theme.warning};
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.9rem;
-`;
-
-const RestoreButton = styled.button`
-  background: ${props => props.theme.warning};
-  color: white;
-  border: none;
-  padding: 0.6rem 1.1rem;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  
-  &:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  }
-`;
-
 const EditorSection = styled.div`
   background: ${props => props.theme.cardBg || '#ffffff'};
   border: 1px solid ${props => props.theme.border || '#e0e0e0'};
@@ -1362,12 +1275,6 @@ const EditorHeader = styled.div`
   gap: 1rem;
 `;
 
-const Label = styled.label`
-  font-size: 1rem;
-  font-weight: 600;
-  color: ${props => props.theme.textPrimary || '#333'};
-`;
-
 const Stats = styled.div`
   display: flex;
   gap: 1rem;
@@ -1380,163 +1287,6 @@ const Stat = styled.span`
   color: ${props => props.$valid ? props.theme.success || '#4CAF50' : props.theme.warning || '#FF9800'};
   font-weight: 600;
   font-size: 0.9rem;
-`;
-
-const Textarea = styled.textarea`
-  width: 100%;
-  max-width: 100%; /* Evitar desbordamiento horizontal */
-  box-sizing: border-box; /* Asegurar padding dentro del ancho */
-  padding: 1rem;
-  border-radius: 8px;
-  border: 2px solid ${props => props.theme.border || '#e0e0e0'};
-  background: ${props => props.$isLocked ? `${props.theme.surface || '#f5f5f5'}` : props.theme.background || '#fff'};
-  color: ${props => props.theme.textPrimary || '#333'};
-  font-size: clamp(0.9rem, 2.2vw, 0.95rem);
-  line-height: 1.8;
-  font-family: inherit;
-  resize: vertical;
-  min-height: 200px;
-  overflow-y: auto; /* Scroll si el contenido es muy largo */
-  white-space: pre-wrap; /* Mantener saltos de línea y ajustar */
-  opacity: ${props => props.$isLocked ? 0.7 : 1};
-  
-  &:focus {
-    outline: none;
-    border-color: ${props => props.theme.primary || '#2196F3'};
-  }
-  
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    background: ${props => props.theme.surface || '#f5f5f5'};
-  }
-
-  @media (max-width: 640px) {
-    min-height: 160px;
-  }
-`;
-
-const LockedMessage = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  margin-top: 1rem;
-  background: linear-gradient(135deg, ${props => props.theme.primary}15, ${props => props.theme.info}10);
-  border: 2px solid ${props => props.theme.primary}40;
-  border-radius: 8px;
-  animation: slideIn 0.3s ease-out;
-  
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  border-radius: 8px;
-  animation: slideIn 0.3s ease-out;
-  
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-`;
-
-const SubmissionBanner = styled(motion.div)`
-  background: ${props => `${props.theme.success || '#4CAF50'}10`};
-  border: 1px solid ${props => props.theme.success || '#4CAF50'};
-  color: ${props => props.theme.success || '#1b5e20'};
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  font-weight: 500;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-
-  .icon { font-size: 1.5rem; }
-  .text { font-size: 1rem; }
-`;
-
-const SubmitButton = styled.button`
-  padding: 0.75rem 1.25rem;
-  background: ${props => props.theme.success || '#4CAF50'};
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  min-height: 44px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  
-  &:hover {
-    background: ${props => props.theme.successDark || '#388E3C'};
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px ${props => `${props.theme.success || '#4CAF50'}40`};
-  }
-`;
-
-const LockIcon = styled.div`
-  font-size: 2rem;
-  flex-shrink: 0;
-`;
-
-const LockText = styled.div`
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  
-  strong {
-    color: ${props => props.theme.textPrimary};
-    font-size: 1rem;
-  }
-  
-  span {
-    color: ${props => props.theme.textSecondary};
-    font-size: 0.9rem;
-  }
-`;
-
-const UnlockButton = styled.button`
-  padding: 0.75rem 1.25rem;
-  background: ${props => props.theme.primary};
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  min-height: 44px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-  
-  &:hover {
-    background: ${props => props.theme.primaryDark || props.theme.primary};
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px ${props => props.theme.primary}40;
-  }
-  
-  &:active {
-    transform: translateY(0);
-  }
 `;
 
 const ValidationErrors = styled.div`
@@ -1633,28 +1383,6 @@ const ResumenDimension = styled.div`
   color: ${props => props.theme.textPrimary || '#333'};
 `;
 
-const CriteriosGrid = styled.div`
-  display: grid;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-`;
-
-const CriterioCard = styled.div`
-  background: ${props => props.theme.surface || '#f5f5f5'};
-  border-radius: 8px;
-  padding: 1.5rem;
-  border: 1px solid ${props => props.theme.border || '#e0e0e0'};
-`;
-
-const CriterioHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-`;
-
 const CriterioTitulo = styled.h3`
   margin: 0;
   font-size: 1.1rem;
@@ -1689,10 +1417,6 @@ const EvidenciaItem = styled.div`
   font-style: italic;
   color: ${props => props.theme.textSecondary || '#666'};
   margin-top: 0.5rem;
-`;
-
-const FeedbackSection = styled.div`
-  margin-bottom: 1rem;
 `;
 
 const FeedbackList = styled.ul`
@@ -1767,193 +1491,6 @@ const EmptyDescription = styled.p`
   line-height: 1.6;
 `;
 
-// 🆕 Styled Components para Panel de Citas
-const CitasButton = styled.button`
-  position: fixed;
-  bottom: calc(1.25rem + env(safe-area-inset-bottom));
-  right: calc(1.25rem + env(safe-area-inset-right));
-  z-index: 1001;
-  padding: 0.7rem 1.2rem;
-  background: ${props => props.$active ? props.theme.warning || '#f59e0b' : props.theme.cardBg || '#fff'};
-  color: ${props => props.$active ? '#fff' : props.theme.textPrimary};
-  border: 2px solid ${props => props.$active ? props.theme.warning || '#f59e0b' : props.theme.border};
-  border-radius: 50px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.85rem;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-  
-  ${props => props.$hasNotification && !props.$active && `
-    &:after {
-      content: '';
-      position: absolute;
-      top: -4px;
-      right: -4px;
-      width: 12px;
-      height: 12px;
-      background: ${props.theme.success || '#4CAF50'};
-      border: 2px solid ${props.theme.cardBg || '#fff'};
-      border-radius: 50%;
-      animation: fabPulse 2s ease-in-out infinite;
-    }
-    @keyframes fabPulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.2); opacity: 0.8; }
-    }
-  `}
-  
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-    border-color: ${props => props.theme.warning || '#f59e0b'};
-  }
-
-  &:focus-visible {
-    outline: 3px solid ${props => props.theme.primary || '#3190FC'};
-    outline-offset: 2px;
-  }
-  
-  &:active {
-    transform: translateY(0);
-  }
-  
-  @media (max-width: 768px) {
-    bottom: calc(4rem + env(safe-area-inset-bottom));
-    right: calc(1rem + env(safe-area-inset-right));
-    padding: 0.6rem 1rem;
-    font-size: 0.8rem;
-  }
-`;
-
-const CitasPanel = styled.div`
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 380px;
-  max-width: 90vw;
-  background: ${props => props.theme.surface};
-  border-left: 2px solid ${props => props.theme.border};
-  box-shadow: -4px 0 20px rgba(0,0,0,0.15);
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  
-  @media (max-width: 768px) {
-    width: 100%;
-  }
-`;
-
-const CitasPanelHeader = styled.div`
-  padding: 1.5rem;
-  background: ${props => props.theme.primary};
-  color: white;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-`;
-
-const CitasList = styled.div`
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  overflow-y: auto;
-  flex: 1;
-`;
-
-const CitaItem = styled.div`
-  background: ${props => props.theme.background};
-  border: 1px solid ${props => props.theme.border};
-  border-radius: 8px;
-  padding: 1rem;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    transform: translateY(-2px);
-  }
-`;
-
-const CitaTexto = styled.p`
-  font-size: 0.9rem;
-  line-height: 1.5;
-  color: ${props => props.theme.textPrimary};
-  margin: 0 0 0.75rem 0;
-  font-style: italic;
-`;
-
-const CitaFooter = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-`;
-
-const CitaInfo = styled.span`
-  font-size: 0.75rem;
-  color: ${props => props.theme.textMuted};
-`;
-
-
-const AutoSaveMessage = styled.div`
-  padding: 0.75rem 1rem;
-  background: ${props => props.theme.success}15;
-  border: 1px solid ${props => props.theme.success}40;
-  border-radius: 6px;
-  color: ${props => props.theme.success || '#4CAF50'};
-  font-size: 0.85rem;
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-`;
-
-// 🆕 Nuevos componentes para sistema de citas mejorado
-const PasteErrorMessage = styled.div`
-  padding: 0.75rem 1rem;
-  background: ${props => props.theme.danger}15;
-  border: 1px solid ${props => props.theme.danger}40;
-  border-radius: 6px;
-  color: ${props => props.theme.danger || '#F44336'};
-  font-size: 0.85rem;
-  margin-top: 0.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  animation: shake 0.5s ease;
-  
-  @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-8px); }
-    75% { transform: translateX(8px); }
-  }
-`;
-
-const EmptyCitasMessage = styled.div`
-  text-align: center;
-  padding: 2rem;
-  color: ${props => props.theme.textSecondary};
-  
-  strong {
-    color: ${props => props.theme.textPrimary};
-    font-size: 1.1rem;
-  }
-  
-  ol {
-    margin-top: 1rem;
-    padding-left: 1.5rem;
-  }
-  
-  li {
-    margin-bottom: 0.5rem;
-  }
-`;
-
 const CitaNota = styled.p`
   font-size: 0.8rem;
   line-height: 1.4;
@@ -1965,69 +1502,6 @@ const CitaNota = styled.p`
   border-radius: 4px;
 `;
 
-const InsertarButton = styled.button`
-  padding: 0.4rem 0.8rem;
-  background: ${props => props.theme.success || '#4CAF50'};
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    background: ${props => props.theme.successHover || '#45a049'};
-    transform: scale(1.05);
-  }
-  
-  &:active {
-    transform: scale(0.95);
-  }
-`;
-
-const EliminarButton = styled.button`
-  padding: 0.4rem 0.6rem;
-  background: transparent;
-  color: ${props => props.theme.danger || '#F44336'};
-  border: 1px solid ${props => props.theme.danger || '#F44336'};
-  border-radius: 6px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    background: ${props => props.theme.danger || '#F44336'};
-    color: white;
-  }
-`;
-
-const ShortcutsHint = styled.div`
-  position: absolute;
-  top: -40px;
-  right: 0;
-  background: ${props => props.theme.success || '#4CAF50'};
-  color: white;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-  z-index: 10;
-  
-  &::after {
-    content: '';
-    position: absolute;
-    bottom: -6px;
-    right: 20px;
-    width: 0;
-    height: 0;
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-top: 6px solid ${props => props.theme.success || '#4CAF50'};
-  }
-`;
-
 export default ResumenAcademico;
 
-
+

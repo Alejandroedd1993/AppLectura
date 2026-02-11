@@ -24,97 +24,34 @@ import ConfirmModal from '../common/ConfirmModal';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import HistoryRibbon from '../ui/HistoryRibbon';
 import logger from '../../utils/logger';
+import {
+  AutoSaveMessage,
+  Container,
+  CriterioCard,
+  CriterioHeader,
+  CriterioNivel,
+  CriterioTitle,
+  CriteriosGrid,
+  FeedbackHeader,
+  Header,
+  HeaderDescription,
+  HeaderTitle,
+  List,
+  ListItem,
+  ListSection,
+  ListTitle,
+  LockIcon,
+  LockText,
+  LockedMessage,
+  RestoreBanner,
+  RestoreButton,
+  SectionTitle,
+  SubmissionBanner,
+  SubmitButton,
+  UnlockButton
+} from './shared';
 
 // ... (component definition) ...
-
-// ============================================================
-// STYLED COMPONENTS
-// ============================================================
-
-// 🆕 History UI Components
-
-
-const SubmissionBanner = styled(motion.div)`
-  background: ${props => `${props.theme.success || '#4CAF50'}10`};
-  border: 1px solid ${props => props.theme.success || '#4CAF50'};
-  color: ${props => props.theme.success || '#1b5e20'};
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  font-weight: 500;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-
-  .icon { font-size: 1.5rem; }
-  .text { font-size: 1rem; }
-`;
-
-const SubmitButton = styled.button`
-  padding: 1rem 2rem;
-  background: ${props => props.theme.success || '#4CAF50'};
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px ${props => `${props.theme.success || '#4CAF50'}40`};
-  
-  &:hover {
-    background: ${props => props.theme.successDark || '#388E3C'};
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px ${props => `${props.theme.success || '#4CAF50'}50`};
-  }
-`;
-
-const RestoreBanner = styled(motion.div)`
-  background: #fffbeb;
-  border: 1px solid #fcd34d;
-  color: #92400e;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1rem;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.9rem;
-`;
-
-const RestoreButton = styled.button`
-  background: #f59e0b;
-  color: white;
-  border: none;
-  padding: 0.25rem 0.75rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  font-weight: 600;
-
-  &:hover {
-    background: #d97706;
-  }
-`;
-
-const AutoSaveMessage = styled.div`
-  background: ${props => props.theme?.success || '#4CAF50'}15;
-  border: 1px solid ${props => props.theme?.success || '#4CAF50'};
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1rem;
-  color: ${props => props.theme?.success || '#4CAF50'};
-  font-size: 0.9rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-`;
 
 const DeclarationsContainer = styled.div`
   display: flex;
@@ -1372,45 +1309,6 @@ export default function BitacoraEticaIA({ theme }) {
   );
 }
 
-// ============================================================
-// STYLED COMPONENTS
-// ============================================================
-
-const Container = styled.div`
-  padding: 1.5rem;
-  max-width: 900px;
-  margin: 0 auto;
-  background: ${props => props.theme.background};
-  min-height: calc(100vh - 120px);
-`;
-
-const Header = styled.div`
-  text-align: center;
-  margin-bottom: 2rem;
-  padding: 1.5rem;
-  background: linear-gradient(135deg, ${props => props.theme.primary || '#2196F3'} 0%, ${props => props.theme.primaryDark || props.theme.primary || '#1976D2'} 100%);
-  border-radius: 12px;
-  color: white;
-`;
-
-const HeaderTitle = styled.h2`
-  margin: 0 0 0.5rem 0;
-  font-size: 1.6rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  color: white;
-`;
-
-const HeaderDescription = styled.p`
-  margin: 0;
-  font-size: 0.95rem;
-  opacity: 0.9;
-  line-height: 1.5;
-  color: white;
-`;
-
 const EvaluacionSummary = styled.div`
   background: linear-gradient(135deg, ${props => props.theme.purple}15, ${props => props.theme.primary}15);
   border: 2px solid ${props => props.theme.purple}40;
@@ -1511,16 +1409,6 @@ const SectionHeader = styled.div`
   margin-bottom: 1rem;
   flex-wrap: wrap;
   gap: 1rem;
-`;
-
-const SectionTitle = styled.h2`
-  margin: 0 0 1rem 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: ${props => props.theme.textPrimary};
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 `;
 
 const SectionDescription = styled.p`
@@ -1928,13 +1816,6 @@ const FeedbackCriterialSection = styled.div`
   box-shadow: 0 4px 20px ${props => props.theme.purple}20;
 `;
 
-const FeedbackHeader = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-`;
-
 const NivelGlobalBadge = styled.div`
   display: inline-flex;
   align-items: center;
@@ -1972,85 +1853,6 @@ const FeedbackDimension = styled.p`
   line-height: 1.5;
 `;
 
-const CriteriosGrid = styled.div`
-  display: grid;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-`;
-
-const CriterioCard = styled.div`
-  background: ${props => props.theme.surface};
-  border: 1px solid ${props => props.theme.border};
-  border-radius: 8px;
-  padding: 1rem;
-`;
-
-const CriterioHeader = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-`;
-
-const CriterioTitle = styled.h4`
-  margin: 0;
-  color: ${props => props.theme.textPrimary};
-  font-size: 0.95rem;
-`;
-
-const CriterioNivel = styled.span`
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  background: ${props => {
-    switch (props.$nivel) {
-      case 1: return '#fee2e2';
-      case 2: return '#fed7aa';
-      case 3: return '#dcfce7';
-      case 4: return '#e9d5ff';
-      default: return '#f3f4f6';
-    }
-  }
-  };
-  color: ${props => {
-    switch (props.$nivel) {
-      case 1: return '#991b1b';
-      case 2: return '#c2410c';
-      case 3: return '#166534';
-      case 4: return '#6b21a8';
-      default: return '#374151';
-    }
-  }
-  };
-`;
-
-const ListSection = styled.div`
-  margin-top: 0.75rem;
-`;
-
-const ListTitle = styled.p`
-  margin: 0 0 0.5rem 0;
-  color: ${props => props.theme.textPrimary};
-  font-weight: 600;
-  font-size: 0.85rem;
-`;
-
-const List = styled.ul`
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-`;
-
-const ListItem = styled.li`
-  color: ${props => props.theme.textSecondary};
-  font-size: 0.85rem;
-  line-height: 1.4;
-`;
-
 const FeedbackFooter = styled.div`
   display: flex;
   justify-content: center;
@@ -2072,65 +1874,4 @@ const SecondaryButton = styled.button`
   &:hover {
     background: ${props => props.theme.border};
   }
-`;
-
-// 🆕 Componentes para Bloqueo y Seguir Editando
-const LockedMessage = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  margin: 1rem 0;
-  background: linear-gradient(135deg, ${props => props.theme.primary}15, ${props => props.theme.info}10);
-  border: 2px solid ${props => props.theme.primary}40;
-  border-radius: 8px;
-  animation: slideIn 0.3s ease-out;
-  
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-`;
-
-const LockIcon = styled.span`
-  font-size: 1.5rem;
-`;
-
-const LockText = styled.div`
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  
-  strong {
-    color: ${props => props.theme?.text || '#333'};
-    font-size: 1rem;
-  }
-  
-  span {
-    color: ${props => props.theme?.textSecondary || '#666'};
-    font-size: 0.9rem;
-  }
-`;
-
-const UnlockButton = styled.button`
-  padding: 0.6rem 1.2rem;
-  background: ${props => props.theme.primary || '#2196F3'};
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    background: ${props => props.theme.primaryHover || '#1976D2'};
-    transform: translateY(-1px);
-  }
-`;
+`;
