@@ -16,6 +16,7 @@ import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import ConfirmModal from '../common/ConfirmModal';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
+import HistoryRibbon from '../ui/HistoryRibbon';
 
 // ============================================
 // STYLED COMPONENTS
@@ -622,68 +623,6 @@ const AutoSaveMessage = styled(motion.div)`
   display: flex;
   align-items: center;
   gap: 0.5rem;
-`;
-
-// ============================================
-// 🆕 STYLED COMPONENTS - HISTORIAL
-// ============================================
-
-const HistoryRibbon = styled.div`
-  display: flex;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: ${props => props.theme.surface};
-  border-bottom: 1px solid ${props => props.theme.border};
-  overflow-x: auto;
-  align-items: center;
-  margin-bottom: 1rem;
-  
-  &::-webkit-scrollbar {
-    height: 4px;
-  }
-  
-  &::-webkit-scrollbar-thumb {
-    background: ${props => props.theme.border};
-    border-radius: 4px;
-  }
-`;
-
-const HistoryTitle = styled.span`
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: ${props => props.theme.textMuted};
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-`;
-
-const HistoryBadge = styled.button`
-  padding: 0.25rem 0.75rem;
-  border-radius: 16px;
-  border: 1px solid ${props => props.$active ? props.theme.primary : props.theme.border};
-  background: ${props => props.$active ? props.theme.primary + '15' : 'transparent'};
-  color: ${props => props.$active ? props.theme.primary : props.theme.textMuted};
-  font-size: 0.8rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-
-  &:hover {
-    background: ${props => props.theme.primary + '10'};
-    border-color: ${props => props.theme.primary};
-  }
-
-  .score {
-    font-weight: 700;
-    font-size: 0.75rem;
-    padding: 0.1rem 0.4rem;
-    background: ${props => props.$active ? props.theme.primary : props.theme.border};
-    color: ${props => props.$active ? '#fff' : props.theme.textMuted};
-    border-radius: 8px;
-  }
 `;
 
 const RestoreBanner = styled(motion.div)`
@@ -1606,30 +1545,13 @@ export default function RespuestaArgumentativa({ theme }) {
       </AnimatePresence>
 
       {/* 🆕 Historial y Navegación de Versiones */}
-      {history.length > 0 && (
-        <HistoryRibbon theme={theme}>
-          <HistoryTitle theme={theme}>📋 Historial:</HistoryTitle>
-          <HistoryBadge
-            theme={theme}
-            $active={!viewingVersion}
-            onClick={() => handleViewVersion(null)}
-          >
-            <span>Actual</span>
-            <span className="score">En progreso</span>
-          </HistoryBadge>
-          {history.slice().reverse().map((entry, idx) => (
-            <HistoryBadge
-              key={idx}
-              theme={theme}
-              $active={viewingVersion === entry}
-              onClick={() => handleViewVersion(entry)}
-            >
-              <span>Intento {entry.attemptNumber}</span>
-              <span className="score">{entry.score?.toFixed(1)}/10</span>
-            </HistoryBadge>
-          ))}
-        </HistoryRibbon>
-      )}
+      <HistoryRibbon
+        history={history}
+        viewingVersion={viewingVersion}
+        onViewVersion={handleViewVersion}
+        theme={theme}
+        scoreFormat="score"
+      />
 
       {/* 🆕 Banner de Restauración */}
       <AnimatePresence>

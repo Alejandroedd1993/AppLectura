@@ -12,6 +12,7 @@ import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
+import HistoryRibbon from '../ui/HistoryRibbon';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import ConfirmModal from '../common/ConfirmModal';
 import logger from '../../utils/logger';
@@ -22,61 +23,7 @@ import logger from '../../utils/logger';
 
 // ... (existing styled components)
 
-// 🆕 History UI Components
-const HistoryRibbon = styled.div`
-  display: flex;
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding: 0.75rem;
-  background: ${props => props.theme.surface};
-  border-bottom: 1px solid ${props => props.theme.border};
-  margin-bottom: 1rem;
-  align-items: center;
-  border-radius: 8px;
-  
-  &::-webkit-scrollbar {
-    height: 4px;
-  }
-  
-  &::-webkit-scrollbar-thumb {
-    background: ${props => props.theme.border};
-    border-radius: 2px;
-  }
-`;
 
-const HistoryBadge = styled.button`
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  cursor: pointer;
-  white-space: nowrap;
-  border: 1px solid ${props => props.$active ? '#10b981' : props.theme.border};
-  background: ${props => props.$active ? '#dcfce7' : 'transparent'};
-  color: ${props => props.$active ? '#065f46' : props.theme.textMuted};
-  transition: all 0.2s;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 60px;
-
-  &:hover {
-    background: ${props => props.$active ? '#dcfce7' : props.theme.hoverBg};
-    transform: translateY(-1px);
-  }
-
-  span.score {
-    font-weight: 700;
-    font-size: 0.7rem;
-  }
-`;
-
-const HistoryTitle = styled.span`
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: ${props => props.theme.textMuted};
-  margin-right: 0.5rem;
-`;
 
 const RestoreBanner = styled(motion.div)`
   background: #fffbeb;
@@ -1631,34 +1578,13 @@ export default function MapaActores({ theme }) {
       </GuideSection>
 
       {/* 🆕 Ribbon de Historial - SIEMPRE visible */}
-      {history.length > 0 && (
-        <HistoryRibbon theme={theme}>
-          <HistoryTitle theme={theme}>📋 Historial:</HistoryTitle>
-
-          {/* Versión actual primero */}
-          <HistoryBadge
-            $active={!viewingVersion}
-            onClick={() => handleViewVersion(null)}
-            theme={theme}
-          >
-            Actual
-            <span className="score">En progreso</span>
-          </HistoryBadge>
-
-          {/* Historial en orden cronológico inverso (más reciente primero) */}
-          {history.slice().reverse().map((entry, idx) => (
-            <HistoryBadge
-              key={idx}
-              $active={viewingVersion && viewingVersion.timestamp === entry.timestamp}
-              onClick={() => handleViewVersion(entry)}
-              theme={theme}
-            >
-              Intento {entry.attemptNumber}
-              <span className="score">Nivel {entry.feedback.nivel_global}</span>
-            </HistoryBadge>
-          ))}
-        </HistoryRibbon>
-      )}
+      <HistoryRibbon
+        history={history}
+        viewingVersion={viewingVersion}
+        onViewVersion={handleViewVersion}
+        theme={theme}
+        scoreFormat="nivel"
+      />
 
       {/* 🆕 Banner de Restauración */}
       <AnimatePresence>

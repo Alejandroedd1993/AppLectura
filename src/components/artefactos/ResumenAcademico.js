@@ -17,6 +17,7 @@ import useRateLimit from '../../hooks/useRateLimit';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
+import HistoryRibbon from '../ui/HistoryRibbon';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import ConfirmModal from '../common/ConfirmModal';
@@ -928,33 +929,13 @@ const ResumenAcademico = ({ theme }) => {
 
       {/* Formulario del resumen */}
       <EditorSection>
-        {/* 🆕 Ribbon de Historial - "Actual" primero, luego historial */}
-        {history.length > 0 && (
-          <HistoryRibbon theme={theme}>
-            <HistoryTitle theme={theme}>📋 Historial:</HistoryTitle>
-
-            <HistoryBadge
-              $active={!viewingVersion}
-              onClick={() => handleViewVersion(null)}
-              theme={theme}
-            >
-              Actual
-              <span className="score">En progreso</span>
-            </HistoryBadge>
-
-            {history.slice().reverse().map((entry, idx) => (
-              <HistoryBadge
-                key={idx}
-                $active={viewingVersion && viewingVersion.timestamp === entry.timestamp}
-                onClick={() => handleViewVersion(entry)}
-                theme={theme}
-              >
-                Intento {entry.attemptNumber}
-                <span className="score">★ {entry.score}</span>
-              </HistoryBadge>
-            ))}
-          </HistoryRibbon>
-        )}
+        <HistoryRibbon
+          history={history}
+          viewingVersion={viewingVersion}
+          onViewVersion={handleViewVersion}
+          theme={theme}
+          scoreFormat="score"
+        />
 
         {/* 🆕 Banner de Restauración */}
         <AnimatePresence>
@@ -1333,68 +1314,7 @@ const GuideItem = styled.li`
   }
 `;
 
-// 🆕 Componentes para Historial de Versiones
-const HistoryRibbon = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  background: ${props => props.theme.surfaceAlt || '#f8f9fa'};
-  border-bottom: 1px solid ${props => props.theme.border || '#e0e0e0'};
-  overflow-x: auto;
-  margin-bottom: 1rem;
-  border-radius: 8px 8px 0 0;
-  
-  &::-webkit-scrollbar {
-    height: 4px;
-  }
-  
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  
-  &::-webkit-scrollbar-thumb {
-    background: ${props => props.theme.border || '#ccc'};
-    border-radius: 2px;
-  }
-`;
 
-const HistoryTitle = styled.div`
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: ${props => props.theme.textSecondary};
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  flex-shrink: 0;
-`;
-
-const HistoryBadge = styled.button`
-  padding: 0.25rem 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  border-radius: 20px;
-  border: 1px solid ${props => props.$active ? props.theme.primary : props.theme.border};
-  background: ${props => props.$active ? props.theme.primary : 'transparent'};
-  color: ${props => props.$active ? 'white' : props.theme.textSecondary};
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  
-  &:hover {
-    background: ${props => props.$active ? props.theme.primaryHover : props.theme.background};
-    border-color: ${props => props.theme.primary};
-  }
-  
-  span.score {
-    background: ${props => props.$active ? 'rgba(255,255,255,0.2)' : props.theme.surfaceAlt};
-    padding: 0.1rem 0.4rem;
-    border-radius: 10px;
-    font-size: 0.75rem;
-  }
-`;
 
 const RestoreBanner = styled(motion.div)`
   background: ${props => props.theme.warning}15;

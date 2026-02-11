@@ -22,6 +22,7 @@ import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import ConfirmModal from '../common/ConfirmModal';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
+import HistoryRibbon from '../ui/HistoryRibbon';
 import logger from '../../utils/logger';
 
 // ... (component definition) ...
@@ -31,44 +32,7 @@ import logger from '../../utils/logger';
 // ============================================================
 
 // 🆕 History UI Components
-const HistoryRibbon = styled.div`
-  display: flex;
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding: 0.75rem;
-  background: ${props => props.theme.surface};
-  border-bottom: 1px solid ${props => props.theme.border};
-  margin-bottom: 1rem;
-  align-items: center;
-  border-radius: 8px;
-`;
 
-const HistoryBadge = styled.button`
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  cursor: pointer;
-  white-space: nowrap;
-  border: 1px solid ${props => props.$active ? '#10b981' : props.theme.border};
-  background: ${props => props.$active ? '#dcfce7' : 'transparent'};
-  color: ${props => props.$active ? '#065f46' : props.theme.textMuted};
-  transition: all 0.2s;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 60px;
-
-  &:hover {
-    background: ${props => props.$active ? '#dcfce7' : props.theme.hoverBg};
-    transform: translateY(-1px);
-  }
-
-  span.score {
-    font-weight: 700;
-    font-size: 0.7rem;
-  }
-`;
 
 const SubmissionBanner = styled(motion.div)`
   background: ${props => `${props.theme.success || '#4CAF50'}10`};
@@ -108,13 +72,6 @@ const SubmitButton = styled.button`
     transform: translateY(-2px);
     box-shadow: 0 6px 16px ${props => `${props.theme.success || '#4CAF50'}50`};
   }
-`;
-
-const HistoryTitle = styled.span`
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: ${props => props.theme.textMuted};
-  margin-right: 0.5rem;
 `;
 
 const RestoreBanner = styled(motion.div)`
@@ -860,30 +817,13 @@ export default function BitacoraEticaIA({ theme }) {
       <TeacherScoreOverrideBanner cloudData={teacherScoreOverride} theme={effectiveTheme} />
 
       {/* 🆕 Historial y Navegación de Versiones */}
-      {history.length > 0 && (
-        <HistoryRibbon theme={effectiveTheme}>
-          <HistoryTitle theme={effectiveTheme}>📋 Historial:</HistoryTitle>
-          <HistoryBadge
-            theme={effectiveTheme}
-            $active={!viewingVersion}
-            onClick={() => handleViewVersion(null)}
-          >
-            <span>Actual</span>
-            <span className="score">En progreso</span>
-          </HistoryBadge>
-          {history.slice().reverse().map((entry, idx) => (
-            <HistoryBadge
-              key={idx}
-              theme={effectiveTheme}
-              $active={viewingVersion === entry}
-              onClick={() => handleViewVersion(entry)}
-            >
-              <span>Intento {entry.attemptNumber}</span>
-              <span className="score">{entry.score?.toFixed(1)}/10</span>
-            </HistoryBadge>
-          ))}
-        </HistoryRibbon>
-      )}
+      <HistoryRibbon
+        history={history}
+        viewingVersion={viewingVersion}
+        onViewVersion={handleViewVersion}
+        theme={effectiveTheme}
+        scoreFormat="score"
+      />
 
       {/* 🆕 Banner de Restauración */}
       <AnimatePresence>
