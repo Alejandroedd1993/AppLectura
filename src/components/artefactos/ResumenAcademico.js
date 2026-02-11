@@ -16,6 +16,7 @@ import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useRateLimit from '../../hooks/useRateLimit';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
+import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import ConfirmModal from '../common/ConfirmModal';
@@ -930,7 +931,7 @@ const ResumenAcademico = ({ theme }) => {
         {/* 🆕 Ribbon de Historial - "Actual" primero, luego historial */}
         {history.length > 0 && (
           <HistoryRibbon theme={theme}>
-            <HistoryTitle theme={theme}>Versiones:</HistoryTitle>
+            <HistoryTitle theme={theme}>📋 Historial:</HistoryTitle>
 
             <HistoryBadge
               $active={!viewingVersion}
@@ -991,7 +992,7 @@ const ResumenAcademico = ({ theme }) => {
         {/* 🆕 Mensaje de auto-guardado (solo si es actual) */}
         {!viewingVersion && resumen.length > 0 && (
           <AutoSaveMessage theme={theme}>
-            💾 Tu trabajo se guarda automáticamente. Puedes cambiar de pestaña sin perder tu progreso.
+            💾 Tu trabajo se guarda automáticamente. No perderás nada al cambiar de pestaña.
           </AutoSaveMessage>
         )}
 
@@ -1010,17 +1011,14 @@ const ResumenAcademico = ({ theme }) => {
           )}
         </AnimatePresence>
 
-        <ShortcutsBar theme={theme}>
-          <ShortcutItem theme={theme}>
-            <kbd>Ctrl</kbd> + <kbd>S</kbd> <span>Guardar</span>
-          </ShortcutItem>
-          <ShortcutItem theme={theme}>
-            <kbd>Ctrl</kbd> + <kbd>Enter</kbd> <span>Evaluar</span>
-          </ShortcutItem>
-          <ShortcutItem theme={theme}>
-            <kbd>Esc</kbd> <span>Cerrar</span>
-          </ShortcutItem>
-        </ShortcutsBar>
+        <KeyboardShortcutsBar
+          theme={theme}
+          shortcuts={[
+            { keys: ['Ctrl', 'S'], label: 'Guardar' },
+            { keys: ['Ctrl', 'Enter'], label: 'Evaluar' },
+            { keys: ['Esc'], label: 'Cerrar' }
+          ]}
+        />
 
         <Textarea
           value={displayedResumen}
@@ -2081,55 +2079,6 @@ const EliminarButton = styled.button`
   &:hover {
     background: ${props => props.theme.danger || '#F44336'};
     color: white;
-  }
-`;
-
-const ShortcutsBar = styled.div`
-  display: flex;
-  gap: 1rem;
-  padding: 0.75rem;
-  background: ${props => props.theme.surfaceAlt || props.theme.background || '#f8f9fa'};
-  border-radius: 8px;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
-  
-  @media (max-width: 768px) {
-    gap: 0.5rem;
-    padding: 0.5rem;
-  }
-`;
-
-const ShortcutItem = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-  color: ${props => props.theme.textSecondary || '#666'};
-  
-  kbd {
-    display: inline-block;
-    padding: 0.2rem 0.4rem;
-    background: ${props => props.theme.surface || '#fff'};
-    border: 1px solid ${props => props.theme.border || '#ddd'};
-    border-radius: 4px;
-    font-family: 'Courier New', monospace;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: ${props => props.theme.textPrimary || '#333'};
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-  }
-  
-  span {
-    font-size: 0.75rem;
-  }
-  
-  @media (max-width: 768px) {
-    font-size: 0.7rem;
-    
-    kbd {
-      padding: 0.15rem 0.3rem;
-      font-size: 0.7rem;
-    }
   }
 `;
 

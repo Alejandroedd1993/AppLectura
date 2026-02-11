@@ -11,6 +11,7 @@ import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
+import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import ConfirmModal from '../common/ConfirmModal';
 import logger from '../../utils/logger';
@@ -1632,7 +1633,7 @@ export default function MapaActores({ theme }) {
       {/* 🆕 Ribbon de Historial - SIEMPRE visible */}
       {history.length > 0 && (
         <HistoryRibbon theme={theme}>
-          <HistoryTitle theme={theme}>Versiones:</HistoryTitle>
+          <HistoryTitle theme={theme}>📋 Historial:</HistoryTitle>
 
           {/* Versión actual primero */}
           <HistoryBadge
@@ -1701,6 +1702,16 @@ export default function MapaActores({ theme }) {
               💾 Tu trabajo se guarda automáticamente. No perderás nada al cambiar de pestaña.
             </AutoSaveMessage>
           )}
+
+          {/* Atajos de teclado */}
+          <KeyboardShortcutsBar
+            theme={theme}
+            shortcuts={[
+              { keys: ['Ctrl', 'S'], label: 'Guardar' },
+              { keys: ['Ctrl', 'Enter'], label: 'Evaluar' },
+              { keys: ['Esc'], label: 'Cerrar' }
+            ]}
+          />
 
           <FormSection theme={theme}>
             <SectionTitle theme={theme}>1️⃣ Actores Sociales y Políticos</SectionTitle>

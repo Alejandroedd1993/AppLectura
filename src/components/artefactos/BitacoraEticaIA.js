@@ -21,6 +21,7 @@ import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import ConfirmModal from '../common/ConfirmModal';
+import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import logger from '../../utils/logger';
 
 // ... (component definition) ...
@@ -142,6 +143,20 @@ const RestoreButton = styled.button`
   &:hover {
     background: #d97706;
   }
+`;
+
+const AutoSaveMessage = styled.div`
+  background: ${props => props.theme?.success || '#4CAF50'}15;
+  border: 1px solid ${props => props.theme?.success || '#4CAF50'};
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  color: ${props => props.theme?.success || '#4CAF50'};
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 `;
 
 const DeclarationsContainer = styled.div`
@@ -847,14 +862,14 @@ export default function BitacoraEticaIA({ theme }) {
       {/* 🆕 Historial y Navegación de Versiones */}
       {history.length > 0 && (
         <HistoryRibbon theme={effectiveTheme}>
-          <HistoryTitle theme={effectiveTheme}>📜 Historial:</HistoryTitle>
+          <HistoryTitle theme={effectiveTheme}>📋 Historial:</HistoryTitle>
           <HistoryBadge
             theme={effectiveTheme}
             $active={!viewingVersion}
             onClick={() => handleViewVersion(null)}
           >
             <span>Actual</span>
-            <span className="score">Editando</span>
+            <span className="score">En progreso</span>
           </HistoryBadge>
           {history.slice().reverse().map((entry, idx) => (
             <HistoryBadge
@@ -1016,6 +1031,23 @@ export default function BitacoraEticaIA({ theme }) {
           </UnlockButton>
         </LockedMessage>
       )}
+
+      {/* Mensaje de guardado automático */}
+      {!viewingVersion && (verificacionFuentes || procesoUsoIA || reflexionEtica) && (
+        <AutoSaveMessage theme={effectiveTheme}>
+          💾 Tu trabajo se guarda automáticamente. No perderás nada al cambiar de pestaña.
+        </AutoSaveMessage>
+      )}
+
+      {/* Atajos de teclado */}
+      <KeyboardShortcutsBar
+        theme={effectiveTheme}
+        shortcuts={[
+          { keys: ['Ctrl', 'S'], label: 'Guardar' },
+          { keys: ['Ctrl', 'Enter'], label: 'Evaluar' },
+          { keys: ['Esc'], label: 'Cerrar' }
+        ]}
+      />
 
       {/* Sección 2: Reflexión Metacognitiva */}
       <Section theme={effectiveTheme}>

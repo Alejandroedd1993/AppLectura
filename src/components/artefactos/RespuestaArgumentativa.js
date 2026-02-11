@@ -15,6 +15,7 @@ import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import ConfirmModal from '../common/ConfirmModal';
+import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 
 // ============================================
 // STYLED COMPONENTS
@@ -1607,14 +1608,14 @@ export default function RespuestaArgumentativa({ theme }) {
       {/* 🆕 Historial y Navegación de Versiones */}
       {history.length > 0 && (
         <HistoryRibbon theme={theme}>
-          <HistoryTitle theme={theme}>📜 Historial:</HistoryTitle>
+          <HistoryTitle theme={theme}>📋 Historial:</HistoryTitle>
           <HistoryBadge
             theme={theme}
             $active={!viewingVersion}
             onClick={() => handleViewVersion(null)}
           >
             <span>Actual</span>
-            <span className="score">Editando</span>
+            <span className="score">En progreso</span>
           </HistoryBadge>
           {history.slice().reverse().map((entry, idx) => (
             <HistoryBadge
@@ -1698,6 +1699,16 @@ export default function RespuestaArgumentativa({ theme }) {
               💾 Tu trabajo se guarda automáticamente. No perderás nada al cambiar de pestaña.
             </AutoSaveMessage>
           )}
+
+          {/* Atajos de teclado */}
+          <KeyboardShortcutsBar
+            theme={theme}
+            shortcuts={[
+              { keys: ['Ctrl', 'S'], label: 'Guardar' },
+              { keys: ['Ctrl', 'Enter'], label: 'Evaluar' },
+              { keys: ['Esc'], label: 'Cerrar' }
+            ]}
+          />
 
           <FormSection theme={theme}>
             <SectionTitle theme={theme}>1️⃣ Tu Tesis (Postura Fundamentada)</SectionTitle>

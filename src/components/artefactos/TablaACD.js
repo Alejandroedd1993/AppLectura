@@ -1705,7 +1705,7 @@ export default function TablaACD({ theme }) {
       {/* 🆕 Ribbon de Historial - SIEMPRE visible */}
       {history.length > 0 && (
         <HistoryRibbon theme={theme}>
-          <HistoryTitle theme={theme}>Versiones:</HistoryTitle>
+          <HistoryTitle theme={theme}>📋 Historial:</HistoryTitle>
 
           {/* Versión actual primero */}
           <HistoryBadge
@@ -1768,7 +1768,7 @@ export default function TablaACD({ theme }) {
           {/* 🆕 Mensaje de auto-guardado */}
           {(marcoIdeologico || estrategiasRetoricas || vocesPresentes || vocesSilenciadas) && (
             <AutoSaveMessage theme={theme}>
-              💾 Tu trabajo se guarda automáticamente. Puedes cambiar de pestaña sin perder tu progreso.
+              💾 Tu trabajo se guarda automáticamente. No perderás nada al cambiar de pestaña.
             </AutoSaveMessage>
           )}
 
