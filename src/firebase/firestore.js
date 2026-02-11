@@ -1640,6 +1640,18 @@ export async function deleteAllUserSessions(userId) {
     const sessionsRef = collection(db, 'users', userId, 'sessions');
     const snapshot = await getDocs(sessionsRef);
 
+    // 🔧 C3 FIX: Eliminar archivos de Storage ANTES del batch delete
+    for (const docSnap of snapshot.docs) {
+      if (docSnap.data().textInStorage) {
+        try {
+          await deleteTextFromStorage(userId, docSnap.id);
+        } catch (storageError) {
+          // Best-effort: continuar aunque falle un archivo individual
+          console.warn('⚠️ [Firestore] Error eliminando texto de Storage:', storageError.message);
+        }
+      }
+    }
+
     const batch = writeBatch(db);
 
     snapshot.docs.forEach(doc => {
@@ -1648,7 +1660,7 @@ export async function deleteAllUserSessions(userId) {
 
     await batch.commit();
 
-    console.log(`✅ [Firestore] ${snapshot.docs.length} sesiones eliminadas`);
+    console.log(`✅ [Firestore] ${snapshot.docs.length} sesiones eliminadas (+ archivos Storage)`);
 
   } catch (error) {
     console.error('❌ [Firestore] Error eliminando sesiones:', error);

@@ -83,7 +83,8 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
 
   const isBackupExpired = (backup) => {
     const ts = getBackupTimestampMs(backup);
-    if (!ts) return false;
+    // 🔧 C2 FIX: backups sin timestamp se consideran expirados para evitar datos zombie
+    if (!ts) return true;
     return Date.now() - ts > backupTtlMs;
   };
   

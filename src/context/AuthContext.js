@@ -18,7 +18,7 @@ export function AuthProvider({ children }) {
   const [userData, setUserData] = useState(null); // Datos de Firestore (role, nombre, etc.)
   const [loading, setLoading] = useState(true); // Estado de carga inicial
   const [error, setError] = useState(null);
-  const [previousUserId, setPreviousUserId] = useState(null); // Para detectar cambios de usuario
+  // 🔧 C1 FIX: detección de cambio de usuario usa solo lastUserIdRef (eliminado previousUserId state)
   const lastUserIdRef = useRef(null);
 
   // Función para limpiar datos locales del usuario (debe estar antes del useEffect)
@@ -132,8 +132,6 @@ export function AuthProvider({ children }) {
 
           lastUserIdRef.current = user.uid;
 
-          setPreviousUserId(user.uid);
-
           // Mejor esfuerzo: sincronizar pendientes al iniciar sesión
           try {
             syncPendingSessions();
@@ -157,12 +155,12 @@ export function AuthProvider({ children }) {
         } else {
           // No hay usuario autenticado - preservar progreso local, limpiar solo datos sensibles
           setSessionManagerUser(null);
-          if (previousUserId) {
+          if (lastUserIdRef.current) {
             logger.debug('🧹 [AuthContext] Usuario cerró sesión, limpiando datos sensibles...');
             clearLocalUserData({ mode: 'logout' });
           }
 
-          setPreviousUserId(null);
+          lastUserIdRef.current = null;
           setCurrentUser(null);
           setUserData(null);
 
@@ -186,7 +184,7 @@ export function AuthProvider({ children }) {
       logger.debug('🔐 [AuthContext] Limpiando listener de autenticación');
       unsubscribe();
     };
-  }, [previousUserId]); // Agregar previousUserId como dependencia
+  }, []); // 🔧 C1 FIX: montar listener UNA sola vez; detección de cambio usa lastUserIdRef
 
   // Función para refrescar datos del usuario (útil después de actualizaciones)
   const refreshUserData = useCallback(async () => {
