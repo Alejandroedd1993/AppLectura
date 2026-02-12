@@ -16,6 +16,7 @@ import {
   getStudentProgress, 
   subscribeToStudentProgress 
 } from '../firebase/firestore';
+import logger from '../utils/logger';
 
 /**
  * useFirestorePersistence
@@ -123,23 +124,23 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
     if (hasRehydratedRef.current) return;
     
     try {
-      console.log('📥 [FirestorePersistence] Rehidratando desde Firestore...');
+      logger.log('📥 [FirestorePersistence] Rehidratando desde Firestore...');
       setLoading(true);
       
       const savedData = await getStudentProgress(currentUser.uid, textoId);
       
       if (savedData && onRehydrate) {
-        console.log('✅ [FirestorePersistence] Datos encontrados, rehidratando...');
+        logger.log('✅ [FirestorePersistence] Datos encontrados, rehidratando...');
         onRehydrate(savedData);
         setSynced(true);
       } else {
-        console.log('ℹ️ [FirestorePersistence] No hay datos guardados (primera vez)');
+        logger.log('ℹ️ [FirestorePersistence] No hay datos guardados (primera vez)');
       }
       
       hasRehydratedRef.current = true;
       
     } catch (err) {
-      console.error('❌ [FirestorePersistence] Error rehidratando:', err);
+      logger.error('❌ [FirestorePersistence] Error rehidratando:', err);
       setError(err.message);
       
       // Fallback a localStorage
@@ -156,13 +157,13 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
               if (stamped !== parsed) {
                 try { localStorage.setItem(localKey, JSON.stringify(stamped)); } catch { /* ignore */ }
               }
-              console.log('📦 [FirestorePersistence] Rehidratando desde localStorage backup');
+              logger.log('📦 [FirestorePersistence] Rehidratando desde localStorage backup');
               onRehydrate(stamped);
             }
           }
         }
       } catch (localErr) {
-        console.error('❌ [FirestorePersistence] Error con localStorage backup:', localErr);
+        logger.error('❌ [FirestorePersistence] Error con localStorage backup:', localErr);
       }
       
     } finally {
@@ -177,12 +178,12 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
     const payload = dataToSave || dataRef.current;
     
     if (!currentUser || !textoId || !enabled || !isEstudiante) {
-      console.warn('⚠️ [FirestorePersistence] Guardado deshabilitado (no autenticado o no es estudiante)');
+      logger.warn('⚠️ [FirestorePersistence] Guardado deshabilitado (no autenticado o no es estudiante)');
       return false;
     }
     
     try {
-      console.log('💾 [FirestorePersistence] Guardando en Firestore...');
+      logger.log('💾 [FirestorePersistence] Guardando en Firestore...');
       setError(null);
       
       await saveStudentProgress(currentUser.uid, textoId, payload);
@@ -228,14 +229,14 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
           localStorage.setItem(localKey, JSON.stringify(stampBackupMeta(next)));
         }
       } catch (localErr) {
-        console.warn('⚠️ [FirestorePersistence] No se pudo guardar backup local:', localErr);
+        logger.warn('⚠️ [FirestorePersistence] No se pudo guardar backup local:', localErr);
       }
       
-      console.log('✅ [FirestorePersistence] Guardado exitoso');
+      logger.log('✅ [FirestorePersistence] Guardado exitoso');
       return true;
       
     } catch (err) {
-      console.error('❌ [FirestorePersistence] Error guardando:', err);
+      logger.error('❌ [FirestorePersistence] Error guardando:', err);
       setError(err.message);
       setSynced(false);
       return false;
@@ -300,18 +301,27 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
    * Listener en tiempo real (opcional)
    * Nota: la app mantiene UNA sola sesión activa por usuario; este listener es para reflejar cambios remotos
    * (p.ej., restauración/rehidratación o cambios desde otra pestaña) y no implica soporte multi-dispositivo.
+   *
+   * 🔧 M5 FIX: Ignora actualizaciones remotas mientras haya un autosave pendiente (saveTimeoutRef activo)
+   * para evitar que el listener pise cambios locales aún no enviados.
    */
   useEffect(() => {
     if (!currentUser || !textoId || !enabled || !isEstudiante) return;
     
-    console.log('👂 [FirestorePersistence] Suscribiéndose a cambios en tiempo real...');
+    logger.log('👂 [FirestorePersistence] Suscribiéndose a cambios en tiempo real...');
     
     const unsubscribe = subscribeToStudentProgress(
       currentUser.uid, 
       textoId, 
       (updatedData) => {
+        // 🔧 M5 FIX: si hay un save pendiente, ignorar la actualización remota
+        // para evitar pisar cambios locales en curso
+        if (saveTimeoutRef.current) {
+          logger.log('🛡️ [FirestorePersistence] Ignorando update remoto (save pendiente)');
+          return;
+        }
         if (updatedData && onRehydrate && hasRehydratedRef.current) {
-          console.log('🔄 [FirestorePersistence] Datos actualizados desde Firestore');
+          logger.log('🔄 [FirestorePersistence] Datos actualizados desde Firestore');
           onRehydrate(updatedData);
           setSynced(true);
         }
@@ -319,7 +329,7 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
     );
     
     return () => {
-      console.log('👂 [FirestorePersistence] Cancelando suscripción');
+      logger.log('👂 [FirestorePersistence] Cancelando suscripción');
       unsubscribe();
     };
   }, [currentUser, textoId, enabled, isEstudiante, onRehydrate]);

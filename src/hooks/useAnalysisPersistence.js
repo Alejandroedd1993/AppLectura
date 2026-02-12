@@ -1,6 +1,9 @@
 // Hook ligero para persistir y rehidratar el estado del análisis en localStorage
 // No depende de React state del llamador: sólo orquesta load/save a partir de callbacks parametrizables.
 import { useEffect, useRef } from 'react';
+import logger from '../utils/logger';
+
+const DEBOUNCE_MS = 500;
 
 /**
  * useAnalysisPersistence
@@ -12,6 +15,7 @@ import { useEffect, useRef } from 'react';
  */
 export default function useAnalysisPersistence(sessionKey, { enabled, toPersist, onRehydrate }) {
   const lastKeyRef = useRef(null);
+  const saveTimerRef = useRef(null);
 
   // Rehidratación cuando cambia la clave de sesión
   useEffect(() => {
@@ -25,17 +29,30 @@ export default function useAnalysisPersistence(sessionKey, { enabled, toPersist,
         if (onRehydrate) onRehydrate(data);
       }
     } catch (e) {
-      console.warn('[useAnalysisPersistence] Error al leer:', e);
+      logger.warn('[useAnalysisPersistence] Error al leer:', e);
     }
   }, [sessionKey, onRehydrate]);
 
-  // Guardado automático cuando cambian los datos y está habilitado
+  // 🔧 H2 FIX: Guardado automático CON debounce para evitar escrituras excesivas
   useEffect(() => {
     if (!sessionKey || !enabled) return;
-    try {
-      localStorage.setItem(sessionKey, JSON.stringify(toPersist ?? {}));
-    } catch (e) {
-      console.warn('[useAnalysisPersistence] Error al guardar:', e);
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
     }
+
+    saveTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(sessionKey, JSON.stringify(toPersist ?? {}));
+      } catch (e) {
+        logger.warn('[useAnalysisPersistence] Error al guardar:', e);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
   }, [sessionKey, enabled, toPersist]);
 }

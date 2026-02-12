@@ -486,8 +486,14 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
     }
 
     __progressWriteDedupe.set(dedupeKey, { signature, at: now });
-    if (__progressWriteDedupe.size > 500) {
-      __progressWriteDedupe.clear();
+    // 🔧 M2 FIX: limpieza selectiva de entradas expiradas (evita memory leak)
+    // En lugar de nuclear clear() al exceder 500, podar solo las expiradas
+    if (__progressWriteDedupe.size > 100) {
+      for (const [k, v] of __progressWriteDedupe) {
+        if (now - v.at > __DEDUPE_WINDOW_MS * 4) {
+          __progressWriteDedupe.delete(k);
+        }
+      }
     }
 
     // Métrica: write real (no dedupe)

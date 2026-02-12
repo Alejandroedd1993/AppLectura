@@ -43,6 +43,7 @@ import {
   mergeSessions
 } from '../firebase/firestore';
 import { validateAndSanitizeSession } from '../utils/sessionValidator';
+import logger from '../utils/logger';
 
 const SESSIONS_KEY_PREFIX = 'appLectura_sessions_';
 const LEGACY_SESSIONS_KEY = 'appLectura_sessions';
@@ -165,7 +166,7 @@ export async function cleanupLegacyDraftBackupsInSessions({ maxToScan = 200 } = 
 
     return { ok: true, scanned: all?.length || 0, deleted, failed };
   } catch (error) {
-    console.warn('⚠️ [SessionManager] Error limpiando draft backups legacy en sessions:', error);
+    logger.warn('⚠️ [SessionManager] Error limpiando draft backups legacy en sessions:', error);
     return { ok: false, reason: 'error', scanned: 0, deleted: 0, failed: 0 };
   }
 }
@@ -208,9 +209,9 @@ function migratePendingSyncsIfNeeded(uid) {
     const remaining = legacy.filter(id => !existingIds.has(id));
     localStorage.setItem(LEGACY_PENDING_SYNCS_KEY, JSON.stringify(remaining));
 
-    console.log('📦 [SessionManager] Migrados pending syncs legacy -> scoped:', { uid, migrated: filtered.length });
+    logger.log('📦 [SessionManager] Migrados pending syncs legacy -> scoped:', { uid, migrated: filtered.length });
   } catch (e) {
-    console.warn('⚠️ [SessionManager] Error migrando pending syncs:', e);
+    logger.warn('⚠️ [SessionManager] Error migrando pending syncs:', e);
   }
 }
 
@@ -238,7 +239,7 @@ function _migrateLegacyDataIfNeeded() {
     // Si encontramos datos legacy, intentamos migrarlos
     const targetKey = getStorageKey();
     if (!localStorage.getItem(targetKey)) {
-      console.log('📦 [SessionManager] Migrando sesiones legacy a:', targetKey);
+      logger.log('📦 [SessionManager] Migrando sesiones legacy a:', targetKey);
       localStorage.setItem(targetKey, legacyData);
 
       // Migrar también el ID de sesión actual
@@ -252,7 +253,7 @@ function _migrateLegacyDataIfNeeded() {
       localStorage.removeItem(LEGACY_SESSIONS_KEY);
     }
   } catch (e) {
-    console.warn('⚠️ [SessionManager] Error migrando legacy data:', e);
+    logger.warn('⚠️ [SessionManager] Error migrando legacy data:', e);
   }
 }
 
@@ -262,7 +263,7 @@ function _migrateLegacyDataIfNeeded() {
  */
 export function setCurrentUser(userId) {
   currentUserId = userId;
-  console.log('👤 [SessionManager] Usuario establecido:', userId || 'guest');
+  logger.log('👤 [SessionManager] Usuario establecido:', userId || 'guest');
   // 🆕 Migración segura de pending syncs (filtrada por sesiones existentes)
   if (userId) migratePendingSyncsIfNeeded(userId);
   // 🛡️ SEGURIDAD: Desactivada migración legacy para evitar contaminación de datos entre usuarios
@@ -319,7 +320,7 @@ export function getAllSessions() {
     // Ordenar por última modificación (más reciente primero)
     return sessions.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
   } catch (error) {
-    console.error('❌ [SessionManager] Error cargando sesiones:', error);
+    logger.error('❌ [SessionManager] Error cargando sesiones:', error);
     return [];
   }
 }
@@ -338,7 +339,7 @@ export function replaceAllLocalSessions(nextSessions) {
     localStorage.setItem(getStorageKey(), JSON.stringify(limited));
     return true;
   } catch (error) {
-    console.error('❌ [SessionManager] Error reemplazando sesiones locales:', error);
+    logger.error('❌ [SessionManager] Error reemplazando sesiones locales:', error);
     return false;
   }
 }
@@ -354,12 +355,12 @@ export function saveSession(session, syncToCloud = true) {
     const validation = validateAndSanitizeSession(session);
 
     if (!validation.valid) {
-      console.error('❌ [SessionManager] Sesión inválida, rechazada:', validation.errors);
+      logger.error('❌ [SessionManager] Sesión inválida, rechazada:', validation.errors);
       return false;
     }
 
     if (validation.errors.length > 0) {
-      console.warn('⚠️ [SessionManager] Sesión sanitizada con advertencias:', validation.errors);
+      logger.warn('⚠️ [SessionManager] Sesión sanitizada con advertencias:', validation.errors);
     }
 
     const sessionToSave = {
@@ -384,14 +385,14 @@ export function saveSession(session, syncToCloud = true) {
       if (sessions.length > MAX_SESSIONS) {
         const removed = sessions.slice(MAX_SESSIONS);
         sessions = sessions.slice(0, MAX_SESSIONS);
-        console.log(`🗑️ [SessionManager] Límite alcanzado (${MAX_SESSIONS}). Eliminadas ${removed.length} sesiones antiguas`);
+        logger.log(`🗑️ [SessionManager] Límite alcanzado (${MAX_SESSIONS}). Eliminadas ${removed.length} sesiones antiguas`);
 
         // Eliminar también de Firestore si están sincronizadas
         if (currentUserId && syncToCloud) {
           removed.forEach(oldSession => {
             if (oldSession.id) {
               deleteSessionFromFirestore(currentUserId, oldSession.id)
-                .catch(err => console.warn('⚠️ Error limpiando sesión antigua:', err));
+                .catch(err => logger.warn('⚠️ Error limpiando sesión antigua:', err));
             }
           });
         }
@@ -402,18 +403,18 @@ export function saveSession(session, syncToCloud = true) {
     // 🆕 P8 FIX: Manejar QuotaExceededError
     try {
       localStorage.setItem(getStorageKey(), JSON.stringify(sessions));
-      console.log('✅ [SessionManager] Sesión guardada localmente:', sessionToSave.id, 'en', getStorageKey());
+      logger.log('✅ [SessionManager] Sesión guardada localmente:', sessionToSave.id, 'en', getStorageKey());
     } catch (storageError) {
       if (storageError.name === 'QuotaExceededError' ||
         storageError.message?.includes('quota') ||
         storageError.code === 22) { // Safari usa código 22
-        console.warn('⚠️ [SessionManager] localStorage lleno, eliminando sesiones antiguas...');
+        logger.warn('⚠️ [SessionManager] localStorage lleno, eliminando sesiones antiguas...');
 
         // Eliminar las 3 sesiones más antiguas y reintentar
         sessions = sessions.slice(0, -3);
         try {
           localStorage.setItem(getStorageKey(), JSON.stringify(sessions));
-          console.log('✅ [SessionManager] Sesión guardada después de limpiar espacio');
+          logger.log('✅ [SessionManager] Sesión guardada después de limpiar espacio');
 
           // Notificar al usuario que se liberó espacio
           window.dispatchEvent(new CustomEvent('storage-quota-warning', {
@@ -423,7 +424,7 @@ export function saveSession(session, syncToCloud = true) {
             }
           }));
         } catch (retryError) {
-          console.error('❌ [SessionManager] No se pudo guardar incluso después de limpiar:', retryError);
+          logger.error('❌ [SessionManager] No se pudo guardar incluso después de limpiar:', retryError);
           // Último recurso: limpiar todo el caché de análisis
           try {
             const keysToClean = [];
@@ -439,9 +440,9 @@ export function saveSession(session, syncToCloud = true) {
             }
             keysToClean.forEach(key => localStorage.removeItem(key));
             localStorage.setItem(getStorageKey(), JSON.stringify(sessions));
-            console.log('✅ [SessionManager] Sesión guardada después de limpiar caché de análisis');
+            logger.log('✅ [SessionManager] Sesión guardada después de limpiar caché de análisis');
           } catch (finalError) {
-            console.error('❌ [SessionManager] Error crítico de almacenamiento:', finalError);
+            logger.error('❌ [SessionManager] Error crítico de almacenamiento:', finalError);
             return false;
           }
         }
@@ -457,12 +458,12 @@ export function saveSession(session, syncToCloud = true) {
 
       saveSessionToFirestore(currentUserId, sessionToSave)
         .then(() => {
-          console.log('☁️ [SessionManager] Sesión sincronizada con Firestore:', session.id);
+          logger.log('☁️ [SessionManager] Sesión sincronizada con Firestore:', session.id);
           // 🆕 Quitar de pendientes al completar
           clearPendingSync(sessionToSave.id);
         })
         .catch(error => {
-          console.warn('⚠️ [SessionManager] Error sincronizando con Firestore:', error.message);
+          logger.warn('⚠️ [SessionManager] Error sincronizando con Firestore:', error.message);
           // 🆕 Mantener en pendientes para reintento posterior
           // No llamamos clearPendingSync aquí para que se reintente
 
@@ -476,12 +477,12 @@ export function saveSession(session, syncToCloud = true) {
           }));
         });
     } else if (syncToCloud && !currentUserId) {
-      console.log('ℹ️ [SessionManager] Sin usuario autenticado, solo guardado local');
+      logger.log('ℹ️ [SessionManager] Sin usuario autenticado, solo guardado local');
     }
 
     return true;
   } catch (error) {
-    console.error('❌ [SessionManager] Error guardando sesión:', error);
+    logger.error('❌ [SessionManager] Error guardando sesión:', error);
     return false;
   }
 }
@@ -495,23 +496,23 @@ export function loadSession(sessionId) {
     const session = sessions.find(s => s.id === sessionId);
 
     if (session) {
-      console.log('✅ [SessionManager] Sesión cargada:', sessionId);
+      logger.log('✅ [SessionManager] Sesión cargada:', sessionId);
       return session;
     }
 
-    console.warn('⚠️ [SessionManager] Sesión no encontrada:', sessionId);
+    logger.warn('⚠️ [SessionManager] Sesión no encontrada:', sessionId);
 
     // 🧹 AUTO-LIMPIEZA: Si la sesión no existe pero está marcada como current, limpiar
     const currentKey = getCurrentSessionIdKey();
     const currentId = localStorage.getItem(currentKey);
     if (currentId === sessionId) {
-      console.log('🧹 [SessionManager] Limpiando referencia a sesión inválida:', sessionId);
+      logger.log('🧹 [SessionManager] Limpiando referencia a sesión inválida:', sessionId);
       localStorage.removeItem(currentKey);
     }
 
     return null;
   } catch (error) {
-    console.error('❌ [SessionManager] Error cargando sesión:', error);
+    logger.error('❌ [SessionManager] Error cargando sesión:', error);
     return null;
   }
 }
@@ -528,7 +529,7 @@ export function deleteSession(sessionId) {
     try {
       localStorage.setItem(getStorageKey(), JSON.stringify(filtered));
     } catch (storageError) {
-      console.error('❌ [SessionManager] Error escribiendo en localStorage:', storageError);
+      logger.error('❌ [SessionManager] Error escribiendo en localStorage:', storageError);
       // Intentar eliminar items individuales si el setItem falla
       window.dispatchEvent(new CustomEvent('storage-error', {
         detail: { message: 'Error al eliminar sesión del almacenamiento local', error: storageError.message }
@@ -536,7 +537,7 @@ export function deleteSession(sessionId) {
       return false;
     }
 
-    console.log('✅ [SessionManager] Sesión eliminada localmente:', sessionId);
+    logger.log('✅ [SessionManager] Sesión eliminada localmente:', sessionId);
 
     // Si era la sesión actual, limpiar referencia
     const currentKey = getCurrentSessionIdKey();
@@ -550,10 +551,10 @@ export function deleteSession(sessionId) {
     if (currentUserId) {
       deleteSessionFromFirestore(currentUserId, sessionId)
         .then(() => {
-          console.log('☁️ [SessionManager] Sesión eliminada de Firestore:', sessionId);
+          logger.log('☁️ [SessionManager] Sesión eliminada de Firestore:', sessionId);
         })
         .catch(error => {
-          console.warn('⚠️ [SessionManager] Error eliminando de Firestore:', error.message);
+          logger.warn('⚠️ [SessionManager] Error eliminando de Firestore:', error.message);
           // Notificar al usuario que la sesión puede seguir en la nube
           window.dispatchEvent(new CustomEvent('sync-error', {
             detail: {
@@ -567,7 +568,7 @@ export function deleteSession(sessionId) {
 
     return true;
   } catch (error) {
-    console.error('❌ [SessionManager] Error eliminando sesión:', error);
+    logger.error('❌ [SessionManager] Error eliminando sesión:', error);
     return false;
   }
 }
@@ -582,24 +583,24 @@ export function deleteAllSessions() {
       localStorage.removeItem(getStorageKey());
       localStorage.removeItem(getCurrentSessionIdKey());
     } catch (storageError) {
-      console.error('❌ [SessionManager] Error limpiando localStorage:', storageError);
+      logger.error('❌ [SessionManager] Error limpiando localStorage:', storageError);
       window.dispatchEvent(new CustomEvent('storage-error', {
         detail: { message: 'Error al limpiar el almacenamiento local', error: storageError.message }
       }));
       return false;
     }
 
-    console.log('✅ [SessionManager] Todas las sesiones eliminadas localmente');
+    logger.log('✅ [SessionManager] Todas las sesiones eliminadas localmente');
 
     // 🔥 Eliminar de Firestore (async, non-blocking)
     // 🆕 P11 FIX: Notificar al usuario si falla la eliminación en cloud
     if (currentUserId) {
       deleteAllUserSessions(currentUserId)
         .then(() => {
-          console.log('☁️ [SessionManager] Todas las sesiones eliminadas de Firestore');
+          logger.log('☁️ [SessionManager] Todas las sesiones eliminadas de Firestore');
         })
         .catch(error => {
-          console.warn('⚠️ [SessionManager] Error eliminando sesiones de Firestore:', error.message);
+          logger.warn('⚠️ [SessionManager] Error eliminando sesiones de Firestore:', error.message);
           // Notificar al usuario que las sesiones pueden seguir en la nube
           window.dispatchEvent(new CustomEvent('sync-error', {
             detail: {
@@ -612,7 +613,7 @@ export function deleteAllSessions() {
 
     return true;
   } catch (error) {
-    console.error('❌ [SessionManager] Error eliminando todas las sesiones:', error);
+    logger.error('❌ [SessionManager] Error eliminando todas las sesiones:', error);
     return false;
   }
 }
@@ -622,11 +623,11 @@ export function deleteAllSessions() {
  */
 export function createSessionFromState(state, { syncToCloud = true } = {}) {
   // 🔍 DEBUG: Logging exhaustivo del estado recibido
-  console.log('🔵 [SessionManager.createSessionFromState] Iniciando creación...');
-  console.log('🔵 [SessionManager] state.texto:', state.texto ? `${state.texto.length} chars` : 'NULL/UNDEFINED');
-  console.log('🔵 [SessionManager] state.texto preview:', state.texto?.substring(0, 100) || 'VACÍO');
-  console.log('🔵 [SessionManager] state.archivoActual:', state.archivoActual?.name || 'sin archivo');
-  console.log('🔵 [SessionManager] state.completeAnalysis:', !!state.completeAnalysis);
+  logger.log('🔵 [SessionManager.createSessionFromState] Iniciando creación...');
+  logger.log('🔵 [SessionManager] state.texto:', state.texto ? `${state.texto.length} chars` : 'NULL/UNDEFINED');
+  logger.log('🔵 [SessionManager] state.texto preview:', state.texto?.substring(0, 100) || 'VACÍO');
+  logger.log('🔵 [SessionManager] state.archivoActual:', state.archivoActual?.name || 'sin archivo');
+  logger.log('🔵 [SessionManager] state.completeAnalysis:', !!state.completeAnalysis);
 
   const sessionId = generateSessionId();
   const title = state.text?.fileName ||
@@ -678,7 +679,7 @@ export function createSessionFromState(state, { syncToCloud = true } = {}) {
     }
   };
 
-  console.log('✅ [SessionManager] Sesión creada con texto:', !!session.text, 'length:', session.text?.content?.length || 0);
+  logger.log('✅ [SessionManager] Sesión creada con texto:', !!session.text, 'length:', session.text?.content?.length || 0);
 
   saveSession(session, syncToCloud);
   setCurrentSession(sessionId);
@@ -711,7 +712,7 @@ export function updateCurrentSession(updates, { syncToCloud = true } = {}) {
     lastModified: Date.now()
   };
 
-  console.log('💾 [SessionManager.updateCurrentSession] Guardando:', {
+  logger.log('💾 [SessionManager.updateCurrentSession] Guardando:', {
     sessionId: currentId,
     hasText: !!updated.text,
     hasArtifacts: !!updated.artifactsDrafts,
@@ -729,7 +730,7 @@ export function setCurrentSession(sessionId) {
     localStorage.setItem(getCurrentSessionIdKey(), sessionId);
     return true;
   } catch (error) {
-    console.error('❌ [SessionManager] Error estableciendo sesión actual:', error);
+    logger.error('❌ [SessionManager] Error estableciendo sesión actual:', error);
     return false;
   }
 }
@@ -750,13 +751,13 @@ export function getCurrentSessionId() {
  */
 export function restoreSessionToState(session, contextSetters) {
   if (!session) {
-    console.error('❌ [restoreSessionToState] Sesión inválida:', session);
+    logger.error('❌ [restoreSessionToState] Sesión inválida:', session);
     return false;
   }
 
   try {
-    console.log('🔄 [SessionManager] Restaurando sesión:', session.id);
-    console.log('📊 Datos de sesión:', {
+    logger.log('🔄 [SessionManager] Restaurando sesión:', session.id);
+    logger.log('📊 Datos de sesión:', {
       hasText: !!session.text?.content,
       hasAnalysis: !!session.completeAnalysis,
       hasRubrics: !!session.rubricProgress,
@@ -779,9 +780,9 @@ export function restoreSessionToState(session, contextSetters) {
       session.text?.sourceCourseId || null;
 
     if (contextSetters.switchLecture) {
-      console.log('🔄 [SessionManager] Usando switchLecture ATÓMICO para restaurar');
-      console.log('📎 textoId:', textoIdToRestore);
-      console.log('📎 courseId:', courseIdToRestore);
+      logger.log('🔄 [SessionManager] Usando switchLecture ATÓMICO para restaurar');
+      logger.log('📎 textoId:', textoIdToRestore);
+      logger.log('📎 courseId:', courseIdToRestore);
 
       // Primero: cambio atómico de lectura (texto + IDs + reset análisis)
       contextSetters.switchLecture({
@@ -797,12 +798,12 @@ export function restoreSessionToState(session, contextSetters) {
 
       // Después: restaurar análisis específico de la sesión
       if (session.completeAnalysis && contextSetters.setCompleteAnalysis) {
-        console.log('🔬 Restaurando análisis de la sesión...');
+        logger.log('🔬 Restaurando análisis de la sesión...');
         contextSetters.setCompleteAnalysis(session.completeAnalysis);
       }
     } else {
       // Fallback: método antiguo (sin estado atómico)
-      console.warn('⚠️ [SessionManager] switchLecture no disponible, usando método legacy');
+      logger.warn('⚠️ [SessionManager] switchLecture no disponible, usando método legacy');
 
       if (session.text?.content && contextSetters.setTexto) {
         contextSetters.setTexto(session.text.content);
@@ -823,33 +824,33 @@ export function restoreSessionToState(session, contextSetters) {
 
     // Restaurar progreso de rúbricas (independiente del estado atómico)
     if (session.rubricProgress && contextSetters.setRubricProgress) {
-      console.log('📈 Restaurando progreso de rúbricas...');
+      logger.log('📈 Restaurando progreso de rúbricas...');
       contextSetters.setRubricProgress(session.rubricProgress);
     }
 
     // Restaurar citas guardadas
     if (session.savedCitations && contextSetters.setSavedCitations) {
-      console.log('📚 Restaurando citas guardadas...');
+      logger.log('📚 Restaurando citas guardadas...');
       contextSetters.setSavedCitations(session.savedCitations);
     }
 
     // 🆕 Restaurar progreso de actividades
     if (session.activitiesProgress && contextSetters.setActivitiesProgress) {
-      console.log('🎯 Restaurando progreso de actividades...');
+      logger.log('🎯 Restaurando progreso de actividades...');
       contextSetters.setActivitiesProgress(session.activitiesProgress);
     }
 
     // 🆕 CRÍTICO: Restaurar sourceCourseId para sincronización con dashboard
     if (session.sourceCourseId && contextSetters.setSourceCourseId) {
-      console.log('🎓 Restaurando sourceCourseId:', session.sourceCourseId);
+      logger.log('🎓 Restaurando sourceCourseId:', session.sourceCourseId);
       contextSetters.setSourceCourseId(session.sourceCourseId);
     } else if (session.sourceCourseId) {
-      console.warn('⚠️ sourceCourseId presente pero sin setter - progreso no se sincronizará');
+      logger.warn('⚠️ sourceCourseId presente pero sin setter - progreso no se sincronizará');
     }
 
     // 🆕 Restaurar borradores de artefactos
     if (session.artifactsDrafts) {
-      console.log('📋 Restaurando borradores de artefactos...');
+      logger.log('📋 Restaurando borradores de artefactos...');
       restoreArtifactsDrafts(session.artifactsDrafts, textoIdToRestore);
     }
 
@@ -861,10 +862,10 @@ export function restoreSessionToState(session, contextSetters) {
       detail: { sessionId: session.id }
     }));
 
-    console.log('✅ [SessionManager] Sesión restaurada exitosamente');
+    logger.log('✅ [SessionManager] Sesión restaurada exitosamente');
     return true;
   } catch (error) {
-    console.error('❌ [SessionManager] Error restaurando sesión:', error);
+    logger.error('❌ [SessionManager] Error restaurando sesión:', error);
     return false;
   }
 }
@@ -986,9 +987,9 @@ export function restoreArtifactsDrafts(artifacts, textoId = null) {
       }
     }
 
-    console.log('✅ [SessionManager] Borradores de artefactos restaurados para textoId:', textoId || 'global');
+    logger.log('✅ [SessionManager] Borradores de artefactos restaurados para textoId:', textoId || 'global');
   } catch (error) {
-    console.error('❌ [SessionManager] Error restaurando borradores:', error);
+    logger.error('❌ [SessionManager] Error restaurando borradores:', error);
   }
 }
 
@@ -1026,9 +1027,9 @@ export function clearArtifactsDrafts(textoId = null) {
     sessionStorage.removeItem(key('ensayoIntegrador_text'));
     sessionStorage.removeItem(key('ensayoIntegrador_dimension'));
 
-    console.log('✅ [SessionManager] Borradores de artefactos limpiados para textoId:', textoId || 'global');
+    logger.log('✅ [SessionManager] Borradores de artefactos limpiados para textoId:', textoId || 'global');
   } catch (error) {
-    console.error('❌ [SessionManager] Error limpiando borradores:', error);
+    logger.error('❌ [SessionManager] Error limpiando borradores:', error);
   }
 }
 
@@ -1093,21 +1094,21 @@ export async function getAllSessionsMerged() {
     const localSessions = getAllSessions();
 
     if (!currentUserId) {
-      console.log('ℹ️ [SessionManager] Sin usuario autenticado, solo sesiones locales');
+      logger.log('ℹ️ [SessionManager] Sin usuario autenticado, solo sesiones locales');
       return localSessions.map(s => ({ ...s, source: 'local', inCloud: false, inLocal: true }));
     }
 
-    console.log('🔄 [SessionManager] Obteniendo sesiones de Firestore...');
+    logger.log('🔄 [SessionManager] Obteniendo sesiones de Firestore...');
     const firestoreSessions = await getUserSessions(currentUserId);
 
     const merged = mergeSessions(localSessions, firestoreSessions);
 
-    console.log(`✅ [SessionManager] ${merged.length} sesiones totales (${localSessions.length} locales, ${firestoreSessions.length} en cloud)`);
+    logger.log(`✅ [SessionManager] ${merged.length} sesiones totales (${localSessions.length} locales, ${firestoreSessions.length} en cloud)`);
 
     return merged;
 
   } catch (error) {
-    console.error('❌ [SessionManager] Error obteniendo sesiones merged:', error);
+    logger.error('❌ [SessionManager] Error obteniendo sesiones merged:', error);
     // Fallback a sesiones locales
     return getAllSessions().map(s => ({ ...s, source: 'local', inCloud: false, inLocal: true }));
   }
@@ -1119,14 +1120,14 @@ export async function getAllSessionsMerged() {
  */
 export async function syncAllSessionsToCloud() {
   if (!currentUserId) {
-    console.warn('⚠️ [SessionManager] No se puede sincronizar sin usuario autenticado');
+    logger.warn('⚠️ [SessionManager] No se puede sincronizar sin usuario autenticado');
     return { synced: 0, errors: 0 };
   }
 
   try {
     const localSessions = getAllSessions();
 
-    console.log(`🔄 [SessionManager] Sincronizando ${localSessions.length} sesiones con Firestore...`);
+    logger.log(`🔄 [SessionManager] Sincronizando ${localSessions.length} sesiones con Firestore...`);
 
     let synced = 0;
     let errors = 0;
@@ -1136,17 +1137,17 @@ export async function syncAllSessionsToCloud() {
         await saveSessionToFirestore(currentUserId, session);
         synced++;
       } catch (error) {
-        console.error(`❌ Error sincronizando sesión ${session.id}:`, error);
+        logger.error(`❌ Error sincronizando sesión ${session.id}:`, error);
         errors++;
       }
     }
 
-    console.log(`✅ [SessionManager] Sincronización completada: ${synced} exitosas, ${errors} errores`);
+    logger.log(`✅ [SessionManager] Sincronización completada: ${synced} exitosas, ${errors} errores`);
 
     return { synced, errors };
 
   } catch (error) {
-    console.error('❌ [SessionManager] Error en sincronización masiva:', error);
+    logger.error('❌ [SessionManager] Error en sincronización masiva:', error);
     throw error;
   }
 }
@@ -1174,7 +1175,7 @@ export async function getSyncStatus() {
     return stats;
 
   } catch (error) {
-    console.error('❌ [SessionManager] Error obteniendo estado de sincronización:', error);
+    logger.error('❌ [SessionManager] Error obteniendo estado de sincronización:', error);
     return {
       total: 0,
       maxSessions: MAX_SESSIONS,
@@ -1222,7 +1223,7 @@ function markPendingSync(sessionId) {
       localStorage.setItem(getPendingSyncsKey(), JSON.stringify(pending));
     }
   } catch (e) {
-    console.warn('⚠️ [SessionManager] Error guardando pending sync:', e);
+    logger.warn('⚠️ [SessionManager] Error guardando pending sync:', e);
   }
 }
 
@@ -1237,7 +1238,7 @@ function clearPendingSync(sessionId) {
     const updated = pending.filter(id => id !== sessionId);
     localStorage.setItem(getPendingSyncsKey(), JSON.stringify(updated));
   } catch (e) {
-    console.warn('⚠️ [SessionManager] Error limpiando pending sync:', e);
+    logger.warn('⚠️ [SessionManager] Error limpiando pending sync:', e);
   }
 }
 
@@ -1268,7 +1269,7 @@ export function getPendingSyncs() {
  */
 export async function syncPendingSessions() {
   if (!currentUserId) {
-    console.log('ℹ️ [SessionManager] No hay usuario, omitiendo sync de pendientes');
+    logger.log('ℹ️ [SessionManager] No hay usuario, omitiendo sync de pendientes');
     return { synced: 0, failed: 0 };
   }
 
@@ -1277,7 +1278,7 @@ export async function syncPendingSessions() {
     return { synced: 0, failed: 0 };
   }
 
-  console.log(`🔄 [SessionManager] Sincronizando ${pendingIds.length} sesiones pendientes...`);
+  logger.log(`🔄 [SessionManager] Sincronizando ${pendingIds.length} sesiones pendientes...`);
 
   let synced = 0;
   let failed = 0;
@@ -1295,14 +1296,14 @@ export async function syncPendingSessions() {
       await saveSessionToFirestore(currentUserId, session);
       clearPendingSync(sessionId);
       synced++;
-      console.log(`✅ [SessionManager] Sesión pendiente sincronizada: ${sessionId}`);
+      logger.log(`✅ [SessionManager] Sesión pendiente sincronizada: ${sessionId}`);
     } catch (error) {
       failed++;
-      console.warn(`⚠️ [SessionManager] Error sincronizando sesión pendiente ${sessionId}:`, error.message);
+      logger.warn(`⚠️ [SessionManager] Error sincronizando sesión pendiente ${sessionId}:`, error.message);
     }
   }
 
-  console.log(`✅ [SessionManager] Sync pendientes completado: ${synced} ok, ${failed} fallidas`);
+  logger.log(`✅ [SessionManager] Sync pendientes completado: ${synced} ok, ${failed} fallidas`);
   return { synced, failed };
 }
 
@@ -1316,7 +1317,7 @@ export function setupBeforeUnloadSync() {
   window.addEventListener('beforeunload', (_event) => {
     const pendingIds = getPendingSyncs();
     if (pendingIds.length > 0 && currentUserId) {
-      console.log(`⚠️ [SessionManager] Hay ${pendingIds.length} sesiones sin sincronizar`);
+      logger.log(`⚠️ [SessionManager] Hay ${pendingIds.length} sesiones sin sincronizar`);
       // No podemos hacer async aquí, pero el pending_syncs se sincronizará al volver
       // Opcionalmente mostrar advertencia al usuario
       // event.preventDefault();
@@ -1324,5 +1325,5 @@ export function setupBeforeUnloadSync() {
     }
   });
 
-  console.log('✅ [SessionManager] beforeunload sync handler registrado');
+  logger.log('✅ [SessionManager] beforeunload sync handler registrado');
 }

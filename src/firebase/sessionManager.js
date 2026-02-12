@@ -17,9 +17,8 @@
  * - useSessionMaintenance.js: startSessionHeartbeat(), subscribeToSessionConflicts()
  * 
  * IMPACTO EN FIREBASE:
- * - Heartbeat escribe en Firestore cada 30s por usuario activo
- * - Con 40 estudiantes = ~80 escrituras/minuto = ~4,800/hora
- * - Considerar aumentar intervalo a 60-90s si costos son problema
+ * - 🔧 M1 FIX: Heartbeat cada 60s (antes 30s) para reducir costos
+ * - Con 40 estudiantes = ~40 escrituras/minuto = ~2,400/hora
  * 
  * @module firebase/sessionManager
  * @see services/sessionManager.js para sesión de TRABAJO (progreso, borradores)
@@ -180,9 +179,10 @@ export function listenToSessionConflicts(userId, onSessionConflict) {
  * @returns {Function} - Función para detener heartbeat
  */
 export function startSessionHeartbeat(userId) {
+  // 🔧 M1 FIX: intervalo aumentado de 30s a 60s para reducir costos de escritura
   const intervalId = setInterval(() => {
     updateSessionActivity(userId);
-  }, 30000); // Cada 30 segundos
+  }, 60000); // Cada 60 segundos
   
   // Primera actualización inmediata
   updateSessionActivity(userId);

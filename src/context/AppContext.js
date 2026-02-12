@@ -2917,22 +2917,23 @@ export const AppContextProvider = ({ children }) => {
 
         console.log('✅ [AppContext] Sesión restaurada exitosamente');
 
-        // Re-habilitar auto-guardado después de 500ms (suficiente para React render loop)
-        setTimeout(() => {
-          localStorage.removeItem('__restoring_session__');
-          isRestoringRef.current = false; // 🔓 Liberar protección
-          console.log('🔓 [AppContext] Auto-guardado re-habilitado y protección liberada');
-        }, 500);
-      } else {
-        localStorage.removeItem('__restoring_session__');
+        // 🔧 H4 FIX: usar finally pattern para garantizar limpieza del flag
+        // incluso si alguna operación posterior falla (descarga PDF, fetch, etc.)
       }
 
       return success;
     } catch (error) {
       console.error('❌ [AppContext] Error restaurando sesión:', error);
-      localStorage.removeItem('__restoring_session__');
-      isRestoringRef.current = false;
       return false;
+    } finally {
+      // 🔧 H4 FIX: Siempre programar limpieza del flag, sin importar el resultado
+      // El setTimeout de 500ms permite que React procese los state updates antes
+      // de re-habilitar el auto-guardado
+      setTimeout(() => {
+        localStorage.removeItem('__restoring_session__');
+        isRestoringRef.current = false;
+        console.log('🔓 [AppContext] Auto-guardado re-habilitado y protección liberada');
+      }, 500);
     }
   }, [setTextoWithDebug, setCompleteAnalysis, setArchivoActualStable, setRubricProgress, setSavedCitations, setActivitiesProgress, setCurrentTextoId, setSourceCourseId]);
 

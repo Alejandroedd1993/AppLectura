@@ -6,6 +6,7 @@ import {
     startSessionHeartbeat,
     getSessionInfo
 } from '../firebase/sessionManager';
+import logger from '../utils/logger';
 
 /**
  * Hook para gestionar el mantenimiento de la sesión activa:
@@ -52,7 +53,7 @@ export const useSessionMaintenance = (currentUser, userData) => {
                 });
 
             } catch (error) {
-                console.error('❌ [Session] Error inicializando sesión:', error);
+                logger.error('❌ [Session] Error inicializando sesión:', error);
             }
         };
 
@@ -71,7 +72,7 @@ export const useSessionMaintenance = (currentUser, userData) => {
             // Cerrar sesión activa al desmontar
             if (currentUser?.uid) {
                 closeActiveSession(currentUser.uid)
-                    .catch(err => console.warn('⚠️ [Session] Error cerrando sesión:', err));
+                    .catch(err => logger.warn('⚠️ [Session] Error cerrando sesión:', err));
             }
         };
     }, [currentUser, userData]);
@@ -84,7 +85,7 @@ export const useSessionMaintenance = (currentUser, userData) => {
                 const timestamp = parseInt(flag, 10);
                 const now = Date.now();
                 if (now - timestamp > 30000) { // 30 segundos
-                    console.warn('⚠️ [Session] Flag __restoring_session__ stuck, limpiando...');
+                    logger.warn('⚠️ [Session] Flag __restoring_session__ stuck, limpiando...');
                     localStorage.removeItem('__restoring_session__');
                 }
             }
