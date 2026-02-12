@@ -27,6 +27,7 @@
 
 import { db } from './config';
 import { doc, setDoc, onSnapshot, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import logger from '../utils/logger';
 
 /**
  * Genera un ID único para esta sesión del navegador
@@ -58,10 +59,10 @@ function getCurrentSessionId() {
 export async function createActiveSession(userId, metadata = {}) {
   const sessionId = getCurrentSessionId();
   
-  console.log('🔐 [SessionManager.createActiveSession] Iniciando...');
-  console.log('  - User ID:', userId);
-  console.log('  - Session ID:', sessionId);
-  console.log('  - Metadata:', metadata);
+  logger.log('🔐 [SessionManager.createActiveSession] Iniciando...');
+  logger.log('  - User ID:', userId);
+  logger.log('  - Session ID:', sessionId);
+  logger.log('  - Metadata:', metadata);
   
   const sessionData = {
     sessionId,
@@ -75,14 +76,14 @@ export async function createActiveSession(userId, metadata = {}) {
   const sessionRef = doc(db, 'active_sessions', userId);
   
   try {
-    console.log('📝 [SessionManager] Escribiendo a Firestore:', sessionRef.path);
+    logger.log('📝 [SessionManager] Escribiendo a Firestore:', sessionRef.path);
     await setDoc(sessionRef, sessionData);
-    console.log('✅ [SessionManager] Sesión creada exitosamente');
-    console.log('📊 [SessionManager] Datos guardados:', sessionData);
+    logger.log('✅ [SessionManager] Sesión creada exitosamente');
+    logger.log('📊 [SessionManager] Datos guardados:', sessionData);
     return sessionId;
   } catch (error) {
-    console.error('❌ [SessionManager] Error creando sesión:', error);
-    console.error('📋 [SessionManager] Detalles del error:', error.message);
+    logger.error('❌ [SessionManager] Error creando sesión:', error);
+    logger.error('📋 [SessionManager] Detalles del error:', error.message);
     throw error;
   }
 }
@@ -103,9 +104,9 @@ export async function updateSessionActivity(userId) {
       lastActivity: serverTimestamp()
     }, { merge: true });
     
-    console.log('🔄 [SessionManager] Actividad actualizada');
+    logger.log('🔄 [SessionManager] Actividad actualizada');
   } catch (error) {
-    console.warn('⚠️ [SessionManager] Error actualizando actividad:', error);
+    logger.warn('⚠️ [SessionManager] Error actualizando actividad:', error);
   }
 }
 
@@ -120,9 +121,9 @@ export async function closeActiveSession(userId) {
   try {
     await deleteDoc(sessionRef);
     sessionStorage.removeItem('appLectura_sessionId');
-    console.log('✅ [SessionManager] Sesión cerrada');
+    logger.log('✅ [SessionManager] Sesión cerrada');
   } catch (error) {
-    console.error('❌ [SessionManager] Error cerrando sesión:', error);
+    logger.error('❌ [SessionManager] Error cerrando sesión:', error);
   }
 }
 
@@ -138,37 +139,37 @@ export function listenToSessionConflicts(userId, onSessionConflict) {
   const currentSessionId = getCurrentSessionId();
   const sessionRef = doc(db, 'active_sessions', userId);
   
-  console.log('👂 [SessionManager.listenToSessionConflicts] Iniciando listener...');
-  console.log('  - User ID:', userId);
-  console.log('  - Current Session ID:', currentSessionId);
-  console.log('  - Firestore path:', sessionRef.path);
+  logger.log('👂 [SessionManager.listenToSessionConflicts] Iniciando listener...');
+  logger.log('  - User ID:', userId);
+  logger.log('  - Current Session ID:', currentSessionId);
+  logger.log('  - Firestore path:', sessionRef.path);
   
   return onSnapshot(sessionRef, (doc) => {
-    console.log('📡 [SessionManager] Snapshot recibido');
-    console.log('  - Documento existe:', doc.exists());
+    logger.log('📡 [SessionManager] Snapshot recibido');
+    logger.log('  - Documento existe:', doc.exists());
     
     if (doc.exists()) {
       const data = doc.data();
-      console.log('📊 [SessionManager] Datos de sesión:', data);
-      console.log('  - Session ID en Firestore:', data.sessionId);
-      console.log('  - Session ID local:', currentSessionId);
-      console.log('  - ¿Son diferentes?:', data.sessionId !== currentSessionId);
+      logger.log('📊 [SessionManager] Datos de sesión:', data);
+      logger.log('  - Session ID en Firestore:', data.sessionId);
+      logger.log('  - Session ID local:', currentSessionId);
+      logger.log('  - ¿Son diferentes?:', data.sessionId !== currentSessionId);
       
       // Si el sessionId es diferente al nuestro, otra sesión tomó control
       if (data.sessionId !== currentSessionId) {
-        console.warn('⚠️⚠️⚠️ [SessionManager] ¡CONFLICTO! Sesión tomada por otro dispositivo');
-        console.warn('  - Session ID nueva:', data.sessionId);
-        console.warn('  - Session ID nuestra:', currentSessionId);
+        logger.warn('⚠️⚠️⚠️ [SessionManager] ¡CONFLICTO! Sesión tomada por otro dispositivo');
+        logger.warn('  - Session ID nueva:', data.sessionId);
+        logger.warn('  - Session ID nuestra:', currentSessionId);
         onSessionConflict(data);
       } else {
-        console.log('✅ [SessionManager] Sesión válida, es nuestra');
+        logger.log('✅ [SessionManager] Sesión válida, es nuestra');
       }
     } else {
       // La sesión fue eliminada (logout manual)
-      console.log('ℹ️ [SessionManager] Sesión eliminada de Firestore');
+      logger.log('ℹ️ [SessionManager] Sesión eliminada de Firestore');
     }
   }, (error) => {
-    console.error('❌ [SessionManager] Error en listener de sesión:', error);
+    logger.error('❌ [SessionManager] Error en listener de sesión:', error);
   });
 }
 

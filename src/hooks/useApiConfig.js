@@ -1,38 +1,99 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AI_PROVIDERS, DEFAULT_PROVIDER, getProvider, getAvailableProviders } from '../config/aiProviders';
+import { useAuth } from '../context/AuthContext';
+import logger from '../utils/logger';
+
+// ── Storage key helpers (scoped by userId) ──────────────────────────
+const API_KEY_NAMES = ['openai', 'gemini', 'deepseek'];
+
+/** Returns the localStorage key for a given base key, optionally scoped to a user */
+function scopedKey(base, uid) {
+  return uid ? `${base}:${uid}` : base;
+}
+
+/**
+ * Migrates a legacy (un-scoped) localStorage key to a scoped one.
+ * Only migrates if the scoped key doesn't exist yet AND the legacy key does.
+ */
+function migrateLegacyKey(base, uid) {
+  if (!uid) return;
+  const scoped = scopedKey(base, uid);
+  try {
+    if (!localStorage.getItem(scoped) && localStorage.getItem(base)) {
+      localStorage.setItem(scoped, localStorage.getItem(base));
+      localStorage.removeItem(base);
+      logger.log(`[useApiConfig] Migrada clave legacy ${base} → ${scoped}`);
+    }
+  } catch (e) {
+    logger.warn('[useApiConfig] Error migrando clave legacy:', e);
+  }
+}
 
 /**
  * Hook centralizado para la configuración de APIs de IA
- * Maneja proveedores, fallbacks, límites de uso y persistencia
+ * Maneja proveedores, fallbacks, límites de uso y persistencia.
+ * Las claves se scopean por userId para aislar configuraciones entre usuarios.
  */
 export const useApiConfig = () => {
+  const { currentUser } = useAuth();
+  const uid = currentUser?.uid || null;
+  const prevUidRef = useRef(uid);
+
+  // ── Migrate legacy keys on first mount / user change ──────────
+  useEffect(() => {
+    if (!uid) return;
+    migrateLegacyKey('ai_provider', uid);
+    API_KEY_NAMES.forEach(p => migrateLegacyKey(`${p}_api_key`, uid));
+    migrateLegacyKey('api_usage', uid);
+  }, [uid]);
+
   // Estado principal
   const [currentProvider, setCurrentProvider] = useState(() => {
-    // Limpiar localStorage si hay configuración de OpenAI previa
-    const savedProvider = localStorage.getItem('ai_provider');
+    const savedProvider = localStorage.getItem(scopedKey('ai_provider', uid));
     if (savedProvider === 'openai') {
-      // Limpiar configuración anterior y establecer DeepSeek por defecto
-      localStorage.removeItem('openai_api_key');
-      localStorage.setItem('ai_provider', DEFAULT_PROVIDER);
+      localStorage.removeItem(scopedKey('openai_api_key', uid));
+      localStorage.setItem(scopedKey('ai_provider', uid), DEFAULT_PROVIDER);
       return DEFAULT_PROVIDER;
     }
     return savedProvider || DEFAULT_PROVIDER;
   });
   
   const [apiKeys, setApiKeys] = useState(() => ({
-    openai: localStorage.getItem('openai_api_key') || '',
-    gemini: localStorage.getItem('gemini_api_key') || '',
-    deepseek: localStorage.getItem('deepseek_api_key') || '' // Por si en el futuro requiere key
+    openai: localStorage.getItem(scopedKey('openai_api_key', uid)) || '',
+    gemini: localStorage.getItem(scopedKey('gemini_api_key', uid)) || '',
+    deepseek: localStorage.getItem(scopedKey('deepseek_api_key', uid)) || ''
   }));
 
   const [usage, setUsage] = useState(() => {
-    const saved = localStorage.getItem('api_usage');
+    const saved = localStorage.getItem(scopedKey('api_usage', uid));
     return saved ? JSON.parse(saved) : {
       deepseek: { count: 0, date: new Date().toDateString() },
       openai: { count: 0, date: new Date().toDateString() },
       gemini: { count: 0, date: new Date().toDateString() }
     };
   });
+
+  // ── Re-hydrate state when uid changes (user login/switch) ──────
+  useEffect(() => {
+    if (uid === prevUidRef.current) return;
+    prevUidRef.current = uid;
+
+    const savedProvider = localStorage.getItem(scopedKey('ai_provider', uid)) || DEFAULT_PROVIDER;
+    setCurrentProvider(savedProvider);
+
+    setApiKeys({
+      openai: localStorage.getItem(scopedKey('openai_api_key', uid)) || '',
+      gemini: localStorage.getItem(scopedKey('gemini_api_key', uid)) || '',
+      deepseek: localStorage.getItem(scopedKey('deepseek_api_key', uid)) || ''
+    });
+
+    const savedUsage = localStorage.getItem(scopedKey('api_usage', uid));
+    setUsage(savedUsage ? JSON.parse(savedUsage) : {
+      deepseek: { count: 0, date: new Date().toDateString() },
+      openai: { count: 0, date: new Date().toDateString() },
+      gemini: { count: 0, date: new Date().toDateString() }
+    });
+  }, [uid]);
 
   const [isAvailable, setIsAvailable] = useState({});
 
@@ -48,24 +109,26 @@ export const useApiConfig = () => {
       }), {});
       
       setUsage(resetUsage);
-      localStorage.setItem('api_usage', JSON.stringify(resetUsage));
+      localStorage.setItem(scopedKey('api_usage', uid), JSON.stringify(resetUsage));
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persistir configuración
+  // Persistir proveedor actual (scoped)
   useEffect(() => {
-    localStorage.setItem('ai_provider', currentProvider);
-  }, [currentProvider]);
+    localStorage.setItem(scopedKey('ai_provider', uid), currentProvider);
+  }, [currentProvider, uid]);
 
+  // Persistir API keys (scoped)
   useEffect(() => {
     Object.entries(apiKeys).forEach(([provider, key]) => {
+      const k = scopedKey(`${provider}_api_key`, uid);
       if (key) {
-        localStorage.setItem(`${provider}_api_key`, key);
+        localStorage.setItem(k, key);
       } else {
-        localStorage.removeItem(`${provider}_api_key`);
+        localStorage.removeItem(k);
       }
     });
-  }, [apiKeys]);
+  }, [apiKeys, uid]);
 
   // Verificar disponibilidad de proveedores
   const checkProviderAvailability = useCallback((providerId) => {
@@ -96,14 +159,14 @@ export const useApiConfig = () => {
     
     // Auto-configuración: cambiar a proveedor disponible si el actual no lo está
     if (!availability[currentProvider]) {
-      console.log(`⚠️ Proveedor actual '${currentProvider}' no disponible, buscando alternativa...`);
+      logger.log(`⚠️ Proveedor actual '${currentProvider}' no disponible, buscando alternativa...`);
       
       // Orden de preferencia: DeepSeek primero (gratuito)
       const fallbackOrder = ['deepseek', 'openai', 'gemini'];
       
       for (const providerId of fallbackOrder) {
         if (availability[providerId]) {
-          console.log(`🔄 Auto-configurando proveedor: ${providerId}`);
+          logger.log(`🔄 Auto-configurando proveedor: ${providerId}`);
           setCurrentProvider(providerId);
           break;
         }
@@ -128,16 +191,16 @@ export const useApiConfig = () => {
   const switchProvider = useCallback((providerId) => {
     const provider = getProvider(providerId);
     if (!provider) {
-      console.warn(`Proveedor ${providerId} no existe`);
+      logger.warn(`Proveedor ${providerId} no existe`);
       return false;
     }
 
     if (!checkProviderAvailability(providerId)) {
-      console.warn(`Proveedor ${providerId} no disponible`);
+      logger.warn(`Proveedor ${providerId} no disponible`);
       return false;
     }
 
-    console.log(`🔄 Cambiando proveedor a: ${providerId}`);
+    logger.log(`🔄 Cambiando proveedor a: ${providerId}`);
     setCurrentProvider(providerId);
     return true;
   }, [checkProviderAvailability]);
@@ -161,10 +224,10 @@ export const useApiConfig = () => {
           date: today
         }
       };
-      localStorage.setItem('api_usage', JSON.stringify(updated));
+      localStorage.setItem(scopedKey('api_usage', uid), JSON.stringify(updated));
       return updated;
     });
-  }, [currentProvider]);
+  }, [currentProvider, uid]);
 
   // Fallback automático
   const getAvailableProvider = useCallback(() => {
@@ -177,13 +240,13 @@ export const useApiConfig = () => {
     const fallbackOrder = ['deepseek', 'openai', 'gemini'];
     for (const providerId of fallbackOrder) {
       if (checkProviderAvailability(providerId)) {
-        console.log(`Fallback a proveedor: ${providerId}`);
+        logger.log(`Fallback a proveedor: ${providerId}`);
         setCurrentProvider(providerId);
         return providerId;
       }
     }
 
-    console.error('No hay proveedores disponibles');
+    logger.error('No hay proveedores disponibles');
     return null;
   }, [currentProvider, checkProviderAvailability]);
 
@@ -207,7 +270,7 @@ export const useApiConfig = () => {
       isConfigured = true;
     }
     
-    console.log('🔧 useApiConfig - Stats calculados:', {
+    logger.log('🔧 useApiConfig - Stats calculados:', {
       currentProvider,
       activeProvider: activeProvider?.name,
       apiKeyRequired: activeProvider?.apiKeyRequired,

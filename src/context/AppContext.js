@@ -597,7 +597,17 @@ export const AppContextProvider = ({ children }) => {
     setTexto(nuevoTexto);
   }, [setTexto]);
 
-  const [openAIApiKey, setOpenAIApiKey] = useState(() => localStorage.getItem('openai_api_key') || '');
+  const currentUserUid = currentUser?.uid || null;
+
+  const [openAIApiKey, setOpenAIApiKey] = useState(() => {
+    // Intentar clave scopeada primero, luego legacy
+    const uid = currentUser?.uid;
+    if (uid) {
+      const scoped = localStorage.getItem(`openai_api_key:${uid}`);
+      if (scoped) return scoped;
+    }
+    return localStorage.getItem('openai_api_key') || '';
+  });
 
   // MEJORA: Inicializar modo oscuro desde localStorage o preferencia del sistema para persistencia.
   const [modoOscuro, setModoOscuro] = useState(() => {
@@ -1539,12 +1549,14 @@ export const AppContextProvider = ({ children }) => {
   // OPTIMIZADO: Función para guardar la API key, envuelta en useCallback para estabilidad
   const handleApiKeyChange = useCallback((key) => {
     setOpenAIApiKey(key);
+    // Guardar con clave scopeada si hay usuario, legacy como fallback
+    const storageKey = currentUserUid ? `openai_api_key:${currentUserUid}` : 'openai_api_key';
     if (key) {
-      localStorage.setItem('openai_api_key', key);
+      localStorage.setItem(storageKey, key);
     } else {
-      localStorage.removeItem('openai_api_key');
+      localStorage.removeItem(storageKey);
     }
-  }, []);
+  }, [currentUserUid]);
 
   // OPTIMIZADO: Función para cambiar y persistir el modo oscuro.
   const toggleModoOscuro = useCallback(() => {
@@ -3061,7 +3073,6 @@ export const AppContextProvider = ({ children }) => {
       // Lista de claves a preservar (SOLO configuraciones y preferencias del usuario)
       const keysToPreserve = [
         'modoOscuro',
-        'openai_api_key',
         'tutorDockWidth',
         'tutorFollowUpsEnabled',
         'tutorCompactMode',
@@ -3069,13 +3080,19 @@ export const AppContextProvider = ({ children }) => {
         'tutorTemperature'
       ];
 
-      // Prefijos a preservar (preferencias scopeadas por usuario)
+      // Prefijos a preservar (preferencias scopeadas por usuario + API keys scopeadas)
       const prefixesToPreserve = [
         'tutorDockWidth:',
         'tutorFollowUpsEnabled:',
         'tutorCompactMode:',
         'tutorLengthMode:',
-        'tutorTemperature:'
+        'tutorTemperature:',
+        // API keys scopeadas por uid se preservan
+        'openai_api_key:',
+        'gemini_api_key:',
+        'deepseek_api_key:',
+        'ai_provider:',
+        'api_usage:'
       ];
 
       // Obtener todas las claves de localStorage

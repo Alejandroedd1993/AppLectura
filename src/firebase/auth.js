@@ -14,6 +14,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './config';
+import logger from '../utils/logger';
 
 const googleProvider = new GoogleAuthProvider();
 
@@ -28,7 +29,7 @@ const googleProvider = new GoogleAuthProvider();
  */
 export async function registerWithEmail(email, password, nombre, role, metadata = {}) {
   try {
-    console.log('📝 Registrando usuario:', email, 'con rol:', role);
+    logger.log('📝 Registrando usuario:', email, 'con rol:', role);
     
     // Validar rol
     if (!['estudiante', 'docente'].includes(role)) {
@@ -55,12 +56,12 @@ export async function registerWithEmail(email, password, nombre, role, metadata 
     
     await setDoc(doc(db, 'users', user.uid), userData);
     
-    console.log('✅ Usuario registrado exitosamente:', user.uid);
+    logger.log('✅ Usuario registrado exitosamente:', user.uid);
     
     return { user, userData };
     
   } catch (error) {
-    console.error('❌ Error en registro:', error);
+    logger.error('❌ Error en registro:', error);
     
     // Mapear errores de Firebase a mensajes amigables
     const errorMessages = {
@@ -82,7 +83,7 @@ export async function registerWithEmail(email, password, nombre, role, metadata 
  */
 export async function loginWithEmail(email, password) {
   try {
-    console.log('🔑 Iniciando sesión:', email);
+    logger.log('🔑 Iniciando sesión:', email);
     
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
@@ -101,12 +102,12 @@ export async function loginWithEmail(email, password) {
       lastLogin: serverTimestamp()
     });
     
-    console.log('✅ Sesión iniciada exitosamente:', user.uid, 'Rol:', userData.role);
+    logger.log('✅ Sesión iniciada exitosamente:', user.uid, 'Rol:', userData.role);
     
     return { user, userData };
     
   } catch (error) {
-    console.error('❌ Error en login:', error);
+    logger.error('❌ Error en login:', error);
     
     const errorMessages = {
       'auth/user-not-found': 'Usuario no encontrado',
@@ -128,7 +129,7 @@ export async function loginWithEmail(email, password) {
  */
 export async function loginWithGoogle(defaultRole = 'estudiante') {
   try {
-    console.log('🔑 Iniciando sesión con Google...');
+    logger.log('🔑 Iniciando sesión con Google...');
     
     const userCredential = await signInWithPopup(auth, googleProvider);
     const user = userCredential.user;
@@ -141,7 +142,7 @@ export async function loginWithGoogle(defaultRole = 'estudiante') {
     
     if (!userDoc.exists()) {
       // Primer login: crear usuario en Firestore
-      console.log('📝 Primer login con Google. Creando usuario...');
+      logger.log('📝 Primer login con Google. Creando usuario...');
       
       userData = {
         uid: user.uid,
@@ -165,12 +166,12 @@ export async function loginWithGoogle(defaultRole = 'estudiante') {
       });
     }
     
-    console.log('✅ Sesión con Google exitosa:', user.uid, 'Rol:', userData.role);
+    logger.log('✅ Sesión con Google exitosa:', user.uid, 'Rol:', userData.role);
     
     return { user, userData };
     
   } catch (error) {
-    console.error('❌ Error en login con Google:', error);
+    logger.error('❌ Error en login con Google:', error);
     
     const errorMessages = {
       'auth/popup-closed-by-user': 'Popup cerrado. Intenta de nuevo',
@@ -190,11 +191,11 @@ export async function loginWithGoogle(defaultRole = 'estudiante') {
  */
 export async function logout() {
   try {
-    console.log('👋 Cerrando sesión...');
+    logger.log('👋 Cerrando sesión...');
     await signOut(auth);
-    console.log('✅ Sesión cerrada');
+    logger.log('✅ Sesión cerrada');
   } catch (error) {
-    console.error('❌ Error cerrando sesión:', error);
+    logger.error('❌ Error cerrando sesión:', error);
     throw error;
   }
 }
@@ -205,11 +206,11 @@ export async function logout() {
  */
 export async function resetPassword(email) {
   try {
-    console.log('📧 Enviando email de recuperación a:', email);
+    logger.log('📧 Enviando email de recuperación a:', email);
     await sendPasswordResetEmail(auth, email);
-    console.log('✅ Email enviado');
+    logger.log('✅ Email enviado');
   } catch (error) {
-    console.error('❌ Error enviando email:', error);
+    logger.error('❌ Error enviando email:', error);
     
     const errorMessages = {
       'auth/user-not-found': 'Usuario no encontrado',
@@ -227,7 +228,7 @@ export async function resetPassword(email) {
  */
 export async function updateUserProfile(userId, updates) {
   try {
-    console.log('📝 Actualizando perfil de usuario:', userId);
+    logger.log('📝 Actualizando perfil de usuario:', userId);
     
     const userRef = doc(db, 'users', userId);
     
@@ -244,10 +245,10 @@ export async function updateUserProfile(userId, updates) {
       });
     }
     
-    console.log('✅ Perfil actualizado');
+    logger.log('✅ Perfil actualizado');
     
   } catch (error) {
-    console.error('❌ Error actualizando perfil:', error);
+    logger.error('❌ Error actualizando perfil:', error);
     throw error;
   }
 }
@@ -268,7 +269,7 @@ export async function getUserData(userId) {
     return userDoc.data();
     
   } catch (error) {
-    console.error('❌ Error obteniendo datos de usuario:', error);
+    logger.error('❌ Error obteniendo datos de usuario:', error);
     throw error;
   }
 }
@@ -284,7 +285,7 @@ export async function hasRole(userId, role) {
     const userData = await getUserData(userId);
     return userData.role === role;
   } catch (error) {
-    console.error('❌ Error verificando rol:', error);
+    logger.error('❌ Error verificando rol:', error);
     return false;
   }
 }

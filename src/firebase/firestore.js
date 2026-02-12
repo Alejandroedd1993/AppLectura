@@ -27,6 +27,7 @@ import {
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { auth, db, storage } from './config';
 import { getSessionContentHash, compareSessionContent, mergeSessionsWithConflictResolution } from '../utils/sessionHash';
+import logger from '../utils/logger';
 
 const COURSE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -57,7 +58,7 @@ async function __retryWithBackoff(fn) {
         throw error;
       }
       const delay = __RETRY_BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 500;
-      console.warn(`⚠️ [Firestore] Reintento ${attempt + 1}/${__RETRY_MAX_ATTEMPTS} en ${Math.round(delay)}ms:`, error.message);
+      logger.warn(`⚠️ [Firestore] Reintento ${attempt + 1}/${__RETRY_MAX_ATTEMPTS} en ${Math.round(delay)}ms:`, error.message);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
@@ -98,7 +99,7 @@ function sanitizeLecturasInput(lecturas = []) {
  */
 export async function uploadTexto(file, metadata) {
   try {
-    console.log('📤 Subiendo texto:', file.name);
+    logger.log('📤 Subiendo texto:', file.name);
 
     // 🆕 D14 FIX: Validar tamaño máximo de archivo (50MB)
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -120,7 +121,7 @@ export async function uploadTexto(file, metadata) {
     const snapshot = await uploadBytes(storageRef, file);
     const downloadURL = await getDownloadURL(snapshot.ref);
 
-    console.log('✅ Archivo subido a Storage:', downloadURL);
+    logger.log('✅ Archivo subido a Storage:', downloadURL);
 
     // 2. Crear documento en Firestore
     const textoData = {
@@ -147,12 +148,12 @@ export async function uploadTexto(file, metadata) {
     const textoRef = doc(collection(db, 'textos'));
     await setDoc(textoRef, textoData);
 
-    console.log('✅ Texto creado en Firestore:', textoRef.id);
+    logger.log('✅ Texto creado en Firestore:', textoRef.id);
 
     return textoRef.id;
 
   } catch (error) {
-    console.error('❌ Error subiendo texto:', error);
+    logger.error('❌ Error subiendo texto:', error);
     throw error;
   }
 }
@@ -178,7 +179,7 @@ export async function getTextosDocente(docenteUid) {
     }));
 
   } catch (error) {
-    console.error('❌ Error obteniendo textos del docente:', error);
+    logger.error('❌ Error obteniendo textos del docente:', error);
     throw error;
   }
 }
@@ -205,7 +206,7 @@ export async function getTextosEstudiante(estudianteUid) {
     }));
 
   } catch (error) {
-    console.error('❌ Error obteniendo textos del estudiante:', error);
+    logger.error('❌ Error obteniendo textos del estudiante:', error);
     throw error;
   }
 }
@@ -231,10 +232,10 @@ export async function assignTextoToStudents(textoId, estudianteUids) {
       updatedAt: serverTimestamp()
     });
 
-    console.log('✅ Texto asignado a', estudianteUids.length, 'estudiantes');
+    logger.log('✅ Texto asignado a', estudianteUids.length, 'estudiantes');
 
   } catch (error) {
-    console.error('❌ Error asignando texto:', error);
+    logger.error('❌ Error asignando texto:', error);
     throw error;
   }
 }
@@ -254,10 +255,10 @@ export async function saveAnalisisTexto(textoId, completeAnalysis) {
       updatedAt: serverTimestamp()
     });
 
-    console.log('✅ Análisis guardado para texto:', textoId);
+    logger.log('✅ Análisis guardado para texto:', textoId);
 
   } catch (error) {
-    console.error('❌ Error guardando análisis:', error);
+    logger.error('❌ Error guardando análisis:', error);
     throw error;
   }
 }
@@ -309,7 +310,7 @@ function __maybeLogFirestoreStats() {
     const deduped = __firestoreStats.deduped;
     const perMin = (n) => Math.round((n / (elapsed / 60000)) * 10) / 10;
 
-    console.log(
+    logger.log(
       `📈 [Firestore] Métricas ~${seconds}s | writes: ${attempted} intentados (~${perMin(attempted)}/min), ` +
       `${success} ok (~${perMin(success)}/min), ${error} errores (~${perMin(error)}/min) | ` +
       `dedupe: ${deduped} omitidos (~${perMin(deduped)}/min)`
@@ -439,7 +440,7 @@ if (typeof window !== 'undefined') {
  * @param {object} progressData - { rubrica1: {...}, rubrica2: {...}, ... }
  */
 export async function saveStudentProgress(estudianteUid, textoId, progressData) {
-  console.log('🔵 [Firestore] saveStudentProgress llamado:', {
+  logger.log('🔵 [Firestore] saveStudentProgress llamado:', {
     uid: estudianteUid,
     textoId,
     hasRewardsState: !!progressData?.rewardsState,
@@ -451,13 +452,13 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
   });
 
   // 🔵 Log de la ruta completa para debug
-  console.log(`🔵 [Firestore] Ruta de escritura: students/${estudianteUid}/progress/${textoId}`);
+  logger.log(`🔵 [Firestore] Ruta de escritura: students/${estudianteUid}/progress/${textoId}`);
 
   try {
     if (__firestoreWritesDisabled) {
       if (!__firestoreWritesDisabledLogged) {
         __firestoreWritesDisabledLogged = true;
-        console.warn('⚠️ [Firestore] Escrituras deshabilitadas en esta sesión (permission-denied). Se omiten guardados hasta recargar.');
+        logger.warn('⚠️ [Firestore] Escrituras deshabilitadas en esta sesión (permission-denied). Se omiten guardados hasta recargar.');
       }
       __trackFirestoreStat('writeSkipped');
       return;
@@ -469,7 +470,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
       progressData = { ...progressData };
       delete progressData.rewardsState;
       if (localStorage.getItem('__firestore_dedupe_debug__')) {
-        console.warn('⚠️ [saveStudentProgress] Ignorando rewardsState fuera de global_progress');
+        logger.warn('⚠️ [saveStudentProgress] Ignorando rewardsState fuera de global_progress');
       }
     }
 
@@ -479,7 +480,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
     const signature = __stableStringify(__stripVolatileDeep(progressData || {}));
     const prev = __progressWriteDedupe.get(dedupeKey);
     if (prev && prev.signature === signature && (now - prev.at) < __DEDUPE_WINDOW_MS) {
-      console.log('⏭️ [Firestore] Escritura deduplicada (payload idéntico):', estudianteUid, textoId);
+      logger.log('⏭️ [Firestore] Escritura deduplicada (payload idéntico):', estudianteUid, textoId);
       __trackFirestoreStat('deduped');
       return;
     }
@@ -503,10 +504,10 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
         const enrolled = userProfileSnap.exists() ? (userProfileSnap.data().enrolledCourses || []) : [];
         if (enrolled.length > 0) {
           resolvedSourceCourseId = enrolled[enrolled.length - 1]; // Último curso inscrito
-          console.log('🔧 [Firestore] sourceCourseId resuelto desde enrolledCourses:', resolvedSourceCourseId);
+          logger.log('🔧 [Firestore] sourceCourseId resuelto desde enrolledCourses:', resolvedSourceCourseId);
         }
       } catch (err) {
-        console.warn('⚠️ [Firestore] No se pudo resolver sourceCourseId:', err.message);
+        logger.warn('⚠️ [Firestore] No se pudo resolver sourceCourseId:', err.message);
       }
     }
 
@@ -566,7 +567,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
             artefactos: combinedArtefactos
           };
 
-          console.log(`🔄 [Firestore] Merge de ${rubricId}: ${existingScores.length} existentes + ${uniqueNewScores.length} nuevos = ${combinedScores.length} total`);
+          logger.log(`🔄 [Firestore] Merge de ${rubricId}: ${existingScores.length} existentes + ${uniqueNewScores.length} nuevos = ${combinedScores.length} total`);
         }
       });
     }
@@ -634,7 +635,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
       const existingResetAt = existingRewards.resetAt || 0;
       const isIntentionalReset = newResetAt > existingResetAt && newRewards.totalPoints === 0;
 
-      console.log('🔵 [Firestore] Merge de rewardsState:', {
+      logger.log('🔵 [Firestore] Merge de rewardsState:', {
         newResetAt,
         existingResetAt,
         newTotalPoints: newRewards.totalPoints,
@@ -644,7 +645,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
 
       if (isIntentionalReset) {
         // 🗑️ RESET: Reemplazar completamente con el estado vacío, NO hacer merge
-        console.log('🗑️ [Firestore] Reset intencional detectado, reemplazando estado de rewards');
+        logger.log('🗑️ [Firestore] Reset intencional detectado, reemplazando estado de rewards');
         mergedData.rewardsState = {
           ...newRewards,
           lastInteraction: newRewards.lastInteraction || Date.now(),
@@ -783,7 +784,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
 
     // 🆕 Log detallado para debug de persistencia
     const rubricKeys = Object.keys((_savedFinalData?.rubricProgress) || {}).filter(k => k.startsWith('rubrica'));
-    console.log('✅ [Firestore] Progreso guardado con merge inteligente:', {
+    logger.log('✅ [Firestore] Progreso guardado con merge inteligente:', {
       uid: estudianteUid,
       textoId,
       rubricasGuardadas: rubricKeys,
@@ -796,7 +797,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
     if (__isPermissionDeniedError(error)) {
       // 🆕 NO deshabilitar permanentemente - solo loguear el error
       // Las escrituras se reintentarán en la próxima operación
-      console.warn('⚠️ [Firestore] permission-denied al guardar progreso:', {
+      logger.warn('⚠️ [Firestore] permission-denied al guardar progreso:', {
         estudianteUid,
         textoId,
         code: error?.code,
@@ -807,7 +808,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
       // Esto permite reintentar en lugar de bloquear permanentemente
       return;
     }
-    console.error('❌ [Firestore] Error guardando progreso:', error);
+    logger.error('❌ [Firestore] Error guardando progreso:', error);
     throw error;
   }
 }
@@ -819,14 +820,14 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
  * @returns {Promise<object|null>}
  */
 export async function getStudentProgress(estudianteUid, textoId) {
-  console.log('🔵 [Firestore] getStudentProgress llamado:', { uid: estudianteUid, textoId });
+  logger.log('🔵 [Firestore] getStudentProgress llamado:', { uid: estudianteUid, textoId });
   
   try {
     const progressRef = doc(db, 'students', estudianteUid, 'progress', textoId);
     const progressDoc = await getDoc(progressRef);
 
     if (!progressDoc.exists()) {
-      console.log('ℹ️ [Firestore] No existe documento de progreso para:', { uid: estudianteUid, textoId });
+      logger.log('ℹ️ [Firestore] No existe documento de progreso para:', { uid: estudianteUid, textoId });
       return null;
     }
 
@@ -835,7 +836,7 @@ export async function getStudentProgress(estudianteUid, textoId) {
       data.rubricProgress?.[k]?.scores?.length > 0
     );
     
-    console.log('✅ [Firestore] Progreso encontrado:', {
+    logger.log('✅ [Firestore] Progreso encontrado:', {
       uid: estudianteUid,
       textoId,
       rubricasConDatos: rubricKeys,
@@ -853,7 +854,7 @@ export async function getStudentProgress(estudianteUid, textoId) {
     };
 
   } catch (error) {
-    console.error('❌ Error obteniendo progreso:', error);
+    logger.error('❌ Error obteniendo progreso:', error);
     throw error;
   }
 }
@@ -874,7 +875,7 @@ export async function getAllStudentProgress(estudianteUid) {
     }));
 
   } catch (error) {
-    console.error('❌ Error obteniendo progreso completo:', error);
+    logger.error('❌ Error obteniendo progreso completo:', error);
     throw error;
   }
 }
@@ -917,7 +918,7 @@ export async function getTextProgressForStudents(textoId, estudianteUids) {
     return progressData;
 
   } catch (error) {
-    console.error('❌ Error obteniendo progreso de estudiantes:', error);
+    logger.error('❌ Error obteniendo progreso de estudiantes:', error);
     throw error;
   }
 }
@@ -942,12 +943,12 @@ export async function saveEvaluacion(evaluacionData) {
 
     await setDoc(evalRef, dataToSave);
 
-    console.log('✅ Evaluación guardada:', evalRef.id);
+    logger.log('✅ Evaluación guardada:', evalRef.id);
 
     return evalRef.id;
 
   } catch (error) {
-    console.error('❌ Error guardando evaluación:', error);
+    logger.error('❌ Error guardando evaluación:', error);
     throw error;
   }
 }
@@ -975,7 +976,7 @@ export async function getEvaluacionesEstudiante(estudianteUid, textoId) {
     }));
 
   } catch (error) {
-    console.error('❌ Error obteniendo evaluaciones:', error);
+    logger.error('❌ Error obteniendo evaluaciones:', error);
     throw error;
   }
 }
@@ -1005,7 +1006,7 @@ export async function updateReadingTime(estudianteUid, textoId, deltaMinutes) {
       tiempo_total_min: increment(deltaMinutes),
       ultima_actividad: serverTimestamp()
     });
-    console.log(`⏱️ [Firestore] Tiempo lectura +${deltaMinutes.toFixed(2)} min → ${textoId}`);
+    logger.log(`⏱️ [Firestore] Tiempo lectura +${deltaMinutes.toFixed(2)} min → ${textoId}`);
   } catch (error) {
     // Si el documento no existe aún, crearlo con merge
     if (error?.code === 'not-found') {
@@ -1017,12 +1018,12 @@ export async function updateReadingTime(estudianteUid, textoId, deltaMinutes) {
           ultima_actividad: serverTimestamp(),
           primera_actividad: serverTimestamp()
         }, { merge: true });
-        console.log(`⏱️ [Firestore] Doc creado con tiempo: ${deltaMinutes.toFixed(2)} min → ${textoId}`);
+        logger.log(`⏱️ [Firestore] Doc creado con tiempo: ${deltaMinutes.toFixed(2)} min → ${textoId}`);
       } catch (setError) {
-        console.error('❌ [Firestore] Error creando doc de tiempo:', setError);
+        logger.error('❌ [Firestore] Error creando doc de tiempo:', setError);
       }
     } else if (!__isPermissionDeniedError(error)) {
-      console.error('❌ [Firestore] Error actualizando tiempo:', error);
+      logger.error('❌ [Firestore] Error actualizando tiempo:', error);
     }
   }
 }
@@ -1048,7 +1049,7 @@ export function subscribeToStudentProgress(estudianteUid, textoId, callback) {
       callback(null);
     }
   }, (error) => {
-    console.error('❌ Error en listener de progreso:', error);
+    logger.error('❌ Error en listener de progreso:', error);
   });
 }
 
@@ -1072,7 +1073,7 @@ export function subscribeToDocenteTextos(docenteUid, callback) {
     }));
     callback(textos);
   }, (error) => {
-    console.error('❌ Error en listener de textos:', error);
+    logger.error('❌ Error en listener de textos:', error);
   });
 }
 
@@ -1097,7 +1098,7 @@ export function subscribeToCursosDocente(docenteUid, callback) {
     }));
     callback(cursos);
   }, (error) => {
-    console.error('❌ Error en listener de cursos:', error);
+    logger.error('❌ Error en listener de cursos:', error);
   });
 }
 
@@ -1119,7 +1120,7 @@ export function subscribeToCourseStudents(courseId, callback) {
     }));
     callback(students);
   }, (error) => {
-    console.error('❌ Error en listener de estudiantes del curso:', error);
+    logger.error('❌ Error en listener de estudiantes del curso:', error);
   });
 }
 
@@ -1141,7 +1142,7 @@ export async function incrementCounter(collectionName, docId, field, amount = 1)
       [field]: increment(amount)
     });
   } catch (error) {
-    console.error('❌ Error incrementando contador:', error);
+    logger.error('❌ Error incrementando contador:', error);
     throw error;
   }
 }
@@ -1159,7 +1160,7 @@ export async function softDelete(collectionName, docId) {
       deletedAt: serverTimestamp()
     });
   } catch (error) {
-    console.error('❌ Error en soft delete:', error);
+    logger.error('❌ Error en soft delete:', error);
     throw error;
   }
 }
@@ -1193,7 +1194,7 @@ function simpleHash(text) {
  */
 async function uploadTextToStorage(userId, sessionId, textContent) {
   try {
-    console.log(`📤 [Storage] Subiendo texto grande (${(textContent.length / 1024).toFixed(2)} KB)...`);
+    logger.log(`📤 [Storage] Subiendo texto grande (${(textContent.length / 1024).toFixed(2)} KB)...`);
 
     // Crear referencia en Storage: users/{userId}/sessions/{sessionId}/text.txt
     const storageRef = ref(storage, `users/${userId}/sessions/${sessionId}/text.txt`);
@@ -1215,12 +1216,12 @@ async function uploadTextToStorage(userId, sessionId, textContent) {
     const snapshot = await uploadBytes(storageRef, textBlob, metadata);
     const downloadURL = await getDownloadURL(snapshot.ref);
 
-    console.log('✅ [Storage] Texto subido exitosamente. URL:', downloadURL.substring(0, 50) + '...');
+    logger.log('✅ [Storage] Texto subido exitosamente. URL:', downloadURL.substring(0, 50) + '...');
 
     return downloadURL;
 
   } catch (error) {
-    console.error('❌ [Storage] Error subiendo texto:', error);
+    logger.error('❌ [Storage] Error subiendo texto:', error);
     throw error;
   }
 }
@@ -1232,7 +1233,7 @@ async function uploadTextToStorage(userId, sessionId, textContent) {
  */
 async function downloadTextFromStorage(downloadURL) {
   try {
-    console.log('📥 [Storage] Descargando texto desde URL...');
+    logger.log('📥 [Storage] Descargando texto desde URL...');
 
     const response = await fetch(downloadURL);
 
@@ -1242,12 +1243,12 @@ async function downloadTextFromStorage(downloadURL) {
 
     const textContent = await response.text();
 
-    console.log(`✅ [Storage] Texto descargado (${(textContent.length / 1024).toFixed(2)} KB)`);
+    logger.log(`✅ [Storage] Texto descargado (${(textContent.length / 1024).toFixed(2)} KB)`);
 
     return textContent;
 
   } catch (error) {
-    console.error('❌ [Storage] Error descargando texto:', error);
+    logger.error('❌ [Storage] Error descargando texto:', error);
     throw error;
   }
 }
@@ -1261,13 +1262,13 @@ async function deleteTextFromStorage(userId, sessionId) {
   try {
     const storageRef = ref(storage, `users/${userId}/sessions/${sessionId}/text.txt`);
     await deleteObject(storageRef);
-    console.log('✅ [Storage] Texto eliminado de Storage');
+    logger.log('✅ [Storage] Texto eliminado de Storage');
   } catch (error) {
     // Si el archivo no existe, no es un error crítico
     if (error.code === 'storage/object-not-found') {
-      console.log('ℹ️ [Storage] Archivo no encontrado (ya eliminado)');
+      logger.log('ℹ️ [Storage] Archivo no encontrado (ya eliminado)');
     } else {
-      console.error('❌ [Storage] Error eliminando texto:', error);
+      logger.error('❌ [Storage] Error eliminando texto:', error);
       throw error;
     }
   }
@@ -1281,10 +1282,10 @@ async function mapSessionDoc(doc) {
 
   if (data.textInStorage && data.textStorageURL && !textContent) {
     try {
-      console.log(`📥 [mapSessionDoc] Texto en Storage detectado, descargando...`);
+      logger.log(`📥 [mapSessionDoc] Texto en Storage detectado, descargando...`);
       textContent = await downloadTextFromStorage(data.textStorageURL);
     } catch (error) {
-      console.error('❌ [mapSessionDoc] Error descargando texto desde Storage:', error);
+      logger.error('❌ [mapSessionDoc] Error descargando texto desde Storage:', error);
       // Fallback: usar textPreview si falla descarga
       textContent = data.textPreview || null;
     }
@@ -1334,7 +1335,7 @@ async function mapSessionDoc(doc) {
  */
 export async function saveSessionToFirestore(userId, sessionData) {
   try {
-    console.log('💾 [Firestore] Guardando sesión:', sessionData.id);
+    logger.log('💾 [Firestore] Guardando sesión:', sessionData.id);
 
     // Generar hash del texto para deduplicación
     const textHash = sessionData.text?.content
@@ -1354,7 +1355,7 @@ export async function saveSessionToFirestore(userId, sessionData) {
 
     // 🆕 Si el texto excede el límite, subirlo a Storage
     if (!shouldSaveFullText && textContent.length > 0) {
-      console.log(`📦 [Firestore] Texto grande detectado (${(textContent.length / 1024).toFixed(2)} KB), usando Storage...`);
+      logger.log(`📦 [Firestore] Texto grande detectado (${(textContent.length / 1024).toFixed(2)} KB), usando Storage...`);
       textStorageURL = await uploadTextToStorage(userId, sessionData.id, textContent);
     }
 
@@ -1427,12 +1428,12 @@ export async function saveSessionToFirestore(userId, sessionData) {
 
     await setDoc(sessionRef, firestoreData, { merge: true });
 
-    console.log('✅ [Firestore] Sesión guardada exitosamente:', sessionData.id);
+    logger.log('✅ [Firestore] Sesión guardada exitosamente:', sessionData.id);
 
     return sessionData.id;
 
   } catch (error) {
-    console.error('❌ [Firestore] Error guardando sesión:', error);
+    logger.error('❌ [Firestore] Error guardando sesión:', error);
     throw error;
   }
 }
@@ -1494,7 +1495,7 @@ export async function saveDraftBackupToFirestore(userId, backup) {
     await setDoc(refDoc, payload, { merge: true });
     return docId;
   } catch (error) {
-    console.error('❌ [Firestore] Error guardando draft backup:', error);
+    logger.error('❌ [Firestore] Error guardando draft backup:', error);
     throw error;
   }
 }
@@ -1515,7 +1516,7 @@ export async function getUserSessions(userId, options = {}) {
       includeCloudBackups = false
     } = options;
 
-    console.log('📥 [Firestore] Obteniendo sesiones del usuario:', userId);
+    logger.log('📥 [Firestore] Obteniendo sesiones del usuario:', userId);
 
     const sessionsRef = collection(db, 'users', userId, 'sessions');
 
@@ -1546,12 +1547,12 @@ export async function getUserSessions(userId, options = {}) {
         return true;
       });
 
-    console.log(`✅ [Firestore] ${sessions.length} sesiones obtenidas${includeCloudBackups ? ' (incluyendo backups)' : ''}`);
+    logger.log(`✅ [Firestore] ${sessions.length} sesiones obtenidas${includeCloudBackups ? ' (incluyendo backups)' : ''}`);
 
     return sessions;
 
   } catch (error) {
-    console.error('❌ [Firestore] Error obteniendo sesiones:', error);
+    logger.error('❌ [Firestore] Error obteniendo sesiones:', error);
     throw error;
   }
 }
@@ -1568,7 +1569,7 @@ export async function getSessionById(userId, sessionId) {
     const sessionDoc = await getDoc(sessionRef);
 
     if (!sessionDoc.exists()) {
-      console.warn('⚠️ [Firestore] Sesión no encontrada:', sessionId);
+      logger.warn('⚠️ [Firestore] Sesión no encontrada:', sessionId);
       return null;
     }
 
@@ -1576,7 +1577,7 @@ export async function getSessionById(userId, sessionId) {
     return await mapSessionDoc(sessionDoc);
 
   } catch (error) {
-    console.error('❌ [Firestore] Error obteniendo sesión:', error);
+    logger.error('❌ [Firestore] Error obteniendo sesión:', error);
     throw error;
   }
 }
@@ -1597,10 +1598,10 @@ export async function updateSessionInFirestore(userId, sessionId, updates) {
       updatedAt: serverTimestamp()
     });
 
-    console.log('✅ [Firestore] Sesión actualizada:', sessionId);
+    logger.log('✅ [Firestore] Sesión actualizada:', sessionId);
 
   } catch (error) {
-    console.error('❌ [Firestore] Error actualizando sesión:', error);
+    logger.error('❌ [Firestore] Error actualizando sesión:', error);
     throw error;
   }
 }
@@ -1617,16 +1618,16 @@ export async function deleteSessionFromFirestore(userId, sessionId) {
     // 🆕 Verificar si hay texto en Storage antes de eliminar
     const sessionDoc = await getDoc(sessionRef);
     if (sessionDoc.exists() && sessionDoc.data().textInStorage) {
-      console.log('🗑️ [Firestore] Eliminando texto de Storage...');
+      logger.log('🗑️ [Firestore] Eliminando texto de Storage...');
       await deleteTextFromStorage(userId, sessionId);
     }
 
     await deleteDoc(sessionRef);
 
-    console.log('✅ [Firestore] Sesión eliminada:', sessionId);
+    logger.log('✅ [Firestore] Sesión eliminada:', sessionId);
 
   } catch (error) {
-    console.error('❌ [Firestore] Error eliminando sesión:', error);
+    logger.error('❌ [Firestore] Error eliminando sesión:', error);
     throw error;
   }
 }
@@ -1647,7 +1648,7 @@ export async function deleteAllUserSessions(userId) {
           await deleteTextFromStorage(userId, docSnap.id);
         } catch (storageError) {
           // Best-effort: continuar aunque falle un archivo individual
-          console.warn('⚠️ [Firestore] Error eliminando texto de Storage:', storageError.message);
+          logger.warn('⚠️ [Firestore] Error eliminando texto de Storage:', storageError.message);
         }
       }
     }
@@ -1660,10 +1661,10 @@ export async function deleteAllUserSessions(userId) {
 
     await batch.commit();
 
-    console.log(`✅ [Firestore] ${snapshot.docs.length} sesiones eliminadas (+ archivos Storage)`);
+    logger.log(`✅ [Firestore] ${snapshot.docs.length} sesiones eliminadas (+ archivos Storage)`);
 
   } catch (error) {
-    console.error('❌ [Firestore] Error eliminando sesiones:', error);
+    logger.error('❌ [Firestore] Error eliminando sesiones:', error);
     throw error;
   }
 }
@@ -1675,7 +1676,7 @@ export async function deleteAllUserSessions(userId) {
  */
 export async function syncSessionsToFirestore(userId, sessions) {
   try {
-    console.log(`🔄 [Firestore] Sincronizando ${sessions.length} sesiones...`);
+    logger.log(`🔄 [Firestore] Sincronizando ${sessions.length} sesiones...`);
 
     let synced = 0;
     let errors = 0;
@@ -1685,17 +1686,17 @@ export async function syncSessionsToFirestore(userId, sessions) {
         await saveSessionToFirestore(userId, session);
         synced++;
       } catch (error) {
-        console.error(`❌ Error sincronizando sesión ${session.id}:`, error);
+        logger.error(`❌ Error sincronizando sesión ${session.id}:`, error);
         errors++;
       }
     }
 
-    console.log(`✅ [Firestore] Sincronización completada: ${synced} exitosas, ${errors} errores`);
+    logger.log(`✅ [Firestore] Sincronización completada: ${synced} exitosas, ${errors} errores`);
 
     return { synced, errors };
 
   } catch (error) {
-    console.error('❌ [Firestore] Error en sincronización masiva:', error);
+    logger.error('❌ [Firestore] Error en sincronización masiva:', error);
     throw error;
   }
 }
@@ -1743,10 +1744,10 @@ export function mergeSessions(localSessions, firestoreSessions) {
         });
       } else {
         // Contenido diferente → merge inteligente
-        console.log(`⚠️ [mergeSessions] Conflicto en sesión ${session.id}, resolviendo...`);
+        logger.log(`⚠️ [mergeSessions] Conflicto en sesión ${session.id}, resolviendo...`);
 
         const comparison = compareSessionContent(session, existing);
-        console.log('📊 [mergeSessions] Diferencias:', comparison.differences);
+        logger.log('📊 [mergeSessions] Diferencias:', comparison.differences);
 
         const mergedSession = mergeSessionsWithConflictResolution(session, existing);
 
@@ -1817,7 +1818,7 @@ export function subscribeToUserSessions(userId, callback) {
 
     callback(sessions);
   }, (error) => {
-    console.error('❌ Error en listener de sesiones:', error);
+    logger.error('❌ Error en listener de sesiones:', error);
   });
 }
 
@@ -1855,7 +1856,7 @@ export async function createCourse(docenteUid, { nombre, periodo, descripcion = 
     createdAt: serverTimestamp()
   });
 
-  console.log('✅ Curso creado con código:', codigoJoin);
+  logger.log('✅ Curso creado con código:', codigoJoin);
   return { id: courseRef.id, ...courseData };
 }
 
@@ -1886,7 +1887,7 @@ export async function updateCourseWeights(courseId, pesoFormativa, pesoSumativa)
     pesoSumativa,
     updatedAt: serverTimestamp()
   });
-  console.log(`⚖️ Curso ${courseId} pesos actualizados: F=${pesoFormativa}% S=${pesoSumativa}%`);
+  logger.log(`⚖️ Curso ${courseId} pesos actualizados: F=${pesoFormativa}% S=${pesoSumativa}%`);
 }
 
 export async function assignLecturasToCourse(courseId, lecturas) {
@@ -1903,7 +1904,7 @@ export async function assignLecturasToCourse(courseId, lecturas) {
     totalLecturas: sanitizedLecturas.length,
     updatedAt: serverTimestamp()
   });
-  console.log(`📚 Curso ${courseId} actualizado con ${sanitizedLecturas.length} lecturas`);
+  logger.log(`📚 Curso ${courseId} actualizado con ${sanitizedLecturas.length} lecturas`);
 
   // Asignar lecturas a estudiantes activos para mantener sincronía
   const studentsSnap = await getDocs(collection(db, 'courses', courseId, 'students'));
@@ -1936,7 +1937,7 @@ export async function removeLecturaFromCourse(courseId, textoId) {
     const updatedLecturas = currentLecturas.filter(l => l.textoId !== textoId);
 
     if (updatedLecturas.length === currentLecturas.length) {
-      console.log('ℹ️ La lectura no estaba asignada al curso');
+      logger.log('ℹ️ La lectura no estaba asignada al curso');
       return false;
     }
 
@@ -1955,10 +1956,10 @@ export async function removeLecturaFromCourse(courseId, textoId) {
       }
     }
 
-    console.log(`✅ Lectura ${textoId} removida del curso ${courseId}`);
+    logger.log(`✅ Lectura ${textoId} removida del curso ${courseId}`);
     return true;
   } catch (error) {
-    console.error('❌ Error removiendo lectura del curso:', error);
+    logger.error('❌ Error removiendo lectura del curso:', error);
     throw error;
   }
 }
@@ -1970,7 +1971,7 @@ export async function joinCourseWithCode(codigoJoin, estudianteUid) {
   }
 
   let step = 'init';
-  const log = (...args) => console.log('🔍 [joinCourse]', ...args);
+  const log = (...args) => logger.log('🔍 [joinCourse]', ...args);
 
   try {
     step = 'fetch_code';
@@ -1997,7 +1998,7 @@ export async function joinCourseWithCode(codigoJoin, estudianteUid) {
     const studentRef = doc(db, 'courses', courseId, 'students', estudianteUid);
     const existing = await getDoc(studentRef);
     if (existing.exists()) {
-      console.warn('⚠️ [joinCourse] Estudiante ya inscrito en el curso');
+      logger.warn('⚠️ [joinCourse] Estudiante ya inscrito en el curso');
       // FIXED: Ensure profile is updated even if already in course
       const userRef = doc(db, 'users', estudianteUid);
       await setDoc(userRef, {
@@ -2042,7 +2043,7 @@ export async function joinCourseWithCode(codigoJoin, estudianteUid) {
 
     return { courseId, estado, curso: courseData };
   } catch (error) {
-    console.error(`❌ [joinCourse] Error en paso "${step}":`, error);
+    logger.error(`❌ [joinCourse] Error en paso "${step}":`, error);
     throw error;
   }
 }
@@ -2066,15 +2067,15 @@ export async function approveStudentInCourse(courseId, estudianteUid) {
 
 async function syncCourseAssignments(courseId, estudianteUid, lecturasAsignadas = []) {
   if (!lecturasAsignadas?.length) {
-    console.log('ℹ️ [syncCourseAssignments] Sin lecturas para sincronizar');
+    logger.log('ℹ️ [syncCourseAssignments] Sin lecturas para sincronizar');
     return;
   }
 
-  console.log(`🔁 [syncCourseAssignments] Sincronizando ${lecturasAsignadas.length} lecturas para`, estudianteUid);
+  logger.log(`🔁 [syncCourseAssignments] Sincronizando ${lecturasAsignadas.length} lecturas para`, estudianteUid);
 
   for (const lectura of lecturasAsignadas) {
     if (!lectura?.textoId) {
-      console.warn('⚠️ [syncCourseAssignments] Lectura inválida detectada, se omite:', lectura);
+      logger.warn('⚠️ [syncCourseAssignments] Lectura inválida detectada, se omite:', lectura);
       continue;
     }
 
@@ -2082,12 +2083,12 @@ async function syncCourseAssignments(courseId, estudianteUid, lecturasAsignadas 
     const progressSnap = await getDoc(progressRef);
 
     if (progressSnap.exists()) {
-      console.log('✅ [syncCourseAssignments] Progreso ya existente para texto:', lectura.textoId);
+      logger.log('✅ [syncCourseAssignments] Progreso ya existente para texto:', lectura.textoId);
       continue;
     }
 
     try {
-      console.log('🆕 [syncCourseAssignments] Creando progreso para texto:', lectura.textoId);
+      logger.log('🆕 [syncCourseAssignments] Creando progreso para texto:', lectura.textoId);
       await setDoc(progressRef, {
         estudianteUid, // Required by seguridad
         textoId: lectura.textoId,
@@ -2100,7 +2101,7 @@ async function syncCourseAssignments(courseId, estudianteUid, lecturasAsignadas 
         fechaLimite: lectura.fechaLimite || null
       });
     } catch (error) {
-      console.error(`❌ [syncCourseAssignments] Error creando progreso ${lectura.textoId}:`, error);
+      logger.error(`❌ [syncCourseAssignments] Error creando progreso ${lectura.textoId}:`, error);
       throw error;
     }
   }
@@ -2245,7 +2246,7 @@ export async function getCourseMetrics(courseId, options = {}) {
   // 🆕 D3 FIX: Aplicar paginación si se especifica límite
   if (limit !== null) {
     allEstudiantes = allEstudiantes.slice(offset, offset + limit);
-    console.log(`📊 [getCourseMetrics] Paginación: mostrando ${allEstudiantes.length} de ${totalEstudiantes} estudiantes`);
+    logger.log(`📊 [getCourseMetrics] Paginación: mostrando ${allEstudiantes.length} de ${totalEstudiantes} estudiantes`);
   }
 
   const estudiantes = allEstudiantes;
@@ -2305,7 +2306,7 @@ export async function getCourseMetrics(courseId, options = {}) {
         }));
 
         if (fallbackDocs.length) {
-          console.warn('⚠️ [getCourseMetrics] Usando fallback por textoId (sourceCourseId ausente) para estudiante:', estudiante.estudianteUid);
+          logger.warn('⚠️ [getCourseMetrics] Usando fallback por textoId (sourceCourseId ausente) para estudiante:', estudiante.estudianteUid);
         }
 
         // Simular la misma estructura (docs) para reusar el cálculo
@@ -2519,20 +2520,20 @@ export async function deleteText(textId) {
           // Extraer path de Storage desde la URL
           const storageRef = ref(storage, fileURL);
           await deleteObject(storageRef);
-          console.log('🗑️ Archivo eliminado de Storage');
+          logger.log('🗑️ Archivo eliminado de Storage');
         } catch (storageError) {
           // Continuar aunque falle Storage (puede que ya no exista)
-          console.warn('⚠️ No se pudo eliminar archivo de Storage:', storageError.message);
+          logger.warn('⚠️ No se pudo eliminar archivo de Storage:', storageError.message);
         }
       }
     }
 
     // Eliminar documento de Firestore
     await deleteDoc(textoRef);
-    console.log('✅ Texto eliminado:', textId);
+    logger.log('✅ Texto eliminado:', textId);
     return true;
   } catch (error) {
-    console.error('❌ Error eliminando texto:', error);
+    logger.error('❌ Error eliminando texto:', error);
     throw error;
   }
 }
@@ -2584,7 +2585,7 @@ export async function deleteTextEverywhere(textId, docenteUid) {
     await deleteText(textId);
     return { coursesUpdated };
   } catch (error) {
-    console.error('❌ Error eliminando texto globalmente:', error);
+    logger.error('❌ Error eliminando texto globalmente:', error);
     throw error;
   }
 }
@@ -2618,7 +2619,7 @@ export async function deleteCourse(courseId) {
       } catch (codeError) {
         // No bloquear el borrado del curso por datos legacy en courseCodes.
         // Un código huérfano solo causará que joinCourse falle con "Curso no encontrado".
-        console.warn('⚠️ No se pudo eliminar courseCodes para el curso. Continuando...', {
+        logger.warn('⚠️ No se pudo eliminar courseCodes para el curso. Continuando...', {
           code,
           courseId,
           message: codeError?.message
@@ -2642,10 +2643,10 @@ export async function deleteCourse(courseId) {
             // Solo eliminar si el progreso pertenece a este curso
             if (progressSnap.exists() && progressSnap.data().sourceCourseId === courseId) {
               await deleteDoc(progressRef);
-              console.log(`🗑️ Progreso ${lectura.textoId} eliminado para estudiante ${studentUid}`);
+              logger.log(`🗑️ Progreso ${lectura.textoId} eliminado para estudiante ${studentUid}`);
             }
           } catch (progressError) {
-            console.warn(`⚠️ Error limpiando progreso ${lectura.textoId}:`, progressError.message);
+            logger.warn(`⚠️ Error limpiando progreso ${lectura.textoId}:`, progressError.message);
           }
         }
       }
@@ -2657,7 +2658,7 @@ export async function deleteCourse(courseId) {
           enrolledCourses: arrayRemove(courseId)
         });
       } catch (enrollError) {
-        console.warn(`⚠️ Error quitando curso de enrolledCourses:`, enrollError.message);
+        logger.warn(`⚠️ Error quitando curso de enrolledCourses:`, enrollError.message);
       }
 
       // Eliminar registro de inscripción
@@ -2666,10 +2667,10 @@ export async function deleteCourse(courseId) {
 
     // 4. Eliminar documento del curso
     await deleteDoc(courseRef);
-    console.log('✅ Curso eliminado con limpieza completa:', courseId);
+    logger.log('✅ Curso eliminado con limpieza completa:', courseId);
     return true;
   } catch (error) {
-    console.error('❌ Error eliminando curso:', error);
+    logger.error('❌ Error eliminando curso:', error);
     throw error;
   }
 }
@@ -2687,15 +2688,15 @@ export async function deleteStudentFromCourse(courseId, studentUid) {
       await updateDoc(userRef, {
         enrolledCourses: arrayRemove(courseId)
       });
-      console.log('✅ Estudiante eliminado del curso y de enrolledCourses:', studentUid);
+      logger.log('✅ Estudiante eliminado del curso y de enrolledCourses:', studentUid);
     } catch (enrollError) {
       // Si falla actualizar el perfil, al menos ya se eliminó de la subcolección
-      console.warn('⚠️ No se pudo actualizar enrolledCourses del usuario:', enrollError);
+      logger.warn('⚠️ No se pudo actualizar enrolledCourses del usuario:', enrollError);
     }
 
     return true;
   } catch (error) {
-    console.error('❌ Error eliminando estudiante:', error);
+    logger.error('❌ Error eliminando estudiante:', error);
     throw error;
   }
 }
@@ -2711,7 +2712,7 @@ export async function withdrawFromCourse(courseId, studentUid) {
     // 2. Eliminar de la subcolección del curso
     return deleteStudentFromCourse(courseId, studentUid);
   } catch (error) {
-    console.error('❌ Error saliendo del curso:', error);
+    logger.error('❌ Error saliendo del curso:', error);
     throw error;
   }
 }
@@ -2726,7 +2727,7 @@ export async function getStudentCourses(studentUid) {
     const enrolledIds = userSnap.exists() ? (userSnap.data().enrolledCourses || []) : [];
 
     if (enrolledIds.length > 0) {
-      console.log('📚 [getStudentCourses] Usando lista de cursos del perfil:', enrolledIds.length);
+      logger.log('📚 [getStudentCourses] Usando lista de cursos del perfil:', enrolledIds.length);
       const coursesPromises = enrolledIds.map(async (courseId) => {
         const courseSnap = await getDoc(doc(db, 'courses', courseId));
         if (!courseSnap.exists()) return null;
@@ -2747,7 +2748,7 @@ export async function getStudentCourses(studentUid) {
     }
 
     // Fallback antiguo si el array está vacío (para usuarios viejos)
-    console.warn('⚠️ [getStudentCourses] Sin enrolledCourses, usando fallback lento (collectionGroup)');
+    logger.warn('⚠️ [getStudentCourses] Sin enrolledCourses, usando fallback lento (collectionGroup)');
     const studentsQuery = query(
       collectionGroup(db, 'students'),
       where('estudianteUid', '==', studentUid)
@@ -2770,7 +2771,7 @@ export async function getStudentCourses(studentUid) {
     }
     return courses;
   } catch (error) {
-    console.error('❌ Error obteniendo cursos del estudiante:', error);
+    logger.error('❌ Error obteniendo cursos del estudiante:', error);
     return [];
   }
 }
@@ -2792,7 +2793,7 @@ export async function resetStudentArtifact(studentUid, textoId, artifactName) {
       throw new Error('Se requieren studentUid, textoId y artifactName');
     }
 
-    console.log(`🔄 [Reset] Iniciando reset de ${artifactName} para ${studentUid} en ${textoId}`);
+    logger.log(`🔄 [Reset] Iniciando reset de ${artifactName} para ${studentUid} en ${textoId}`);
 
     const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
     const progressSnap = await getDoc(progressRef);
@@ -2885,13 +2886,13 @@ export async function resetStudentArtifact(studentUid, textoId, artifactName) {
       };
     });
 
-    console.log('📝 [Reset] Actualizando con:', { artifactsPaths: Array.from(artifactsPaths), artifactName, rubricKey });
+    logger.log('📝 [Reset] Actualizando con:', { artifactsPaths: Array.from(artifactsPaths), artifactName, rubricKey });
     await updateDoc(progressRef, updateData);
 
-    console.log(`✅ [Reset] Artefacto ${artifactName} reseteado para estudiante ${studentUid} en texto ${textoId}`);
+    logger.log(`✅ [Reset] Artefacto ${artifactName} reseteado para estudiante ${studentUid} en texto ${textoId}`);
     return { success: true, message: `Artefacto "${artifactName}" reseteado correctamente` };
   } catch (error) {
-    console.error('❌ Error reseteando artefacto:', error);
+    logger.error('❌ Error reseteando artefacto:', error);
     return { success: false, message: error.message };
   }
 }
@@ -2908,7 +2909,7 @@ export async function resetAllStudentArtifacts(studentUid, textoId) {
       throw new Error('Se requieren studentUid y textoId');
     }
 
-    console.log(`🔄 [Reset ALL] Iniciando reset de todos los artefactos para ${studentUid} en ${textoId}`);
+    logger.log(`🔄 [Reset ALL] Iniciando reset de todos los artefactos para ${studentUid} en ${textoId}`);
 
     const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
     const progressSnap = await getDoc(progressRef);
@@ -2983,13 +2984,13 @@ export async function resetAllStudentArtifacts(studentUid, textoId) {
       updateData[path] = emptyArtifacts;
     });
 
-    console.log('📝 [Reset ALL] Actualizando con paths:', Array.from(artifactsPaths));
+    logger.log('📝 [Reset ALL] Actualizando con paths:', Array.from(artifactsPaths));
     await updateDoc(progressRef, updateData);
 
-    console.log(`✅ [Reset ALL] Todos los artefactos reseteados para estudiante ${studentUid} en texto ${textoId}`);
+    logger.log(`✅ [Reset ALL] Todos los artefactos reseteados para estudiante ${studentUid} en texto ${textoId}`);
     return { success: true, message: 'Todos los artefactos reseteados', resetCount: artifactNames.length };
   } catch (error) {
-    console.error('❌ Error reseteando todos los artefactos:', error);
+    logger.error('❌ Error reseteando todos los artefactos:', error);
     return { success: false, message: error.message, resetCount: 0 };
   }
 }
@@ -3006,15 +3007,15 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
       throw new Error('Se requieren studentUid y textoId');
     }
 
-    console.log('🔍 [getStudentArtifactDetails] Buscando:', { studentUid, textoId });
+    logger.log('🔍 [getStudentArtifactDetails] Buscando:', { studentUid, textoId });
     
     const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
     const progressSnap = await getDoc(progressRef);
 
-    console.log('📄 [getStudentArtifactDetails] Documento existe:', progressSnap.exists());
+    logger.log('📄 [getStudentArtifactDetails] Documento existe:', progressSnap.exists());
 
     if (!progressSnap.exists()) {
-      console.log('⚠️ [getStudentArtifactDetails] No existe documento de progreso');
+      logger.log('⚠️ [getStudentArtifactDetails] No existe documento de progreso');
       return {
         hasProgress: false,
         artifacts: {},
@@ -3028,7 +3029,7 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
       const topKeys = data && typeof data === 'object' ? Object.keys(data) : [];
       const rubricKeys = data?.rubricProgress && typeof data.rubricProgress === 'object' ? Object.keys(data.rubricProgress) : [];
       const hasActivitiesProgress = !!data?.activitiesProgress;
-      console.log('📊 [getStudentArtifactDetails] Data resumen:', {
+      logger.log('📊 [getStudentArtifactDetails] Data resumen:', {
         topKeys,
         rubricKeys,
         hasActivitiesProgress
@@ -3045,12 +3046,12 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
     // Intentar estructura anidada primero (como se guarda desde AppContext)
     if (data.activitiesProgress?.[textoId]?.artifacts) {
       artifacts = data.activitiesProgress[textoId].artifacts;
-      console.log('🎯 [getStudentArtifactDetails] Usando estructura anidada [textoId].artifacts');
+      logger.log('🎯 [getStudentArtifactDetails] Usando estructura anidada [textoId].artifacts');
     } 
     // Fallback: estructura directa
     else if (data.activitiesProgress?.artifacts) {
       artifacts = data.activitiesProgress.artifacts;
-      console.log('🎯 [getStudentArtifactDetails] Usando estructura directa .artifacts');
+      logger.log('🎯 [getStudentArtifactDetails] Usando estructura directa .artifacts');
     }
     // Último intento: buscar en cualquier key de activitiesProgress que tenga artifacts
     else if (data.activitiesProgress && typeof data.activitiesProgress === 'object') {
@@ -3058,7 +3059,7 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
       for (const key of keys) {
         if (data.activitiesProgress[key]?.artifacts) {
           artifacts = data.activitiesProgress[key].artifacts;
-          console.log(`🎯 [getStudentArtifactDetails] Encontrado artifacts bajo key: ${key}`);
+          logger.log(`🎯 [getStudentArtifactDetails] Encontrado artifacts bajo key: ${key}`);
           break;
         }
       }
@@ -3066,8 +3067,8 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
     
     const rubricProgress = data.rubricProgress || {};
     
-    console.log('🎯 [getStudentArtifactDetails] Artifacts encontrados:', Object.keys(artifacts));
-    console.log('📈 [getStudentArtifactDetails] RubricProgress:', Object.keys(rubricProgress));
+    logger.log('🎯 [getStudentArtifactDetails] Artifacts encontrados:', Object.keys(artifacts));
+    logger.log('📈 [getStudentArtifactDetails] RubricProgress:', Object.keys(rubricProgress));
 
     // 🔧 Helper para obtener el score correcto de una rúbrica
     // La estructura real es: { scores: [{score, timestamp}...], average, lastUpdate }
@@ -3217,7 +3218,7 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
       lastResetAt: data.lastResetAt
     };
   } catch (error) {
-    console.error('❌ Error obteniendo detalles de artefactos:', error);
+    logger.error('❌ Error obteniendo detalles de artefactos:', error);
     return { hasProgress: false, artifacts: {}, rubricProgress: {}, error: error.message };
   }
 }

@@ -22,29 +22,37 @@ export function AuthProvider({ children }) {
   const lastUserIdRef = useRef(null);
 
   // Función para limpiar datos locales del usuario (debe estar antes del useEffect)
-  const clearLocalUserData = ({ mode = 'full' } = {}) => {
+  const clearLocalUserData = ({ mode = 'full', uid = null } = {}) => {
     logger.debug('🧹 [AuthContext] Limpiando datos locales del usuario...');
 
     // En logout normal queremos preservar el progreso local del usuario.
     // Solo limpiamos datos sensibles/no deterministas para evitar contaminación.
     const isLogout = mode === 'logout';
 
+    // Helper: elimina tanto la clave legacy como la scopeada por uid
+    const removeKeyAndScoped = (baseKey) => {
+      try {
+        localStorage.removeItem(baseKey);
+        if (uid) localStorage.removeItem(`${baseKey}:${uid}`);
+      } catch (err) {
+        logger.warn(`⚠️ No se pudo eliminar ${baseKey}:`, err);
+      }
+    };
+
     if (isLogout) {
-      const sensitiveKeys = [
-        // API keys (legacy + BYOK)
+      // API keys (legacy + scoped por usuario)
+      const sensitiveBaseKeys = [
         'openai_api_key',
+        'gemini_api_key',
+        'deepseek_api_key',
         'user_openai_api_key',
+        'ai_provider',
+        'api_usage',
         // Flags/colas transitorias
         '__restoring_session__'
       ];
 
-      sensitiveKeys.forEach((key) => {
-        try {
-          localStorage.removeItem(key);
-        } catch (err) {
-          logger.warn(`⚠️ No se pudo eliminar ${key}:`, err);
-        }
-      });
+      sensitiveBaseKeys.forEach(removeKeyAndScoped);
 
       // sessionStorage es por pestaña/origen; conviene limpiar para evitar contaminación de borradores.
       try {
@@ -61,9 +69,13 @@ export function AuthProvider({ children }) {
     const keysToRemove = [
       LEGACY_KEYS.APPLECTURA_SESSIONS,
       LEGACY_KEYS.APPLECTURA_CURRENT_SESSION,
-      // API keys (legacy + BYOK)
+      // API keys (legacy + scoped)
       'openai_api_key',
+      'gemini_api_key',
+      'deepseek_api_key',
       'user_openai_api_key',
+      'ai_provider',
+      'api_usage',
       'rubricProgress',
       'savedCitations',
       'activitiesProgress',
@@ -79,13 +91,7 @@ export function AuthProvider({ children }) {
       LEGACY_KEYS.APPLECTURA_PENDING_SYNCS
     ];
 
-    keysToRemove.forEach(key => {
-      try {
-        localStorage.removeItem(key);
-      } catch (err) {
-        logger.warn(`⚠️ No se pudo eliminar ${key}:`, err);
-      }
-    });
+    keysToRemove.forEach(removeKeyAndScoped);
 
     // También limpiar keys que empiecen con ciertos prefijos
     const prefixesToClear = [
@@ -127,7 +133,7 @@ export function AuthProvider({ children }) {
           // Detectar cambio de usuario (incluso si hubo logout intermedio)
           if (lastUserIdRef.current && lastUserIdRef.current !== user.uid) {
             logger.warn('🔄 [AuthContext] Cambio de usuario detectado, limpiando datos locales...');
-            clearLocalUserData({ mode: 'full' });
+            clearLocalUserData({ mode: 'full', uid: lastUserIdRef.current });
           }
 
           lastUserIdRef.current = user.uid;
@@ -157,7 +163,7 @@ export function AuthProvider({ children }) {
           setSessionManagerUser(null);
           if (lastUserIdRef.current) {
             logger.debug('🧹 [AuthContext] Usuario cerró sesión, limpiando datos sensibles...');
-            clearLocalUserData({ mode: 'logout' });
+            clearLocalUserData({ mode: 'logout', uid: lastUserIdRef.current });
           }
 
           lastUserIdRef.current = null;
@@ -207,7 +213,7 @@ export function AuthProvider({ children }) {
       logger.debug('🔐 [AuthContext] Cerrando sesión...');
 
       // Logout: preservar progreso local; limpiar solo datos sensibles
-      clearLocalUserData({ mode: 'logout' });
+      clearLocalUserData({ mode: 'logout', uid: currentUser?.uid });
 
       await firebaseSignOut(auth);
       logger.log('✅ [AuthContext] Sesión cerrada correctamente');
