@@ -1,3 +1,6 @@
+import logger from '../utils/logger';
+
+
 /**
  * Servicio Universal de Lectura de Documentos
  * Similar a lectores EPUB profesionales (Calibre, Adobe Digital Editions)
@@ -90,7 +93,7 @@ function segmentByDoubleNewline(text) {
     .map(p => p.trim())
     .filter(p => isValidParagraph(p));
   
-  console.log(`📄 [DocumentReader] Estrategia 1: ${paragraphs.length} párrafos por doble salto`);
+  logger.log(`📄 [DocumentReader] Estrategia 1: ${paragraphs.length} párrafos por doble salto`);
   
   // Validar que produjo resultados razonables
   // Aceptar desde 1 párrafo (documentos cortos) hasta 2000 (libros largos)
@@ -138,7 +141,7 @@ function segmentBySentences(text) {
     paragraphs.push(currentParagraph.trim());
   }
   
-  console.log(`✍️ [DocumentReader] Estrategia 2: ${paragraphs.length} párrafos por oraciones`);
+  logger.log(`✍️ [DocumentReader] Estrategia 2: ${paragraphs.length} párrafos por oraciones`);
   
   if (paragraphs.length >= 1) {
     return paragraphs;
@@ -193,7 +196,7 @@ function segmentByLines(text) {
     paragraphs.push(currentParagraph.trim());
   }
   
-  console.log(`📋 [DocumentReader] Estrategia 3: ${paragraphs.length} párrafos por líneas`);
+  logger.log(`📋 [DocumentReader] Estrategia 3: ${paragraphs.length} párrafos por líneas`);
   
   if (paragraphs.length >= 2) {
     return paragraphs;
@@ -235,7 +238,7 @@ function segmentByFixedLength(text) {
     start = end;
   }
   
-  console.log(`🔧 [DocumentReader] Estrategia 4 (fallback): ${paragraphs.length} bloques de longitud fija`);
+  logger.log(`🔧 [DocumentReader] Estrategia 4 (fallback): ${paragraphs.length} bloques de longitud fija`);
   
   return paragraphs;
 }
@@ -248,11 +251,11 @@ function segmentByFixedLength(text) {
  * @returns {Array<string>} - Array de párrafos limpios y válidos
  */
 export function processDocument(rawText, options = {}) {
-  console.log('📖 [DocumentReader] Iniciando procesamiento de documento...');
+  logger.log('📖 [DocumentReader] Iniciando procesamiento de documento...');
   
   // Validación inicial
   if (!rawText || typeof rawText !== 'string') {
-    console.error('❌ [DocumentReader] Texto inválido recibido');
+    logger.error('❌ [DocumentReader] Texto inválido recibido');
     return [];
   }
   
@@ -260,11 +263,11 @@ export function processDocument(rawText, options = {}) {
   const cleanedText = cleanText(rawText);
   
   if (!cleanedText || cleanedText.length < 50) {
-    console.error('❌ [DocumentReader] Texto demasiado corto después de limpieza');
+    logger.error('❌ [DocumentReader] Texto demasiado corto después de limpieza');
     return [];
   }
   
-  console.log(`✅ [DocumentReader] Texto limpio: ${cleanedText.length} caracteres`);
+  logger.log(`✅ [DocumentReader] Texto limpio: ${cleanedText.length} caracteres`);
   
   // 2. Intentar estrategias en orden de prioridad
   const strategies = [
@@ -279,19 +282,19 @@ export function processDocument(rawText, options = {}) {
       const result = strategy.fn(cleanedText);
       
       if (result && result.length > 0) {
-        console.log(`✅ [DocumentReader] Éxito con estrategia: ${strategy.name}`);
-        console.log(`📊 [DocumentReader] Total de párrafos: ${result.length}`);
-        console.log(`📏 [DocumentReader] Longitud promedio: ${Math.round(result.reduce((sum, p) => sum + p.length, 0) / result.length)} caracteres`);
+        logger.log(`✅ [DocumentReader] Éxito con estrategia: ${strategy.name}`);
+        logger.log(`📊 [DocumentReader] Total de párrafos: ${result.length}`);
+        logger.log(`📏 [DocumentReader] Longitud promedio: ${Math.round(result.reduce((sum, p) => sum + p.length, 0) / result.length)} caracteres`);
         
         return result;
       }
     } catch (error) {
-      console.error(`❌ [DocumentReader] Error en estrategia ${strategy.name}:`, error);
+      logger.error(`❌ [DocumentReader] Error en estrategia ${strategy.name}:`, error);
     }
   }
   
   // Si todo falló, devolver texto completo como un solo párrafo
-  console.warn('⚠️ [DocumentReader] Todas las estrategias fallaron, devolviendo texto completo');
+  logger.warn('⚠️ [DocumentReader] Todas las estrategias fallaron, devolviendo texto completo');
   return [cleanedText];
 }
 
@@ -330,7 +333,7 @@ export function analyzeTextQuality(paragraphs) {
     quality = quality === 'excellent' ? 'good' : quality;
   }
   
-  console.log('📊 [DocumentReader] Análisis de calidad:', { quality, stats, issues });
+  logger.log('📊 [DocumentReader] Análisis de calidad:', { quality, stats, issues });
   
   return { quality, stats, issues };
 }

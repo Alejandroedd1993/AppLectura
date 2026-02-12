@@ -540,7 +540,7 @@ export default function BitacoraEticaIA({ theme }) {
         fileName: `bitacora-etica-ia-${new Date().toISOString().split('T')[0]}.pdf`,
       });
     } catch (error) {
-      console.error('Error exportando bitácora como PDF:', error);
+      logger.error('Error exportando bitácora como PDF:', error);
     }
   }, [tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, feedbackCriterial]);
 
@@ -694,7 +694,7 @@ export default function BitacoraEticaIA({ theme }) {
       window.dispatchEvent(event);
 
     } catch (error) {
-      console.error('Error evaluando Bitácora Ética de IA:', error);
+      logger.error('Error evaluando Bitácora Ética de IA:', error);
       setError(error.message || 'Error al evaluar la bitácora');
     } finally {
       // Limpiar step timeouts en cualquier caso (éxito o error)

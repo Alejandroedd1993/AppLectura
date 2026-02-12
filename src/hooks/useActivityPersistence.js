@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 
+import logger from '../utils/logger';
 const STORAGE_KEY_PREFIX = 'activity_results_';
 const VERSION = '1.1'; // Incrementado por cambio en estructura de claves
 const MAX_STORED_DOCUMENTS = 15; // Límite de documentos almacenados
@@ -135,7 +136,7 @@ export default function useActivityPersistence(documentId, options = {}) {
           const oldKey = getStorageKey(oldDocId);
           if (oldKey) {
             localStorage.removeItem(oldKey);
-            console.log(`🗑️ [ActivityPersistence] Documento antiguo eliminado: ${oldDocId}`);
+            logger.log(`🗑️ [ActivityPersistence] Documento antiguo eliminado: ${oldDocId}`);
           }
           delete index[oldDocId];
         });
@@ -149,7 +150,7 @@ export default function useActivityPersistence(documentId, options = {}) {
           const expiredKey = getStorageKey(expDocId);
           if (expiredKey) {
             localStorage.removeItem(expiredKey);
-            console.log(`⏰ [ActivityPersistence] Documento expirado eliminado: ${expDocId}`);
+            logger.log(`⏰ [ActivityPersistence] Documento expirado eliminado: ${expDocId}`);
           }
           delete index[expDocId];
         }
@@ -157,7 +158,7 @@ export default function useActivityPersistence(documentId, options = {}) {
 
       localStorage.setItem(indexKey, JSON.stringify(index));
     } catch (error) {
-      console.warn('[ActivityPersistence] Error al actualizar índice:', error);
+      logger.warn('[ActivityPersistence] Error al actualizar índice:', error);
     }
   }, [getStorageKey]);
 
@@ -195,10 +196,10 @@ export default function useActivityPersistence(documentId, options = {}) {
       // Actualizar índice de documentos
       updateDocumentIndex(documentId, metrics);
 
-      console.log(`✅ [ActivityPersistence] Guardado para documento: ${documentId}`);
+      logger.log(`✅ [ActivityPersistence] Guardado para documento: ${documentId}`);
       return true;
     } catch (error) {
-      console.error('[ActivityPersistence] Error al guardar:', error);
+      logger.error('[ActivityPersistence] Error al guardar:', error);
       return false;
     }
   }, [documentId, enabled, studentAnswers, aiFeedbacks, criterionFeedbacks, currentIndex, getStorageKey, calculateMetrics, optionsAttempts, optionsHistory, optionsSubmitted, updateDocumentIndex]);
@@ -232,12 +233,12 @@ export default function useActivityPersistence(documentId, options = {}) {
           try {
             // Copiar tal cual al nuevo storageKey (mantener version/data/metrics)
             localStorage.setItem(storageKey, legacyRaw);
-            console.log(`♻️ [ActivityPersistence] Migrado desde legacyId: ${legacyId} -> ${documentId}`);
+            logger.log(`♻️ [ActivityPersistence] Migrado desde legacyId: ${legacyId} -> ${documentId}`);
 
             const migrated = JSON.parse(legacyRaw);
             return migrated?.data || null;
           } catch (e) {
-            console.warn('[ActivityPersistence] Error migrando datos legacy:', e);
+            logger.warn('[ActivityPersistence] Error migrando datos legacy:', e);
           }
         }
 
@@ -248,14 +249,14 @@ export default function useActivityPersistence(documentId, options = {}) {
 
       // Validar versión (para futuras migraciones)
       if (saved.version !== VERSION) {
-        console.warn(`[ActivityPersistence] Versión incompatible: ${saved.version} vs ${VERSION}`);
+        logger.warn(`[ActivityPersistence] Versión incompatible: ${saved.version} vs ${VERSION}`);
         // Aquí se podría añadir lógica de migración si fuera necesario
       }
 
-      console.log(`📦 [ActivityPersistence] Datos cargados para documento: ${documentId}`);
+      logger.log(`📦 [ActivityPersistence] Datos cargados para documento: ${documentId}`);
       return saved.data;
     } catch (error) {
-      console.error('[ActivityPersistence] Error al cargar:', error);
+      logger.error('[ActivityPersistence] Error al cargar:', error);
       return null;
     }
   }, [documentId, getStorageKey, legacyDocumentIds]);
@@ -279,10 +280,10 @@ export default function useActivityPersistence(documentId, options = {}) {
       delete index[documentId];
       localStorage.setItem(indexKey, JSON.stringify(index));
 
-      console.log(`🗑️ [ActivityPersistence] Resultados eliminados para: ${documentId}`);
+      logger.log(`🗑️ [ActivityPersistence] Resultados eliminados para: ${documentId}`);
       return true;
     } catch (error) {
-      console.error('[ActivityPersistence] Error al limpiar:', error);
+      logger.error('[ActivityPersistence] Error al limpiar:', error);
       return false;
     }
   }, [documentId, getStorageKey]);
@@ -349,7 +350,7 @@ export default function useActivityPersistence(documentId, options = {}) {
           latestSaveRef.current();
         }
       } catch (error) {
-        console.warn('[ActivityPersistence] Error en flush al desmontar:', error);
+        logger.warn('[ActivityPersistence] Error en flush al desmontar:', error);
       }
     };
   }, [documentId, enabled]);
@@ -387,7 +388,7 @@ export function getAllStoredActivities() {
     const indexRaw = localStorage.getItem(indexKey) || '{}';
     return JSON.parse(indexRaw);
   } catch (error) {
-    console.error('[ActivityPersistence] Error al obtener índice:', error);
+    logger.error('[ActivityPersistence] Error al obtener índice:', error);
     return {};
   }
 }
@@ -400,10 +401,10 @@ export function clearAllActivities() {
   try {
     const keys = Object.keys(localStorage).filter(k => k.startsWith(STORAGE_KEY_PREFIX));
     keys.forEach(k => localStorage.removeItem(k));
-    console.log(`🗑️ [ActivityPersistence] ${keys.length} entradas eliminadas`);
+    logger.log(`🗑️ [ActivityPersistence] ${keys.length} entradas eliminadas`);
     return true;
   } catch (error) {
-    console.error('[ActivityPersistence] Error al limpiar todo:', error);
+    logger.error('[ActivityPersistence] Error al limpiar todo:', error);
     return false;
   }
 }
@@ -429,16 +430,16 @@ export function clearLegacyActivities() {
       if (underscoreCount === 0 && k !== `${STORAGE_KEY_PREFIX}index`) {
         localStorage.removeItem(k);
         cleaned++;
-        console.log(`🗑️ [ActivityPersistence] Eliminado dato legacy: ${k}`);
+        logger.log(`🗑️ [ActivityPersistence] Eliminado dato legacy: ${k}`);
       } else {
         remaining++;
       }
     });
     
-    console.log(`🧹 [ActivityPersistence] Limpieza legacy: ${cleaned} eliminados, ${remaining} conservados`);
+    logger.log(`🧹 [ActivityPersistence] Limpieza legacy: ${cleaned} eliminados, ${remaining} conservados`);
     return { cleaned, remaining };
   } catch (error) {
-    console.error('[ActivityPersistence] Error en limpieza legacy:', error);
+    logger.error('[ActivityPersistence] Error en limpieza legacy:', error);
     return { cleaned: 0, remaining: 0, error: error.message };
   }
 }
@@ -478,7 +479,7 @@ export function diagnoseStoredActivities() {
       withCourseId: { count: withCourseId.length, entries: withCourseId }
     };
   } catch (error) {
-    console.error('[ActivityPersistence] Error en diagnóstico:', error);
+    logger.error('[ActivityPersistence] Error en diagnóstico:', error);
     return { error: error.message };
   }
 }

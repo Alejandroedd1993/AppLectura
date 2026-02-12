@@ -2,6 +2,7 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension, scoreToLevelDescriptor } from '../pedagogy/rubrics/criticalLiteracyRubric';
 
+import logger from '../utils/logger';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 const DIMENSION_KEY = 'argumentacion'; // Dimensión: Argumentación y Contraargumento
@@ -199,10 +200,10 @@ async function evaluateWithDeepSeek(text, tesis, evidencias, contraargumento, re
     });
 
     const rawContent = extractContent(response);
-    console.log('🔍 [DeepSeek RespuestaArgumentativa] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [DeepSeek RespuestaArgumentativa] Respuesta cruda:', rawContent.slice(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [DeepSeek RespuestaArgumentativa] Respuesta limpia:', cleanedContent.slice(0, 200));
+    logger.log('✅ [DeepSeek RespuestaArgumentativa] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     if (!parsed.criterios_evaluados) {
@@ -210,7 +211,7 @@ async function evaluateWithDeepSeek(text, tesis, evidencias, contraargumento, re
     }
     return parsed;
   } catch (error) {
-    console.error('❌ Error en evaluación DeepSeek (RespuestaArgumentativa):', error);
+    logger.error('❌ Error en evaluación DeepSeek (RespuestaArgumentativa):', error);
     return {
       criterios_evaluados: {
         solidez_tesis: { nivel: 3, tesis_clara: true, defendible: true },
@@ -242,10 +243,10 @@ async function evaluateWithOpenAI(text, tesis, evidencias, contraargumento, refu
     });
 
     const rawContent = extractContent(response);
-    console.log('🔍 [OpenAI RespuestaArgumentativa] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [OpenAI RespuestaArgumentativa] Respuesta cruda:', rawContent.slice(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [OpenAI RespuestaArgumentativa] Respuesta limpia:', cleanedContent.slice(0, 200));
+    logger.log('✅ [OpenAI RespuestaArgumentativa] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     if (!parsed.profundidad_dialogica || !parsed.nivel_pensamiento_critico) {
@@ -253,7 +254,7 @@ async function evaluateWithOpenAI(text, tesis, evidencias, contraargumento, refu
     }
     return parsed;
   } catch (error) {
-    console.error('❌ Error en evaluación OpenAI (RespuestaArgumentativa):', error);
+    logger.error('❌ Error en evaluación OpenAI (RespuestaArgumentativa):', error);
     return {
       profundidad_dialogica: {
         solidez_tesis: { demuestra_pensamiento_original: true, es_matizada: true, comentario: 'Análisis básico' },
@@ -383,21 +384,21 @@ function detectCriterioKey(comentario) {
  * @returns {Promise<Object>} Feedback criterial con niveles y evidencias
  */
 export async function evaluateRespuestaArgumentativa({ text, tesis, evidencias, contraargumento, refutacion }) {
-  console.log('💭 [RespuestaArgumentativa] Iniciando evaluación dual...');
+  logger.log('💭 [RespuestaArgumentativa] Iniciando evaluación dual...');
 
   const startTime = Date.now();
 
   try {
     // FASE 1: Evaluación estructural con DeepSeek
-    console.log('📊 Evaluando estructura argumentativa (DeepSeek)...');
+    logger.log('📊 Evaluando estructura argumentativa (DeepSeek)...');
     const deepseekResult = await evaluateWithDeepSeek(text, tesis, evidencias, contraargumento, refutacion);
 
     // FASE 2: Evaluación de profundidad dialógica con OpenAI
-    console.log('🧠 Evaluando profundidad dialógica (OpenAI)...');
+    logger.log('🧠 Evaluando profundidad dialógica (OpenAI)...');
     const openaiResult = await evaluateWithOpenAI(text, tesis, evidencias, contraargumento, refutacion, deepseekResult);
 
     // FASE 3: Combinar feedback
-    console.log('🔧 Combinando feedback dual...');
+    logger.log('🔧 Combinando feedback dual...');
     const mergedFeedback = mergeFeedback(deepseekResult, openaiResult);
 
     // FASE 4: Añadir descriptores de rúbrica
@@ -412,13 +413,13 @@ export async function evaluateRespuestaArgumentativa({ text, tesis, evidencias, 
       duracion_ms: Date.now() - startTime
     };
 
-    console.log(`✅ Evaluación completada en ${finalFeedback.duracion_ms}ms`);
-    console.log(`📊 Nivel global: ${mergedFeedback.nivel_global}/4`);
+    logger.log(`✅ Evaluación completada en ${finalFeedback.duracion_ms}ms`);
+    logger.log(`📊 Nivel global: ${mergedFeedback.nivel_global}/4`);
 
     return finalFeedback;
 
   } catch (error) {
-    console.error('❌ Error en evaluación dual de RespuestaArgumentativa:', error);
+    logger.error('❌ Error en evaluación dual de RespuestaArgumentativa:', error);
     throw error;
   }
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
+import logger from '../utils/logger';
 /**
  * Hook simplificado para testing de la configuración de API
  * Garantiza que DeepSeek esté siempre disponible como fallback
@@ -35,11 +36,11 @@ export const useApiConfigSimple = () => {
   }, []);
 
   const setApiKey = useCallback((providerId, key) => {
-    console.log(`Setting API key for ${providerId}`);
+    logger.log(`Setting API key for ${providerId}`);
   }, []);
 
   const incrementUsage = useCallback(() => {
-    console.log('Usage incremented');
+    logger.log('Usage incremented');
   }, []);
 
   const getAvailableProvider = useCallback(() => {

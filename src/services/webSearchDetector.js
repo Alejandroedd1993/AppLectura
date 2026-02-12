@@ -1,3 +1,6 @@
+import logger from '../utils/logger';
+
+
 /**
  * Detector Inteligente de Necesidad de Búsqueda Web
  * Analiza texto y decide automáticamente si requiere contexto web actualizado
@@ -15,8 +18,8 @@
  * @example
  * const decision = shouldSearchWeb(texto, { genero_textual: 'noticia' });
  * if (decision.needsWeb) {
- *   console.log(`Buscar en web (confianza: ${decision.confidence})`);
- *   console.log('Razones:', decision.reasons);
+ *   logger.log(`Buscar en web (confianza: ${decision.confidence})`);
+ *   logger.log('Razones:', decision.reasons);
  * }
  */
 export function shouldSearchWeb(texto, metadata = {}) {
@@ -238,12 +241,12 @@ export function shouldSearchWeb(texto, metadata = {}) {
 
   // Log para debugging
   if (indicators.needsWeb) {
-    console.log('🌐 Búsqueda web REQUERIDA');
-    console.log(`   Confianza: ${(indicators.confidence * 100).toFixed(1)}%`);
-    console.log('   Razones:', indicators.reasons);
+    logger.log('🌐 Búsqueda web REQUERIDA');
+    logger.log(`   Confianza: ${(indicators.confidence * 100).toFixed(1)}%`);
+    logger.log('   Razones:', indicators.reasons);
   } else {
-    console.log('✅ Búsqueda web NO necesaria');
-    console.log(`   Confianza: ${(indicators.confidence * 100).toFixed(1)}%`);
+    logger.log('✅ Búsqueda web NO necesaria');
+    logger.log(`   Confianza: ${(indicators.confidence * 100).toFixed(1)}%`);
   }
 
   return indicators;

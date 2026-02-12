@@ -1,3 +1,5 @@
+import logger from './logger';
+
 /**
  * Utilidades para manejar AbortController de manera segura
  * y evitar errores de runtime en la consola del navegador
@@ -17,7 +19,7 @@ export const safeAbort = (controller, context = 'Unknown') => {
       controller.abort();
     }
   } catch (error) {
-    console.warn(`Error al abortar controlador (${context}):`, error);
+    logger.warn(`Error al abortar controlador (${context}):`, error);
   }
 };
 
@@ -30,7 +32,7 @@ export const safeAbort = (controller, context = 'Unknown') => {
 export const createSafeAbortController = (controllerRef, context = 'Unknown') => {
   // Verificar que la referencia es válida
   if (!controllerRef || typeof controllerRef !== 'object') {
-    console.warn(`Referencia inválida en createSafeAbortController (${context})`);
+    logger.warn(`Referencia inválida en createSafeAbortController (${context})`);
     return null;
   }
 
@@ -44,7 +46,7 @@ export const createSafeAbortController = (controllerRef, context = 'Unknown') =>
     controllerRef.current = new AbortController();
     return controllerRef.current;
   } catch (error) {
-    console.error(`Error creando AbortController (${context}):`, error);
+    logger.error(`Error creando AbortController (${context}):`, error);
     return null;
   }
 };

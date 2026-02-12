@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Script de migración de datos de actividades
  * Migra de useActivityPersistence (activity_results_*) → AppContext (activitiesProgress)
@@ -20,7 +23,7 @@ const DEFAULT_NEW_KEY = 'activitiesProgress';
  */
 export function migrateActivityDataToContext(options = {}) {
   try {
-    console.log('🔄 [Migration] Iniciando migración de datos de actividades...');
+    logger.log('🔄 [Migration] Iniciando migración de datos de actividades...');
 
     const storageKey = options?.storageKey || DEFAULT_NEW_KEY;
     
@@ -29,11 +32,11 @@ export function migrateActivityDataToContext(options = {}) {
       .filter(key => key.startsWith(ACTIVITY_PREFIX));
     
     if (activityKeys.length === 0) {
-      console.log('ℹ️ [Migration] No hay datos antiguos para migrar');
+      logger.log('ℹ️ [Migration] No hay datos antiguos para migrar');
       return { migrated: 0, errors: 0, data: {} };
     }
     
-    console.log(`📊 [Migration] Encontrados ${activityKeys.length} documentos a migrar`);
+    logger.log(`📊 [Migration] Encontrados ${activityKeys.length} documentos a migrar`);
     
     // 2. Cargar activitiesProgress actual (puede estar vacío)
     let activitiesProgress = {};
@@ -43,7 +46,7 @@ export function migrateActivityDataToContext(options = {}) {
         activitiesProgress = JSON.parse(existing);
       }
     } catch (e) {
-      console.warn('⚠️ [Migration] Error cargando activitiesProgress existente:', e);
+      logger.warn('⚠️ [Migration] Error cargando activitiesProgress existente:', e);
     }
     
     let migrated = 0;
@@ -76,14 +79,14 @@ export function migrateActivityDataToContext(options = {}) {
         // Guardar en activitiesProgress
         activitiesProgress[documentId] = newFormat;
         
-        console.log(`✅ [Migration] Migrado documento: ${documentId}`);
+        logger.log(`✅ [Migration] Migrado documento: ${documentId}`);
         migrated++;
         
         // Opcional: Eliminar dato antiguo (comentar si quieres mantener backup)
         // localStorage.removeItem(key);
         
       } catch (error) {
-        console.error(`❌ [Migration] Error migrando ${key}:`, error);
+        logger.error(`❌ [Migration] Error migrando ${key}:`, error);
         errors++;
       }
     });
@@ -91,7 +94,7 @@ export function migrateActivityDataToContext(options = {}) {
     // 4. Guardar activitiesProgress actualizado
     localStorage.setItem(storageKey, JSON.stringify(activitiesProgress));
     
-    console.log(`✅ [Migration] Migración completada: ${migrated} exitosos, ${errors} errores`);
+    logger.log(`✅ [Migration] Migración completada: ${migrated} exitosos, ${errors} errores`);
     
     return {
       migrated,
@@ -100,7 +103,7 @@ export function migrateActivityDataToContext(options = {}) {
     };
     
   } catch (error) {
-    console.error('❌ [Migration] Error fatal en migración:', error);
+    logger.error('❌ [Migration] Error fatal en migración:', error);
     return { migrated: 0, errors: 1, data: {} };
   }
 }
@@ -119,12 +122,12 @@ export function cleanupOldActivityData() {
     // También limpiar el índice
     localStorage.removeItem(`${ACTIVITY_PREFIX}index`);
     
-    console.log(`🗑️ [Migration] ${activityKeys.length} entradas antiguas eliminadas`);
+    logger.log(`🗑️ [Migration] ${activityKeys.length} entradas antiguas eliminadas`);
     
     return activityKeys.length;
     
   } catch (error) {
-    console.error('❌ [Migration] Error limpiando datos antiguos:', error);
+    logger.error('❌ [Migration] Error limpiando datos antiguos:', error);
     return 0;
   }
 }

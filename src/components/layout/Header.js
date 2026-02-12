@@ -8,6 +8,7 @@ import { lightTheme, darkTheme } from '../../styles/theme';
 import { useAuth } from '../../context/AuthContext';
 import { logout } from '../../firebase/auth';
 
+import logger from '../../utils/logger';
 /**
  * Componente Header: Muestra el encabezado de la aplicación.
  * @param {string} titulo - Título que se mostrará en el encabezado.
@@ -23,9 +24,9 @@ const Header = ({ titulo = 'Mi App de Lectura', modoOscuro = false, onToggleModo
     if (window.confirm('¿Estás seguro que deseas cerrar sesión?')) {
       try {
         await logout();
-        console.log('👋 Sesión cerrada exitosamente');
+        logger.log('👋 Sesión cerrada exitosamente');
       } catch (error) {
-        console.error('❌ Error cerrando sesión:', error);
+        logger.error('❌ Error cerrando sesión:', error);
         alert('Error al cerrar sesión. Intenta de nuevo.');
       }
     }

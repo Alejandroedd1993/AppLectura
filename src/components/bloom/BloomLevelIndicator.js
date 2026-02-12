@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { useZDPDetector } from '../../context/PedagogyContext';
 
+import logger from '../../utils/logger';
 /**
  * 🧠 BloomLevelIndicator - Indicador visual del nivel cognitivo actual (Bloom)
  * 
@@ -176,7 +177,7 @@ export default function BloomLevelIndicator({ compact = false, showTooltip = tru
         setCurrentDetection(history[history.length - 1]);
       }
     } catch (e) {
-      console.warn('Error obteniendo progresión ZDP:', e);
+      logger.warn('Error obteniendo progresión ZDP:', e);
     }
   }, [zdpDetector]);
   

@@ -1,6 +1,7 @@
 // src/services/retryWrapper.js
 import { createEvaluationError } from './evaluationErrors';
 
+import logger from '../utils/logger';
 /**
  * Configuración de reintentos
  */
@@ -87,7 +88,7 @@ export async function withRetry(fn, options = {}, onProgress = null) {
       const evaluationError = createEvaluationError(error);
       lastError = evaluationError;
 
-      console.warn(`❌ Intento ${attempt}/${config.maxAttempts} falló:`, {
+      logger.warn(`❌ Intento ${attempt}/${config.maxAttempts} falló:`, {
         type: evaluationError.type,
         message: evaluationError.message,
         retryable: evaluationError.retryable

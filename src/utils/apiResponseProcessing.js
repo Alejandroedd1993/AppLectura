@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Módulo para el procesamiento de respuestas de API, especialmente aquellas mal formadas.
  */
@@ -157,7 +160,7 @@ export const recuperarAnalisisDeTextoMalFormado = (texto) => {
     
     return null;
   } catch (error) {
-    console.error('Error al recuperar análisis de texto mal formado:', error);
+    logger.error('Error al recuperar análisis de texto mal formado:', error);
     return null;
   }
 };
@@ -189,7 +192,7 @@ export const procesarRespuestaJSON = (respuesta) => {
   const camposFaltantes = camposRequeridos.filter(campo => !analisisData[campo]);
   
   if (camposFaltantes.length > 0) {
-    console.warn('Respuesta incompleta:', camposFaltantes);
+    logger.warn('Respuesta incompleta:', camposFaltantes);
     
     // Completar campos faltantes
     camposFaltantes.forEach(campo => {

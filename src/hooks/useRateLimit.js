@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 
+import logger from '../utils/logger';
 /**
  * Hook para rate limiting de operaciones
  * Previene abuse de APIs con cooldown y límite por hora
@@ -110,7 +111,7 @@ function useRateLimit(key, options = {}) {
         operations: operationsHistory.current
       }));
     } catch (e) {
-      console.warn('No se pudo persistir rate limit:', e);
+      logger.warn('No se pudo persistir rate limit:', e);
     }
 
     return {
@@ -140,7 +141,7 @@ function useRateLimit(key, options = {}) {
     try {
       localStorage.removeItem(`ratelimit_${key}`);
     } catch (e) {
-      console.warn('No se pudo limpiar rate limit:', e);
+      logger.warn('No se pudo limpiar rate limit:', e);
     }
   }, [key, maxPerHour, resetCooldown]);
 
@@ -159,7 +160,7 @@ function useRateLimit(key, options = {}) {
         checkCooldown();
       }
     } catch (e) {
-      console.warn('Error restaurando rate limit:', e);
+      logger.warn('Error restaurando rate limit:', e);
     }
   }, [key, cleanOldOperations, updateRemaining, checkCooldown]);
 

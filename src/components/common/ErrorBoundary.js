@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 
+import logger from '../../utils/logger';
 const ErrorContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -107,8 +108,8 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     // Registrar error para debugging
-    console.error('🔴 ErrorBoundary capturó un error:', error);
-    console.error('📍 Component stack:', errorInfo.componentStack);
+    logger.error('🔴 ErrorBoundary capturó un error:', error);
+    logger.error('📍 Component stack:', errorInfo.componentStack);
     
     // Guardar detalles del error en el estado
     this.setState({

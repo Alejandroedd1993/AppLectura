@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { exportGenericPDF } from '../../utils/exportUtils';
 
+import logger from '../../utils/logger';
 /**
  * 📥 ExportProgressButton - Exporta el progreso del estudiante en CSV/PDF
  *
@@ -159,7 +160,7 @@ export default function ExportProgressButton({
         const parsed = JSON.parse(resumenData);
         content.resumenAcademico = parsed.student_answers?.resumen || '';
       }
-    } catch (e) { console.warn('Error loading resumenAcademico', e); }
+    } catch (e) { logger.warn('Error loading resumenAcademico', e); }
 
     // Tabla ACD
     try {
@@ -174,7 +175,7 @@ export default function ExportProgressButton({
           vocesSilenciadas: parsed.student_answers?.voces_silenciadas || ''
         };
       }
-    } catch (e) { console.warn('Error loading tablaACD', e); }
+    } catch (e) { logger.warn('Error loading tablaACD', e); }
 
     // Mapa de Actores
     try {
@@ -189,7 +190,7 @@ export default function ExportProgressButton({
           consecuencias: parsed.student_answers?.consecuencias || ''
         };
       }
-    } catch (e) { console.warn('Error loading mapaActores', e); }
+    } catch (e) { logger.warn('Error loading mapaActores', e); }
 
     // Respuesta Argumentativa
     try {
@@ -204,7 +205,7 @@ export default function ExportProgressButton({
           refutacion: parsed.student_answers?.refutacion || ''
         };
       }
-    } catch (e) { console.warn('Error loading respuestaArgumentativa', e); }
+    } catch (e) { logger.warn('Error loading respuestaArgumentativa', e); }
 
     // Bitácora Ética IA
     try {
@@ -233,7 +234,7 @@ export default function ExportProgressButton({
           declaraciones: reflexiones.declaraciones || content.bitacoraEticaIA.declaraciones || []
         };
       }
-    } catch (e) { console.warn('Error loading bitacoraEticaIA', e); }
+    } catch (e) { logger.warn('Error loading bitacoraEticaIA', e); }
 
     return content;
   };

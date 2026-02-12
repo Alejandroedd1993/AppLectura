@@ -1,3 +1,6 @@
+import logger from '../utils/logger';
+
+
 /**
  * AnnotationsService
  * Unifica gestión de resaltados y notas vinculadas a un texto segmentado.
@@ -80,7 +83,7 @@ class AnnotationsServiceImpl {
       localStorage.setItem(storageKey, payload);
       entry.dirty = false;
     } catch (e) {
-      console.warn('[AnnotationsService] Persistencia fallida, manteniendo en memoria.', e);
+      logger.warn('[AnnotationsService] Persistencia fallida, manteniendo en memoria.', e);
     }
   }
 

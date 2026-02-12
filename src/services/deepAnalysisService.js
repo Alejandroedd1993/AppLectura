@@ -27,6 +27,7 @@ import { generarPromptLiteracidadCritica } from './criticalPromptService.js';
 import { fetchWithTimeout } from '../utils/netUtils';
 import { chatCompletion, extractContent } from './unifiedAiService';
 
+import logger from '../utils/logger';
 /**
  * @deprecated Usar performFullAnalysis() de textAnalysisOrchestrator.js
  * 
@@ -41,23 +42,23 @@ export async function analizarTextoCompletoProfundo(texto, opciones = {}) {
     apiKey
   } = opciones;
 
-  console.log('🧠 Iniciando análisis profundo del texto completo...');
+  logger.log('🧠 Iniciando análisis profundo del texto completo...');
   // Declarar fuera del try para poder usarlo en el catch sin errores de alcance
   let contextoBasico;
 
   try {
     // FASE 1: Análisis estructural y contextual básico
-    console.log('📊 Fase 1: Detección de contexto crítico...');
+    logger.log('📊 Fase 1: Detección de contexto crítico...');
     contextoBasico = detectarContextoTexto(texto);
     
     // FASE 2: Comprensión profunda con IA
-    console.log('🤖 Fase 2: Análisis profundo con IA...');
+    logger.log('🤖 Fase 2: Análisis profundo con IA...');
   const analisisIA = await realizarAnalisisProfundoIA(texto, contextoBasico, provider, apiKey);
     
     // FASE 3: Búsqueda web contextual (si está habilitada)
     let contextoWeb = null;
     if (incluirBusquedaWeb) {
-      console.log('🌐 Fase 3: Búsqueda web contextual...');
+      logger.log('🌐 Fase 3: Búsqueda web contextual...');
       try {
         contextoWeb = await buscarContextoWeb(
           texto, 
@@ -65,13 +66,13 @@ export async function analizarTextoCompletoProfundo(texto, opciones = {}) {
           analisisIA?.temas_identificados || contextoBasico.temasPrincipales
         );
       } catch (error) {
-        console.warn('⚠️ Búsqueda web no disponible:', error.message);
+        logger.warn('⚠️ Búsqueda web no disponible:', error.message);
         contextoWeb = { modo_offline: true };
       }
     }
     
     // FASE 4: Generación de preguntas ultra-contextualizadas
-    console.log('💭 Fase 4: Generación de preguntas contextualizadas...');
+    logger.log('💭 Fase 4: Generación de preguntas contextualizadas...');
     const preguntasBase = generarPreguntasContextualizadas(contextoBasico, maxPreguntasPorDimension);
     
     // Enriquecer preguntas con IA y contexto web
@@ -91,11 +92,11 @@ export async function analizarTextoCompletoProfundo(texto, opciones = {}) {
       preguntasEnriquecidas
     });
     
-    console.log('✅ Análisis profundo completado');
+    logger.log('✅ Análisis profundo completado');
     return analisisCompleto;
     
   } catch (error) {
-    console.error('❌ Error en análisis profundo:', error);
+    logger.error('❌ Error en análisis profundo:', error);
     // Fallback a análisis básico sin fallar completamente
     // Si contextoBasico no se calculó antes del fallo, intente derivarlo ahora de forma segura
     const contextoSeguro = contextoBasico || detectarContextoTexto(texto);
@@ -141,7 +142,7 @@ async function realizarAnalisisProfundoIA(texto, contextoBasico, provider, apiKe
     }
     
   } catch (error) {
-    console.warn('⚠️ Análisis IA no disponible:', error.message);
+    logger.warn('⚠️ Análisis IA no disponible:', error.message);
     return null;
   }
 }
@@ -394,7 +395,7 @@ function compilarAnalisisCompleto({ texto, contextoBasico, analisisIA, contextoW
  * Análisis básico de fallback cuando falla el análisis profundo
  */
 async function fallbackAnalisisBasico(texto, contextoBasico) {
-  console.log('⚠️ Usando análisis básico de fallback');
+  logger.log('⚠️ Usando análisis básico de fallback');
   
   const preguntasBasicas = generarPreguntasContextualizadas(contextoBasico, 1);
   

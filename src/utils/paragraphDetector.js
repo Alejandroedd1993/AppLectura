@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Utilidad para detectar tipos de párrafos en documentos
  * Separado para mejor mantenibilidad y testing
@@ -34,7 +37,7 @@ export function detectAcademicSection(text) {
       // Validar que no es parte de una oración larga
       const hasLongSentence = trimmed.split('.').some(s => s.trim().length > 150);
       if (!hasLongSentence) {
-        console.log('✅ [detectAcademicSection] Sección encontrada:', keyword, '| Preview:', text.substring(0, 50));
+        logger.log('✅ [detectAcademicSection] Sección encontrada:', keyword, '| Preview:', text.substring(0, 50));
         return {
           type: 'section-header',
           keyword,
@@ -72,7 +75,7 @@ export function detectParagraphType(text) {
                      trimmed.length > 3 && 
                      trimmed.length < 150;
   if (isAllCaps) {
-    console.log('✅ [detectParagraphType] Título en mayúsculas:', trimmed.substring(0, 50));
+    logger.log('✅ [detectParagraphType] Título en mayúsculas:', trimmed.substring(0, 50));
     return { type: 'h1' };
   }
   

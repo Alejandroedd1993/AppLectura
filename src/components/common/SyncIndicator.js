@@ -15,6 +15,7 @@ import styled, { keyframes, css } from 'styled-components';
 import { AppContext } from '../../context/AppContext';
 import { getPendingSyncs, syncPendingSessions } from '../../services/sessionManager';
 
+import logger from '../../utils/logger';
 // Animación de rotación para estado "syncing"
 const rotate = keyframes`
   from { transform: rotate(0deg); }
@@ -211,10 +212,10 @@ const SyncIndicator = ({ showLabel = true, compact = false, className }) => {
 
         if ((result?.synced || 0) > 0) {
           // Mensaje breve, no intrusivo
-          console.log(`✅ [SyncIndicator] Pendientes sincronizadas: ${result.synced} ok, ${result.failed} fallidas`);
+          logger.log(`✅ [SyncIndicator] Pendientes sincronizadas: ${result.synced} ok, ${result.failed} fallidas`);
         }
       } catch (e) {
-        console.warn('⚠️ [SyncIndicator] Error sincronizando pendientes:', e);
+        logger.warn('⚠️ [SyncIndicator] Error sincronizando pendientes:', e);
       } finally {
         setSyncingPendingSessions(false);
       }

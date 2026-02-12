@@ -23,6 +23,7 @@ import {
 } from '../../firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 
+import logger from '../../utils/logger';
 const initialCourseForm = {
   nombre: '',
   periodo: '2025',
@@ -385,7 +386,7 @@ function TeacherDashboard() {
         setPesoSumativa(30);
       }
     } catch (error) {
-      console.error('Error cargando métricas:', error);
+      logger.error('Error cargando métricas:', error);
       showFeedback('error', error.message || 'No se pudieron cargar las métricas');
     } finally {
       setLoadingMetrics(false);
@@ -411,7 +412,7 @@ function TeacherDashboard() {
       // Debounce de 2s para no recargar métricas en cada micro-cambio
       clearTimeout(metricsDebounceRef.current);
       metricsDebounceRef.current = setTimeout(() => {
-        console.log('🔄 [Dashboard] Cambio detectado en estudiantes, recargando métricas...');
+        logger.log('🔄 [Dashboard] Cambio detectado en estudiantes, recargando métricas...');
         loadMetrics(selectedCourseId);
       }, 2000);
     });
@@ -454,7 +455,7 @@ function TeacherDashboard() {
       );
       await loadMetrics(selectedCourseId);
     } catch (error) {
-      console.error('Error en migración de progreso:', error);
+      logger.error('Error en migración de progreso:', error);
       showFeedback('error', error?.message || 'No se pudo reparar el progreso');
     } finally {
       setBackfillingProgress(false);
@@ -500,7 +501,7 @@ function TeacherDashboard() {
       // 🔄 Los textos se actualizan automáticamente vía listener en tiempo real
 
     } catch (error) {
-      console.error('Error subiendo texto:', error);
+      logger.error('Error subiendo texto:', error);
       showFeedback('error', 'Error al subir la lectura');
     } finally {
       setUploadingText(false);
@@ -548,7 +549,7 @@ function TeacherDashboard() {
       setSelectedCourseId(nuevoCurso.id);
       showFeedback('success', `Curso "${courseForm.nombre}" creado`);
     } catch (error) {
-      console.error('Error al crear curso:', error);
+      logger.error('Error al crear curso:', error);
       showFeedback('error', error.message || 'No se pudo crear el curso');
     } finally {
       setCreatingCourse(false);
@@ -580,7 +581,7 @@ function TeacherDashboard() {
       await loadMetrics(selectedCourse.id);
       showFeedback('success', 'Lecturas asignadas al curso');
     } catch (error) {
-      console.error('Error asignando lecturas:', error);
+      logger.error('Error asignando lecturas:', error);
       showFeedback('error', error.message || 'No se pudieron asignar las lecturas');
     } finally {
       setSavingLecturas(false);
@@ -595,7 +596,7 @@ function TeacherDashboard() {
       await loadMetrics(selectedCourse.id);
       showFeedback('success', 'Estudiante aprobado');
     } catch (error) {
-      console.error('Error aprobando estudiante:', error);
+      logger.error('Error aprobando estudiante:', error);
       showFeedback('error', error.message || 'No se pudo aprobar al estudiante');
     } finally {
       setApprovingStudent(null);
@@ -616,7 +617,7 @@ function TeacherDashboard() {
       }
       showFeedback('success', 'Curso eliminado');
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       showFeedback('error', error?.message || 'Error eliminando curso');
     } finally {
       setDeletingCourseId(null);
@@ -638,7 +639,7 @@ function TeacherDashboard() {
       // Si estaba en el curso actual, recargar métricas
       if (selectedCourseId) loadMetrics(selectedCourseId);
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       showFeedback('error', 'Error eliminando lectura');
     } finally {
       setDeletingTextId(null);
@@ -659,7 +660,7 @@ function TeacherDashboard() {
       await loadMetrics(selectedCourse.id); // Recargar métricas
       showFeedback('success', 'Lectura removida del curso');
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       showFeedback('error', 'Error removiendo lectura del curso');
     } finally {
       setRemovingLecturaId(null);
@@ -677,7 +678,7 @@ function TeacherDashboard() {
       await loadMetrics(selectedCourse.id); // Recargar
       showFeedback('success', 'Estudiante eliminado del curso');
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       showFeedback('error', 'Error eliminando estudiante');
     } finally {
       setDeletingStudentId(null);
@@ -695,7 +696,7 @@ function TeacherDashboard() {
       const details = await getStudentArtifactDetails(student.estudianteUid, lectura.textoId);
       setArtifactDetails(details);
     } catch (error) {
-      console.error('Error cargando detalles de artefactos:', error);
+      logger.error('Error cargando detalles de artefactos:', error);
       showFeedback('error', 'Error cargando detalles');
     } finally {
       setLoadingArtifacts(false);
@@ -738,7 +739,7 @@ function TeacherDashboard() {
         showFeedback('error', result.message);
       }
     } catch (error) {
-      console.error('Error reseteando artefacto:', error);
+      logger.error('Error reseteando artefacto:', error);
       showFeedback('error', 'Error al resetear');
     } finally {
       setResettingArtifact(null);
@@ -773,7 +774,7 @@ function TeacherDashboard() {
         showFeedback('error', result.message);
       }
     } catch (error) {
-      console.error('Error reseteando todos los artefactos:', error);
+      logger.error('Error reseteando todos los artefactos:', error);
       showFeedback('error', 'Error al resetear');
     } finally {
       setResettingArtifact(null);
@@ -831,7 +832,7 @@ function TeacherDashboard() {
           [`${updatePath}.viewedBy`]: docenteUid
         });
 
-        console.log(`✅ [TeacherDashboard] Artefacto ${artifactKey} marcado como visto`);
+        logger.log(`✅ [TeacherDashboard] Artefacto ${artifactKey} marcado como visto`);
 
         // Actualizar estado local para reflejar el cambio inmediatamente
         setArtifactDetails(prev => {
@@ -876,7 +877,7 @@ function TeacherDashboard() {
         });
 
       } catch (error) {
-        console.warn('⚠️ Error marcando artefacto como visto:', error);
+        logger.warn('⚠️ Error marcando artefacto como visto:', error);
         // No mostrar error al usuario, es una operación silenciosa
       }
     }
@@ -962,9 +963,9 @@ function TeacherDashboard() {
             createdAt: serverTimestamp(),
             createdAtMs: Date.now()
           });
-          console.log('🔔 [TeacherDashboard] Notificación creada para el estudiante');
+          logger.log('🔔 [TeacherDashboard] Notificación creada para el estudiante');
         } catch (notifError) {
-          console.warn('⚠️ Error creando notificación:', notifError);
+          logger.warn('⚠️ Error creando notificación:', notifError);
           // No bloquear si falla la notificación
         }
       }
@@ -982,7 +983,7 @@ function TeacherDashboard() {
       setArtifactDetails(details);
 
     } catch (error) {
-      console.error('Error guardando comentario:', error);
+      logger.error('Error guardando comentario:', error);
       showFeedback('error', 'Error al guardar comentario');
     } finally {
       setSavingComment(false);
@@ -1085,7 +1086,7 @@ function TeacherDashboard() {
           createdAtMs: Date.now()
         });
       } catch (notifError) {
-        console.warn('⚠️ Error creando notificación de cambio de nota:', notifError);
+        logger.warn('⚠️ Error creando notificación de cambio de nota:', notifError);
       }
 
       showFeedback('success', `✅ Nota actualizada a ${newScore}/10`);
@@ -1099,7 +1100,7 @@ function TeacherDashboard() {
       if (selectedCourseId) loadMetrics(selectedCourseId);
 
     } catch (error) {
-      console.error('Error guardando nota:', error);
+      logger.error('Error guardando nota:', error);
       showFeedback('error', 'Error al guardar la nota');
     } finally {
       setSavingScore(false);
@@ -1154,9 +1155,9 @@ function TeacherDashboard() {
         const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
         await Promise.all(deletePromises);
         
-        console.log(`🗑️ [TeacherDashboard] Eliminadas ${snapshot.docs.length} notificaciones del estudiante`);
+        logger.log(`🗑️ [TeacherDashboard] Eliminadas ${snapshot.docs.length} notificaciones del estudiante`);
       } catch (notifError) {
-        console.warn('⚠️ Error borrando notificaciones:', notifError);
+        logger.warn('⚠️ Error borrando notificaciones:', notifError);
         // No bloquear si falla borrar notificaciones
       }
 
@@ -1174,7 +1175,7 @@ function TeacherDashboard() {
       setArtifactDetails(details);
 
     } catch (error) {
-      console.error('Error borrando comentario:', error);
+      logger.error('Error borrando comentario:', error);
       showFeedback('error', 'Error al borrar comentario');
     } finally {
       setSavingComment(false);
@@ -1244,7 +1245,7 @@ function TeacherDashboard() {
               ]);
             }
           } catch (err) {
-            console.warn('Error obteniendo detalles para exportación:', err);
+            logger.warn('Error obteniendo detalles para exportación:', err);
           }
         }
       }
@@ -1267,7 +1268,7 @@ function TeacherDashboard() {
       showFeedback('success', `✅ Exportados ${rows.length - 1} registros`);
 
     } catch (error) {
-      console.error('Error exportando datos:', error);
+      logger.error('Error exportando datos:', error);
       showFeedback('error', 'Error al exportar');
     } finally {
       setExporting(false);
@@ -1314,7 +1315,7 @@ function TeacherDashboard() {
         });
         showFeedback('success', '✅ PDF exportado');
       } catch (error) {
-        console.error('Error exportando PDF:', error);
+        logger.error('Error exportando PDF:', error);
         showFeedback('error', 'Error al exportar PDF');
       }
       return;
@@ -1366,7 +1367,7 @@ function TeacherDashboard() {
       await navigator.clipboard.writeText(code);
       showFeedback('success', 'Código copiado');
     } catch (error) {
-      console.warn('No se pudo copiar automáticamente', error);
+      logger.warn('No se pudo copiar automáticamente', error);
     }
   };
 
@@ -1387,7 +1388,7 @@ function TeacherDashboard() {
       // Recargar métricas para reflejar el cambio
       if (selectedCourseId) loadMetrics(selectedCourseId);
     } catch (error) {
-      console.error('Error guardando ponderación:', error);
+      logger.error('Error guardando ponderación:', error);
       showFeedback('error', error?.message || 'Error al guardar ponderación');
     } finally {
       setSavingWeights(false);
@@ -1430,7 +1431,7 @@ function TeacherDashboard() {
         }
 
         if (markedCount > 0) {
-          console.log(`✅ [TeacherDashboard] ${markedCount} artefactos marcados como vistos para ${est.estudianteNombre}`);
+          logger.log(`✅ [TeacherDashboard] ${markedCount} artefactos marcados como vistos para ${est.estudianteNombre}`);
           // Actualizar contador local inmediatamente
           setCourseMetrics(prev => {
             if (!prev) return prev;
@@ -1449,7 +1450,7 @@ function TeacherDashboard() {
           });
         }
       } catch (error) {
-        console.warn('⚠️ Error marcando entregas como vistas:', error);
+        logger.warn('⚠️ Error marcando entregas como vistas:', error);
       }
     }
   }, [expandedStudent, courseMetrics, selectedCourseId, docenteUid]);

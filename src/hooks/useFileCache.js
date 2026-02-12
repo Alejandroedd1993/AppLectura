@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { generateTextHash } from '../utils/cache';
 
+import logger from '../utils/logger';
 /**
  * Configuración de la caché de archivos
  */
@@ -68,14 +69,14 @@ const useFileCache = () => {
         .replace(/\s+/g, ' ')       // Convertir múltiples espacios en uno
         .replace(/\n\s*\n/g, '\n'); // Convertir múltiples saltos de línea en uno
       
-      console.log(`Texto comprimido: ${texto.length} -> ${textoComprimido.length} bytes`);
+      logger.log(`Texto comprimido: ${texto.length} -> ${textoComprimido.length} bytes`);
       return { 
         texto: textoComprimido, 
         comprimido: true,
         tamañoOriginal: texto.length
       };
     } catch (err) {
-      console.warn('Error al comprimir texto:', err);
+      logger.warn('Error al comprimir texto:', err);
       return { texto, comprimido: false };
     }
   }, []);
@@ -91,7 +92,7 @@ const useFileCache = () => {
     // En una implementación real, aquí se descomprimiría usando la misma
     // librería que se usó para comprimir
     
-    console.log(`Usando texto comprimido (ahorro: ${Math.round((1 - data.texto.length/data.tamañoOriginal) * 100)}%)`);
+    logger.log(`Usando texto comprimido (ahorro: ${Math.round((1 - data.texto.length/data.tamañoOriginal) * 100)}%)`);
     
     // Solo registramos que estamos usando el texto comprimido
     return data;
@@ -139,18 +140,18 @@ const useFileCache = () => {
       // Guardar en localStorage
       localStorage.setItem(key, JSON.stringify(cacheData));
       memoryCache.current.set(key, cacheData);
-      console.log('Archivo guardado en caché:', file.name);
+      logger.log('Archivo guardado en caché:', file.name);
       
       // Actualizar estadísticas
       actualizarEstadisticasCache();
       
       return true;
     } catch (err) {
-      console.warn('Error al guardar en caché:', err);
+      logger.warn('Error al guardar en caché:', err);
       
       // Si el almacenamiento está lleno, podar la caché
       if (err.name === 'QuotaExceededError') {
-        console.log('Almacenamiento lleno. Realizando poda de emergencia...');
+        logger.log('Almacenamiento lleno. Realizando poda de emergencia...');
         
         try {
           // Podar más agresivamente en caso de error de cuota
@@ -170,11 +171,11 @@ const useFileCache = () => {
             
             localStorage.setItem(key, JSON.stringify(datosMinimos));
             memoryCache.current.set(key, datosMinimos);
-            console.log('Archivo guardado en caché (versión reducida):', file.name);
+            logger.log('Archivo guardado en caché (versión reducida):', file.name);
             return true;
           }
         } catch (e) {
-          console.error('Error durante la poda de emergencia:', e);
+          logger.error('Error durante la poda de emergencia:', e);
         }
       }
       
@@ -219,13 +220,13 @@ const useFileCache = () => {
       // Descomprimir si es necesario
       const finalData = descomprimirSiNecesario(data);
       
-      console.log('Archivo recuperado de caché:', file.name);
+      logger.log('Archivo recuperado de caché:', file.name);
       // Caché hit
       setCacheStats(prev => ({...prev, hitCount: prev.hitCount + 1}));
       
       return finalData;
     } catch (err) {
-      console.warn('Error al recuperar de caché:', err);
+      logger.warn('Error al recuperar de caché:', err);
       setCacheStats(prev => ({...prev, missCount: prev.missCount + 1}));
       return null;
     }
@@ -248,13 +249,13 @@ const useFileCache = () => {
         localStorage.removeItem(key);
         memoryCache.current.delete(key);
         actualizarEstadisticasCache();
-        console.log('Caché invalidada para:', file.name);
+        logger.log('Caché invalidada para:', file.name);
         return true;
       }
       
       return false;
     } catch (err) {
-      console.warn('Error al invalidar caché:', err);
+      logger.warn('Error al invalidar caché:', err);
       return false;
     }
   }, [cacheKey]);
@@ -291,7 +292,7 @@ const useFileCache = () => {
       // Verificar si excede algún límite
       return count > CACHE_CONFIG.MAX_ENTRIES || totalSizeMB > CACHE_CONFIG.MAX_SIZE_MB;
     } catch (err) {
-      console.warn('Error al verificar límites de caché:', err);
+      logger.warn('Error al verificar límites de caché:', err);
       return false;
     }
   }, []);
@@ -332,7 +333,7 @@ const useFileCache = () => {
       for (let i = 0; i < entriesToRemove; i++) {
         localStorage.removeItem(entries[i].key);
         memoryCache.current.delete(entries[i].key);
-        console.log(`Caché podada: ${entries[i].key}`);
+        logger.log(`Caché podada: ${entries[i].key}`);
       }
       
       // Actualizar estadísticas
@@ -340,7 +341,7 @@ const useFileCache = () => {
       
       return entriesToRemove;
     } catch (err) {
-      console.error('Error durante la poda de caché:', err);
+      logger.error('Error durante la poda de caché:', err);
       return 0;
     }
   }, []);
@@ -378,10 +379,10 @@ const useFileCache = () => {
       });
       memoryCache.current.clear();
       
-      console.log(`Caché de archivos limpiada: ${count} entradas eliminadas`);
+      logger.log(`Caché de archivos limpiada: ${count} entradas eliminadas`);
       return count;
     } catch (err) {
-      console.error('Error al limpiar caché:', err);
+      logger.error('Error al limpiar caché:', err);
       return 0;
     }
   }, []);
@@ -411,7 +412,7 @@ const useFileCache = () => {
         totalSize: totalSize / (1024 * 1024) // Convertir a MB
       }));
     } catch (err) {
-      console.warn('Error al actualizar estadísticas de caché:', err);
+      logger.warn('Error al actualizar estadísticas de caché:', err);
     }
   }, []);
   
@@ -424,7 +425,7 @@ const useFileCache = () => {
       
       if (!lastCleanup || (now - parseInt(lastCleanup, 10)) > CACHE_CONFIG.CLEANUP_INTERVAL) {
         // Si ha pasado el tiempo de intervalo, realizar limpieza automática
-        console.log('Realizando limpieza automática de caché...');
+        logger.log('Realizando limpieza automática de caché...');
         verificarLimiteCache();
         
         if (cacheStats.entryCount > CACHE_CONFIG.MAX_ENTRIES / 2) {
@@ -439,7 +440,7 @@ const useFileCache = () => {
       // Actualizar estadísticas al montar
       actualizarEstadisticasCache();
     } catch (err) {
-      console.warn('Error en limpieza automática de caché:', err);
+      logger.warn('Error en limpieza automática de caché:', err);
     }
   }, [podarCache, verificarLimiteCache, actualizarEstadisticasCache, cacheStats.entryCount]);
 

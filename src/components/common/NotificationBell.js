@@ -9,6 +9,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 
+import logger from '../../utils/logger';
 const NotificationBell = ({ theme }) => {
   const { currentUser, userData } = useAuth();
   const [notifications, setNotifications] = useState([]);
@@ -23,7 +24,7 @@ const NotificationBell = ({ theme }) => {
   // Cargar notificaciones desde Firestore
   useEffect(() => {
     if (!currentUser?.uid || !isEstudiante) {
-      console.log('🔔 [NotificationBell] No carga: uid=', currentUser?.uid, 'isEstudiante=', isEstudiante);
+      logger.log('🔔 [NotificationBell] No carga: uid=', currentUser?.uid, 'isEstudiante=', isEstudiante);
       setLoading(false);
       return;
     }
@@ -35,17 +36,17 @@ const NotificationBell = ({ theme }) => {
         const { collection, query, limit, onSnapshot } = await import('firebase/firestore');
         const { db } = await import('../../firebase/config');
 
-        console.log('🔔 [NotificationBell] Configurando listener para:', currentUser.uid);
+        logger.log('🔔 [NotificationBell] Configurando listener para:', currentUser.uid);
         
         const notificationsRef = collection(db, 'students', currentUser.uid, 'notifications');
         // Simplificar query - sin orderBy para evitar necesidad de índice
         const q = query(notificationsRef, limit(50));
 
         unsubscribe = onSnapshot(q, (snapshot) => {
-          console.log('🔔 [NotificationBell] Snapshot recibido:', snapshot.docs.length, 'documentos');
+          logger.log('🔔 [NotificationBell] Snapshot recibido:', snapshot.docs.length, 'documentos');
           const notifs = snapshot.docs.map(doc => {
             const data = doc.data();
-            console.log('🔔 [NotificationBell] Notificación:', doc.id, data);
+            logger.log('🔔 [NotificationBell] Notificación:', doc.id, data);
             return {
               id: doc.id,
               ...data
@@ -57,11 +58,11 @@ const NotificationBell = ({ theme }) => {
           setUnreadCount(notifs.filter(n => !n.read).length);
           setLoading(false);
         }, (error) => {
-          console.error('🔔 [NotificationBell] Error en snapshot:', error);
+          logger.error('🔔 [NotificationBell] Error en snapshot:', error);
           setLoading(false);
         });
       } catch (error) {
-        console.error('🔔 [NotificationBell] Error configurando listener:', error);
+        logger.error('🔔 [NotificationBell] Error configurando listener:', error);
         setLoading(false);
       }
     };
@@ -102,7 +103,7 @@ const NotificationBell = ({ theme }) => {
       ));
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
-      console.error('Error marcando notificación como leída:', error);
+      logger.error('Error marcando notificación como leída:', error);
     }
   };
 
@@ -123,7 +124,7 @@ const NotificationBell = ({ theme }) => {
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
     } catch (error) {
-      console.error('Error marcando todas como leídas:', error);
+      logger.error('Error marcando todas como leídas:', error);
     }
   };
 
@@ -145,9 +146,9 @@ const NotificationBell = ({ theme }) => {
         setUnreadCount(prev => Math.max(0, prev - 1));
       }
       
-      console.log('🗑️ Notificación eliminada (el comentario del docente permanece en el artefacto)');
+      logger.log('🗑️ Notificación eliminada (el comentario del docente permanece en el artefacto)');
     } catch (error) {
-      console.error('Error borrando notificación:', error);
+      logger.error('Error borrando notificación:', error);
     }
   };
 
@@ -169,9 +170,9 @@ const NotificationBell = ({ theme }) => {
 
       setNotifications([]);
       setUnreadCount(0);
-      console.log('🗑️ Todas las notificaciones eliminadas');
+      logger.log('🗑️ Todas las notificaciones eliminadas');
     } catch (error) {
-      console.error('Error borrando todas las notificaciones:', error);
+      logger.error('Error borrando todas las notificaciones:', error);
     }
   };
 

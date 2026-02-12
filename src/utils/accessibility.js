@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 
+import logger from './logger';
 /**
  * Utilidades de accesibilidad para mejorar UX
  */
@@ -63,7 +64,7 @@ export function moveFocusTo(target, options = {}) {
       if (onError) {
         onError(error);
       } else {
-        console.warn('Focus error:', error);
+        logger.warn('Focus error:', error);
       }
     }
   }, delay);

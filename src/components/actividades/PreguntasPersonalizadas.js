@@ -11,6 +11,7 @@ import { AppContext } from '../../context/AppContext';
 import MCQExercise from './MCQExercise';
 import SynthesisQuestions from './SynthesisQuestions';
 
+import logger from '../../utils/logger';
 // ==============================================================================
 // STYLED COMPONENTS
 // ==============================================================================
@@ -212,16 +213,16 @@ const PreguntasPersonalizadas = ({ theme }) => {
   // 🔄 Sincronizar estado local con contexto cuando cambia documentId o activitiesProgress
   useEffect(() => {
     if (lectureId && docProgress) {
-      console.log('🔄 [PreguntasPersonalizadas] Sincronizando con contexto:', docProgress);
+      logger.log('🔄 [PreguntasPersonalizadas] Sincronizando con contexto:', docProgress);
       setMcqCompleted(docProgress.mcqPassed || false);
       setMcqResults(docProgress.mcqResults || null);
       setSynthesisCompleted(docProgress.completed || false);
       setSynthesisAnswers(docProgress.synthesisAnswers || null);
 
       if (docProgress.completed) {
-        console.log('✅ [PreguntasPersonalizadas] Preparación COMPLETADA restaurada desde contexto');
+        logger.log('✅ [PreguntasPersonalizadas] Preparación COMPLETADA restaurada desde contexto');
       } else if (docProgress.mcqPassed) {
-        console.log('✅ [PreguntasPersonalizadas] MCQ completado, activando síntesis');
+        logger.log('✅ [PreguntasPersonalizadas] MCQ completado, activando síntesis');
         setActiveTab('synthesis');
       }
     } else {
@@ -231,13 +232,13 @@ const PreguntasPersonalizadas = ({ theme }) => {
       setSynthesisCompleted(false);
       setSynthesisAnswers(null);
       setActiveTab('mcq');
-      console.log('🆕 [PreguntasPersonalizadas] Nueva preparación inicializada');
+      logger.log('🆕 [PreguntasPersonalizadas] Nueva preparación inicializada');
     }
   }, [lectureId, docProgress]);
 
   // Handlers
   const handleMCQComplete = useCallback((results) => {
-    console.log('✅ [EjerciciosGuiados] MCQ completado:', results);
+    logger.log('✅ [EjerciciosGuiados] MCQ completado:', results);
     setMcqResults(results);
     setMcqCompleted(results.passed);
 
@@ -247,7 +248,7 @@ const PreguntasPersonalizadas = ({ theme }) => {
         mcqPassed: results.passed,
         mcqResults: results
       });
-      console.log('💾 [PreguntasPersonalizadas] Resultados MCQ guardados en contexto');
+      logger.log('💾 [PreguntasPersonalizadas] Resultados MCQ guardados en contexto');
     }
 
     if (results.passed) {
@@ -256,7 +257,7 @@ const PreguntasPersonalizadas = ({ theme }) => {
   }, [lectureId, markPreparationProgress]);
 
   const handleSynthesisComplete = useCallback((answers) => {
-    console.log('✅ [EjerciciosGuiados] Síntesis completada, desbloqueando artefactos...');
+    logger.log('✅ [EjerciciosGuiados] Síntesis completada, desbloqueando artefactos...');
     setSynthesisAnswers(answers);
     setSynthesisCompleted(true);
 
@@ -268,7 +269,7 @@ const PreguntasPersonalizadas = ({ theme }) => {
         mcqResults,
         synthesisAnswers: answers
       });
-      console.log('💾 [PreguntasPersonalizadas] Preparación y respuestas guardadas en contexto');
+      logger.log('💾 [PreguntasPersonalizadas] Preparación y respuestas guardadas en contexto');
     }
 
     // Disparar evento para desbloquear artefactos

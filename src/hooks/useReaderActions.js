@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { buildPromptFromAction } from '../utils/readerActionPrompts';
 
+import logger from '../utils/logger';
 /**
  * Hook transversal que escucha eventos 'reader-action' emitidos por el visor de Solo Lectura
  * y notifica a un consumidor (TutorCore) con un prompt generado.
@@ -38,7 +39,7 @@ export default function useReaderActions({ onPrompt }) {
     
     // IGNORAR acción 'notes' - se maneja directamente en ReadingWorkspace
     if (std === 'notes') {
-      console.log('🔇 useReaderActions: Ignorando acción "notes" (manejada por ReadingWorkspace)');
+      logger.log('🔇 useReaderActions: Ignorando acción "notes" (manejada por ReadingWorkspace)');
       return;
     }
     

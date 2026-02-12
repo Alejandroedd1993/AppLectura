@@ -13,6 +13,7 @@
 import mammoth from 'mammoth';
 import { checkBackendAvailability, processPdfWithBackend } from './backendUtils';
 
+import logger from './logger';
 // Configurar el worker de PDF.js para que se cargue localmente
 // pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -59,7 +60,7 @@ async function procesarPdf(file, onProgress) {
     const text = await processPdfWithBackend(file);
     return text;
   } catch (error) {
-    console.warn('🔄 Backend no disponible, usando procesamiento local del PDF:', error.message);
+    logger.warn('🔄 Backend no disponible, usando procesamiento local del PDF:', error.message);
     
     // Fallback: Procesar PDF localmente (modo simulado)
     if (onProgress) onProgress(0.1);
@@ -119,7 +120,7 @@ export const procesarArchivo = async (file, options = {}) => {
   }
 
   // 2. ✅ ANÁLISIS LOCAL - Sin IA, solo procesamiento heurístico robusto
-  console.log('📖 Usando procesamiento local sin IA (más rápido y confiable)');
+  logger.log('📖 Usando procesamiento local sin IA (más rápido y confiable)');
   
   // Retornar texto limpio para procesamiento universal
   return extractedText;

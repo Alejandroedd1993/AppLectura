@@ -3,6 +3,7 @@
  */
 
 import { fetchWithTimeout } from './netUtils';
+import logger from './logger';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 
 /**
@@ -10,7 +11,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001'
  * @returns {Promise<boolean>} true si el backend está disponible
  */
 export const checkBackendAvailability = async () => {
-  console.log('🔍 Verificando disponibilidad del backend en:', BACKEND_URL);
+  logger.log('🔍 Verificando disponibilidad del backend en:', BACKEND_URL);
   
   try {
     const response = await fetchWithTimeout(`${BACKEND_URL}/api/health`, {
@@ -19,10 +20,10 @@ export const checkBackendAvailability = async () => {
         'Content-Type': 'application/json',
       }
     }, 5000);
-    console.log('✅ Respuesta del backend:', response.status, response.ok);
+    logger.log('✅ Respuesta del backend:', response.status, response.ok);
     return response.ok;
   } catch (error) {
-    console.error('❌ Backend no disponible:', error.message);
+    logger.error('❌ Backend no disponible:', error.message);
     return false;
   }
 };
@@ -33,7 +34,7 @@ export const checkBackendAvailability = async () => {
  * @returns {Promise<string>} El texto extraído del PDF
  */
 export const processPdfWithBackend = async (file) => {
-  console.log('🔄 Iniciando procesamiento de PDF:', file.name, 'Tamaño:', file.size, 'bytes');
+  logger.log('🔄 Iniciando procesamiento de PDF:', file.name, 'Tamaño:', file.size, 'bytes');
   
   const formData = new FormData();
   formData.append('pdfFile', file);
@@ -51,9 +52,9 @@ export const processPdfWithBackend = async (file) => {
   const result = await response.json();
   const extractedText = result.text || result.content || '';
   
-  console.log('✅ Texto recibido del backend, longitud:', extractedText.length, 'caracteres');
-  console.log('📖 Primeros 200 caracteres:', extractedText.substring(0, 200) + '...');
-  console.log('📚 Últimos 200 caracteres:', extractedText.length > 200 ? '...' + extractedText.substring(extractedText.length - 200) : extractedText);
+  logger.log('✅ Texto recibido del backend, longitud:', extractedText.length, 'caracteres');
+  logger.log('📖 Primeros 200 caracteres:', extractedText.substring(0, 200) + '...');
+  logger.log('📚 Últimos 200 caracteres:', extractedText.length > 200 ? '...' + extractedText.substring(extractedText.length - 200) : extractedText);
   
   return extractedText;
 };

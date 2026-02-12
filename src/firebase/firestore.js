@@ -158,110 +158,8 @@ export async function uploadTexto(file, metadata) {
   }
 }
 
-/**
- * Obtiene todos los textos de un docente
- * @param {string} docenteUid 
- * @returns {Promise<Array>}
- */
-export async function getTextosDocente(docenteUid) {
-  try {
-    const q = query(
-      collection(db, 'textos'),
-      where('docenteUid', '==', docenteUid),
-      orderBy('createdAt', 'desc')
-    );
-
-    const snapshot = await getDocs(q);
-
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-  } catch (error) {
-    logger.error('❌ Error obteniendo textos del docente:', error);
-    throw error;
-  }
-}
-
-/**
- * Obtiene los textos asignados a un estudiante
- * @param {string} estudianteUid 
- * @returns {Promise<Array>}
- */
-export async function getTextosEstudiante(estudianteUid) {
-  try {
-    const q = query(
-      collection(db, 'textos'),
-      where('asignadoA', 'array-contains', estudianteUid),
-      where('visible', '==', true),
-      orderBy('createdAt', 'desc')
-    );
-
-    const snapshot = await getDocs(q);
-
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-  } catch (error) {
-    logger.error('❌ Error obteniendo textos del estudiante:', error);
-    throw error;
-  }
-}
-
-/**
- * Asigna un texto a uno o más estudiantes
- * @param {string} textoId 
- * @param {Array<string>} estudianteUids 
- */
-export async function assignTextoToStudents(textoId, estudianteUids) {
-  try {
-    const textoRef = doc(db, 'textos', textoId);
-
-    // Obtener asignados actuales
-    const textoDoc = await getDoc(textoRef);
-    const currentAssignments = textoDoc.data()?.asignadoA || [];
-
-    // Combinar (sin duplicados)
-    const newAssignments = [...new Set([...currentAssignments, ...estudianteUids])];
-
-    await updateDoc(textoRef, {
-      asignadoA: newAssignments,
-      updatedAt: serverTimestamp()
-    });
-
-    logger.log('✅ Texto asignado a', estudianteUids.length, 'estudiantes');
-
-  } catch (error) {
-    logger.error('❌ Error asignando texto:', error);
-    throw error;
-  }
-}
-
-/**
- * Guarda el análisis completo de un texto (pre-lectura + crítico)
- * @param {string} textoId 
- * @param {object} completeAnalysis 
- */
-export async function saveAnalisisTexto(textoId, completeAnalysis) {
-  try {
-    const textoRef = doc(db, 'textos', textoId);
-
-    await updateDoc(textoRef, {
-      completeAnalysis,
-      analisisGenerado: true,
-      updatedAt: serverTimestamp()
-    });
-
-    logger.log('✅ Análisis guardado para texto:', textoId);
-
-  } catch (error) {
-    logger.error('❌ Error guardando análisis:', error);
-    throw error;
-  }
-}
+// [L1 cleanup] getTextosDocente, getTextosEstudiante, assignTextoToStudents, saveAnalisisTexto
+// removed — replaced by subscription-based and course-based patterns (see git history)
 
 // ============================================
 // PROGRESO DE ESTUDIANTES
@@ -389,7 +287,7 @@ function __stableStringify(value) {
  * 🔍 DIAGNÓSTICO: Exponer estado interno para debugging
  * Útil en consola: window.__getFirestoreDebugInfo?.()
  */
-export function getFirestoreDebugInfo() {
+function getFirestoreDebugInfo() {
   return {
     writesDisabled: __firestoreWritesDisabled,
     dedupeMapSize: __progressWriteDedupe.size,
@@ -886,48 +784,7 @@ export async function getAllStudentProgress(estudianteUid) {
   }
 }
 
-/**
- * Obtiene el progreso de todos los estudiantes asignados a un texto (vista docente)
- * @param {string} textoId 
- * @param {Array<string>} estudianteUids 
- * @returns {Promise<Array>}
- */
-export async function getTextProgressForStudents(textoId, estudianteUids) {
-  try {
-    const progressData = [];
-
-    // Firestore no permite IN con más de 10 elementos, así que hacemos batch queries
-    const batches = [];
-    for (let i = 0; i < estudianteUids.length; i += 10) {
-      batches.push(estudianteUids.slice(i, i + 10));
-    }
-
-    for (const batch of batches) {
-      const promises = batch.map(async (uid) => {
-        const progress = await getStudentProgress(uid, textoId);
-
-        // Obtener nombre del estudiante
-        const userDoc = await getDoc(doc(db, 'users', uid));
-        const estudianteNombre = userDoc.data()?.nombre || 'Usuario';
-
-        return {
-          estudianteUid: uid,
-          estudianteNombre,
-          ...progress
-        };
-      });
-
-      const results = await Promise.all(promises);
-      progressData.push(...results);
-    }
-
-    return progressData;
-
-  } catch (error) {
-    logger.error('❌ Error obteniendo progreso de estudiantes:', error);
-    throw error;
-  }
-}
+// [L1 cleanup] getTextProgressForStudents removed — unused (see git history)
 
 // ============================================
 // EVALUACIONES
@@ -959,33 +816,7 @@ export async function saveEvaluacion(evaluacionData) {
   }
 }
 
-/**
- * Obtiene todas las evaluaciones de un estudiante para un texto
- * @param {string} estudianteUid 
- * @param {string} textoId 
- * @returns {Promise<Array>}
- */
-export async function getEvaluacionesEstudiante(estudianteUid, textoId) {
-  try {
-    const q = query(
-      collection(db, 'evaluaciones'),
-      where('estudianteUid', '==', estudianteUid),
-      where('textoId', '==', textoId),
-      orderBy('timestamp', 'desc')
-    );
-
-    const snapshot = await getDocs(q);
-
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-  } catch (error) {
-    logger.error('❌ Error obteniendo evaluaciones:', error);
-    throw error;
-  }
-}
+// [L1 cleanup] getEvaluacionesEstudiante removed — unused (see git history)
 
 // ============================================
 // ACTUALIZACIÓN ATÓMICA DE TIEMPO DE LECTURA
@@ -1134,42 +965,7 @@ export function subscribeToCourseStudents(courseId, callback) {
 // UTILIDADES
 // ============================================
 
-/**
- * Incrementa un contador (útil para métricas)
- * @param {string} collection 
- * @param {string} docId 
- * @param {string} field 
- * @param {number} amount 
- */
-export async function incrementCounter(collectionName, docId, field, amount = 1) {
-  try {
-    const docRef = doc(db, collectionName, docId);
-    await updateDoc(docRef, {
-      [field]: increment(amount)
-    });
-  } catch (error) {
-    logger.error('❌ Error incrementando contador:', error);
-    throw error;
-  }
-}
-
-/**
- * Elimina un documento (soft delete: marca como invisible)
- * @param {string} collection 
- * @param {string} docId 
- */
-export async function softDelete(collectionName, docId) {
-  try {
-    const docRef = doc(db, collectionName, docId);
-    await updateDoc(docRef, {
-      visible: false,
-      deletedAt: serverTimestamp()
-    });
-  } catch (error) {
-    logger.error('❌ Error en soft delete:', error);
-    throw error;
-  }
-}
+// [L1 cleanup] incrementCounter, softDelete removed — unused (see git history)
 
 // ============================================
 // GESTIÓN DE SESIONES (localStorage → Firestore)
@@ -1563,30 +1359,7 @@ export async function getUserSessions(userId, options = {}) {
   }
 }
 
-/**
- * Obtiene una sesión específica por ID
- * @param {string} userId 
- * @param {string} sessionId 
- * @returns {Promise<object|null>}
- */
-export async function getSessionById(userId, sessionId) {
-  try {
-    const sessionRef = doc(db, 'users', userId, 'sessions', sessionId);
-    const sessionDoc = await getDoc(sessionRef);
-
-    if (!sessionDoc.exists()) {
-      logger.warn('⚠️ [Firestore] Sesión no encontrada:', sessionId);
-      return null;
-    }
-
-    // 🆕 Await porque mapSessionDoc ahora es async
-    return await mapSessionDoc(sessionDoc);
-
-  } catch (error) {
-    logger.error('❌ [Firestore] Error obteniendo sesión:', error);
-    throw error;
-  }
-}
+// [L1 cleanup] getSessionById removed — unused (see git history)
 
 /**
  * Actualiza una sesión existente en Firestore
@@ -1675,37 +1448,7 @@ export async function deleteAllUserSessions(userId) {
   }
 }
 
-/**
- * Sincroniza múltiples sesiones de localStorage a Firestore
- * @param {string} userId 
- * @param {Array} sessions - Array de sesiones desde localStorage
- */
-export async function syncSessionsToFirestore(userId, sessions) {
-  try {
-    logger.log(`🔄 [Firestore] Sincronizando ${sessions.length} sesiones...`);
-
-    let synced = 0;
-    let errors = 0;
-
-    for (const session of sessions) {
-      try {
-        await saveSessionToFirestore(userId, session);
-        synced++;
-      } catch (error) {
-        logger.error(`❌ Error sincronizando sesión ${session.id}:`, error);
-        errors++;
-      }
-    }
-
-    logger.log(`✅ [Firestore] Sincronización completada: ${synced} exitosas, ${errors} errores`);
-
-    return { synced, errors };
-
-  } catch (error) {
-    logger.error('❌ [Firestore] Error en sincronización masiva:', error);
-    throw error;
-  }
-}
+// [L1 cleanup] syncSessionsToFirestore removed — unused (see git history)
 
 /**
  * Combina sesiones de localStorage y Firestore (merge inteligente)
@@ -1866,15 +1609,7 @@ export async function createCourse(docenteUid, { nombre, periodo, descripcion = 
   return { id: courseRef.id, ...courseData };
 }
 
-export async function getCursosDocente(docenteUid) {
-  const q = query(
-    collection(db, 'courses'),
-    where('docenteUid', '==', docenteUid),
-    orderBy('createdAt', 'desc')
-  );
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-}
+// [L1 cleanup] getCursosDocente removed — replaced by subscribeToCursosDocente (see git history)
 
 /**
  * 🆕 Actualizar pesos de evaluación formativa/sumativa del curso
@@ -2113,7 +1848,7 @@ async function syncCourseAssignments(courseId, estudianteUid, lecturasAsignadas 
   }
 }
 
-export async function getCourseStudents(courseId) {
+async function getCourseStudents(courseId) {
   const snapshot = await getDocs(collection(db, 'courses', courseId, 'students'));
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, estudianteUid: docSnap.id, ...docSnap.data() }));
 }

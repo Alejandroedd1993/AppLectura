@@ -838,7 +838,7 @@ export default function MapaActores({ theme }) {
       }
 
     } catch (error) {
-      console.error('Error evaluando Mapa de Actores:', error);
+      logger.error('Error evaluando Mapa de Actores:', error);
       setError(error.message || 'Error al evaluar el análisis');
     } finally {
       // 🧹 Limpiar step timeouts en todos los casos (éxito, error, cancelación)

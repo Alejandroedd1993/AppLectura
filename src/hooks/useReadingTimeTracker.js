@@ -12,6 +12,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { updateReadingTime } from '../firebase/firestore';
 
+import logger from '../utils/logger';
 const SAVE_INTERVAL_MS = 30_000;   // Guardar cada 30 s
 const IDLE_TIMEOUT_MS  = 120_000;  // Inactivo tras 2 min sin interacción
 const TICK_MS          = 1_000;    // Resolución del cronómetro
@@ -47,7 +48,7 @@ export function useReadingTimeTracker({ textoId, userId, isActive = true }) {
 
     // Fire-and-forget (no bloquear la UI)
     updateReadingTime(uid, tid, minutes).catch((err) =>
-      console.warn('⏱️ [ReadingTime] Error guardando tiempo:', err)
+      logger.warn('⏱️ [ReadingTime] Error guardando tiempo:', err)
     );
   }, []);
 

@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Utilidades para hash y comparación de sesiones
  * Detecta cambios reales sin depender solo de timestamps
@@ -148,7 +151,7 @@ export function mergeSessionsWithConflictResolution(local, cloud) {
   }
 
   // Hay diferencias, estrategia de merge campo por campo
-  console.log('⚠️ [SessionHash] Conflicto detectado, mergeando:', comparison.differences);
+  logger.log('⚠️ [SessionHash] Conflicto detectado, mergeando:', comparison.differences);
 
   const merged = {
     ...cloud, // Base: versión cloud

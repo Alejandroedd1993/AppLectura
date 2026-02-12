@@ -5,6 +5,7 @@ import { useRewards } from '../../context/PedagogyContext';
 import { ACHIEVEMENTS } from '../../pedagogy/rewards/rewardsEngine';
 import RewardsAnalytics from './RewardsAnalytics';
 
+import logger from '../../utils/logger';
 /**
  * 🎮 RewardsHeader - Header global con indicador de puntos, racha y achievements
  * 
@@ -231,7 +232,7 @@ export default function RewardsHeader({ onClickDetails }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       isInitialLoadRef.current = false;
-      console.log('🎮 [RewardsHeader] Achievement popups habilitados');
+      logger.log('🎮 [RewardsHeader] Achievement popups habilitados');
     }, 5000);
     return () => clearTimeout(timer);
   }, []);
@@ -247,7 +248,7 @@ export default function RewardsHeader({ onClickDetails }) {
         const prevPoints = prevState.totalPoints;
         const newPoints = newState.totalPoints;
 
-        console.log('🎮 [RewardsHeader] rewards-state-changed:', { prevPoints, newPoints });
+        logger.log('🎮 [RewardsHeader] rewards-state-changed:', { prevPoints, newPoints });
 
         // Detectar incremento de puntos y mostrar toast
         if (newPoints > prevPoints) {
@@ -295,12 +296,12 @@ export default function RewardsHeader({ onClickDetails }) {
     if (!rewards) return;
 
     const handleProgressSync = (event) => {
-      console.log('🔄 [RewardsHeader] Evento progress-synced-from-cloud recibido:', event.detail);
+      logger.log('🔄 [RewardsHeader] Evento progress-synced-from-cloud recibido:', event.detail);
 
       // Diferir setState para evitar warning de React
       setTimeout(() => {
         const newState = rewards.getState();
-        console.log('📊 [RewardsHeader] Estado actualizado desde rewards:', {
+        logger.log('📊 [RewardsHeader] Estado actualizado desde rewards:', {
           totalPoints: newState.totalPoints,
           availablePoints: newState.availablePoints
         });

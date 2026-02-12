@@ -20,6 +20,7 @@ import {
 import { db } from '../firebase/config';
 import { deleteTextFromStorage } from '../firebase/firestore';
 
+import logger from './logger';
 // ============================================
 // CONFIGURACIÓN
 // ============================================
@@ -51,7 +52,7 @@ const CLEANUP_CONFIG = {
  */
 export async function cleanupUserSessions(userId, dryRun = false, daysThreshold = CLEANUP_CONFIG.DAYS_THRESHOLD) {
   try {
-    console.log(`🧹 [Cleanup] ${dryRun ? 'DRY RUN' : 'Iniciando limpieza'} para usuario: ${userId}`);
+    logger.log(`🧹 [Cleanup] ${dryRun ? 'DRY RUN' : 'Iniciando limpieza'} para usuario: ${userId}`);
     
     const stats = {
       total: 0,
@@ -67,14 +68,14 @@ export async function cleanupUserSessions(userId, dryRun = false, daysThreshold 
     thresholdDate.setDate(thresholdDate.getDate() - daysThreshold);
     const thresholdTimestamp = Timestamp.fromDate(thresholdDate);
     
-    console.log(`📅 [Cleanup] Fecha límite: ${thresholdDate.toLocaleDateString()} (${daysThreshold} días atrás)`);
+    logger.log(`📅 [Cleanup] Fecha límite: ${thresholdDate.toLocaleDateString()} (${daysThreshold} días atrás)`);
     
     // Obtener todas las sesiones del usuario
     const sessionsRef = collection(db, 'users', userId, 'sessions');
     const snapshot = await getDocs(sessionsRef);
     
     stats.total = snapshot.size;
-    console.log(`📊 [Cleanup] Total sesiones encontradas: ${stats.total}`);
+    logger.log(`📊 [Cleanup] Total sesiones encontradas: ${stats.total}`);
     
     // Filtrar sesiones antiguas
     const sessionsToDelete = [];
@@ -103,10 +104,10 @@ export async function cleanupUserSessions(userId, dryRun = false, daysThreshold 
     
     stats.old = sessionsToDelete.length;
     
-    console.log(`🔍 [Cleanup] Sesiones antiguas (>${daysThreshold} días): ${stats.old}`);
+    logger.log(`🔍 [Cleanup] Sesiones antiguas (>${daysThreshold} días): ${stats.old}`);
     
     if (stats.old === 0) {
-      console.log('✅ [Cleanup] No hay sesiones antiguas para eliminar');
+      logger.log('✅ [Cleanup] No hay sesiones antiguas para eliminar');
       return stats;
     }
     
@@ -114,30 +115,30 @@ export async function cleanupUserSessions(userId, dryRun = false, daysThreshold 
     const toDelete = sessionsToDelete.slice(0, CLEANUP_CONFIG.MAX_BATCH_DELETE);
     
     if (toDelete.length < sessionsToDelete.length) {
-      console.warn(`⚠️ [Cleanup] Limitando a ${CLEANUP_CONFIG.MAX_BATCH_DELETE} sesiones por seguridad`);
+      logger.warn(`⚠️ [Cleanup] Limitando a ${CLEANUP_CONFIG.MAX_BATCH_DELETE} sesiones por seguridad`);
     }
     
     // Mostrar sesiones a eliminar
     if (CLEANUP_CONFIG.VERBOSE || dryRun) {
-      console.log('\n📋 [Cleanup] Sesiones marcadas para eliminación:');
+      logger.log('\n📋 [Cleanup] Sesiones marcadas para eliminación:');
       toDelete.forEach((session, i) => {
-        console.log(`  ${i + 1}. ${session.title}`);
-        console.log(`     ID: ${session.id}`);
-        console.log(`     Último acceso: ${session.lastAccess.toLocaleDateString()} (${session.daysSinceAccess} días)`);
-        console.log(`     Tamaño: ${session.textSize} KB ${session.textInStorage ? '(en Storage)' : ''}`);
+        logger.log(`  ${i + 1}. ${session.title}`);
+        logger.log(`     ID: ${session.id}`);
+        logger.log(`     Último acceso: ${session.lastAccess.toLocaleDateString()} (${session.daysSinceAccess} días)`);
+        logger.log(`     Tamaño: ${session.textSize} KB ${session.textInStorage ? '(en Storage)' : ''}`);
       });
-      console.log('');
+      logger.log('');
     }
     
     // Si es dry run, solo retornar estadísticas
     if (dryRun) {
-      console.log('🔍 [Cleanup] DRY RUN completado - No se eliminó nada');
+      logger.log('🔍 [Cleanup] DRY RUN completado - No se eliminó nada');
       stats.sessions = toDelete;
       return stats;
     }
     
     // Eliminar sesiones en batch
-    console.log(`🗑️ [Cleanup] Eliminando ${toDelete.length} sesiones...`);
+    logger.log(`🗑️ [Cleanup] Eliminando ${toDelete.length} sesiones...`);
     
     for (const session of toDelete) {
       try {
@@ -147,7 +148,7 @@ export async function cleanupUserSessions(userId, dryRun = false, daysThreshold 
             await deleteTextFromStorage(userId, session.id);
             stats.bytesFreed += (session.textSize * 1024); // KB a bytes
           } catch (storageError) {
-            console.warn(`⚠️ [Cleanup] Error eliminando Storage para ${session.id}:`, storageError.message);
+            logger.warn(`⚠️ [Cleanup] Error eliminando Storage para ${session.id}:`, storageError.message);
           }
         }
         
@@ -158,27 +159,27 @@ export async function cleanupUserSessions(userId, dryRun = false, daysThreshold 
         stats.deleted++;
         
         if (CLEANUP_CONFIG.VERBOSE) {
-          console.log(`  ✅ Eliminada: ${session.title} (${session.id})`);
+          logger.log(`  ✅ Eliminada: ${session.title} (${session.id})`);
         }
         
       } catch (error) {
-        console.error(`  ❌ Error eliminando ${session.id}:`, error);
+        logger.error(`  ❌ Error eliminando ${session.id}:`, error);
         stats.errors++;
       }
     }
     
-    console.log('\n✅ [Cleanup] Limpieza completada');
-    console.log(`📊 Estadísticas:`);
-    console.log(`   - Total sesiones: ${stats.total}`);
-    console.log(`   - Antiguas encontradas: ${stats.old}`);
-    console.log(`   - Eliminadas: ${stats.deleted}`);
-    console.log(`   - Errores: ${stats.errors}`);
-    console.log(`   - Espacio liberado: ${(stats.bytesFreed / 1024 / 1024).toFixed(2)} MB`);
+    logger.log('\n✅ [Cleanup] Limpieza completada');
+    logger.log(`📊 Estadísticas:`);
+    logger.log(`   - Total sesiones: ${stats.total}`);
+    logger.log(`   - Antiguas encontradas: ${stats.old}`);
+    logger.log(`   - Eliminadas: ${stats.deleted}`);
+    logger.log(`   - Errores: ${stats.errors}`);
+    logger.log(`   - Espacio liberado: ${(stats.bytesFreed / 1024 / 1024).toFixed(2)} MB`);
     
     return stats;
     
   } catch (error) {
-    console.error('❌ [Cleanup] Error en limpieza de sesiones:', error);
+    logger.error('❌ [Cleanup] Error en limpieza de sesiones:', error);
     throw error;
   }
 }
@@ -191,7 +192,7 @@ export async function cleanupUserSessions(userId, dryRun = false, daysThreshold 
  */
 export async function cleanupAllUsersSessions(dryRun = false, daysThreshold = CLEANUP_CONFIG.DAYS_THRESHOLD) {
   try {
-    console.log('🧹 [Cleanup Global] Iniciando limpieza masiva...');
+    logger.log('🧹 [Cleanup Global] Iniciando limpieza masiva...');
     
     const globalStats = {
       usersProcessed: 0,
@@ -206,14 +207,14 @@ export async function cleanupAllUsersSessions(dryRun = false, daysThreshold = CL
     const usersRef = collection(db, 'users');
     const usersSnapshot = await getDocs(usersRef);
     
-    console.log(`👥 [Cleanup Global] Usuarios encontrados: ${usersSnapshot.size}`);
+    logger.log(`👥 [Cleanup Global] Usuarios encontrados: ${usersSnapshot.size}`);
     
     // Procesar cada usuario
     for (const userDoc of usersSnapshot.docs) {
       const userId = userDoc.id;
       
       try {
-        console.log(`\n🔄 [Cleanup Global] Procesando usuario: ${userId}`);
+        logger.log(`\n🔄 [Cleanup Global] Procesando usuario: ${userId}`);
         
         const stats = await cleanupUserSessions(userId, dryRun, daysThreshold);
         
@@ -232,23 +233,23 @@ export async function cleanupAllUsersSessions(dryRun = false, daysThreshold = CL
         }
         
       } catch (error) {
-        console.error(`❌ [Cleanup Global] Error procesando usuario ${userId}:`, error);
+        logger.error(`❌ [Cleanup Global] Error procesando usuario ${userId}:`, error);
         globalStats.totalErrors++;
       }
     }
     
-    console.log('\n✅ [Cleanup Global] Limpieza masiva completada');
-    console.log('📊 Estadísticas Globales:');
-    console.log(`   - Usuarios procesados: ${globalStats.usersProcessed}`);
-    console.log(`   - Total sesiones: ${globalStats.totalSessions}`);
-    console.log(`   - Eliminadas: ${globalStats.totalDeleted}`);
-    console.log(`   - Errores: ${globalStats.totalErrors}`);
-    console.log(`   - Espacio liberado: ${(globalStats.bytesFreed / 1024 / 1024).toFixed(2)} MB`);
+    logger.log('\n✅ [Cleanup Global] Limpieza masiva completada');
+    logger.log('📊 Estadísticas Globales:');
+    logger.log(`   - Usuarios procesados: ${globalStats.usersProcessed}`);
+    logger.log(`   - Total sesiones: ${globalStats.totalSessions}`);
+    logger.log(`   - Eliminadas: ${globalStats.totalDeleted}`);
+    logger.log(`   - Errores: ${globalStats.totalErrors}`);
+    logger.log(`   - Espacio liberado: ${(globalStats.bytesFreed / 1024 / 1024).toFixed(2)} MB`);
     
     return globalStats;
     
   } catch (error) {
-    console.error('❌ [Cleanup Global] Error en limpieza masiva:', error);
+    logger.error('❌ [Cleanup Global] Error en limpieza masiva:', error);
     throw error;
   }
 }
@@ -260,7 +261,7 @@ export async function cleanupAllUsersSessions(dryRun = false, daysThreshold = CL
  */
 export async function getSessionsStats(userId = null) {
   try {
-    console.log('📊 [Stats] Calculando estadísticas de sesiones...');
+    logger.log('📊 [Stats] Calculando estadísticas de sesiones...');
     
     const stats = {
       total: 0,
@@ -302,25 +303,25 @@ export async function getSessionsStats(userId = null) {
       }
     }
     
-    console.log('✅ [Stats] Estadísticas calculadas:');
-    console.log(`   Total sesiones: ${stats.total}`);
-    console.log(`   Por antigüedad:`);
-    console.log(`     - Recientes (<30d): ${stats.byAge.recent}`);
-    console.log(`     - Medias (30-90d): ${stats.byAge.medium}`);
-    console.log(`     - Antiguas (90-180d): ${stats.byAge.old}`);
-    console.log(`     - Muy antiguas (>180d): ${stats.byAge.veryOld}`);
-    console.log(`   Por tamaño:`);
-    console.log(`     - Pequeñas (<100KB): ${stats.bySize.small}`);
-    console.log(`     - Medianas (100-500KB): ${stats.bySize.medium}`);
-    console.log(`     - Grandes (500KB-1MB): ${stats.bySize.large}`);
-    console.log(`     - Muy grandes (>1MB): ${stats.bySize.veryLarge}`);
-    console.log(`   En Storage: ${stats.inStorage}`);
-    console.log(`   Tamaño total: ${(stats.totalSizeKB / 1024).toFixed(2)} MB`);
+    logger.log('✅ [Stats] Estadísticas calculadas:');
+    logger.log(`   Total sesiones: ${stats.total}`);
+    logger.log(`   Por antigüedad:`);
+    logger.log(`     - Recientes (<30d): ${stats.byAge.recent}`);
+    logger.log(`     - Medias (30-90d): ${stats.byAge.medium}`);
+    logger.log(`     - Antiguas (90-180d): ${stats.byAge.old}`);
+    logger.log(`     - Muy antiguas (>180d): ${stats.byAge.veryOld}`);
+    logger.log(`   Por tamaño:`);
+    logger.log(`     - Pequeñas (<100KB): ${stats.bySize.small}`);
+    logger.log(`     - Medianas (100-500KB): ${stats.bySize.medium}`);
+    logger.log(`     - Grandes (500KB-1MB): ${stats.bySize.large}`);
+    logger.log(`     - Muy grandes (>1MB): ${stats.bySize.veryLarge}`);
+    logger.log(`   En Storage: ${stats.inStorage}`);
+    logger.log(`   Tamaño total: ${(stats.totalSizeKB / 1024).toFixed(2)} MB`);
     
     return stats;
     
   } catch (error) {
-    console.error('❌ [Stats] Error calculando estadísticas:', error);
+    logger.error('❌ [Stats] Error calculando estadísticas:', error);
     throw error;
   }
 }

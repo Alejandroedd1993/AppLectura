@@ -8,6 +8,7 @@ import { applyStructureToText } from './services/textStructureService';
 import PDFViewer from './components/PDFViewer';
 import { useReadingTimeTracker } from './hooks/useReadingTimeTracker';
 import './setupPdfWorker';
+import logger from './utils/logger';
 // Eliminado sistema de anotaciones persistentes (resaltado)
 
 /**
@@ -587,23 +588,23 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       return;
     }
 
-    console.log('📄 [VisorTexto] Preparando nuevo PDF:', archivoActual.name);
+    logger.log('📄 [VisorTexto] Preparando nuevo PDF:', archivoActual.name);
 
     // Si es un File object, usarlo directamente
     if (archivoActual.file instanceof File) {
-      console.log('📄 [VisorTexto] Usando File object');
+      logger.log('📄 [VisorTexto] Usando File object');
       setPdfSource(archivoActual.file);
       return;
     }
 
     // Si tiene objectUrl, usarlo
     if (archivoActual.objectUrl) {
-      console.log('📄 [VisorTexto] Usando objectUrl');
+      logger.log('📄 [VisorTexto] Usando objectUrl');
       setPdfSource(archivoActual.objectUrl);
       return;
     }
 
-    console.warn('⚠️ [VisorTexto] No se encontró fuente válida para PDF');
+    logger.warn('⚠️ [VisorTexto] No se encontró fuente válida para PDF');
     setPdfSource(null);
   }, [isPDF, archivoActual]);
 
@@ -633,11 +634,11 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   const parrafos = useMemo(() => {
     if (!texto || !texto.trim()) return [];
 
-    console.log('📐 [VisorTexto] Procesando texto, estructura IA disponible:', !!textStructure);
+    logger.log('📐 [VisorTexto] Procesando texto, estructura IA disponible:', !!textStructure);
 
     // 🆕 PRIORIDAD 1: Si hay estructura detectada por IA, usarla
     if (textStructure && textStructure.sections && textStructure.elements) {
-      console.log('✨ Usando estructura detectada por IA:', textStructure);
+      logger.log('✨ Usando estructura detectada por IA:', textStructure);
       const segments = applyStructureToText(texto, textStructure);
       return segments.map(seg => ({
         text: seg.text,
@@ -646,21 +647,21 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       }));
     }
 
-    console.log('🔧 [VisorTexto] Usando segmentación manual/heurística');
+    logger.log('🔧 [VisorTexto] Usando segmentación manual/heurística');
 
     // 🔧 PRIORIDAD 2: Respetar estructura original del texto (doble salto de línea)
     if (/\n\n/.test(texto)) {
       const manual = texto.split(/\n\n+/).map(t => t.trim()).filter(Boolean);
       // Solo usar split manual si produce al menos 2 párrafos razonables
       if (manual.length >= 2 && manual.some(p => p.length > 20)) {
-        console.log(`📄 [VisorTexto] Usando ${manual.length} párrafos por \\n\\n`);
+        logger.log(`📄 [VisorTexto] Usando ${manual.length} párrafos por \\n\\n`);
         return manual.map(text => ({ text, type: 'paragraph', metadata: {} }));
       }
     }
 
     // 🔧 PRIORIDAD 3: Fallback - servicio de segmentación inteligente
     const seg = getSegmentedCached(texto, { minParagraphLen: 10 }).map(p => p.content);
-    console.log(`🤖 [VisorTexto] Usando ${seg.length} párrafos por segmentación algorítmica`);
+    logger.log(`🤖 [VisorTexto] Usando ${seg.length} párrafos por segmentación algorítmica`);
     return seg.map(text => ({ text, type: 'paragraph', metadata: {} }));
   }, [texto, textStructure]);
   const bigText = parrafos.length > LARGE_TEXT_THRESHOLD;
@@ -696,7 +697,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   // Guardar una cita textual directa (selección rápida)
   const handleSaveCitation = useCallback(() => {
     if (!selectionInfo?.text || selectionInfo.text.trim().length < 10) {
-      console.warn('⚠️ [VisorTexto] Cita muy corta (mínimo 10 caracteres)');
+      logger.warn('⚠️ [VisorTexto] Cita muy corta (mínimo 10 caracteres)');
       return;
     }
 
@@ -976,9 +977,9 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     try {
       await navigator.clipboard.writeText(textToCopy);
       // Opcional: mostrar notificación de éxito
-      console.log('✅ Texto copiado al portapapeles');
+      logger.log('✅ Texto copiado al portapapeles');
     } catch (err) {
-      console.error('❌ Error copiando al portapapeles:', err);
+      logger.error('❌ Error copiando al portapapeles:', err);
       // Fallback para navegadores antiguos
       const textArea = document.createElement('textarea');
       textArea.value = textToCopy;
@@ -988,9 +989,9 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       textArea.select();
       try {
         document.execCommand('copy');
-        console.log('✅ Texto copiado (método fallback)');
+        logger.log('✅ Texto copiado (método fallback)');
       } catch (e) {
-        console.error('❌ Error en fallback:', e);
+        logger.error('❌ Error en fallback:', e);
       }
       document.body.removeChild(textArea);
     }
@@ -1085,7 +1086,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
 
       // Debug: mostrar detecciones especiales
       if (elementType === 'section-header') {
-        console.log('🎯 [VisorTexto] Sección detectada:', {
+        logger.log('🎯 [VisorTexto] Sección detectada:', {
           index,
           preview: content.substring(0, 50),
           type: elementType,

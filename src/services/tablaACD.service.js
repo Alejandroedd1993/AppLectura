@@ -2,6 +2,7 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension, scoreToLevelDescriptor } from '../pedagogy/rubrics/criticalLiteracyRubric';
 
+import logger from '../utils/logger';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 const DIMENSION_KEY = 'acd'; // Dimensión: Análisis Crítico del Discurso
@@ -189,10 +190,10 @@ async function evaluateWithDeepSeek(text, marcoIdeologico, estrategiasRetoricas,
     });
 
     const rawContent = extractContent(response);
-    console.log('🔍 [DeepSeek TablaACD] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [DeepSeek TablaACD] Respuesta cruda:', rawContent.slice(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [DeepSeek TablaACD] Respuesta limpia:', cleanedContent.slice(0, 200));
+    logger.log('✅ [DeepSeek TablaACD] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     if (!parsed.criterios_evaluados) {
@@ -200,7 +201,7 @@ async function evaluateWithDeepSeek(text, marcoIdeologico, estrategiasRetoricas,
     }
     return parsed;
   } catch (error) {
-    console.error('❌ Error en evaluación DeepSeek (TablaACD):', error);
+    logger.error('❌ Error en evaluación DeepSeek (TablaACD):', error);
     return {
       criterios_evaluados: {
         marco_ideologico: { nivel: 3, evidencia_marco: '', coherencia: true },
@@ -232,10 +233,10 @@ async function evaluateWithOpenAI(text, marcoIdeologico, estrategiasRetoricas, v
     });
 
     const rawContent = extractContent(response);
-    console.log('🔍 [OpenAI TablaACD] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [OpenAI TablaACD] Respuesta cruda:', rawContent.slice(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [OpenAI TablaACD] Respuesta limpia:', cleanedContent.slice(0, 200));
+    logger.log('✅ [OpenAI TablaACD] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     if (!parsed.profundidad_critica || !parsed.nivel_pensamiento_critico) {
@@ -243,7 +244,7 @@ async function evaluateWithOpenAI(text, marcoIdeologico, estrategiasRetoricas, v
     }
     return parsed;
   } catch (error) {
-    console.error('❌ Error en evaluación OpenAI (TablaACD):', error);
+    logger.error('❌ Error en evaluación OpenAI (TablaACD):', error);
     return {
       profundidad_critica: {
         marco_ideologico: { conecta_beneficiarios: true, analiza_naturalizacion: true, comentario: 'Análisis básico' },
@@ -361,21 +362,21 @@ function detectCriterioKey(comentario) {
  * @returns {Promise<Object>} Feedback criterial con niveles y evidencias
  */
 export async function evaluateTablaACD({ text, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas }) {
-  console.log('🔍 [TablaACD] Iniciando evaluación dual...');
+  logger.log('🔍 [TablaACD] Iniciando evaluación dual...');
 
   const startTime = Date.now();
 
   try {
     // FASE 1: Evaluación estructural con DeepSeek
-    console.log('📊 Evaluando precisión estructural (DeepSeek)...');
+    logger.log('📊 Evaluando precisión estructural (DeepSeek)...');
     const deepseekResult = await evaluateWithDeepSeek(text, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas);
 
     // FASE 2: Evaluación de profundidad crítica con OpenAI
-    console.log('🧠 Evaluando profundidad crítica (OpenAI)...');
+    logger.log('🧠 Evaluando profundidad crítica (OpenAI)...');
     const openaiResult = await evaluateWithOpenAI(text, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas, deepseekResult);
 
     // FASE 3: Combinar feedback
-    console.log('🔧 Combinando feedback dual...');
+    logger.log('🔧 Combinando feedback dual...');
     const mergedFeedback = mergeFeedback(deepseekResult, openaiResult);
 
     // FASE 4: Añadir descriptores de rúbrica
@@ -390,13 +391,13 @@ export async function evaluateTablaACD({ text, marcoIdeologico, estrategiasRetor
       duracion_ms: Date.now() - startTime
     };
 
-    console.log(`✅ Evaluación completada en ${finalFeedback.duracion_ms}ms`);
-    console.log(`📊 Nivel global: ${mergedFeedback.nivel_global}/4`);
+    logger.log(`✅ Evaluación completada en ${finalFeedback.duracion_ms}ms`);
+    logger.log(`📊 Nivel global: ${mergedFeedback.nivel_global}/4`);
 
     return finalFeedback;
 
   } catch (error) {
-    console.error('❌ Error en evaluación dual de TablaACD:', error);
+    logger.error('❌ Error en evaluación dual de TablaACD:', error);
     throw error;
   }
 }

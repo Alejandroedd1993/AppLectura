@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import { useAuth } from '../../context/AuthContext';
 
+import logger from '../../utils/logger';
 const Panel = styled.div`
   background: ${p => p.theme.surface || '#fff'};
   border: 1px solid ${p => p.theme.border || '#e5e7eb'};
@@ -110,7 +111,7 @@ export default function SearchHistoryPanel({ onSelectQuery, disabled }) {
         setHistory(parsed);
       }
     } catch (e) {
-      console.error('Error cargando historial de búsquedas:', e);
+      logger.error('Error cargando historial de búsquedas:', e);
     }
   };
 
@@ -190,7 +191,7 @@ export function saveSearchToHistory(query, resultsCount, config = 'rapida') {
     
     localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
   } catch (e) {
-    console.error('Error guardando en historial:', e);
+    logger.error('Error guardando en historial:', e);
   }
 }
 
@@ -220,6 +221,6 @@ export function saveSearchToHistoryForUser(userId, query, resultsCount, config =
 
     localStorage.setItem(scopedKey, JSON.stringify(history));
   } catch (e) {
-    console.error('Error guardando en historial:', e);
+    logger.error('Error guardando en historial:', e);
   }
 }

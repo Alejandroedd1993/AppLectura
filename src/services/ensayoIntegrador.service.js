@@ -8,6 +8,7 @@ import {
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
 import { CHAT_TIMEOUT_MS } from '../constants/timeoutConstants';
 
+import logger from '../utils/logger';
 // 🆕 Logging estructurado para producción
 const LOG_PREFIX = '📝 [EnsayoIntegrador]';
 
@@ -16,11 +17,11 @@ function log(level, message, data = {}) {
   const logData = { timestamp, ...data };
   
   if (level === 'error') {
-    console.error(`${LOG_PREFIX} ❌ ${message}`, logData);
+    logger.error(`${LOG_PREFIX} ❌ ${message}`, logData);
   } else if (level === 'warn') {
-    console.warn(`${LOG_PREFIX} ⚠️ ${message}`, logData);
+    logger.warn(`${LOG_PREFIX} ⚠️ ${message}`, logData);
   } else {
-    console.log(`${LOG_PREFIX} ${message}`, logData);
+    logger.log(`${LOG_PREFIX} ${message}`, logData);
   }
 }
 

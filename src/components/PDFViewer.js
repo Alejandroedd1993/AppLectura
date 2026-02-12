@@ -6,6 +6,7 @@ import styled from 'styled-components';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
+import logger from '../utils/logger';
 const ViewerContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -135,19 +136,19 @@ function PDFViewer({
 
   // 🆕 FIX: Reset numPages when file changes to prevent stale rendering
   useEffect(() => {
-    console.log('📄 [PDFViewer] Archivo cambió, reseteando estado');
+    logger.log('📄 [PDFViewer] Archivo cambió, reseteando estado');
     setNumPages(null);
   }, [fileId]);
 
   const handleDocumentLoadSuccess = useCallback((doc) => {
-    console.log('📄 PDF cargado:', doc.numPages, 'páginas (modo continuo)');
+    logger.log('📄 PDF cargado:', doc.numPages, 'páginas (modo continuo)');
     setNumPages(doc.numPages);
     onDocumentLoad?.({ numPages: doc.numPages });
   }, [onDocumentLoad]);
 
   const handleDocumentLoadError = useCallback((error) => {
-    console.error('❌ Error cargando PDF:', error);
-    console.error('❌ Tipo de archivo recibido:', typeof file, file);
+    logger.error('❌ Error cargando PDF:', error);
+    logger.error('❌ Tipo de archivo recibido:', typeof file, file);
     onLoadError?.(error);
   }, [onLoadError, file]);
 
@@ -188,7 +189,7 @@ function PDFViewer({
         page: selectedPage,
       });
     } catch (err) {
-      console.warn('⚠️ No se pudo obtener el rectángulo de selección:', err);
+      logger.warn('⚠️ No se pudo obtener el rectángulo de selección:', err);
       onSelection({ text: selectedText, page: 1 });
     }
   }, [onSelection]);
@@ -284,7 +285,7 @@ function PDFViewer({
 
       searchMatchesRef.current = matchedSpanGroups;
 
-      console.log('🔍 [PDF Search]', {
+      logger.log('🔍 [PDF Search]', {
         query: searchQuery,
         matches: matchedSpanGroups.length,
         textLayers: textLayers.length
@@ -349,8 +350,8 @@ function PDFViewer({
     );
   }
 
-  console.log('📄 [PDFViewer] Renderizando con file:', file instanceof File ? 'File object' : typeof file, file);
-  console.log('📄 [PDFViewer] Modo continuo -', numPages ? `${numPages} páginas` : 'Cargando...');
+  logger.log('📄 [PDFViewer] Renderizando con file:', file instanceof File ? 'File object' : typeof file, file);
+  logger.log('📄 [PDFViewer] Modo continuo -', numPages ? `${numPages} páginas` : 'Cargando...');
 
   return (
     <ViewerContainer

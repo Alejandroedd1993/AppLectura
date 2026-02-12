@@ -11,6 +11,7 @@ import { chatCompletion, extractContent } from './unifiedAiService';
 import { extractKeywords } from './webSearchDetector';
 import { ANALYSIS_TIMEOUT_MS } from '../constants/timeoutConstants';
 
+import logger from '../utils/logger';
 /**
  * Genera un ID único para el documento basado en su contenido
  * Permite detectar cambios de documento y evitar mostrar análisis obsoleto
@@ -43,7 +44,7 @@ function generateDocumentId(text) {
  * const critical = fullAnalysis.critical;
  */
 export async function performFullAnalysis(text, options = {}) {
-  console.log('📊 ORQUESTADOR: Iniciando análisis completo con arquitectura unificada...');
+  logger.log('📊 ORQUESTADOR: Iniciando análisis completo con arquitectura unificada...');
 
   const startTime = Date.now();
 
@@ -51,32 +52,32 @@ export async function performFullAnalysis(text, options = {}) {
     // ========================================================
     // FASE 1: ENRIQUECIMIENTO RAG (si es necesario)
     // ========================================================
-    console.log('\n🌐 FASE 1: Enriquecimiento RAG...');
+    logger.log('\n🌐 FASE 1: Enriquecimiento RAG...');
 
     const enrichment = await enrichWithWebContext(text, options.metadata || {});
 
     const webEnriched = enrichment.requires_web_search && enrichment.web_context !== null;
 
     if (webEnriched) {
-      console.log(`✅ Texto enriquecido con ${enrichment.web_context.sources.length} fuentes web`);
+      logger.log(`✅ Texto enriquecido con ${enrichment.web_context.sources.length} fuentes web`);
     } else {
-      console.log('✅ Análisis sin enriquecimiento web (no necesario)');
+      logger.log('✅ Análisis sin enriquecimiento web (no necesario)');
     }
 
     // ========================================================
     // FASE 2: CONSTRUCCIÓN DE PROMPT UNIFICADO
     // ========================================================
-    console.log('\n📝 FASE 2: Construcción de prompt unificado...');
+    logger.log('\n📝 FASE 2: Construcción de prompt unificado...');
 
     const prompt = buildUnifiedAnalysisPrompt(text, enrichment);
 
-    console.log(`📏 Longitud del prompt: ${prompt.length} caracteres`);
+    logger.log(`📏 Longitud del prompt: ${prompt.length} caracteres`);
 
     // ========================================================
     // FASE 3: ANÁLISIS CON IA (UNA SOLA LLAMADA)
     // ========================================================
-    console.log('\n🤖 FASE 3: Análisis con IA (llamada única)...');
-    console.log('   Provider: DeepSeek (optimizado para análisis profundo)');
+    logger.log('\n🤖 FASE 3: Análisis con IA (llamada única)...');
+    logger.log('   Provider: DeepSeek (optimizado para análisis profundo)');
 
     const response = await chatCompletion({
       provider: 'deepseek',
@@ -95,19 +96,19 @@ export async function performFullAnalysis(text, options = {}) {
       throw new Error('No se obtuvo respuesta válida de la IA');
     }
 
-    console.log('✅ Respuesta recibida de IA');
+    logger.log('✅ Respuesta recibida de IA');
 
     // ========================================================
     // FASE 4: PARSEO Y ESTRUCTURACIÓN
     // ========================================================
-    console.log('\n🔧 FASE 4: Estructurando análisis...');
+    logger.log('\n🔧 FASE 4: Estructurando análisis...');
 
     const parsedAnalysis = parseUnifiedAnalysis(content);
 
     // ========================================================
     // FASE 5: ESTRUCTURACIÓN FINAL PARA AMBAS PESTAÑAS
     // ========================================================
-    console.log('\n📦 FASE 5: Estructurando para Pre-lectura + Análisis Crítico...');
+    logger.log('\n📦 FASE 5: Estructurando para Pre-lectura + Análisis Crítico...');
 
     const finalAnalysis = {
       // =====================================================
@@ -188,16 +189,16 @@ export async function performFullAnalysis(text, options = {}) {
       }
     };
 
-    console.log(`\n✅ ORQUESTADOR: Análisis completo en ${Date.now() - startTime}ms`);
-    console.log(`   Document ID: ${finalAnalysis.metadata.document_id}`);
-    console.log(`   Pre-lectura: ${Object.keys(finalAnalysis.prelecture).length} secciones`);
-    console.log(`   Análisis Crítico: Estructurado`);
-    console.log(`   Web enriquecido: ${webEnriched ? 'SÍ' : 'NO'}`);
+    logger.log(`\n✅ ORQUESTADOR: Análisis completo en ${Date.now() - startTime}ms`);
+    logger.log(`   Document ID: ${finalAnalysis.metadata.document_id}`);
+    logger.log(`   Pre-lectura: ${Object.keys(finalAnalysis.prelecture).length} secciones`);
+    logger.log(`   Análisis Crítico: Estructurado`);
+    logger.log(`   Web enriquecido: ${webEnriched ? 'SÍ' : 'NO'}`);
 
     return finalAnalysis;
 
   } catch (error) {
-    console.error('❌ ORQUESTADOR: Error en análisis completo:', error);
+    logger.error('❌ ORQUESTADOR: Error en análisis completo:', error);
 
     // Retornar estructura fallback
     return buildFallbackAnalysis(text, error);
@@ -288,12 +289,12 @@ function parseUnifiedAnalysis(content) {
 
     const parsed = JSON.parse(jsonMatch[0]);
 
-    console.log('✅ JSON parseado exitosamente');
+    logger.log('✅ JSON parseado exitosamente');
 
     return parsed;
 
   } catch (error) {
-    console.warn('⚠️ Error parseando JSON, intentando limpieza...', error.message);
+    logger.warn('⚠️ Error parseando JSON, intentando limpieza...', error.message);
 
     // Intentar limpieza de caracteres problemáticos
     try {
@@ -304,7 +305,7 @@ function parseUnifiedAnalysis(content) {
         return JSON.parse(jsonMatch[0]);
       }
     } catch (e) {
-      console.error('❌ No se pudo parsear JSON después de limpieza');
+      logger.error('❌ No se pudo parsear JSON después de limpieza');
     }
 
     // Retornar estructura vacía como fallback
@@ -316,7 +317,7 @@ function parseUnifiedAnalysis(content) {
  * Construye análisis fallback en caso de error
  */
 function buildFallbackAnalysis(text, error) {
-  console.warn('⚠️ Construyendo análisis fallback...');
+  logger.warn('⚠️ Construyendo análisis fallback...');
 
   const keywords = extractKeywords(text, 5);
 

@@ -894,7 +894,7 @@ export default function TablaACD({ theme }) {
       }
 
     } catch (error) {
-      console.error('Error evaluando Tabla ACD:', error);
+      logger.error('Error evaluando Tabla ACD:', error);
       setError(error.message || 'Error al evaluar el análisis');
     } finally {
       stepTimeouts.forEach(t => clearTimeout(t));

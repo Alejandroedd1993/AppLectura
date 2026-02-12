@@ -1,3 +1,6 @@
+import logger from '../utils/logger';
+
+
 /**
  * StudyItemsService
  * Persistencia ligera y reactiva para items de estudio (aprendizaje espaciado) derivados del feedback.
@@ -85,7 +88,7 @@ class StudyItemsServiceImpl {
       localStorage.setItem(storageKey, payload);
       entry.dirty = false;
     } catch (e) {
-      console.warn('[StudyItemsService] Persistencia fallida, manteniendo en memoria.', e);
+      logger.warn('[StudyItemsService] Persistencia fallida, manteniendo en memoria.', e);
     }
   }
 

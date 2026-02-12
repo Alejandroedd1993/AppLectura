@@ -1,3 +1,5 @@
+import logger from '../utils/logger';
+
 /**
  * 🆕 A5 FIX: Constantes de timeout unificadas para toda la aplicación
  * Centraliza los tiempos de espera para mantener consistencia
@@ -24,7 +26,7 @@ export const MAX_RETRIES = 1;
 export const FIREBASE_TIMEOUT_MS = 15000; // 15 segundos
 
 // Logs para debugging
-console.log('⏱️ [Timeouts] Configuración cargada:', {
+logger.log('⏱️ [Timeouts] Configuración cargada:', {
     ANALYSIS_TIMEOUT_MS,
     CHAT_TIMEOUT_MS,
     NETWORK_TIMEOUT_MS,

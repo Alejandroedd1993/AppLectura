@@ -610,7 +610,7 @@ const ResumenAcademico = ({ theme }) => {
       persistence.saveManual();
 
     } catch (error) {
-      console.error('❌ [ResumenAcademico] Error:', error);
+      logger.error('❌ [ResumenAcademico] Error:', error);
       setError(`Error al evaluar: ${error.message}`);
     } finally {
       timersRef.current.forEach(clearTimeout);

@@ -1,3 +1,6 @@
+import logger from '../utils/logger';
+
+
 /**
  * Lector de Documentos SIMPLE y DIRECTO
  * Sin complejidad innecesaria - solo divide el texto en párrafos legibles
@@ -9,11 +12,11 @@
  * @returns {Array<string>} - Array de párrafos
  */
 export function processDocument(text) {
-  console.log('📖 [SimpleReader] === INICIO ===');
-  console.log('📄 Longitud texto:', text?.length || 0);
+  logger.log('📖 [SimpleReader] === INICIO ===');
+  logger.log('📄 Longitud texto:', text?.length || 0);
   
   if (!text || typeof text !== 'string' || text.trim().length === 0) {
-    console.warn('⚠️ Texto vacío o inválido');
+    logger.warn('⚠️ Texto vacío o inválido');
     return [];
   }
 
@@ -28,34 +31,34 @@ export function processDocument(text) {
     // Limpiar espacios
     .trim();
   
-  console.log('✅ Texto limpiado:', cleaned.length, 'caracteres');
-  console.log('📝 Primeros 300 caracteres:', cleaned.substring(0, 300));
+  logger.log('✅ Texto limpiado:', cleaned.length, 'caracteres');
+  logger.log('📝 Primeros 300 caracteres:', cleaned.substring(0, 300));
 
   let paragraphs = [];
 
   // ESTRATEGIA 1: Dividir por doble salto de línea
-  console.log('\n🔄 Estrategia 1: Doble salto de línea (\\n\\n)');
+  logger.log('\n🔄 Estrategia 1: Doble salto de línea (\\n\\n)');
   paragraphs = cleaned
     .split(/\n\s*\n/)
     .map(p => p.trim())
     .filter(p => p.length >= 20);
   
-  console.log(`   Resultado: ${paragraphs.length} párrafos`);
+  logger.log(`   Resultado: ${paragraphs.length} párrafos`);
   
   // Si hay muy pocos, probar estrategia 2
   if (paragraphs.length < 5) {
-    console.log('\n🔄 Estrategia 2: Salto de línea simple (\\n)');
+    logger.log('\n🔄 Estrategia 2: Salto de línea simple (\\n)');
     paragraphs = cleaned
       .split(/\n/)
       .map(p => p.trim())
       .filter(p => p.length >= 30); // Más restrictivo para evitar líneas sueltas
     
-    console.log(`   Resultado: ${paragraphs.length} líneas`);
+    logger.log(`   Resultado: ${paragraphs.length} líneas`);
   }
 
   // Si aún hay pocos, probar estrategia 3
   if (paragraphs.length < 5) {
-    console.log('\n🔄 Estrategia 3: Por oraciones (. + Mayúscula)');
+    logger.log('\n🔄 Estrategia 3: Por oraciones (. + Mayúscula)');
     
     // Dividir por punto seguido de espacio y mayúscula
     paragraphs = cleaned
@@ -67,12 +70,12 @@ export function processDocument(text) {
       })
       .filter(p => p.length >= 50); // Oraciones completas
     
-    console.log(`   Resultado: ${paragraphs.length} oraciones`);
+    logger.log(`   Resultado: ${paragraphs.length} oraciones`);
   }
 
   // Si TODAVÍA hay muy pocos, crear bloques fijos
   if (paragraphs.length < 3) {
-    console.log('\n🔄 Estrategia 4: Bloques fijos de 2000 caracteres');
+    logger.log('\n🔄 Estrategia 4: Bloques fijos de 2000 caracteres');
     paragraphs = [];
     const blockSize = 2000;
     
@@ -83,7 +86,7 @@ export function processDocument(text) {
       }
     }
     
-    console.log(`   Resultado: ${paragraphs.length} bloques`);
+    logger.log(`   Resultado: ${paragraphs.length} bloques`);
   }
 
   // Validación final
@@ -97,13 +100,13 @@ export function processDocument(text) {
     return true;
   });
 
-  console.log('\n✅ FINAL:', paragraphs.length, 'párrafos válidos');
-  console.log('📊 Primeros 5 párrafos (100 chars cada uno):');
+  logger.log('\n✅ FINAL:', paragraphs.length, 'párrafos válidos');
+  logger.log('📊 Primeros 5 párrafos (100 chars cada uno):');
   paragraphs.slice(0, 5).forEach((p, i) => {
-    console.log(`   [${i}]: ${p.substring(0, 100)}...`);
+    logger.log(`   [${i}]: ${p.substring(0, 100)}...`);
   });
   
-  console.log('📖 [SimpleReader] === FIN ===\n');
+  logger.log('📖 [SimpleReader] === FIN ===\n');
   
   return paragraphs;
 }

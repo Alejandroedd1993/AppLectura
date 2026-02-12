@@ -34,6 +34,7 @@ import { useSessionMaintenance } from '../hooks/useSessionMaintenance';
 import useFirestorePersistence from '../hooks/useFirestorePersistence';
 import { generateBasicAnalysis } from '../services/basicAnalysisService';
 import { runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
+import logger from '../utils/logger';
 import {
   createEmptyRubricProgressV2,
   createEmptyFormative,
@@ -43,7 +44,7 @@ import {
 
 // Backend URL configuration
 export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
-console.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
+logger.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
 
 // 1. Crear el Contexto
 export const 
@@ -54,7 +55,7 @@ AppContext = createContext();
  * para que esté disponible en toda la aplicación.
  */
 export const AppContextProvider = ({ children }) => {
-  console.log('🚀 AppContext provider loaded'); // Log inmediato
+  logger.log('🚀 AppContext provider loaded'); // Log inmediato
 
   // ==================== FEATURE FLAGS (PERSISTENCIA) ====================
   // Fase 2: Firestore como verdad para progreso evaluable; localStorage solo como "airbag".
@@ -258,7 +259,7 @@ export const AppContextProvider = ({ children }) => {
 
       return parsed;
     } catch (e) {
-      console.warn('⚠️ [AppContext] Error leyendo firestore_backup:', e);
+      logger.warn('⚠️ [AppContext] Error leyendo firestore_backup:', e);
       return null;
     }
   }, [getFirestoreBackupTimestampMs, isFirestoreBackupExpired, stampFirestoreBackupMeta]);
@@ -305,7 +306,7 @@ export const AppContextProvider = ({ children }) => {
       const stamped = stampFirestoreBackupMeta(next);
       localStorage.setItem(key, JSON.stringify(stamped));
     } catch (e) {
-      console.warn('⚠️ [AppContext] No se pudo escribir firestore_backup:', e);
+      logger.warn('⚠️ [AppContext] No se pudo escribir firestore_backup:', e);
     }
   }, [stampFirestoreBackupMeta]);
 
@@ -346,10 +347,10 @@ export const AppContextProvider = ({ children }) => {
       });
 
       if (keysToDelete.length > 0) {
-        console.log('🧹 [AppContext] Limpieza TTL firestore_backup_*:', { removed: keysToDelete.length, uid: uidFilter || 'all' });
+        logger.log('🧹 [AppContext] Limpieza TTL firestore_backup_*:', { removed: keysToDelete.length, uid: uidFilter || 'all' });
       }
     } catch (e) {
-      console.warn('⚠️ [AppContext] Error limpiando firestore_backup_*:', e);
+      logger.warn('⚠️ [AppContext] Error limpiando firestore_backup_*:', e);
     }
   }, [firestoreBackupTtlMs, getFirestoreBackupTimestampMs]);
 
@@ -377,13 +378,13 @@ export const AppContextProvider = ({ children }) => {
     currentUser = auth.currentUser;
     userData = auth.userData;
   } catch (error) {
-    console.warn('⚠️ [AppContext] AuthContext no disponible aún, continuando sin auth');
+    logger.warn('⚠️ [AppContext] AuthContext no disponible aún, continuando sin auth');
   }
 
   // 🆕 Inicializar SessionManager con el usuario actual
   useEffect(() => {
     if (currentUser) {
-      console.log('👤 [AppContext] Inicializando SessionManager para usuario:', currentUser.uid);
+      logger.log('👤 [AppContext] Inicializando SessionManager para usuario:', currentUser.uid);
       setSessionManagerUser(currentUser.uid);
 
       // 🧹 Fase 3: limpiar backups expirados del usuario actual
@@ -430,13 +431,13 @@ export const AppContextProvider = ({ children }) => {
             // ignore
           }
           if ((res.deleted || 0) > 0 || (res.failed || 0) > 0) {
-            console.log(
+            logger.log(
               `🧹 [AppContext] Cleanup draft backups legacy en sessions: deleted=${res.deleted} failed=${res.failed} scanned=${res.scanned}`
             );
           }
         }
       } catch (e) {
-        console.warn('⚠️ [AppContext] Cleanup legacy draft backups en sessions falló:', e);
+        logger.warn('⚠️ [AppContext] Cleanup legacy draft backups en sessions falló:', e);
       }
     })();
   }, [currentUser?.uid, cloudBackupWriteOnly]);
@@ -507,7 +508,7 @@ export const AppContextProvider = ({ children }) => {
   // 🆕 SETTERS DERIVADOS - Para que componentes existentes sigan funcionando
   // Estos actualizan activeLecture internamente
   const setTexto = useCallback((nuevoTexto) => {
-    console.log('🔄 [AppContext] setTexto llamado, longitud:', nuevoTexto?.length || 0);
+    logger.log('🔄 [AppContext] setTexto llamado, longitud:', nuevoTexto?.length || 0);
     setActiveLecture(prev => ({
       ...prev,
       content: nuevoTexto || '',
@@ -516,7 +517,7 @@ export const AppContextProvider = ({ children }) => {
   }, []);
 
   const setCurrentTextoId = useCallback((id) => {
-    console.log('🔄 [AppContext] setCurrentTextoId:', id);
+    logger.log('🔄 [AppContext] setCurrentTextoId:', id);
     setActiveLecture(prev => ({
       ...prev,
       id: id,
@@ -525,7 +526,7 @@ export const AppContextProvider = ({ children }) => {
   }, []);
 
   const setSourceCourseId = useCallback((courseId) => {
-    console.log('🔄 [AppContext] setSourceCourseId:', courseId);
+    logger.log('🔄 [AppContext] setSourceCourseId:', courseId);
     setActiveLecture(prev => ({
       ...prev,
       courseId: courseId,
@@ -534,7 +535,7 @@ export const AppContextProvider = ({ children }) => {
   }, []);
 
   const setCompleteAnalysis = useCallback((analysis) => {
-    console.log('🔄 [AppContext] setCompleteAnalysis:', analysis ? 'CON DATOS' : 'NULL');
+    logger.log('🔄 [AppContext] setCompleteAnalysis:', analysis ? 'CON DATOS' : 'NULL');
     setActiveLecture(prev => ({
       ...prev,
       analysis: analysis,
@@ -546,10 +547,10 @@ export const AppContextProvider = ({ children }) => {
   // 🆕 FUNCIÓN PRINCIPAL: Cambio atómico de lectura
   // GARANTIZA que todos los estados cambien juntos, sin race conditions
   const switchLecture = useCallback((lectureData) => {
-    console.log('🔄 [AppContext] ===== SWITCH LECTURE (ATÓMICO) =====');
-    console.log('📎 Nuevo textoId:', lectureData.id);
-    console.log('📎 Nuevo courseId:', lectureData.courseId);
-    console.log('📎 Contenido:', lectureData.content?.length || 0, 'chars');
+    logger.log('🔄 [AppContext] ===== SWITCH LECTURE (ATÓMICO) =====');
+    logger.log('📎 Nuevo textoId:', lectureData.id);
+    logger.log('📎 Nuevo courseId:', lectureData.courseId);
+    logger.log('📎 Contenido:', lectureData.content?.length || 0, 'chars');
 
     // 🆕 FIX CRÍTICO: Cada lectura necesita su PROPIA sesión
     // Buscar si ya existe una sesión para este textoId
@@ -564,15 +565,15 @@ export const AppContextProvider = ({ children }) => {
       if (existingSession) {
         // Reutilizar la sesión existente de esta lectura
         setCurrentSessionId(existingSession.id);
-        console.log('♻️ [AppContext] Reutilizando sesión existente para esta lectura:', existingSession.id);
+        logger.log('♻️ [AppContext] Reutilizando sesión existente para esta lectura:', existingSession.id);
       } else {
         // Crear un NUEVO ID de sesión único para esta lectura
         const newSessionId = `session_${Date.now()}_${lectureData.id.substring(0, 8)}`;
         setCurrentSessionId(newSessionId);
-        console.log('🆕 [AppContext] Nueva sesión creada para lectura:', newSessionId);
+        logger.log('🆕 [AppContext] Nueva sesión creada para lectura:', newSessionId);
       }
     } else {
-      console.warn('⚠️ [AppContext] switchLecture sin textoId, no se puede asignar sesión');
+      logger.warn('⚠️ [AppContext] switchLecture sin textoId, no se puede asignar sesión');
     }
 
     setActiveLecture({
@@ -588,12 +589,12 @@ export const AppContextProvider = ({ children }) => {
       lastModified: Date.now()
     });
 
-    console.log('✅ [AppContext] Lectura cambiada atómicamente con sesión aislada');
+    logger.log('✅ [AppContext] Lectura cambiada atómicamente con sesión aislada');
   }, []);
 
   // Debug wrapper para compatibilidad
   const setTextoWithDebug = useCallback((nuevoTexto) => {
-    console.log('🔄 AppContext - Estableciendo nuevo texto, longitud:', nuevoTexto?.length || 0);
+    logger.log('🔄 AppContext - Estableciendo nuevo texto, longitud:', nuevoTexto?.length || 0);
     setTexto(nuevoTexto);
   }, [setTexto]);
 
@@ -662,7 +663,7 @@ export const AppContextProvider = ({ children }) => {
 
     window.addEventListener('tutor-interaction-logged', handleNewInteraction);
     return () => {
-      console.log('🔌 [AppContext] Removiendo listener global');
+      logger.log('🔌 [AppContext] Removiendo listener global');
       window.removeEventListener('tutor-interaction-logged', handleNewInteraction);
     };
   }, [currentTextoId]);
@@ -673,7 +674,7 @@ export const AppContextProvider = ({ children }) => {
     const storageKey = `tutorInteractionsLog:${lectureId}`;
     localStorage.removeItem(storageKey);
     setGlobalTutorInteractions([]);
-    console.log('🗑️ [AppContext] Log del tutor limpiado para:', lectureId);
+    logger.log('🗑️ [AppContext] Log del tutor limpiado para:', lectureId);
   }, [currentTextoId]);
 
   // Flag para saber si ya se intentó analizar el texto actual
@@ -715,7 +716,7 @@ export const AppContextProvider = ({ children }) => {
 
     if (!saved) {
       // Sin datos locales para esta lectura - mantener vacío
-      console.log(`ℹ️ [AppContext] Sin rubricProgress local para ${currentTextoId}`);
+      logger.log(`ℹ️ [AppContext] Sin rubricProgress local para ${currentTextoId}`);
       return;
     }
 
@@ -724,10 +725,10 @@ export const AppContextProvider = ({ children }) => {
       if (parsed && typeof parsed === 'object') {
         // 🛡️ PASO 2: Cargar datos específicos de ESTA lectura
         setRubricProgress(normalizeRubricProgress(parsed));
-        console.log(`✅ [AppContext] rubricProgress cargado (local) para ${currentUser.uid} / ${currentTextoId}`);
+        logger.log(`✅ [AppContext] rubricProgress cargado (local) para ${currentUser.uid} / ${currentTextoId}`);
       }
     } catch (e) {
-      console.warn('⚠️ Error cargando rubricProgress (local):', e);
+      logger.warn('⚠️ Error cargando rubricProgress (local):', e);
     }
   }, [currentUser?.uid, currentTextoId, disableLocalProgressMirror, useFirestorePersistenceHook, emptyRubricProgress]);
 
@@ -740,13 +741,13 @@ export const AppContextProvider = ({ children }) => {
     // Esto evita sobrescribir datos existentes durante el reseteo al cambiar de lectura
     const hasData = Object.keys(rubricProgress).some(k => (rubricProgress[k]?.formative?.scores?.length || rubricProgress[k]?.scores?.length || 0) > 0);
     if (!hasData) {
-      console.log(`ℹ️ [AppContext] Omitiendo guardar rubricProgress vacío para ${currentTextoId}`);
+      logger.log(`ℹ️ [AppContext] Omitiendo guardar rubricProgress vacío para ${currentTextoId}`);
       return;
     }
     
     const key = rubricProgressKey(currentUser.uid, currentTextoId);
     localStorage.setItem(key, JSON.stringify(rubricProgress));
-    console.log(`💾 [AppContext] rubricProgress guardado en localStorage para ${currentTextoId}`);
+    logger.log(`💾 [AppContext] rubricProgress guardado en localStorage para ${currentTextoId}`);
   }, [rubricProgress, currentUser, currentTextoId, disableLocalProgressMirror, useFirestorePersistenceHook]);
 
   // 🆕 FIX: Cargar rubricProgress desde Firestore cuando cambie el texto (currentTextoId)
@@ -759,11 +760,11 @@ export const AppContextProvider = ({ children }) => {
     const loadProgressForText = async () => {
       // Si no hay usuario o texto, mantener estado actual
       if (!currentUser?.uid || !currentTextoId) {
-        console.log('ℹ️ [AppContext] Skipping rubricProgress load - no user or textoId');
+        logger.log('ℹ️ [AppContext] Skipping rubricProgress load - no user or textoId');
         return;
       }
 
-      console.log(`📥 [AppContext] Cargando rubricProgress desde Firestore para texto: ${currentTextoId}`);
+      logger.log(`📥 [AppContext] Cargando rubricProgress desde Firestore para texto: ${currentTextoId}`);
 
       try {
         // Obtener progreso guardado en Firestore para este texto específico
@@ -778,7 +779,7 @@ export const AppContextProvider = ({ children }) => {
             : (typeof progress.lastResetAt === 'number' ? progress.lastResetAt : 0);
           
           if (resetTime > 0) {
-            console.log('🔄 [AppContext] Reset detectado en Firestore, limpiando localStorage...');
+            logger.log('🔄 [AppContext] Reset detectado en Firestore, limpiando localStorage...');
             
             // Limpiar localStorage de rubricProgress
             const rubricKey = rubricProgressKey(currentUser.uid, currentTextoId);
@@ -792,14 +793,14 @@ export const AppContextProvider = ({ children }) => {
             Object.keys(localStorage).forEach(k => {
               if (k.includes('activity_results_') && k.includes(currentTextoId)) {
                 localStorage.removeItem(k);
-                console.log('🧹 [AppContext] Limpiado localStorage key:', k);
+                logger.log('🧹 [AppContext] Limpiado localStorage key:', k);
               }
             });
             
             // Aplicar datos de Firestore (reseteados) directamente
             if (progress.rubricProgress) {
               setRubricProgress(normalizeRubricProgress(progress.rubricProgress));
-              console.log('✅ [AppContext] rubricProgress reemplazado tras reset');
+              logger.log('✅ [AppContext] rubricProgress reemplazado tras reset');
             } else {
               setRubricProgress(emptyRubricProgress);
             }
@@ -812,7 +813,7 @@ export const AppContextProvider = ({ children }) => {
           const anyResetAt = Object.values(progress.rubricProgress).some(r => r?.resetAt);
           
           if (anyResetAt) {
-            console.log('🔄 [AppContext] Reset de rúbrica detectado, reemplazando datos');
+            logger.log('🔄 [AppContext] Reset de rúbrica detectado, reemplazando datos');
             const rubricKey = rubricProgressKey(currentUser.uid, currentTextoId);
             localStorage.removeItem(rubricKey);
             setRubricProgress(normalizeRubricProgress(progress.rubricProgress));
@@ -835,7 +836,7 @@ export const AppContextProvider = ({ children }) => {
             
             // Si solo cloud tiene datos, usar cloud
             if (cloudHasData && !localHasData) {
-              console.log('✅ [AppContext] rubricProgress cargado desde Firestore (cloud tiene datos, local vacío)');
+              logger.log('✅ [AppContext] rubricProgress cargado desde Firestore (cloud tiene datos, local vacío)');
               return normalizedCloud;
             }
             
@@ -870,23 +871,23 @@ export const AppContextProvider = ({ children }) => {
                 }
               });
               
-              console.log('✅ [AppContext] rubricProgress MERGED (cloud+local) para texto:', currentTextoId);
+              logger.log('✅ [AppContext] rubricProgress MERGED (cloud+local) para texto:', currentTextoId);
               return normalizeRubricProgress(merged);
             }
             
             // Si solo local tiene datos, mantener local
-            console.log('ℹ️ [AppContext] Manteniendo datos locales (cloud vacío)');
+            logger.log('ℹ️ [AppContext] Manteniendo datos locales (cloud vacío)');
             return normalizedLocal;
           });
         } else {
           // Sin progreso en Firestore para esta lectura
           // Mantener lo que se cargó del localStorage (si había algo)
-          console.log('ℹ️ [AppContext] Sin progreso en Firestore para este texto:', currentTextoId);
+          logger.log('ℹ️ [AppContext] Sin progreso en Firestore para este texto:', currentTextoId);
         }
       } catch (error) {
-        console.error('❌ [AppContext] Error cargando rubricProgress desde Firestore:', error);
+        logger.error('❌ [AppContext] Error cargando rubricProgress desde Firestore:', error);
         // En caso de error, mantener estado actual
-        console.log('⚠️ [AppContext] Error de Firestore, manteniendo estado actual');
+        logger.log('⚠️ [AppContext] Error de Firestore, manteniendo estado actual');
       }
     };
 
@@ -921,7 +922,7 @@ export const AppContextProvider = ({ children }) => {
       try {
         setSavedCitations(JSON.parse(saved));
       } catch (e) {
-        console.warn('⚠️ Error cargando savedCitations:', e);
+        logger.warn('⚠️ Error cargando savedCitations:', e);
       }
     }
   }, [currentUser, disableLocalProgressMirror]);
@@ -983,7 +984,7 @@ export const AppContextProvider = ({ children }) => {
 
       if (changed) {
         next[currentTextoId] = merged;
-        console.log('♻️ [AppContext] Migradas citas legacy -> textoId:', { currentTextoId, migratedFrom: legacyList });
+        logger.log('♻️ [AppContext] Migradas citas legacy -> textoId:', { currentTextoId, migratedFrom: legacyList });
         return next;
       }
 
@@ -1020,7 +1021,7 @@ export const AppContextProvider = ({ children }) => {
 
       if (changed) {
         next[currentTextoId] = merged;
-        console.log('♻️ [AppContext] Migrado activitiesProgress legacy -> textoId:', { currentTextoId, migratedFrom: legacyList });
+        logger.log('♻️ [AppContext] Migrado activitiesProgress legacy -> textoId:', { currentTextoId, migratedFrom: legacyList });
         return next;
       }
 
@@ -1053,7 +1054,7 @@ export const AppContextProvider = ({ children }) => {
     const hasRecentReset = remoteResetAt > 0;
     
     if (hasRecentReset) {
-      console.log('🔄 [AppContext] Detectado RESET desde Firestore, timestamp:', new Date(remoteResetAt).toISOString());
+      logger.log('🔄 [AppContext] Detectado RESET desde Firestore, timestamp:', new Date(remoteResetAt).toISOString());
     }
 
     const getArtifactsStats = (docProgress) => {
@@ -1080,7 +1081,7 @@ export const AppContextProvider = ({ children }) => {
           if (hasRecentReset) {
             const anyLocalHasData = Object.values(normalizedLocal).some(r => (r?.scores?.length || r?.formative?.scores?.length || 0) > 0);
             if (anyLocalHasData) {
-              console.log('🔄 [AppContext] Reset detectado - reemplazando rubricProgress local con Firestore');
+              logger.log('🔄 [AppContext] Reset detectado - reemplazando rubricProgress local con Firestore');
               lastRubricProgressFromCloudAtRef.current = Date.now();
               return normalizedRemote;
             }
@@ -1098,7 +1099,7 @@ export const AppContextProvider = ({ children }) => {
               const resetTime = new Date(remoteRubric.resetAt).getTime();
               const localTime = localRubric?.lastUpdate || 0;
               if (resetTime > localTime) {
-                console.log(`🔄 [AppContext] Rúbrica ${rubricId} reseteada, reemplazando`);
+                logger.log(`🔄 [AppContext] Rúbrica ${rubricId} reseteada, reemplazando`);
                 mergedRubrics[rubricId] = remoteRubric;
                 hasChanges = true;
                 return;
@@ -1155,7 +1156,7 @@ export const AppContextProvider = ({ children }) => {
             if (anyArtifactReset || hasRecentReset) {
               // 🆕 SIEMPRE usar datos remotos si hay resetBy='docente' en cualquier artefacto
               // El docente tiene autoridad para resetear, así que sus datos tienen prioridad
-              console.log(`🔄 [AppContext] Reset detectado en artifacts de ${docId}, usando datos remotos`);
+              logger.log(`🔄 [AppContext] Reset detectado en artifacts de ${docId}, usando datos remotos`);
               mergedActivities[docId] = remoteDoc;
               hasChanges = true;
               return;
@@ -1431,7 +1432,7 @@ export const AppContextProvider = ({ children }) => {
       try {
         setActivitiesProgress(JSON.parse(saved));
       } catch (error) {
-        console.warn('⚠️ Error cargando activitiesProgress:', error);
+        logger.warn('⚠️ Error cargando activitiesProgress:', error);
       }
     }
   }, [currentUser, disableLocalProgressMirror, useFirestorePersistenceHook]);
@@ -1447,7 +1448,7 @@ export const AppContextProvider = ({ children }) => {
       import('../utils/migrateActivityData').then(({ migrateActivityDataToContext }) => {
         const result = migrateActivityDataToContext({ storageKey: activitiesProgressKey(currentUser.uid) });
         if (result.migrated > 0) {
-          console.log(`✅ [Migration] ${result.migrated} documentos migrados a activitiesProgress`);
+          logger.log(`✅ [Migration] ${result.migrated} documentos migrados a activitiesProgress`);
           activitiesProgressLocalDirtyRef.current = true;
           setActivitiesProgress(result.data);
           localStorage.setItem(migrationFlagKey, 'true');
@@ -1455,7 +1456,7 @@ export const AppContextProvider = ({ children }) => {
           localStorage.setItem(migrationFlagKey, 'true');
         }
       }).catch(err => {
-        console.warn('⚠️ [Migration] Error importando migración:', err);
+        logger.warn('⚠️ [Migration] Error importando migración:', err);
       });
     }
   }, [currentUser, disableLocalProgressMirror, useFirestorePersistenceHook]);
@@ -1480,7 +1481,7 @@ export const AppContextProvider = ({ children }) => {
     let rewardsSaved = true;
     if (hasRewardsState) {
       try {
-        console.log('📤 [saveGlobalProgress] Guardando rewardsState en global_progress...');
+        logger.log('📤 [saveGlobalProgress] Guardando rewardsState en global_progress...');
         const rewardsPayload = {
           rewardsState,
           // Mantener metadata útil para debugging
@@ -1491,13 +1492,13 @@ export const AppContextProvider = ({ children }) => {
         };
 
         await saveStudentProgress(currentUser.uid, 'global_progress', rewardsPayload);
-        console.log('✅ [saveGlobalProgress] rewardsState guardado exitosamente');
+        logger.log('✅ [saveGlobalProgress] rewardsState guardado exitosamente');
 
         // Airbag local (último estado conocido)
         writeFirestoreBackupMerged(currentUser.uid, 'global_progress', rewardsPayload);
       } catch (error) {
         rewardsSaved = false;
-        console.error('❌ [AppContext] Error guardando rewardsState (global_progress):', error);
+        logger.error('❌ [AppContext] Error guardando rewardsState (global_progress):', error);
       }
     }
 
@@ -1509,11 +1510,11 @@ export const AppContextProvider = ({ children }) => {
       // Intentar usar currentTextoId del contexto
       if (currentTextoId && currentTextoId !== 'global_progress') {
         targetTextoId = currentTextoId;
-        console.log('💡 [AppContext] Usando currentTextoId del contexto:', targetTextoId);
+        logger.log('💡 [AppContext] Usando currentTextoId del contexto:', targetTextoId);
       } else {
         // FALLBACK: Usar 'global_progress' pero loguear warning
         targetTextoId = 'global_progress';
-        console.warn('⚠️ [AppContext] Guardando progreso sin textoId específico (global_progress). Este progreso no será visible para el docente.');
+        logger.warn('⚠️ [AppContext] Guardando progreso sin textoId específico (global_progress). Este progreso no será visible para el docente.');
       }
     }
 
@@ -1541,7 +1542,7 @@ export const AppContextProvider = ({ children }) => {
       writeFirestoreBackupMerged(currentUser.uid, targetTextoId, payloadWithoutRewards);
       return rewardsSaved;
     } catch (error) {
-      console.error('❌ [AppContext] Error guardando progreso por lectura:', error);
+      logger.error('❌ [AppContext] Error guardando progreso por lectura:', error);
       return false;
     }
   }, [currentUser, isStudent, currentTextoId, sourceCourseId, writeFirestoreBackupMerged, useFirestorePersistenceHook, saveProgressViaHook, progressDocId]);
@@ -1583,13 +1584,13 @@ export const AppContextProvider = ({ children }) => {
 
   // NUEVO: Setter estable para estructura del texto
   const setTextStructureStable = useCallback((structure) => {
-    console.log('📐 AppContext - Estableciendo estructura del texto:', structure);
+    logger.log('📐 AppContext - Estableciendo estructura del texto:', structure);
     setTextStructure(structure || null);
   }, []);
 
   // 🆕 FUNCIÓN PARA ACTUALIZAR PROGRESO DE RÚBRICAS
   const updateRubricScore = useCallback((rubricId, scoreData) => {
-    console.log(`📊 [updateRubricScore] Actualizando ${rubricId}:`, scoreData);
+    logger.log(`📊 [updateRubricScore] Actualizando ${rubricId}:`, scoreData);
 
     // 🛡️ Preferir un textoId explícito si el caller lo provee (p.ej. lectureId)
     const textoIdForSync =
@@ -1643,7 +1644,7 @@ export const AppContextProvider = ({ children }) => {
         artefactos: Array.from(artefactosSet)
       };
 
-      console.log(`✅ [updateRubricScore] ${rubricId} actualizada. Promedio: ${updatedRubrica.average}/10`);
+      logger.log(`✅ [updateRubricScore] ${rubricId} actualizada. Promedio: ${updatedRubrica.average}/10`);
 
       // 🆕 DISPARAR EVENTO para sincronización optimizada
       window.dispatchEvent(new CustomEvent('artifact-evaluated', {
@@ -1696,7 +1697,7 @@ export const AppContextProvider = ({ children }) => {
 
   // 🆕 Sprint 1: Registro de Ensayo Integrador (SUMATIVO) en la rúbrica seleccionada
   const submitSummativeEssay = useCallback((rubricId, essayData = {}) => {
-    console.log(`📝 [submitSummativeEssay] Registrando ensayo sumativo para ${rubricId}`);
+    logger.log(`📝 [submitSummativeEssay] Registrando ensayo sumativo para ${rubricId}`);
 
     const textoIdForSync =
       essayData?.textoId ||
@@ -1712,7 +1713,7 @@ export const AppContextProvider = ({ children }) => {
       if (!current) return normalizedPrev;
 
       if (!current.summative) {
-        console.warn(`⚠️ [submitSummativeEssay] ${rubricId} no soporta sumativo (probablemente rubrica5)`);
+        logger.warn(`⚠️ [submitSummativeEssay] ${rubricId} no soporta sumativo (probablemente rubrica5)`);
         return normalizedPrev;
       }
 
@@ -1824,7 +1825,7 @@ export const AppContextProvider = ({ children }) => {
 
   // 🆕 FUNCIÓN PARA LIMPIAR PROGRESO DE UNA RÚBRICA
   const clearRubricProgress = useCallback((rubricId) => {
-    console.log(`🗑️ [clearRubricProgress] Limpiando ${rubricId}`);
+    logger.log(`🗑️ [clearRubricProgress] Limpiando ${rubricId}`);
     setRubricProgress(prev => {
       const normalizedPrev = normalizeRubricProgress(prev);
       const current = normalizedPrev[rubricId];
@@ -1849,7 +1850,7 @@ export const AppContextProvider = ({ children }) => {
 
   // 🆕 FUNCIÓN PARA RESETEAR TODO EL PROGRESO
   const resetAllProgress = useCallback(() => {
-    console.log('🗑️ [resetAllProgress] Reseteando todo el progreso de rúbricas');
+    logger.log('🗑️ [resetAllProgress] Reseteando todo el progreso de rúbricas');
     const emptyProgress = createEmptyRubricProgressV2();
     setRubricProgress(emptyProgress);
 
@@ -1864,7 +1865,7 @@ export const AppContextProvider = ({ children }) => {
 
   // 🆕 FUNCIÓN PARA GUARDAR UNA CITA (llamada desde Lectura Guiada)
   const saveCitation = useCallback((citation) => {
-    console.log('💾 [saveCitation] Guardando entrada:', citation);
+    logger.log('💾 [saveCitation] Guardando entrada:', citation);
 
     const { documentId, texto, nota = '', tipo = 'cita' } = citation;
     const targetId = currentTextoId || documentId;
@@ -1872,7 +1873,7 @@ export const AppContextProvider = ({ children }) => {
     // Las reflexiones/comentarios requieren mínimo 5 chars, las citas textuales mínimo 10
     const minLength = tipo === 'cita' ? 10 : 5;
     if (!targetId || !texto || texto.trim().length < minLength) {
-      console.warn(`⚠️ [saveCitation] Entrada inválida (requiere textoId/documentId y texto >${minLength} chars)`);
+      logger.warn(`⚠️ [saveCitation] Entrada inválida (requiere textoId/documentId y texto >${minLength} chars)`);
       return false;
     }
 
@@ -1887,7 +1888,7 @@ export const AppContextProvider = ({ children }) => {
       );
 
       if (isDuplicate) {
-        console.warn('⚠️ [saveCitation] Entrada duplicada, no se guardará');
+        logger.warn('⚠️ [saveCitation] Entrada duplicada, no se guardará');
         return prev;
       }
 
@@ -1904,7 +1905,7 @@ export const AppContextProvider = ({ children }) => {
         [targetId]: [...docCitations, newCitation]
       };
 
-      console.log(`✅ [saveCitation] Entrada guardada (${tipo}). Total para documento: ${updated[targetId].length}`);
+      logger.log(`✅ [saveCitation] Entrada guardada (${tipo}). Total para documento: ${updated[targetId].length}`);
       return updated;
     });
 
@@ -1913,7 +1914,7 @@ export const AppContextProvider = ({ children }) => {
 
   // 🆕 FUNCIÓN PARA ELIMINAR UNA CITA
   const deleteCitation = useCallback((documentId, citationId) => {
-    console.log(`🗑️ [deleteCitation] Eliminando cita ${citationId} del documento ${documentId}`);
+    logger.log(`🗑️ [deleteCitation] Eliminando cita ${citationId} del documento ${documentId}`);
 
     savedCitationsLocalDirtyRef.current = true;
 
@@ -1942,7 +1943,7 @@ export const AppContextProvider = ({ children }) => {
 
   // 🆕 FUNCIÓN PARA LIMPIAR TODAS LAS CITAS DE UN DOCUMENTO
   const clearDocumentCitations = useCallback((documentId) => {
-    console.log(`🗑️ [clearDocumentCitations] Limpiando todas las citas del documento ${documentId}`);
+    logger.log(`🗑️ [clearDocumentCitations] Limpiando todas las citas del documento ${documentId}`);
 
     savedCitationsLocalDirtyRef.current = true;
 
@@ -2025,13 +2026,13 @@ export const AppContextProvider = ({ children }) => {
    */
   const saveCurrentTextToFirestore = useCallback(async () => {
     if (!currentUser || !texto || texto.length < 100) {
-      console.log('⚠️ [Firestore] No se puede guardar: usuario no autenticado o texto muy corto');
+      logger.log('⚠️ [Firestore] No se puede guardar: usuario no autenticado o texto muy corto');
       return null;
     }
 
     try {
-      console.log('💾 [Firestore] Texto disponible para guardar (función pendiente de implementación completa)');
-      console.log('📊 Longitud:', texto.length, 'palabras');
+      logger.log('💾 [Firestore] Texto disponible para guardar (función pendiente de implementación completa)');
+      logger.log('📊 Longitud:', texto.length, 'palabras');
 
       // TODO: Implementar guardado con estructura docente → uploadTexto()
       // Por ahora solo registramos que está disponible
@@ -2039,7 +2040,7 @@ export const AppContextProvider = ({ children }) => {
       return 'pending_implementation';
 
     } catch (error) {
-      console.error('❌ [Firestore] Error:', error);
+      logger.error('❌ [Firestore] Error:', error);
       return null;
     }
   }, [currentUser, texto]);
@@ -2052,7 +2053,7 @@ export const AppContextProvider = ({ children }) => {
     if (!currentUser || !userData?.role) return;
 
     try {
-      console.log('💾 [Firestore] Sincronizando progreso de rúbricas...', rubricId || 'todas');
+      logger.log('💾 [Firestore] Sincronizando progreso de rúbricas...', rubricId || 'todas');
 
       // Usar saveStudentProgress para estudiantes
       if (userData.role === 'estudiante') {
@@ -2079,15 +2080,15 @@ export const AppContextProvider = ({ children }) => {
           await saveGlobalProgress(progressData, { textoId: targetTextoId });
         }
 
-        console.log('✅ [Firestore] Progreso de estudiante sincronizado (rúbricas)');
+        logger.log('✅ [Firestore] Progreso de estudiante sincronizado (rúbricas)');
         return true;
       } else {
-        console.log('ℹ️ [Firestore] Usuario docente - progreso no se sincroniza');
+        logger.log('ℹ️ [Firestore] Usuario docente - progreso no se sincroniza');
         return false;
       }
 
     } catch (error) {
-      console.error('❌ [Firestore] Error sincronizando progreso:', error);
+      logger.error('❌ [Firestore] Error sincronizando progreso:', error);
       return false;
     }
   }, [currentUser, userData, rubricProgress, saveGlobalProgress, currentTextoId, sourceCourseId, useFirestorePersistenceHook, saveProgressViaHook]);
@@ -2097,12 +2098,12 @@ export const AppContextProvider = ({ children }) => {
    */
   const saveEvaluationToFirestore = useCallback(async (evaluationData) => {
     if (!currentUser) {
-      console.log('⚠️ [Firestore] No se puede guardar evaluación: usuario no autenticado');
+      logger.log('⚠️ [Firestore] No se puede guardar evaluación: usuario no autenticado');
       return null;
     }
 
     try {
-      console.log('💾 [Firestore] Guardando evaluación...');
+      logger.log('💾 [Firestore] Guardando evaluación...');
 
       const evalData = {
         estudianteUid: currentUser.uid,
@@ -2121,11 +2122,11 @@ export const AppContextProvider = ({ children }) => {
 
       const evalId = await saveEvaluacion(evalData);
 
-      console.log('✅ [Firestore] Evaluación guardada con ID:', evalId);
+      logger.log('✅ [Firestore] Evaluación guardada con ID:', evalId);
       return evalId;
 
     } catch (error) {
-      console.error('❌ [Firestore] Error guardando evaluación:', error);
+      logger.error('❌ [Firestore] Error guardando evaluación:', error);
       return null;
     }
   }, [currentUser, userData, saveGlobalProgress, sourceCourseId]);
@@ -2137,13 +2138,13 @@ export const AppContextProvider = ({ children }) => {
     if (!currentUser || Object.keys(savedCitations).length === 0) return;
 
     try {
-      console.log('💾 [Firestore] Citas disponibles para sincronizar:', Object.keys(savedCitations).length);
-      console.log('ℹ️ [Firestore] Sincronización de citas pendiente de implementación');
+      logger.log('💾 [Firestore] Citas disponibles para sincronizar:', Object.keys(savedCitations).length);
+      logger.log('ℹ️ [Firestore] Sincronización de citas pendiente de implementación');
 
       // TODO: Implementar guardado de notas/citas cuando se agregue la función correspondiente
 
     } catch (error) {
-      console.error('❌ [Firestore] Error sincronizando citas:', error);
+      logger.error('❌ [Firestore] Error sincronizando citas:', error);
     }
   }, [currentUser, savedCitations]);
 
@@ -2155,7 +2156,7 @@ export const AppContextProvider = ({ children }) => {
       if (rubricId && currentUser) {
         // 🔵 LOG DETALLADO para diagnóstico de persistencia
         const targetTextoId = textoIdForSync || currentTextoId || 'global_progress';
-        console.log(`📊 [AppContext] Artefacto completado:`, {
+        logger.log(`📊 [AppContext] Artefacto completado:`, {
           rubricId,
           score,
           textoIdForSync,
@@ -2177,7 +2178,7 @@ export const AppContextProvider = ({ children }) => {
               syncType: 'incremental_override'
             };
 
-            console.log('🔵 [AppContext] Guardando progreso en Firestore:', {
+            logger.log('🔵 [AppContext] Guardando progreso en Firestore:', {
               targetTextoId,
               rubricKeys: Object.keys(rubricProgressOverride),
               sourceCourseId
@@ -2192,9 +2193,9 @@ export const AppContextProvider = ({ children }) => {
               await saveGlobalProgress(progressData, { textoId: targetTextoId });
             }
 
-            console.log('✅ [AppContext] Rúbrica guardada (override) en:', targetTextoId);
+            logger.log('✅ [AppContext] Rúbrica guardada (override) en:', targetTextoId);
           } catch (error) {
-            console.error('❌ [AppContext] Error guardando rúbrica (override):', error);
+            logger.error('❌ [AppContext] Error guardando rúbrica (override):', error);
           }
           return;
         }
@@ -2215,18 +2216,18 @@ export const AppContextProvider = ({ children }) => {
 
   // 🆕 SINCRONIZAR rewardsState cuando cambia (tutor, actividades, etc.)
   useEffect(() => {
-    console.log('🔍 [AppContext] useEffect rewards-state-changed check:', {
+    logger.log('🔍 [AppContext] useEffect rewards-state-changed check:', {
       uid: currentUser?.uid,
       role: userData?.role,
       isEstudiante: userData?.role === 'estudiante'
     });
 
     if (!currentUser?.uid || !userData?.role || userData.role !== 'estudiante') {
-      console.log('⏭️ [AppContext] Saltando registro de listener rewards-state-changed (no es estudiante o no hay user)');
+      logger.log('⏭️ [AppContext] Saltando registro de listener rewards-state-changed (no es estudiante o no hay user)');
       return;
     }
 
-    console.log('✅ [AppContext] Registrando listener rewards-state-changed');
+    logger.log('✅ [AppContext] Registrando listener rewards-state-changed');
 
     let debounceTimer = null;
 
@@ -2245,25 +2246,25 @@ export const AppContextProvider = ({ children }) => {
 
         Promise.resolve(saveGlobalProgress(progressData))
           .then(() => {
-            console.log('✅ [AppContext] rewardsState flush sincronizado a Firestore');
+            logger.log('✅ [AppContext] rewardsState flush sincronizado a Firestore');
           })
           .catch((error) => {
-            console.error('❌ [AppContext] Error en flush de rewardsState:', error);
+            logger.error('❌ [AppContext] Error en flush de rewardsState:', error);
           });
       } catch (error) {
-        console.error('❌ [AppContext] Error preparando flush de rewardsState:', error);
+        logger.error('❌ [AppContext] Error preparando flush de rewardsState:', error);
       }
     };
 
     const handleRewardsChanged = (event) => {
       const { totalPoints, availablePoints, forceSync, isReset } = event.detail || {};
 
-      console.log('🎯 [AppContext] rewards-state-changed recibido:', { totalPoints, availablePoints, forceSync, isReset });
+      logger.log('🎯 [AppContext] rewards-state-changed recibido:', { totalPoints, availablePoints, forceSync, isReset });
 
       // 🆕 Si es un reset forzado, sincronizar INMEDIATAMENTE (bypass anti-loop y debounce)
       if (forceSync || isReset) {
-        console.log('🗑️ [AppContext] Reset de puntos detectado, sincronizando inmediatamente...');
-        console.log('🗑️ [AppContext] Usuario actual para reset:', currentUser?.uid);
+        logger.log('🗑️ [AppContext] Reset de puntos detectado, sincronizando inmediatamente...');
+        logger.log('🗑️ [AppContext] Usuario actual para reset:', currentUser?.uid);
         if (debounceTimer) clearTimeout(debounceTimer);
         
         // Sincronizar inmediatamente
@@ -2272,7 +2273,7 @@ export const AppContextProvider = ({ children }) => {
             const currentRewardsState = window.__rewardsEngine?.exportState();
             if (!currentRewardsState) return;
 
-            console.log('🗑️ [AppContext] Estado de rewards a guardar:', {
+            logger.log('🗑️ [AppContext] Estado de rewards a guardar:', {
               totalPoints: currentRewardsState.totalPoints,
               resetAt: currentRewardsState.resetAt,
               userId: currentUser.uid
@@ -2286,14 +2287,14 @@ export const AppContextProvider = ({ children }) => {
               syncType: 'rewards_reset_forced'
             };
 
-            console.log('🗑️ [AppContext] Llamando saveGlobalProgress con uid:', currentUser.uid);
+            logger.log('🗑️ [AppContext] Llamando saveGlobalProgress con uid:', currentUser.uid);
             await saveGlobalProgress(progressData);
-            console.log('✅ [AppContext] Reset de puntos sincronizado a Firestore para uid:', currentUser.uid);
+            logger.log('✅ [AppContext] Reset de puntos sincronizado a Firestore para uid:', currentUser.uid);
             
             // Marcar como recién sincronizado desde local para evitar que el listener lo sobrescriba
             lastRewardsStateFromCloudAtRef.current = Date.now();
           } catch (error) {
-            console.error('❌ [AppContext] Error sincronizando reset:', error);
+            logger.error('❌ [AppContext] Error sincronizando reset:', error);
           }
         })();
         return;
@@ -2303,26 +2304,26 @@ export const AppContextProvider = ({ children }) => {
       // ignoramos durante un breve periodo para no re-escribir inmediatamente.
       const timeSinceCloudImport = Date.now() - (lastRewardsStateFromCloudAtRef.current || 0);
       if (timeSinceCloudImport < 2000) {
-        console.log('⏭️ [AppContext] Anti-loop activo, ignorando evento (hace ' + timeSinceCloudImport + 'ms)');
+        logger.log('⏭️ [AppContext] Anti-loop activo, ignorando evento (hace ' + timeSinceCloudImport + 'ms)');
         return;
       }
 
-      console.log(`🎮 [AppContext] Puntos actualizados: ${totalPoints} pts (${availablePoints} disponibles)`);
-      console.log(`⏱️ [AppContext] Programando sync en 3 segundos...`);
+      logger.log(`🎮 [AppContext] Puntos actualizados: ${totalPoints} pts (${availablePoints} disponibles)`);
+      logger.log(`⏱️ [AppContext] Programando sync en 3 segundos...`);
 
       // Debounce de 3 segundos para evitar múltiples writes
       if (debounceTimer) clearTimeout(debounceTimer);
 
       debounceTimer = setTimeout(async () => {
-        console.log('⏱️ [AppContext] Debounce completado, sincronizando...');
+        logger.log('⏱️ [AppContext] Debounce completado, sincronizando...');
         try {
           const currentRewardsState = window.__rewardsEngine?.exportState();
           if (!currentRewardsState) {
-            console.log('⚠️ [AppContext] No hay rewardsState para sincronizar');
+            logger.log('⚠️ [AppContext] No hay rewardsState para sincronizar');
             return;
           }
 
-          console.log('📤 [AppContext] Enviando a Firestore:', {
+          logger.log('📤 [AppContext] Enviando a Firestore:', {
             totalPoints: currentRewardsState.totalPoints,
             resetAt: currentRewardsState.resetAt,
             userId: currentUser.uid
@@ -2337,9 +2338,9 @@ export const AppContextProvider = ({ children }) => {
           };
 
           await saveGlobalProgress(progressData);
-          console.log('✅ [AppContext] rewardsState sincronizado a Firestore');
+          logger.log('✅ [AppContext] rewardsState sincronizado a Firestore');
         } catch (error) {
-          console.error('❌ [AppContext] Error sincronizando rewardsState:', error);
+          logger.error('❌ [AppContext] Error sincronizando rewardsState:', error);
         }
       }, 3000);
     };
@@ -2360,38 +2361,38 @@ export const AppContextProvider = ({ children }) => {
   // 🔄 SINCRONIZACIÓN INMEDIATA: Cuando cambia activitiesProgress, sincronizar a Firestore
   useEffect(() => {
     if (!currentUser?.uid || !userData?.role || userData.role !== 'estudiante') {
-      console.log('⏭️ [AppContext] Sync skip: no user/role/estudiante');
+      logger.log('⏭️ [AppContext] Sync skip: no user/role/estudiante');
       return;
     }
 
     // Cloud-first: sincronizar SOLO si el cambio fue local.
     // Evita re-escrituras cuando el estado cambia por merges desde Firestore.
     if (disableLocalProgressMirror && !activitiesProgressLocalDirtyRef.current) {
-      console.log('⏭️ [AppContext] Sync skip: cloud-first y no hay dirty local');
+      logger.log('⏭️ [AppContext] Sync skip: cloud-first y no hay dirty local');
       return;
     }
 
     // Evitar sincronizar en la carga inicial (solo cuando hay cambios reales)
     const hasActivities = Object.keys(activitiesProgress).length > 0;
     if (!hasActivities) {
-      console.log('⏭️ [AppContext] Sync skip: no hay activitiesProgress');
+      logger.log('⏭️ [AppContext] Sync skip: no hay activitiesProgress');
       return;
     }
 
     // 🛡️ Evitar bucle: si este cambio viene de Firestore, no re-escribir inmediatamente
     const cloudTimeDiff = Date.now() - (lastActivitiesProgressFromCloudAtRef.current || 0);
     if (cloudTimeDiff < 5000) {
-      console.log('⏭️ [AppContext] Sync skip: update reciente de cloud hace', cloudTimeDiff, 'ms');
+      logger.log('⏭️ [AppContext] Sync skip: update reciente de cloud hace', cloudTimeDiff, 'ms');
       return;
     }
 
-    console.log('🔄 [AppContext] Programando sync de activitiesProgress en 2s...');
+    logger.log('🔄 [AppContext] Programando sync de activitiesProgress en 2s...');
 
     // Debounce de 2 segundos para evitar múltiples writes
     const scheduledForTextoId = currentTextoId;
 
     const writeNow = () => {
-      console.log('💾 [AppContext] Sincronizando activitiesProgress a Firestore...');
+      logger.log('💾 [AppContext] Sincronizando activitiesProgress a Firestore...');
 
       const targetTextoId = lastActivitiesTouchedTextoIdRef.current || currentTextoId || null;
 
@@ -2419,7 +2420,7 @@ export const AppContextProvider = ({ children }) => {
 
       Promise.resolve(writePromise)
         .then(() => {
-          console.log('✅ [AppContext] activitiesProgress sincronizado');
+          logger.log('✅ [AppContext] activitiesProgress sincronizado');
 
           // Cloud-first: limpiar dirty SOLO tras éxito.
           if (disableLocalProgressMirror) {
@@ -2427,7 +2428,7 @@ export const AppContextProvider = ({ children }) => {
           }
         })
         .catch(error => {
-          console.error('❌ [AppContext] Error sincronizando activitiesProgress:', error);
+          logger.error('❌ [AppContext] Error sincronizando activitiesProgress:', error);
         });
 
     };
@@ -2485,7 +2486,7 @@ export const AppContextProvider = ({ children }) => {
           savedCitationsLocalDirtyRef.current = false;
         })
         .catch((error) => {
-          console.error('❌ [AppContext] Error sincronizando savedCitations:', error);
+          logger.error('❌ [AppContext] Error sincronizando savedCitations:', error);
         });
     };
 
@@ -2505,20 +2506,20 @@ export const AppContextProvider = ({ children }) => {
   useEffect(() => {
     if (currentUser?.uid) {
       setSessionManagerUser(currentUser.uid);
-      console.log('👤 [AppContext] Usuario establecido en SessionManager:', currentUser.uid);
+      logger.log('👤 [AppContext] Usuario establecido en SessionManager:', currentUser.uid);
 
       // 🆕 RACE CONDITION FIX: Sincronizar sesiones pendientes al reconectar
       // Opción A' (write-only): no sincronizar sesiones completas a cloud.
       if (!cloudBackupWriteOnly) {
         syncPendingSessions().then(({ synced, failed }) => {
           if (synced > 0 || failed > 0) {
-            console.log(`🔄 [AppContext] Pending syncs: ${synced} completadas, ${failed} fallidas`);
+            logger.log(`🔄 [AppContext] Pending syncs: ${synced} completadas, ${failed} fallidas`);
           }
         }).catch(err => {
-          console.warn('⚠️ [AppContext] Error sincronizando sesiones pendientes:', err);
+          logger.warn('⚠️ [AppContext] Error sincronizando sesiones pendientes:', err);
         });
       } else {
-        console.log('☁️ [AppContext] cloudBackupWriteOnly activo: omitiendo syncPendingSessions');
+        logger.log('☁️ [AppContext] cloudBackupWriteOnly activo: omitiendo syncPendingSessions');
       }
 
       // 🆕 P4 FIX: Auto-merge de sesiones cloud al login
@@ -2526,17 +2527,17 @@ export const AppContextProvider = ({ children }) => {
       if (!cloudBackupWriteOnly) {
         getAllSessionsMerged().then(mergedSessions => {
           if (mergedSessions.length > 0) {
-            console.log(`☁️ [AppContext] Sesiones sincronizadas desde cloud: ${mergedSessions.length}`);
+            logger.log(`☁️ [AppContext] Sesiones sincronizadas desde cloud: ${mergedSessions.length}`);
           }
         }).catch(err => {
-          console.warn('⚠️ [AppContext] Error en auto-merge de sesiones:', err);
+          logger.warn('⚠️ [AppContext] Error en auto-merge de sesiones:', err);
         });
       } else {
-        console.log('☁️ [AppContext] cloudBackupWriteOnly activo: omitiendo auto-merge de sesiones desde cloud');
+        logger.log('☁️ [AppContext] cloudBackupWriteOnly activo: omitiendo auto-merge de sesiones desde cloud');
       }
     } else {
       setSessionManagerUser(null);
-      console.log('👤 [AppContext] Usuario removido de SessionManager');
+      logger.log('👤 [AppContext] Usuario removido de SessionManager');
     }
   }, [currentUser, cloudBackupWriteOnly]);
 
@@ -2592,14 +2593,14 @@ export const AppContextProvider = ({ children }) => {
             }
           })
           .catch((e) => {
-            console.warn('⚠️ [AppContext] Backup de borradores falló:', e?.message || e);
+            logger.warn('⚠️ [AppContext] Backup de borradores falló:', e?.message || e);
             lastDraftsBackupHashRef.current = null;
           })
           .finally(() => {
             draftsBackupInFlightRef.current = false;
           });
       } catch (e) {
-        console.warn('⚠️ [AppContext] Error en loop de backup de borradores:', e?.message || e);
+        logger.warn('⚠️ [AppContext] Error en loop de backup de borradores:', e?.message || e);
       }
     }, 12000);
 
@@ -2615,10 +2616,10 @@ export const AppContextProvider = ({ children }) => {
 
       syncPendingSessions().then(({ synced, failed }) => {
         if (synced > 0 || failed > 0) {
-          console.log(`🌐 [AppContext] Online: pending syncs ${synced} ok, ${failed} fallidas`);
+          logger.log(`🌐 [AppContext] Online: pending syncs ${synced} ok, ${failed} fallidas`);
         }
       }).catch(err => {
-        console.warn('⚠️ [AppContext] Error sincronizando pendientes al volver online:', err);
+        logger.warn('⚠️ [AppContext] Error sincronizando pendientes al volver online:', err);
       });
     };
 
@@ -2635,7 +2636,7 @@ export const AppContextProvider = ({ children }) => {
   useEffect(() => {
     const handleSyncError = (event) => {
       const { message, sessionId } = event.detail || {};
-      console.warn(`⚠️ [AppContext] Sync error para sesión ${sessionId}:`, message);
+      logger.warn(`⚠️ [AppContext] Sync error para sesión ${sessionId}:`, message);
       setSyncStatus('error');
 
       // Resetear a 'idle' después de 10 segundos para permitir nuevos intentos
@@ -2644,7 +2645,7 @@ export const AppContextProvider = ({ children }) => {
 
     const handleStorageQuota = (event) => {
       const { message, sessionsRemaining } = event.detail || {};
-      console.warn(`⚠️ [AppContext] Storage quota warning:`, message, `(${sessionsRemaining} sesiones restantes)`);
+      logger.warn(`⚠️ [AppContext] Storage quota warning:`, message, `(${sessionsRemaining} sesiones restantes)`);
     };
 
     window.addEventListener('sync-error', handleSyncError);
@@ -2661,21 +2662,21 @@ export const AppContextProvider = ({ children }) => {
   // 📚 FUNCIONES DE GESTIÓN DE SESIONES
   const createSession = useCallback(async () => {
     try {
-      console.log('🔵 [AppContext.createSession] Iniciando creación de sesión...');
-      console.log('🔵 [AppContext.createSession] Texto disponible:', !!texto, 'longitud:', texto?.length || 0);
-      console.log('🔵 [AppContext.createSession] Archivo actual:', archivoActual?.name || 'sin archivo');
-      console.log('🔵 [AppContext.createSession] currentUser:', currentUser?.email || 'null', 'uid:', currentUser?.uid || 'null');
+      logger.log('🔵 [AppContext.createSession] Iniciando creación de sesión...');
+      logger.log('🔵 [AppContext.createSession] Texto disponible:', !!texto, 'longitud:', texto?.length || 0);
+      logger.log('🔵 [AppContext.createSession] Archivo actual:', archivoActual?.name || 'sin archivo');
+      logger.log('🔵 [AppContext.createSession] currentUser:', currentUser?.email || 'null', 'uid:', currentUser?.uid || 'null');
 
       // 🔥 CRÍTICO: Asegurar que el usuario esté configurado en sessionManager
       if (currentUser?.uid) {
-        console.log('👤 [AppContext.createSession] Configurando usuario en sessionManager:', currentUser.uid);
+        logger.log('👤 [AppContext.createSession] Configurando usuario en sessionManager:', currentUser.uid);
         setSessionManagerUser(currentUser.uid, userData?.nombre || currentUser.email);
       } else {
-        console.warn('⚠️ [AppContext.createSession] Sin usuario autenticado, sesión solo local');
+        logger.warn('⚠️ [AppContext.createSession] Sin usuario autenticado, sesión solo local');
       }
 
       if (!texto || texto.length === 0) {
-        console.warn('⚠️ [AppContext.createSession] No hay texto para guardar');
+        logger.warn('⚠️ [AppContext.createSession] No hay texto para guardar');
         return null;
       }
 
@@ -2693,18 +2694,18 @@ export const AppContextProvider = ({ children }) => {
         // Se sincroniza solo en global_progress (ver saveGlobalProgress)
       };
 
-      console.log('🔵 [AppContext.createSession] Llamando a createSessionFromState...');
+      logger.log('🔵 [AppContext.createSession] Llamando a createSessionFromState...');
       const session = createSessionFromState(sessionData, { syncToCloud: !cloudBackupWriteOnly });
 
-      console.log('✅ [AppContext.createSession] Sesión creada:', session?.id);
+      logger.log('✅ [AppContext.createSession] Sesión creada:', session?.id);
 
       // Emitir evento para actualizar UI
       window.dispatchEvent(new CustomEvent('session-updated'));
 
       return session;
     } catch (error) {
-      console.error('❌ [AppContext.createSession] Error:', error);
-      console.error('❌ [AppContext.createSession] Stack:', error.stack);
+      logger.error('❌ [AppContext.createSession] Error:', error);
+      logger.error('❌ [AppContext.createSession] Stack:', error.stack);
       return null;
     }
   }, [texto, archivoActual, completeAnalysis, rubricProgress, savedCitations, activitiesProgress, modoOscuro, currentTextoId, sourceCourseId, currentUser, userData]);
@@ -2712,12 +2713,12 @@ export const AppContextProvider = ({ children }) => {
   // 🆕 NUEVA FUNCIÓN: Actualizar sesión actual con cambios
   const updateCurrentSessionFromState = useCallback(async () => {
     try {
-      console.log('💾 [AppContext.updateCurrentSession] Actualizando sesión actual...');
+      logger.log('💾 [AppContext.updateCurrentSession] Actualizando sesión actual...');
 
       // Verificar que hay una sesión activa
       const currentSessionId = getCurrentSessionId();
       if (!currentSessionId) {
-        console.warn('⚠️ [AppContext.updateCurrentSession] No hay sesión activa para actualizar');
+        logger.warn('⚠️ [AppContext.updateCurrentSession] No hay sesión activa para actualizar');
         return null;
       }
 
@@ -2727,7 +2728,7 @@ export const AppContextProvider = ({ children }) => {
       }
 
       if (!texto || texto.length === 0) {
-        console.warn('⚠️ [AppContext.updateCurrentSession] No hay texto para guardar');
+        logger.warn('⚠️ [AppContext.updateCurrentSession] No hay texto para guardar');
         return null;
       }
 
@@ -2738,10 +2739,10 @@ export const AppContextProvider = ({ children }) => {
       const sessionTextoId = loadedSession?.currentTextoId || loadedSession?.text?.metadata?.id || loadedSession?.text?.textoId;
 
       if (sessionTextoId && currentTextoId && sessionTextoId !== currentTextoId) {
-        console.warn('🚫 [AppContext.updateCurrentSession] ¡PREVINIENDO CONTAMINACIÓN!');
-        console.warn(`   Sesión actual es para textoId: ${sessionTextoId}`);
-        console.warn(`   Pero currentTextoId es: ${currentTextoId}`);
-        console.warn('   NO se actualizará para evitar sobrescribir análisis correcto');
+        logger.warn('🚫 [AppContext.updateCurrentSession] ¡PREVINIENDO CONTAMINACIÓN!');
+        logger.warn(`   Sesión actual es para textoId: ${sessionTextoId}`);
+        logger.warn(`   Pero currentTextoId es: ${currentTextoId}`);
+        logger.warn('   NO se actualizará para evitar sobrescribir análisis correcto');
         return null;
       }
 
@@ -2780,16 +2781,16 @@ export const AppContextProvider = ({ children }) => {
       const success = updateCurrentSession(updates, { syncToCloud: !cloudBackupWriteOnly });
 
       if (success) {
-        console.log('✅ [AppContext.updateCurrentSession] Sesión actualizada:', currentSessionId);
+        logger.log('✅ [AppContext.updateCurrentSession] Sesión actualizada:', currentSessionId);
         // Emitir evento para actualizar UI
         window.dispatchEvent(new CustomEvent('session-updated'));
         return currentSessionId;
       } else {
-        console.error('❌ [AppContext.updateCurrentSession] Error actualizando sesión');
+        logger.error('❌ [AppContext.updateCurrentSession] Error actualizando sesión');
         return null;
       }
     } catch (error) {
-      console.error('❌ [AppContext.updateCurrentSession] Error:', error);
+      logger.error('❌ [AppContext.updateCurrentSession] Error:', error);
       return null;
     }
   }, [texto, archivoActual, activeLecture, completeAnalysis, rubricProgress, savedCitations, activitiesProgress, modoOscuro, currentTextoId, sourceCourseId, currentUser, userData, cloudBackupWriteOnly]);
@@ -2802,7 +2803,7 @@ export const AppContextProvider = ({ children }) => {
       // 🔒 Deshabilitar auto-guardado temporalmente durante restauración
       const currentId = getCurrentSessionId();
       if (currentId) {
-        console.log('🔒 [AppContext] Deshabilitando auto-guardado durante restauración');
+        logger.log('🔒 [AppContext] Deshabilitando auto-guardado durante restauración');
         localStorage.setItem('__restoring_session__', Date.now().toString());
       }
 
@@ -2828,22 +2829,22 @@ export const AppContextProvider = ({ children }) => {
         // 🆕 FALLBACK: Si no hay fileURL pero tenemos textoId, buscar en Firestore
         if (isPDF && !fileURL && (session.currentTextoId || session.text?.metadata?.id)) {
           const textoId = session.currentTextoId || session.text?.metadata?.id;
-          console.log('🔍 [AppContext] Buscando fileURL en Firestore para:', textoId);
+          logger.log('🔍 [AppContext] Buscando fileURL en Firestore para:', textoId);
           try {
             const { doc, getDoc } = await import('firebase/firestore');
             const { db } = await import('../firebase/config');
             const docSnap = await getDoc(doc(db, 'textos', textoId));
             if (docSnap.exists() && docSnap.data().fileURL) {
               fileURL = docSnap.data().fileURL;
-              console.log('✅ [AppContext] fileURL encontrada en Firestore');
+              logger.log('✅ [AppContext] fileURL encontrada en Firestore');
             }
           } catch (fbError) {
-            console.warn('⚠️ [AppContext] No se pudo obtener fileURL de Firestore:', fbError);
+            logger.warn('⚠️ [AppContext] No se pudo obtener fileURL de Firestore:', fbError);
           }
         }
 
         if (isPDF && fileURL) {
-          console.log('📄 [AppContext] Restaurando PDF desde Storage...');
+          logger.log('📄 [AppContext] Restaurando PDF desde Storage...');
           try {
             const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
             const proxyUrl = `${BACKEND_BASE_URL}/api/storage/proxy?url=${encodeURIComponent(fileURL)}`;
@@ -2861,16 +2862,16 @@ export const AppContextProvider = ({ children }) => {
                 file: file,
                 objectUrl: objectUrl
               });
-              console.log('✅ [AppContext] PDF restaurado correctamente');
+              logger.log('✅ [AppContext] PDF restaurado correctamente');
             } else {
-              console.warn('⚠️ [AppContext] No se pudo descargar el PDF, mostrando como texto');
+              logger.warn('⚠️ [AppContext] No se pudo descargar el PDF, mostrando como texto');
               setArchivoActualStable({
                 name: session.text.fileName,
                 type: session.text.fileType
               });
             }
           } catch (pdfError) {
-            console.warn('⚠️ [AppContext] Error descargando PDF:', pdfError);
+            logger.warn('⚠️ [AppContext] Error descargando PDF:', pdfError);
             setArchivoActualStable({
               name: session.text.fileName,
               type: session.text.fileType
@@ -2888,7 +2889,7 @@ export const AppContextProvider = ({ children }) => {
         // Esto evita sobrescribir puntos actuales con datos obsoletos de sesiones antiguas
         // rewardsState se carga y sincroniza desde global_progress (listener dedicado ~línea 2457)
         if (session.rewardsState) {
-          console.log('ℹ️ [AppContext] Ignorando rewardsState de sesión (se usa global_progress)');
+          logger.log('ℹ️ [AppContext] Ignorando rewardsState de sesión (se usa global_progress)');
         }
 
         // 🆕 FIX CRÍTICO: Si la sesión restaurada tiene rubricProgress vacío/débil,
@@ -2899,23 +2900,23 @@ export const AppContextProvider = ({ children }) => {
         );
         
         if (currentUser?.uid && textoIdRestored && sessionRubricKeys.length === 0) {
-          console.log('🔄 [AppContext] Sesión sin rúbricas, intentando cargar desde Firestore...');
+          logger.log('🔄 [AppContext] Sesión sin rúbricas, intentando cargar desde Firestore...');
           try {
             const firestoreProgress = await getStudentProgress(currentUser.uid, textoIdRestored);
             if (firestoreProgress?.rubricProgress && Object.keys(firestoreProgress.rubricProgress).length > 0) {
-              console.log('✅ [AppContext] Rúbricas encontradas en Firestore, aplicando...');
+              logger.log('✅ [AppContext] Rúbricas encontradas en Firestore, aplicando...');
               setRubricProgress(normalizeRubricProgress(firestoreProgress.rubricProgress));
             }
             if (firestoreProgress?.activitiesProgress && Object.keys(firestoreProgress.activitiesProgress).length > 0) {
-              console.log('✅ [AppContext] Actividades encontradas en Firestore, aplicando...');
+              logger.log('✅ [AppContext] Actividades encontradas en Firestore, aplicando...');
               setActivitiesProgress(firestoreProgress.activitiesProgress);
             }
           } catch (fbErr) {
-            console.warn('⚠️ [AppContext] Error cargando progreso de Firestore:', fbErr);
+            logger.warn('⚠️ [AppContext] Error cargando progreso de Firestore:', fbErr);
           }
         }
 
-        console.log('✅ [AppContext] Sesión restaurada exitosamente');
+        logger.log('✅ [AppContext] Sesión restaurada exitosamente');
 
         // 🔧 H4 FIX: usar finally pattern para garantizar limpieza del flag
         // incluso si alguna operación posterior falla (descarga PDF, fetch, etc.)
@@ -2923,7 +2924,7 @@ export const AppContextProvider = ({ children }) => {
 
       return success;
     } catch (error) {
-      console.error('❌ [AppContext] Error restaurando sesión:', error);
+      logger.error('❌ [AppContext] Error restaurando sesión:', error);
       return false;
     } finally {
       // 🔧 H4 FIX: Siempre programar limpieza del flag, sin importar el resultado
@@ -2932,7 +2933,7 @@ export const AppContextProvider = ({ children }) => {
       setTimeout(() => {
         localStorage.removeItem('__restoring_session__');
         isRestoringRef.current = false;
-        console.log('🔓 [AppContext] Auto-guardado re-habilitado y protección liberada');
+        logger.log('🔓 [AppContext] Auto-guardado re-habilitado y protección liberada');
       }, 500);
     }
   }, [setTextoWithDebug, setCompleteAnalysis, setArchivoActualStable, setRubricProgress, setSavedCitations, setActivitiesProgress, setCurrentTextoId, setSourceCourseId]);
@@ -2946,23 +2947,23 @@ export const AppContextProvider = ({ children }) => {
 
     const isRestoring = localStorage.getItem('__restoring_session__');
     if (isRestoring) {
-      console.log('🛡️ [AppContext] Saltando auto-guardado durante restauración');
+      logger.log('🛡️ [AppContext] Saltando auto-guardado durante restauración');
       return;
     }
 
-    console.log('💾 [AppContext] Auto-guardando sesión después de análisis completo...');
+    logger.log('💾 [AppContext] Auto-guardando sesión después de análisis completo...');
 
     const timeoutId = setTimeout(() => {
       const currentId = getCurrentSessionId();
 
       if (currentId) {
-        console.log('📝 [AppContext] Actualizando sesión existente:', currentId);
+        logger.log('📝 [AppContext] Actualizando sesión existente:', currentId);
         updateCurrentSessionFromState();
       } else {
-        console.log('🆕 [AppContext] Creando nueva sesión automáticamente...');
+        logger.log('🆕 [AppContext] Creando nueva sesión automáticamente...');
         createSession().then(session => {
           if (session) {
-            console.log('✅ [AppContext] Sesión auto-guardada:', session.id);
+            logger.log('✅ [AppContext] Sesión auto-guardada:', session.id);
           }
         });
       }
@@ -2991,7 +2992,7 @@ export const AppContextProvider = ({ children }) => {
     const currentId = getCurrentSessionId();
     if (currentId) {
       // Solo actualizar si hay sesión activa
-      console.log('💾 [AppContext] Auto-guardando progreso de actividades...');
+      logger.log('💾 [AppContext] Auto-guardando progreso de actividades...');
       const timeoutId = setTimeout(() => {
         updateCurrentSessionFromState();
       }, 2000); // Mayor delay para agrupar cambios rápidos
@@ -3010,16 +3011,16 @@ export const AppContextProvider = ({ children }) => {
     // 1. Hay texto cargado
     // 2. NO hay una sesión actual activa
     if (texto && texto.length > 0 && !currentId) {
-      console.log('🆕 [AppContext] Texto detectado sin sesión, creando automáticamente...');
+      logger.log('🆕 [AppContext] Texto detectado sin sesión, creando automáticamente...');
       
       const timeoutId = setTimeout(() => {
         createSession().then(session => {
           if (session) {
-            console.log('✅ [AppContext] Sesión auto-creada:', session.id);
+            logger.log('✅ [AppContext] Sesión auto-creada:', session.id);
             window.dispatchEvent(new CustomEvent('session-updated'));
           }
         }).catch(error => {
-          console.error('❌ [AppContext] Error en auto-creación:', error);
+          logger.error('❌ [AppContext] Error en auto-creación:', error);
         });
       }, 500);
       
@@ -3035,7 +3036,7 @@ export const AppContextProvider = ({ children }) => {
     if (flag) {
       const timestamp = parseInt(flag, 10);
       if (!isNaN(timestamp) && Date.now() - timestamp < 30000) {
-        console.log('⏸️ [AppContext] Auto-guardado pausado (restauración en curso)');
+        logger.log('⏸️ [AppContext] Auto-guardado pausado (restauración en curso)');
         return;
       }
     }
@@ -3043,10 +3044,10 @@ export const AppContextProvider = ({ children }) => {
     // Solo guardar si hay una sesión actual activa y hay texto cargado
     const currentId = getCurrentSessionId();
     if (currentId && texto) {
-      console.log('🔄 [AppContext] Auto-guardado programado para sesión:', currentId);
+      logger.log('🔄 [AppContext] Auto-guardado programado para sesión:', currentId);
       // Usar un debounce para no guardar en cada cambio
       const timeoutId = setTimeout(() => {
-        console.log('💾 [AppContext] Ejecutando auto-guardado de sesión:', currentId);
+        logger.log('💾 [AppContext] Ejecutando auto-guardado de sesión:', currentId);
         const sessionData = captureCurrentState({
           texto,
           archivoActual,
@@ -3059,7 +3060,7 @@ export const AppContextProvider = ({ children }) => {
 
         // Actualizar sesión actual
         const updated = updateCurrentSession(sessionData, { syncToCloud: !cloudBackupWriteOnly });
-        console.log('✅ [AppContext] Auto-guardado completado:', updated);
+        logger.log('✅ [AppContext] Auto-guardado completado:', updated);
       }, 2000); // Guardar 2 segundos después del último cambio
 
       return () => clearTimeout(timeoutId);
@@ -3068,7 +3069,7 @@ export const AppContextProvider = ({ children }) => {
 
   // 🗑️ FUNCIÓN PARA ELIMINAR TODO EL HISTORIAL DE LA APLICACIÓN
   const clearAllHistory = useCallback(() => {
-    console.log('🧹 [clearAllHistory] Iniciando LIMPIEZA NUCLEAR completa...');
+    logger.log('🧹 [clearAllHistory] Iniciando LIMPIEZA NUCLEAR completa...');
 
     try {
       // Lista de claves a preservar (SOLO configuraciones y preferencias del usuario)
@@ -3162,7 +3163,7 @@ export const AppContextProvider = ({ children }) => {
         if (matchesPattern || specificKeysToRemove.includes(key)) {
           localStorage.removeItem(key);
           removedCount++;
-          console.log(`  ✓ Eliminado: ${key}`);
+          logger.log(`  ✓ Eliminado: ${key}`);
         }
       });
 
@@ -3187,7 +3188,7 @@ export const AppContextProvider = ({ children }) => {
           key.includes('current')) {            // 🆕 Estados actuales
           sessionStorage.removeItem(key);
           removedCount++;
-          console.log(`  ✓ Eliminado (session): ${key}`);
+          logger.log(`  ✓ Eliminado (session): ${key}`);
         }
       });
 
@@ -3203,7 +3204,7 @@ export const AppContextProvider = ({ children }) => {
       setCompleteAnalysis(null);
       setTextStructure(null);
 
-      console.log(`✅ [clearAllHistory] Limpieza completada. ${removedCount} elementos eliminados.`);
+      logger.log(`✅ [clearAllHistory] Limpieza completada. ${removedCount} elementos eliminados.`);
 
       // Emitir evento para que otros componentes se actualicen
       window.dispatchEvent(new CustomEvent('app-history-cleared'));
@@ -3214,7 +3215,7 @@ export const AppContextProvider = ({ children }) => {
         message: `Se eliminaron ${removedCount} elementos del historial`
       };
     } catch (error) {
-      console.error('❌ [clearAllHistory] Error durante la limpieza:', error);
+      logger.error('❌ [clearAllHistory] Error durante la limpieza:', error);
       return {
         success: false,
         error: error.message,
@@ -3226,8 +3227,8 @@ export const AppContextProvider = ({ children }) => {
   // NUEVO: Función para analizar documento con orquestador unificado
   // param textId: ID explícito del texto para evitar race conditions con el estado
   const analyzeDocument = useCallback(async (text, textId = null, options = {}) => {
-    console.log('🔵 [AppContext.analyzeDocument] LLAMADA RECIBIDA');
-    console.log('🔍 [AppContext.analyzeDocument] Longitud texto:', text?.length || 0, 'ID:', textId);
+    logger.log('🔵 [AppContext.analyzeDocument] LLAMADA RECIBIDA');
+    logger.log('🔍 [AppContext.analyzeDocument] Longitud texto:', text?.length || 0, 'ID:', textId);
 
     // Compat: permitir analyzeDocument(text, { force: true })
     if (textId && typeof textId === 'object' && !Array.isArray(textId)) {
@@ -3237,17 +3238,17 @@ export const AppContextProvider = ({ children }) => {
 
     const forceReanalyze = !!(options && (options.force === true || options.forceReanalyze === true || options.bypassCache === true));
     if (forceReanalyze) {
-      console.log('🧹 [AppContext.analyzeDocument] Force re-análisis: bypass de cachés habilitado');
+      logger.log('🧹 [AppContext.analyzeDocument] Force re-análisis: bypass de cachés habilitado');
     }
 
     if (!text || text.trim().length < 100) {
-      console.warn('⚠️ [AppContext.analyzeDocument] Texto muy corto para análisis completo (mínimo 100 caracteres)');
+      logger.warn('⚠️ [AppContext.analyzeDocument] Texto muy corto para análisis completo (mínimo 100 caracteres)');
       return;
     }
 
     // 🛡️ Si estamos restaurando, ignorar peticiones de análisis nuevas
     if (isRestoringRef.current) {
-      console.log('🚫 [AppContext.analyzeDocument] Bloqueado por proceso de restauración activo');
+      logger.log('🚫 [AppContext.analyzeDocument] Bloqueado por proceso de restauración activo');
       return;
     }
 
@@ -3266,10 +3267,10 @@ export const AppContextProvider = ({ children }) => {
       capturedAt: Date.now()
     };
 
-    console.log('🔒 [analyzeDocument] Estado capturado al inicio:');
-    console.log('   - textoId:', capturedState.textoId);
-    console.log('   - courseId:', capturedState.courseId);
-    console.log('   - timestamp:', capturedState.capturedAt);
+    logger.log('🔒 [analyzeDocument] Estado capturado al inicio:');
+    logger.log('   - textoId:', capturedState.textoId);
+    logger.log('   - courseId:', capturedState.courseId);
+    logger.log('   - timestamp:', capturedState.capturedAt);
 
     // 🆕 A6 FIX MEJORADO: Generar clave de caché basada en textoId (preferido) o hash del texto
     const generateAnalysisCacheKey = (inputText, textoId) => {
@@ -3289,7 +3290,7 @@ export const AppContextProvider = ({ children }) => {
 
     const cacheKey = generateAnalysisCacheKey(text, effectiveId);
 
-    console.log('📊 [AppContext.analyzeDocument] Iniciando análisis completo con backend RAG...');
+    logger.log('📊 [AppContext.analyzeDocument] Iniciando análisis completo con backend RAG...');
 
     // 🆕 A6 FIX: Verificar caché persistente en localStorage ANTES del análisis en memoria
     if (!forceReanalyze) {
@@ -3326,7 +3327,7 @@ export const AppContextProvider = ({ children }) => {
               analysis?.prelecture?.metadata?._isPreliminary === true;
 
             if (!isCachedPreliminary) {
-              console.log(`✅ [AppContext] 🆕 A6: Cache Hit desde localStorage (edad: ${Math.round(cacheAge / 60000)}min)`);
+              logger.log(`✅ [AppContext] 🆕 A6: Cache Hit desde localStorage (edad: ${Math.round(cacheAge / 60000)}min)`);
               setCompleteAnalysis(analysis);
               setLoading(false);
               setAnalysisAttempted(true);
@@ -3334,16 +3335,16 @@ export const AppContextProvider = ({ children }) => {
             }
 
             // Si el cache es preliminar, lo mostramos pero continuamos para disparar el análisis profundo.
-            console.log(`ℹ️ [AppContext] Cache preliminar encontrado (edad: ${Math.round(cacheAge / 60000)}min), continuando con análisis profundo...`);
+            logger.log(`ℹ️ [AppContext] Cache preliminar encontrado (edad: ${Math.round(cacheAge / 60000)}min), continuando con análisis profundo...`);
             setCompleteAnalysis(analysis);
             setLoading(false);
           } else {
-            console.log(`⚠️ [AppContext] Cache expirado o inválido, procediendo a análisis`);
+            logger.log(`⚠️ [AppContext] Cache expirado o inválido, procediendo a análisis`);
             localStorage.removeItem(cacheKey); // Limpiar cache inválido
           }
         }
       } catch (cacheError) {
-        console.warn('⚠️ [AppContext] Error leyendo cache de localStorage:', cacheError.message);
+        logger.warn('⚠️ [AppContext] Error leyendo cache de localStorage:', cacheError.message);
       }
     } else {
       // Si forzamos re-análisis, limpia cache persistente del texto actual
@@ -3361,7 +3362,7 @@ export const AppContextProvider = ({ children }) => {
 
       // 1. Verificación por textoId (la más segura en esta app)
       if (inMemoryAnalysis.metadata.currentTextoId === effectiveId) {
-        console.log(`✅ [AppContext] Cache Hit por currentTextoId: ${effectiveId}`);
+        logger.log(`✅ [AppContext] Cache Hit por currentTextoId: ${effectiveId}`);
         isSameText = true;
       }
       // 2. Verificación por Título (si metadata tiene título)
@@ -3373,13 +3374,13 @@ export const AppContextProvider = ({ children }) => {
         const expectedLen = inMemoryAnalysis.metadata.charCount || inMemoryAnalysis.metadata.text_length;
         const diff = Math.abs(text.length - expectedLen);
         if (diff < text.length * 0.05) { // 5% de tolerancia
-          console.log(`✅ [AppContext] Cache Hit por longitud (~${expectedLen} chars)`);
+          logger.log(`✅ [AppContext] Cache Hit por longitud (~${expectedLen} chars)`);
           isSameText = true;
         }
       }
 
       if (isSameText) {
-        console.log('⚡ [AppContext] Análisis recuperado de memoria/sesión. SALTANDO API.');
+        logger.log('⚡ [AppContext] Análisis recuperado de memoria/sesión. SALTANDO API.');
         // ✅ FIX: Hidratar SIEMPRE el estado para que la UI renderice
         setCompleteAnalysis(inMemoryAnalysis);
         setLoading(false);
@@ -3392,7 +3393,7 @@ export const AppContextProvider = ({ children }) => {
           inMemoryAnalysis?.metadata?._isPreliminary === true ||
           inMemoryAnalysis?.prelecture?.metadata?._isPreliminary === true;
 
-        console.log('🔎 [AppContext] Cache en memoria:', {
+        logger.log('🔎 [AppContext] Cache en memoria:', {
           hasPrelecture,
           isCachedPreliminary,
           provider: inMemoryAnalysis?.metadata?.provider
@@ -3406,9 +3407,9 @@ export const AppContextProvider = ({ children }) => {
         }
 
         // Si falta prelecture o es preliminar, no considerarlo cache válido: continuar con análisis profundo.
-        console.warn('⚠️ [AppContext] Cache en memoria es preliminar o inválido (sin prelecture). Re-analizando...');
+        logger.warn('⚠️ [AppContext] Cache en memoria es preliminar o inválido (sin prelecture). Re-analizando...');
       } else {
-        console.log('⚠️ [AppContext] Análisis en memoria NO coincide con texto actual. Procediendo a re-análisis.');
+        logger.log('⚠️ [AppContext] Análisis en memoria NO coincide con texto actual. Procediendo a re-análisis.');
       }
     }
 
@@ -3417,7 +3418,7 @@ export const AppContextProvider = ({ children }) => {
     setAnalysisAttempted(true);
 
     // 🆕 A1 FIX: FASE 1 - Análisis básico instantáneo (heurísticas locales)
-    console.log('⚡ [AppContext] A1 FIX: FASE 1 - Generando análisis básico instantáneo...');
+    logger.log('⚡ [AppContext] A1 FIX: FASE 1 - Generando análisis básico instantáneo...');
     const basicAnalysis = generateBasicAnalysis(text);
 
     // 🆕 A1-1 FIX: Capturar document_id para verificar race condition
@@ -3431,8 +3432,8 @@ export const AppContextProvider = ({ children }) => {
       // Mostrar análisis básico inmediatamente al usuario
       setCompleteAnalysis(basicAnalysis);
       setLoading(false); // Usuario puede interactuar con resultados preliminares
-      console.log('✅ [AppContext] A1 FIX: Análisis básico mostrado. Iniciando análisis profundo en background...');
-      console.log(`🔑 [AppContext] A1-1 FIX: Document ID para esta sesión: ${analysisDocumentId}`);
+      logger.log('✅ [AppContext] A1 FIX: Análisis básico mostrado. Iniciando análisis profundo en background...');
+      logger.log(`🔑 [AppContext] A1-1 FIX: Document ID para esta sesión: ${analysisDocumentId}`);
     }
 
     // 🆕 A1 FIX: FASE 2 - Análisis profundo en background (no bloquea UI)
@@ -3451,7 +3452,7 @@ export const AppContextProvider = ({ children }) => {
               fetchError.name === 'TypeError';
 
             if (isNetworkError && attempt < retries) {
-              console.warn(`⚠️ [AppContext] Error de red, reintentando en ${delay}ms... (intento ${attempt + 1}/${retries + 1})`);
+              logger.warn(`⚠️ [AppContext] Error de red, reintentando en ${delay}ms... (intento ${attempt + 1}/${retries + 1})`);
               await new Promise(resolve => setTimeout(resolve, delay));
               delay *= 1.5; // Backoff exponencial
             } else {
@@ -3462,8 +3463,8 @@ export const AppContextProvider = ({ children }) => {
       };
 
       try {
-        console.log('🌐 [AppContext.analyzeDocument] Llamando al endpoint /api/analysis/prelecture...');
-        console.log('🔗 [AppContext.analyzeDocument] Backend URL:', BACKEND_URL);
+        logger.log('🌐 [AppContext.analyzeDocument] Llamando al endpoint /api/analysis/prelecture...');
+        logger.log('🔗 [AppContext.analyzeDocument] Backend URL:', BACKEND_URL);
 
         // Crear AbortController con timeout de 5 minutos (alineado con backend)
         const controller = new AbortController();
@@ -3495,7 +3496,7 @@ export const AppContextProvider = ({ children }) => {
         // Compat: algunos backends devuelven HTTP 200 con { degraded, fallback }
         // En ese caso, tratamos el fallback como resultado válido para no romper la UI.
         if (responseData && typeof responseData === 'object' && responseData.fallback && (responseData.degraded || responseData.error)) {
-          console.warn('⚠️ [AppContext.analyzeDocument] Backend devolvió respuesta degradada con fallback (HTTP OK); usando fallback');
+          logger.warn('⚠️ [AppContext.analyzeDocument] Backend devolvió respuesta degradada con fallback (HTTP OK); usando fallback');
           const fullAnalysis = responseData.fallback;
 
           if (!fullAnalysis.metadata) fullAnalysis.metadata = {};
@@ -3513,19 +3514,19 @@ export const AppContextProvider = ({ children }) => {
 
           const latestTextoId = currentTextoIdRef.current;
           if (capturedState.textoId && latestTextoId && capturedState.textoId !== latestTextoId) {
-            console.warn('⚠️ [AppContext] Fallback de análisis obsoleto (cambio de lectura); descartando');
+            logger.warn('⚠️ [AppContext] Fallback de análisis obsoleto (cambio de lectura); descartando');
             return;
           }
 
           setCompleteAnalysis(fullAnalysis);
-          console.log('✅ [AppContext.analyzeDocument] Fallback degradado del backend guardado en contexto');
+          logger.log('✅ [AppContext.analyzeDocument] Fallback degradado del backend guardado en contexto');
           return;
         }
 
         if (!response.ok) {
           // Si el backend envía fallback, NO bloquear la UI: úsalo como resultado válido
           if (responseData && responseData.fallback) {
-            console.warn('⚠️ [AppContext.analyzeDocument] Backend devolvió error pero incluye fallback; continuando sin bloquear UI');
+            logger.warn('⚠️ [AppContext.analyzeDocument] Backend devolvió error pero incluye fallback; continuando sin bloquear UI');
             const fullAnalysis = responseData.fallback;
 
             // Normalización mínima (mismo contrato que en éxito)
@@ -3545,12 +3546,12 @@ export const AppContextProvider = ({ children }) => {
             // Guard: si el usuario cambió de lectura, descartar resultados
             const latestTextoId = currentTextoIdRef.current;
             if (capturedState.textoId && latestTextoId && capturedState.textoId !== latestTextoId) {
-              console.warn('⚠️ [AppContext] Fallback de análisis obsoleto (cambio de lectura); descartando');
+              logger.warn('⚠️ [AppContext] Fallback de análisis obsoleto (cambio de lectura); descartando');
               return;
             }
 
             setCompleteAnalysis(fullAnalysis);
-            console.log('✅ [AppContext.analyzeDocument] Fallback del backend guardado en contexto');
+            logger.log('✅ [AppContext.analyzeDocument] Fallback del backend guardado en contexto');
             return;
           }
 
@@ -3565,14 +3566,14 @@ export const AppContextProvider = ({ children }) => {
 
         const fullAnalysis = responseData;
 
-        console.log('📥 [AppContext.analyzeDocument] Análisis recibido:', fullAnalysis);
+        logger.log('📥 [AppContext.analyzeDocument] Análisis recibido:', fullAnalysis);
 
         // 🛡️ VALIDACIÓN FLEXIBLE: Metadata puede estar en diferentes ubicaciones
         const hasValidMetadata = fullAnalysis && typeof fullAnalysis === 'object' &&
           (fullAnalysis.metadata || fullAnalysis.prelecture?.metadata);
 
         if (!hasValidMetadata) {
-          console.warn('⚠️ [AppContext] Análisis sin metadata válida, agregando estructura mínima');
+          logger.warn('⚠️ [AppContext] Análisis sin metadata válida, agregando estructura mínima');
           // Agregar metadata mínima en lugar de fallar
           fullAnalysis.metadata = {
             document_id: `doc_${Date.now()}`,
@@ -3605,23 +3606,23 @@ export const AppContextProvider = ({ children }) => {
 
         // Guard: si el usuario cambió de lectura, descartar resultados (evita contaminación visual)
         if (capturedState.textoId && latestTextoId && capturedState.textoId !== latestTextoId) {
-          console.warn('⚠️ [AppContext] Resultado de análisis profundo obsoleto (cambio de lectura)');
-          console.warn(`   Análisis era para: ${capturedState.textoId}`);
-          console.warn(`   Lectura actual es: ${latestTextoId}`);
-          console.log('🚫 [AppContext] Descartando setCompleteAnalysis para evitar contaminación');
+          logger.warn('⚠️ [AppContext] Resultado de análisis profundo obsoleto (cambio de lectura)');
+          logger.warn(`   Análisis era para: ${capturedState.textoId}`);
+          logger.warn(`   Lectura actual es: ${latestTextoId}`);
+          logger.log('🚫 [AppContext] Descartando setCompleteAnalysis para evitar contaminación');
           return;
         }
 
         const currentDocId = completeAnalysisRef.current?.metadata?.document_id;
         if (originalDocId && currentDocId && originalDocId !== currentDocId) {
-          console.warn(`⚠️ [AppContext] A1-1 FIX: Race condition detectada! El texto cambió durante análisis.`);
-          console.warn(`   Original: ${originalDocId}, Actual: ${currentDocId}`);
-          console.log('🚫 [AppContext] Descartando análisis profundo obsoleto.');
+          logger.warn(`⚠️ [AppContext] A1-1 FIX: Race condition detectada! El texto cambió durante análisis.`);
+          logger.warn(`   Original: ${originalDocId}, Actual: ${currentDocId}`);
+          logger.log('🚫 [AppContext] Descartando análisis profundo obsoleto.');
           return; // No actualizar con análisis del texto anterior
         }
 
         setCompleteAnalysis(fullAnalysis);
-        console.log('✅ [AppContext.analyzeDocument] Análisis completo guardado en contexto');
+        logger.log('✅ [AppContext.analyzeDocument] Análisis completo guardado en contexto');
 
         // 🆕 A6 FIX: Guardar en localStorage para persistencia entre recargas
         try {
@@ -3655,34 +3656,34 @@ export const AppContextProvider = ({ children }) => {
             const toDelete = allCacheKeys.slice(0, allCacheKeys.length - MAX_CACHED_ANALYSES + 1);
             toDelete.forEach(({ key }) => {
               localStorage.removeItem(key);
-              console.log(`🗑️ [AppContext] A6-1 FIX: Cache antiguo eliminado: ${key.substring(0, 30)}...`);
+              logger.log(`🗑️ [AppContext] A6-1 FIX: Cache antiguo eliminado: ${key.substring(0, 30)}...`);
             });
           }
 
           localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-          console.log(`💾 [AppContext] 🆕 A6: Análisis guardado en localStorage (clave: ${cacheKey.substring(0, 30)}...)`);
+          logger.log(`💾 [AppContext] 🆕 A6: Análisis guardado en localStorage (clave: ${cacheKey.substring(0, 30)}...)`);
         } catch (cacheError) {
           // Si falla (quota exceeded, etc), no interrumpir el flujo
-          console.warn('⚠️ [AppContext] No se pudo guardar cache en localStorage:', cacheError.message);
+          logger.warn('⚠️ [AppContext] No se pudo guardar cache en localStorage:', cacheError.message);
         }
 
         // 🆕 CREAR SESIÓN después del análisis exitoso
-        console.log('💾 [AppContext.analyzeDocument] Creando sesión con análisis completo...');
-        console.log('🔍 [AppContext.analyzeDocument] text param length:', text?.length || 0);
-        console.log('🔍 [AppContext.analyzeDocument] texto state length:', texto?.length || 0);
+        logger.log('💾 [AppContext.analyzeDocument] Creando sesión con análisis completo...');
+        logger.log('🔍 [AppContext.analyzeDocument] text param length:', text?.length || 0);
+        logger.log('🔍 [AppContext.analyzeDocument] texto state length:', texto?.length || 0);
 
         const currentId = getCurrentSessionId();
         // USAR EL PARÁMETRO 'text' EN LUGAR DEL ESTADO 'texto'
         // FIX: Asegurar que usamos el texto analizado para la sesión
         if (text && text.length > 0) {
-          console.log('🆕 [AppContext.analyzeDocument] Creando/Actualizando sesión con texto analizado...');
+          logger.log('🆕 [AppContext.analyzeDocument] Creando/Actualizando sesión con texto analizado...');
           try {
             // 🆕 FIX: Verificar que el usuario NO cambió de lectura durante el análisis
             if (capturedState.textoId !== currentTextoIdRef.current) {
-              console.warn('⚠️ [analyzeDocument] ¡Usuario cambió de lectura durante análisis!');
-              console.warn(`   Análisis era para: ${capturedState.textoId}`);
-              console.warn(`   Lectura actual es: ${currentTextoIdRef.current}`);
-              console.log('🚫 NO se guardará sesión para evitar contaminación');
+              logger.warn('⚠️ [analyzeDocument] ¡Usuario cambió de lectura durante análisis!');
+              logger.warn(`   Análisis era para: ${capturedState.textoId}`);
+              logger.warn(`   Lectura actual es: ${currentTextoIdRef.current}`);
+              logger.log('🚫 NO se guardará sesión para evitar contaminación');
               // Aún así actualizamos el localStorage cache con el textoId correcto
               // pero NO actualizamos la sesión activa
               return;
@@ -3700,17 +3701,17 @@ export const AppContextProvider = ({ children }) => {
               modoOscuro: capturedState.modoOscuro          // ✅ Capturado
             };
 
-            console.log('💾 [analyzeDocument] Guardando sesión con datos capturados:');
-            console.log('   - textoId:', sessionData.currentTextoId);
-            console.log('   - courseId:', sessionData.sourceCourseId);
+            logger.log('💾 [analyzeDocument] Guardando sesión con datos capturados:');
+            logger.log('   - textoId:', sessionData.currentTextoId);
+            logger.log('   - courseId:', sessionData.sourceCourseId);
 
             if (currentId) {
               updateCurrentSession(sessionData, { syncToCloud: !cloudBackupWriteOnly });
-              console.log('✅ [AppContext.analyzeDocument] Sesión actual actualizada con análisis');
+              logger.log('✅ [AppContext.analyzeDocument] Sesión actual actualizada con análisis');
             } else {
               const session = createSessionFromState(sessionData, { syncToCloud: !cloudBackupWriteOnly });
               if (session) {
-                console.log('✅ [AppContext.analyzeDocument] Nueva sesión creada:', session.id);
+                logger.log('✅ [AppContext.analyzeDocument] Nueva sesión creada:', session.id);
               }
             }
 
@@ -3718,19 +3719,19 @@ export const AppContextProvider = ({ children }) => {
             window.dispatchEvent(new CustomEvent('session-updated'));
 
           } catch (sessionError) {
-            console.error('❌ [AppContext.analyzeDocument] Error gestionando sesión:', sessionError);
+            logger.error('❌ [AppContext.analyzeDocument] Error gestionando sesión:', sessionError);
           }
         } else {
-          console.warn('⚠️ [AppContext.analyzeDocument] No hay texto válido para sesión (text length:', text?.length || 0, ')');
+          logger.warn('⚠️ [AppContext.analyzeDocument] No hay texto válido para sesión (text length:', text?.length || 0, ')');
         }
 
       } catch (err) {
-        console.error('❌ [AppContext.analyzeDocument] Error en análisis completo:', err);
+        logger.error('❌ [AppContext.analyzeDocument] Error en análisis completo:', err);
 
         // Si el usuario cambió de lectura, no aplicar fallback para evitar contaminación
         const latestTextoId = currentTextoIdRef.current;
         if (capturedState.textoId && latestTextoId && capturedState.textoId !== latestTextoId) {
-          console.warn('⚠️ [AppContext] Error de análisis profundo para lectura anterior; evitando fallback en lectura actual');
+          logger.warn('⚠️ [AppContext] Error de análisis profundo para lectura anterior; evitando fallback en lectura actual');
           return;
         }
 
@@ -3739,13 +3740,13 @@ export const AppContextProvider = ({ children }) => {
         if (!hasExistingAnalysis) {
           if (err.name === 'AbortError') {
             setError('El análisis tardó demasiado tiempo y fue cancelado');
-            console.error('❌ [AppContext.analyzeDocument] Timeout después de 2 minutos');
+            logger.error('❌ [AppContext.analyzeDocument] Timeout después de 2 minutos');
           } else {
-            console.error('❌ [AppContext.analyzeDocument] Stack:', err.stack);
+            logger.error('❌ [AppContext.analyzeDocument] Stack:', err.stack);
             setError(`Error en análisis: ${err.message}`);
           }
         } else {
-          console.warn('⚠️ [AppContext.analyzeDocument] Error en análisis profundo (background). Se mantiene análisis previo.');
+          logger.warn('⚠️ [AppContext.analyzeDocument] Error en análisis profundo (background). Se mantiene análisis previo.');
         }
 
         // Solo degradar a fallback mínimo si NO hay análisis previo (fase 1)
@@ -3753,7 +3754,7 @@ export const AppContextProvider = ({ children }) => {
           if (err.response?.data?.fallback) {
             setCompleteAnalysis(err.response.data.fallback);
           } else {
-            console.log('🔧 [AppContext.analyzeDocument] Creando análisis fallback mínimo...');
+            logger.log('🔧 [AppContext.analyzeDocument] Creando análisis fallback mínimo...');
             setCompleteAnalysis({
               metadata: {
                 document_id: `fallback_${Date.now()}`,
@@ -3777,14 +3778,14 @@ export const AppContextProvider = ({ children }) => {
         }
       } finally {
         // No setLoading(false) aquí porque ya se hizo en Fase 1
-        console.log('🏁 [AppContext.analyzeDocument] Fase 2 (análisis profundo) finalizada');
+        logger.log('🏁 [AppContext.analyzeDocument] Fase 2 (análisis profundo) finalizada');
       }
     }; // Fin de enrichInBackground
 
     // 🆕 A1 FIX: Ejecutar análisis profundo en background (no esperamos)
     // 🆕 A1-1 FIX: Pasamos document ID para verificar race condition
     enrichInBackground(analysisDocumentId).catch(err => {
-      console.error('❌ [AppContext] Error en análisis profundo de background:', err);
+      logger.error('❌ [AppContext] Error en análisis profundo de background:', err);
     });
 
   }, [texto, archivoActual, rubricProgress, savedCitations, modoOscuro, setCompleteAnalysis]);
@@ -3803,13 +3804,13 @@ export const AppContextProvider = ({ children }) => {
 
   // 🔥 SINCRONIZACIÓN FIREBASE: Cargar sesiones cuando el usuario hace login
   useEffect(() => {
-    console.log('🔍 [AppContext] useEffect Firebase sync ejecutado, currentUser:', currentUser?.email || 'null', 'uid:', currentUser?.uid || 'null');
+    logger.log('🔍 [AppContext] useEffect Firebase sync ejecutado, currentUser:', currentUser?.email || 'null', 'uid:', currentUser?.uid || 'null');
 
     if (currentUser?.uid) {
-      console.log('🔄 [AppContext] Usuario autenticado detectado, sincronizando sesiones...');
-      console.log('👤 [AppContext] UID:', currentUser.uid);
-      console.log('👤 [AppContext] Email:', currentUser.email);
-      console.log('👤 [AppContext] Nombre:', userData?.nombre || 'sin nombre');
+      logger.log('🔄 [AppContext] Usuario autenticado detectado, sincronizando sesiones...');
+      logger.log('👤 [AppContext] UID:', currentUser.uid);
+      logger.log('👤 [AppContext] Email:', currentUser.email);
+      logger.log('👤 [AppContext] Nombre:', userData?.nombre || 'sin nombre');
 
       // Establecer usuario en sessionManager
       setSessionManagerUser(currentUser.uid, userData?.nombre || currentUser.email);
@@ -3817,13 +3818,13 @@ export const AppContextProvider = ({ children }) => {
       // Sincronizar sesiones locales → Firebase
       syncAllSessionsToCloud()
         .then(result => {
-          console.log(`✅ [AppContext] Sincronización completada: ${result.synced} sesiones subidas`);
+          logger.log(`✅ [AppContext] Sincronización completada: ${result.synced} sesiones subidas`);
           if (result.errors > 0) {
-            console.warn(`⚠️ [AppContext] ${result.errors} errores en sincronización`);
+            logger.warn(`⚠️ [AppContext] ${result.errors} errores en sincronización`);
           }
         })
         .catch(error => {
-          console.error('❌ [AppContext] Error en sincronización inicial:', error);
+          logger.error('❌ [AppContext] Error en sincronización inicial:', error);
         });
 
       // Nota: No necesitamos cargar sesiones aquí porque getAllSessionsMerged()
@@ -3832,10 +3833,10 @@ export const AppContextProvider = ({ children }) => {
 
     } else if (currentUser === null) {
       // Usuario deslogueado, limpiar referencia
-      console.log('🔒 [AppContext] Usuario deslogueado, limpiando referencia');
+      logger.log('🔒 [AppContext] Usuario deslogueado, limpiando referencia');
       setSessionManagerUser(null, null);
     } else {
-      console.log('⏳ [AppContext] currentUser es undefined, esperando...');
+      logger.log('⏳ [AppContext] currentUser es undefined, esperando...');
     }
   }, [currentUser, userData, currentTextoId, saveGlobalProgress]);
 
@@ -3852,7 +3853,7 @@ export const AppContextProvider = ({ children }) => {
     // Solo para estudiantes (docentes no tienen progreso individual)
     if (userData.role !== 'estudiante') return;
 
-    console.log('👂 [AppContext] Iniciando listener de progreso en tiempo real...');
+    logger.log('👂 [AppContext] Iniciando listener de progreso en tiempo real...');
 
     // Marcar que Firebase está cargando (para RewardsEngine)
     if (typeof window !== 'undefined') {
@@ -3883,15 +3884,15 @@ export const AppContextProvider = ({ children }) => {
     // 1️⃣ CARGA INICIAL INMEDIATA desde Firestore
     const loadInitialProgress = async () => {
       try {
-        console.log('📥 [AppContext] Cargando progreso inicial desde Firestore...');
+        logger.log('📥 [AppContext] Cargando progreso inicial desde Firestore...');
         const initialData = await getStudentProgress(currentUser.uid, progressDocId);
 
         if (!mounted || !initialData) {
-          console.log('ℹ️ [AppContext] No hay datos iniciales en Firestore');
+          logger.log('ℹ️ [AppContext] No hay datos iniciales en Firestore');
           return;
         }
 
-        console.log('✅ [AppContext] Datos iniciales cargados desde Firestore');
+        logger.log('✅ [AppContext] Datos iniciales cargados desde Firestore');
 
         // 🔄 DETECTAR RESET: Si lastResetAt existe, limpiar datos locales ANTES del merge
         if (initialData.lastResetAt) {
@@ -3900,7 +3901,7 @@ export const AppContextProvider = ({ children }) => {
             : (typeof initialData.lastResetAt === 'number' ? initialData.lastResetAt : 0);
           
           if (resetTime > 0) {
-            console.log('🔄 [AppContext] RESET DETECTADO en carga inicial - limpiando datos locales...');
+            logger.log('🔄 [AppContext] RESET DETECTADO en carga inicial - limpiando datos locales...');
             
             // Limpiar localStorage
             const rubricKey = rubricProgressKey(currentUser.uid, progressDocId);
@@ -3913,21 +3914,21 @@ export const AppContextProvider = ({ children }) => {
               if ((k.includes('activity_results_') || k.includes('rubric') || k.includes('activities')) 
                   && k.includes(progressDocId)) {
                 localStorage.removeItem(k);
-                console.log('🧹 [AppContext] Limpiado localStorage key:', k);
+                logger.log('🧹 [AppContext] Limpiado localStorage key:', k);
               }
             });
             
             // Aplicar datos reseteados de Firestore directamente (sin merge)
             if (initialData.rubricProgress) {
               setRubricProgress(normalizeRubricProgress(initialData.rubricProgress));
-              console.log('✅ [AppContext] rubricProgress reemplazado tras reset (carga inicial)');
+              logger.log('✅ [AppContext] rubricProgress reemplazado tras reset (carga inicial)');
             } else {
               setRubricProgress(emptyRubricProgress);
             }
             
             if (initialData.activitiesProgress) {
               setActivitiesProgress(initialData.activitiesProgress);
-              console.log('✅ [AppContext] activitiesProgress reemplazado tras reset (carga inicial)');
+              logger.log('✅ [AppContext] activitiesProgress reemplazado tras reset (carga inicial)');
             } else {
               setActivitiesProgress({});
             }
@@ -3967,7 +3968,7 @@ export const AppContextProvider = ({ children }) => {
         
         const { hasResets, resetArtifacts } = checkArtifactResets(initialData.activitiesProgress);
         if (hasResets) {
-          console.log('🔄 [AppContext] Reset parcial detectado en artefactos:', resetArtifacts);
+          logger.log('🔄 [AppContext] Reset parcial detectado en artefactos:', resetArtifacts);
           
           // Limpiar localStorage para actividades
           const activitiesKey = activitiesProgressKey(currentUser.uid, progressDocId);
@@ -4002,7 +4003,7 @@ export const AppContextProvider = ({ children }) => {
 
         // 📊 Cargar rubricProgress (MERGE INTELIGENTE)
         if (initialData.rubricProgress && Object.keys(initialData.rubricProgress).length > 0) {
-          console.log('📊 [Carga Inicial] Cargando rubricProgress desde Firebase (Merge con local)');
+          logger.log('📊 [Carga Inicial] Cargando rubricProgress desde Firebase (Merge con local)');
 
           setRubricProgress(prevLocal => {
             const normalizedRemote = normalizeRubricProgress(initialData.rubricProgress);
@@ -4054,7 +4055,7 @@ export const AppContextProvider = ({ children }) => {
 
         // 🎯 Cargar activitiesProgress (MERGE INTELIGENTE)
         if (initialData.activitiesProgress && Object.keys(initialData.activitiesProgress).length > 0) {
-          console.log('🎯 [Carga Inicial] Cargando activitiesProgress desde Firebase (Merge con local)');
+          logger.log('🎯 [Carga Inicial] Cargando activitiesProgress desde Firebase (Merge con local)');
 
           setActivitiesProgress(prevLocal => {
             const mergedActivities = { ...prevLocal };
@@ -4105,12 +4106,12 @@ export const AppContextProvider = ({ children }) => {
           });
         }
       } catch (error) {
-        console.error('❌ [AppContext] Error cargando progreso inicial:', error);
+        logger.error('❌ [AppContext] Error cargando progreso inicial:', error);
 
         // FALLBACK: Intentar rehidratar desde airbag local (firestore_backup_*)
         const backup = readFirestoreBackup(currentUser.uid, progressDocId);
         if (backup) {
-          console.log('📦 [AppContext] Usando firestore_backup_* como fallback de progreso');
+          logger.log('📦 [AppContext] Usando firestore_backup_* como fallback de progreso');
 
           if (backup.rubricProgress && Object.keys(backup.rubricProgress).length > 0) {
             lastRubricProgressFromCloudAtRef.current = Date.now();
@@ -4131,7 +4132,7 @@ export const AppContextProvider = ({ children }) => {
 
         // FALLBACK EN ERROR: Intentar cargar caché local
         if (window.__rewardsEngine) {
-          console.log('⚠️ [AppContext] Error en Firebase, usando caché local para rewards...');
+          logger.log('⚠️ [AppContext] Error en Firebase, usando caché local para rewards...');
           window.__rewardsEngine.loadFromCache();
         }
       }
@@ -4146,11 +4147,11 @@ export const AppContextProvider = ({ children }) => {
       async (progressData) => {
         if (!mounted) return;
         if (!progressData) {
-          console.log('ℹ️ [AppContext] No hay progreso remoto aún');
+          logger.log('ℹ️ [AppContext] No hay progreso remoto aún');
           return;
         }
 
-        console.log('📥 [AppContext] Progreso recibido desde Firestore (realtime):', progressData);
+        logger.log('📥 [AppContext] Progreso recibido desde Firestore (realtime):', progressData);
 
         // 🔄 DETECTAR RESET EN TIEMPO REAL: Si lastResetAt existe, aplicar reset inmediato
         // ⚠️ Solo procesar si es un reset NUEVO (no ya procesado)
@@ -4161,7 +4162,7 @@ export const AppContextProvider = ({ children }) => {
           
           // 🆕 FIX: Solo procesar si este reset es MÁS RECIENTE que el último procesado
           if (resetTime > 0 && resetTime > lastProcessedResetTimeRef.current) {
-            console.log('🔄 [AppContext] RESET NUEVO DETECTADO en tiempo real - aplicando cambios...', {
+            logger.log('🔄 [AppContext] RESET NUEVO DETECTADO en tiempo real - aplicando cambios...', {
               resetTime,
               lastProcessed: lastProcessedResetTimeRef.current
             });
@@ -4192,7 +4193,7 @@ export const AppContextProvider = ({ children }) => {
               detail: { type: 'realtime-reset', timestamp: resetTime }
             }));
             
-            console.log('✅ [AppContext] Reset aplicado desde evento en tiempo real');
+            logger.log('✅ [AppContext] Reset aplicado desde evento en tiempo real');
             return; // Salir, no hacer merge normal
           }
         }
@@ -4218,7 +4219,7 @@ export const AppContextProvider = ({ children }) => {
         
         const { hasResets, resetArtifacts } = checkArtifactResets(progressData.activitiesProgress);
         if (hasResets) {
-          console.log('🔄 [AppContext] Reset parcial detectado en artefactos (realtime):', resetArtifacts);
+          logger.log('🔄 [AppContext] Reset parcial detectado en artefactos (realtime):', resetArtifacts);
           
           // Aplicar activitiesProgress de Firestore directamente
           setActivitiesProgress(progressData.activitiesProgress);
@@ -4232,7 +4233,7 @@ export const AppContextProvider = ({ children }) => {
             detail: { type: 'artifact-reset-realtime', artifacts: resetArtifacts }
           }));
           
-          console.log('✅ [AppContext] Reset parcial aplicado');
+          logger.log('✅ [AppContext] Reset parcial aplicado');
           return; // Salir
         }
 
@@ -4255,7 +4256,7 @@ export const AppContextProvider = ({ children }) => {
               if (!localRubric || !localRubric.scores || localRubric.scores.length === 0) {
                 mergedRubrics[rubricId] = remoteRubric;
                 hasChanges = true;
-                console.log(`📊 [Sync] ${rubricId}: Datos remotos agregados (no existía local)`);
+                logger.log(`📊 [Sync] ${rubricId}: Datos remotos agregados (no existía local)`);
                 return;
               }
 
@@ -4324,14 +4325,14 @@ export const AppContextProvider = ({ children }) => {
                 };
 
                 hasChanges = true;
-                console.log(`📊 [Sync] ${rubricId}: Concatenados ${newRemoteScores.length} scores remotos (total: ${combinedScores.length})`);
+                logger.log(`📊 [Sync] ${rubricId}: Concatenados ${newRemoteScores.length} scores remotos (total: ${combinedScores.length})`);
               } else {
-                console.log(`📊 [Sync] ${rubricId}: Sin scores nuevos desde remoto`);
+                logger.log(`📊 [Sync] ${rubricId}: Sin scores nuevos desde remoto`);
               }
             });
 
             if (hasChanges) {
-              console.log('✅ [Sync] rubricProgress actualizado desde Firestore');
+              logger.log('✅ [Sync] rubricProgress actualizado desde Firestore');
               lastRubricProgressFromCloudAtRef.current = Date.now();
               // Emitir evento para que componentes UI se actualicen
               window.dispatchEvent(new CustomEvent('progress-synced-from-cloud', {
@@ -4358,7 +4359,7 @@ export const AppContextProvider = ({ children }) => {
               if (!localDoc || !localDoc.preparation?.updatedAt) {
                 mergedActivities[docId] = remoteDoc;
                 hasChanges = true;
-                console.log(`🎯 [Sync] ${docId}: Actividad remota agregada (no existía local)`);
+                logger.log(`🎯 [Sync] ${docId}: Actividad remota agregada (no existía local)`);
                 return;
               }
 
@@ -4374,11 +4375,11 @@ export const AppContextProvider = ({ children }) => {
               if (remoteArtifacts.submittedCount > localArtifacts.submittedCount) {
                 mergedActivities[docId] = remoteDoc;
                 hasChanges = true;
-                console.log(`🎯 [Sync] ${docId}: Remota tiene más artefactos entregados (${remoteArtifacts.submittedCount} > ${localArtifacts.submittedCount})`);
+                logger.log(`🎯 [Sync] ${docId}: Remota tiene más artefactos entregados (${remoteArtifacts.submittedCount} > ${localArtifacts.submittedCount})`);
               } else if (remoteArtifacts.submittedCount === localArtifacts.submittedCount && remoteCompleteness > localCompleteness) {
                 mergedActivities[docId] = remoteDoc;
                 hasChanges = true;
-                console.log(`🎯 [Sync] ${docId}: Remota más completa (${remoteCompleteness} campos > ${localCompleteness})`);
+                logger.log(`🎯 [Sync] ${docId}: Remota más completa (${remoteCompleteness} campos > ${localCompleteness})`);
               } else if (remoteArtifacts.submittedCount === localArtifacts.submittedCount && remoteCompleteness === localCompleteness) {
                 const remoteTs = Math.max(remoteTimestamp, remoteArtifacts.latestSubmittedAt);
                 const localTs = Math.max(localTimestamp, localArtifacts.latestSubmittedAt);
@@ -4386,17 +4387,17 @@ export const AppContextProvider = ({ children }) => {
                 if (remoteTs > localTs) {
                   mergedActivities[docId] = remoteDoc;
                   hasChanges = true;
-                  console.log(`🎯 [Sync] ${docId}: Remota más reciente (${new Date(remoteTs).toLocaleTimeString()})`);
+                  logger.log(`🎯 [Sync] ${docId}: Remota más reciente (${new Date(remoteTs).toLocaleTimeString()})`);
                 } else {
-                  console.log(`🎯 [Sync] ${docId}: Local más completa o igual, manteniendo`);
+                  logger.log(`🎯 [Sync] ${docId}: Local más completa o igual, manteniendo`);
                 }
               } else {
-                console.log(`🎯 [Sync] ${docId}: Local más completa o igual, manteniendo`);
+                logger.log(`🎯 [Sync] ${docId}: Local más completa o igual, manteniendo`);
               }
             });
 
             if (hasChanges) {
-              console.log('✅ [Sync] activitiesProgress actualizado desde Firestore');
+              logger.log('✅ [Sync] activitiesProgress actualizado desde Firestore');
               lastActivitiesProgressFromCloudAtRef.current = Date.now();
               // Emitir evento para que componentes UI se actualicen
               window.dispatchEvent(new CustomEvent('progress-synced-from-cloud', {
@@ -4413,12 +4414,12 @@ export const AppContextProvider = ({ children }) => {
       }
     );
 
-    console.log('✅ [AppContext] Listener de tiempo real activo');
+    logger.log('✅ [AppContext] Listener de tiempo real activo');
 
     // Cleanup al desmontar o cambiar usuario
     return () => {
       mounted = false;
-      console.log('🔌 [AppContext] Desconectando listener de progreso');
+      logger.log('🔌 [AppContext] Desconectando listener de progreso');
       if (unsubscribe) {
         unsubscribe();
       }
@@ -4430,7 +4431,7 @@ export const AppContextProvider = ({ children }) => {
     if (!currentUser?.uid || !userData?.role) return;
     if (userData.role !== 'estudiante') return;
 
-    console.log('👂 [AppContext] Iniciando listener global de rewardsState (global_progress)...');
+    logger.log('👂 [AppContext] Iniciando listener global de rewardsState (global_progress)...');
 
     let mounted = true;
     let unsubscribe = null;
@@ -4464,7 +4465,7 @@ export const AppContextProvider = ({ children }) => {
           const localWasResetRecently = localResetAt > 0 && localResetAt > remoteResetAt && (Date.now() - localResetAt) < 10000;
 
           if (localWasResetRecently) {
-            console.log('🛡️ [AppContext] Reset local reciente detectado, ignorando estado remoto');
+            logger.log('🛡️ [AppContext] Reset local reciente detectado, ignorando estado remoto');
             // Subir el estado reseteado a Firestore
             const currentRewardsState = window.__rewardsEngine.exportState();
             Promise.resolve(saveGlobalProgress({
@@ -4476,14 +4477,14 @@ export const AppContextProvider = ({ children }) => {
             // 🆕 FIX: Si local no tiene datos válidos (resetAt=0 o puntos=0), preferir remoto
             const localIsEmpty = localResetAt === 0 || (localPoints === 0 && remotePoints > 0);
             if (localIsEmpty && remotePoints > 0) {
-              console.log('✅ [AppContext] Estado local vacío, cargando desde Firestore:', remotePoints, 'pts');
+              logger.log('✅ [AppContext] Estado local vacío, cargando desde Firestore:', remotePoints, 'pts');
               lastRewardsStateFromCloudAtRef.current = Date.now();
               window.__rewardsEngine.importState(remoteState, false);
             } else {
               // 🆕 FIX: Si ambos tienen el mismo resetAt pero local tiene más puntos, NO sobrescribir
               const sameResetEpoch = localResetAt === remoteResetAt && localResetAt > 0;
               if (sameResetEpoch && localPoints > remotePoints) {
-                console.log('🛡️ [AppContext] Local tiene más puntos en mismo epoch de reset, subiendo a Firestore');
+                logger.log('🛡️ [AppContext] Local tiene más puntos en mismo epoch de reset, subiendo a Firestore');
                 const currentRewardsState = window.__rewardsEngine.exportState();
                 Promise.resolve(saveGlobalProgress({
                   rewardsState: currentRewardsState,
@@ -4523,7 +4524,7 @@ export const AppContextProvider = ({ children }) => {
           }
         }));
       } catch (error) {
-        console.error('❌ [AppContext] Error cargando rewardsState inicial (global_progress):', error);
+        logger.error('❌ [AppContext] Error cargando rewardsState inicial (global_progress):', error);
         if (window.__rewardsEngine) {
           window.__rewardsEngine.loadFromCache();
         }
@@ -4577,14 +4578,14 @@ export const AppContextProvider = ({ children }) => {
           const localWasResetRecently = localResetAt > 0 && localResetAt > remoteResetAt && (Date.now() - localResetAt) < 10000;
 
           if (localWasResetRecently) {
-            console.log('🛡️ [AppContext] Listener: Reset local reciente detectado, ignorando estado remoto');
+            logger.log('🛡️ [AppContext] Listener: Reset local reciente detectado, ignorando estado remoto');
             return; // No hacer nada, el reset ya sincronizó
           }
 
           // 🆕 FIX: Si local está vacío (resetAt=0 después de logout), preferir remoto
           const localIsEmpty = localResetAt === 0 || (localPoints === 0 && remotePoints > 0);
           if (localIsEmpty && remotePoints > 0) {
-            console.log('✅ [AppContext] Listener: Estado local vacío, cargando desde Firestore:', remotePoints, 'pts');
+            logger.log('✅ [AppContext] Listener: Estado local vacío, cargando desde Firestore:', remotePoints, 'pts');
             lastRewardsStateFromCloudAtRef.current = Date.now();
             window.__rewardsEngine.importState(remoteState, false);
             const safe = window.__rewardsEngine.exportState();
@@ -4601,7 +4602,7 @@ export const AppContextProvider = ({ children }) => {
           // Esto evita que el estado reseteado (0 pts) sobrescriba puntos ganados después del reset
           const sameResetEpoch = localResetAt === remoteResetAt && localResetAt > 0;
           if (sameResetEpoch && localPoints > remotePoints) {
-            console.log('🛡️ [AppContext] Listener: Local tiene más puntos en mismo epoch de reset, subiendo a Firestore');
+            logger.log('🛡️ [AppContext] Listener: Local tiene más puntos en mismo epoch de reset, subiendo a Firestore');
             const currentRewardsState = window.__rewardsEngine.exportState();
             await saveGlobalProgress({
               rewardsState: currentRewardsState,
@@ -4654,7 +4655,7 @@ export const AppContextProvider = ({ children }) => {
             }
           }
         } catch (error) {
-          console.error('❌ [Sync] Error en merge de rewardsState (global_progress):', error);
+          logger.error('❌ [Sync] Error en merge de rewardsState (global_progress):', error);
         }
       }
     );
@@ -4674,7 +4675,7 @@ export const AppContextProvider = ({ children }) => {
 
     const loadInitialSessions = async () => {
       try {
-        console.log('📥 [AppContext] Cargando sesiones iniciales desde Firestore...');
+        logger.log('📥 [AppContext] Cargando sesiones iniciales desde Firestore...');
 
         const firestoreSessions = await getUserSessions(currentUser.uid);
 
@@ -4687,7 +4688,7 @@ export const AppContextProvider = ({ children }) => {
         // Guardar merged en localStorage (scoped por usuario)
         replaceAllLocalSessions(merged);
 
-        console.log(`✅ [AppContext] ${merged.length} sesiones cargadas desde Firebase (${firestoreSessions.length} remotas, ${localSessions.length} locales)`);
+        logger.log(`✅ [AppContext] ${merged.length} sesiones cargadas desde Firebase (${firestoreSessions.length} remotas, ${localSessions.length} locales)`);
 
         // Emitir evento para actualizar UI
         window.dispatchEvent(new CustomEvent('sessions-loaded-from-firebase', {
@@ -4695,7 +4696,7 @@ export const AppContextProvider = ({ children }) => {
         }));
 
       } catch (error) {
-        console.error('❌ [AppContext] Error cargando sesiones iniciales:', error);
+        logger.error('❌ [AppContext] Error cargando sesiones iniciales:', error);
       }
     };
 
@@ -4715,16 +4716,16 @@ export const AppContextProvider = ({ children }) => {
     let isCurrent = true;
     const _currentUserId = currentUser.uid;
 
-    console.log('👂 [AppContext] Iniciando listener de sesiones en tiempo real...');
+    logger.log('👂 [AppContext] Iniciando listener de sesiones en tiempo real...');
 
     const unsubscribe = subscribeToUserSessions(currentUser.uid, (sessions) => {
       // 🆕 P12 FIX: Ignorar callbacks de usuarios anteriores
       if (!isCurrent) {
-        console.log('⚠️ [AppContext] Ignorando callback de listener obsoleto');
+        logger.log('⚠️ [AppContext] Ignorando callback de listener obsoleto');
         return;
       }
 
-      console.log(`📥 [AppContext] Actualización de sesiones en tiempo real: ${sessions.length} sesiones`);
+      logger.log(`📥 [AppContext] Actualización de sesiones en tiempo real: ${sessions.length} sesiones`);
 
       // Actualizar localStorage para persistencia offline y consistencia
       // Nota: subscribeToUserSessions ya devuelve las sesiones mapeadas y ordenadas
@@ -4759,7 +4760,7 @@ export const AppContextProvider = ({ children }) => {
     if (!completeAnalysis || !texto || !currentTextoId) return;
     if (notasAutoGeneradasByTextoId?.[currentTextoId]) return;
 
-    console.log('🎓 [AppContext] Análisis completo detectado, marcando notas disponibles para:', currentTextoId);
+    logger.log('🎓 [AppContext] Análisis completo detectado, marcando notas disponibles para:', currentTextoId);
 
     // Marcamos que hay notas disponibles (el componente NotasEstudio las generará)
     setNotasAutoGeneradasByTextoId((prev) => ({

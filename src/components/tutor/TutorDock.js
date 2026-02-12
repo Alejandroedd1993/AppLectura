@@ -10,6 +10,7 @@ import { generateTextHash } from '../../utils/cache';
 import { updateCurrentSession } from '../../services/sessionManager';
 import { useAuth } from '../../context/AuthContext';
 
+import logger from '../../utils/logger';
 /**
  * Función simple para convertir markdown básico a HTML
  * Soporta: **negrita**, *cursiva*, `código`, listas, links
@@ -190,11 +191,11 @@ function TutorDockEffects({
           if (fullText) { try { api.setContext({ fullText }); } catch { } }
           // Si hay webContext, agregarlo al contexto del sistema antes de enviar
           if (webContext) {
-            console.log('🌐 [TutorDock] Agregando contexto web al sistema');
+            logger.log('🌐 [TutorDock] Agregando contexto web al sistema');
             try {
               api.setContext({ webEnrichment: webContext });
             } catch (err) {
-              console.warn('⚠️ [TutorDock] Error agregando webContext:', err);
+              logger.warn('⚠️ [TutorDock] Error agregando webContext:', err);
             }
           }
           api.sendPrompt(prompt);
@@ -686,7 +687,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
             w.focus();
             w.print();
           } catch (err) {
-            console.error('[TutorDock] Error al exportar PDF:', err);
+            logger.error('[TutorDock] Error al exportar PDF:', err);
           }
         };
         return (
@@ -810,7 +811,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                       <ActionButton
                         onClick={() => {
                           try { api.generateSessionSummary(); } catch (err) {
-                            console.error('[TutorDock] Error resumen:', err);
+                            logger.error('[TutorDock] Error resumen:', err);
                           }
                         }}
                         disabled={api.loading || !api.messages || api.messages.length < 2}
@@ -823,7 +824,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                       <ActionButton
                         onClick={() => {
                           try { api.regenerateLastResponse(); } catch (err) {
-                            console.error('[TutorDock] Error regenerar:', err);
+                            logger.error('[TutorDock] Error regenerar:', err);
                           }
                         }}
                         disabled={api.loading || !api.messages || api.messages.length < 2}
@@ -867,7 +868,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                             document.body.removeChild(a);
                             URL.revokeObjectURL(url);
                           } catch (err) {
-                            console.error('[TutorDock] Error al guardar:', err);
+                            logger.error('[TutorDock] Error al guardar:', err);
                           }
                         }}
                         disabled={!api.messages || api.messages.length === 0}
@@ -892,7 +893,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                             btn.textContent = '✅ Copiado';
                             setTimeout(() => { btn.textContent = orig; }, 1500);
                           } catch (err) {
-                            console.error('[TutorDock] Error al copiar:', err);
+                            logger.error('[TutorDock] Error al copiar:', err);
                           }
                         }}
                         disabled={!api.messages || api.messages.length === 0}

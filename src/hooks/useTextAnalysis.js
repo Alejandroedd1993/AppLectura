@@ -3,6 +3,7 @@ import { generateTextHash, getAnalysisFromCache, saveAnalysisToCache, runLegacyT
 import { fetchWithTimeout } from '../utils/netUtils';
 import { obtenerConfiguracionAPI } from '../utils/crypto';
 
+import logger from '../utils/logger';
 /**
  * Hook simplificado para análisis de texto
  * Funciona directamente con las APIs sin necesidad de backend
@@ -75,7 +76,7 @@ export const useTextAnalysis = () => {
         }
       };
     } catch (error) {
-      console.error("Error generando análisis básico:", error);
+      logger.error("Error generando análisis básico:", error);
       return {
         resumen: "No fue posible generar un análisis básico.",
         ideasPrincipales: [],
@@ -170,7 +171,7 @@ export const useTextAnalysis = () => {
       const cachedAnalysis = getAnalysisFromCache(textHash);
       
       if (cachedAnalysis) {
-        console.log('Usando análisis en caché');
+        logger.log('Usando análisis en caché');
         setAnalisis(cachedAnalysis);
         setProgreso(100);
         setCargando(false);
@@ -272,7 +273,7 @@ export const useTextAnalysis = () => {
       }
 
     } catch (error) {
-      console.error('Error en análisis:', error);
+      logger.error('Error en análisis:', error);
       setError(error.message || 'Error durante el análisis');
     } finally {
       setCargando(false);

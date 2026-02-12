@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import webSearchService from '../services/webSearchService';
 
+import logger from '../utils/logger';
 /**
  * useWebSearchTutor
  * Hook aislado para (re)integrar la búsqueda web dentro del flujo TutorCore sin acoplar
@@ -20,9 +21,9 @@ export function useWebSearchTutor(config) {
   const [lastResults, setLastResults] = useState(null);
 
   const search = useCallback(async (query, contextoTexto) => {
-    console.log('🔎 [useWebSearchTutor] Iniciando búsqueda', { enabled: config?.enabled, query });
+    logger.log('🔎 [useWebSearchTutor] Iniciando búsqueda', { enabled: config?.enabled, query });
     if (!config?.enabled) {
-      console.warn('⚠️ [useWebSearchTutor] Búsqueda deshabilitada por config');
+      logger.warn('⚠️ [useWebSearchTutor] Búsqueda deshabilitada por config');
       return null;
     }
     setError(null);
@@ -40,16 +41,16 @@ export function useWebSearchTutor(config) {
         queries = [query];
       }
       const effectiveQuery = query || queries[0];
-      console.log('🌐 [useWebSearchTutor] Llamando webSearchService.searchWeb', { effectiveQuery, provider: config.provider });
+      logger.log('🌐 [useWebSearchTutor] Llamando webSearchService.searchWeb', { effectiveQuery, provider: config.provider });
       const resultados = await webSearchService.searchWeb(effectiveQuery, config.provider, {
         maxResults: config.maxResults || 5,
         language: 'es'
       });
-      console.log('✅ [useWebSearchTutor] Resultados recibidos:', resultados?.length || 0);
+      logger.log('✅ [useWebSearchTutor] Resultados recibidos:', resultados?.length || 0);
       setLastResults(resultados);
       return resultados;
     } catch (e) {
-      console.error('❌ [useWebSearchTutor] Error en búsqueda:', e);
+      logger.error('❌ [useWebSearchTutor] Error en búsqueda:', e);
       setError(e.message || 'Error en búsqueda web');
       return null;
     } finally {

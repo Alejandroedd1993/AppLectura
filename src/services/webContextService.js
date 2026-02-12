@@ -33,7 +33,7 @@ export async function buscarContextoWeb(texto, contexto, temasPrincipales) {
     };
     
   } catch (error) {
-    console.warn('⚠️ Error en búsqueda web contextual:', error);
+    logger.warn('⚠️ Error en búsqueda web contextual:', error);
     return {
       contexto_web_encontrado: {},
       error: 'Búsqueda web no disponible',
@@ -144,6 +144,7 @@ function detectarUbicaciones(texto) {
  * Realiza búsqueda web usando la API del backend
  */
 import { fetchWithTimeout } from '../utils/netUtils';
+import logger from '../utils/logger';
 async function realizarBusquedaWeb(terminoBusqueda) {
   try {
       const response = await fetchWithTimeout('/api/web-search', {
@@ -170,7 +171,7 @@ async function realizarBusquedaWeb(terminoBusqueda) {
     };
     
   } catch (error) {
-    console.warn(`Error buscando: ${terminoBusqueda.query}`, error);
+    logger.warn(`Error buscando: ${terminoBusqueda.query}`, error);
     return {
       termino: terminoBusqueda,
       resultados: [],

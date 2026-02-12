@@ -25,6 +25,7 @@ import { procesarArchivo } from '../../utils/fileProcessor';
 import { AppContext } from '../../context/AppContext';
 import { getAllSessionsMerged } from '../../services/sessionManager';
 
+import logger from '../../utils/logger';
 const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 const Container = styled.div`
@@ -374,7 +375,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
 
       // 4. 🆕 Cargar mapa de sesiones locales CON CLAVE COMPUESTA courseId_textoId
       const mergedSessions = await getAllSessionsMerged();
-      console.log('🔍 [TextoSelector] Sesiones cargadas:', mergedSessions.length);
+      logger.log('🔍 [TextoSelector] Sesiones cargadas:', mergedSessions.length);
 
       const sMap = {};
       const pickedMeta = {}; // compositeKey -> { chosenId, chosenTs, replacedCount }
@@ -460,7 +461,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
             sMap[compositeKey] = s;
             const ts = getSessionFreshnessTs(s);
             pickedMeta[compositeKey] = { chosenId: s?.id, chosenTs: ts, replacedCount: 0 };
-            console.log(`  📎 Sesión mapeada (curso aislado): ${compositeKey}`);
+            logger.log(`  📎 Sesión mapeada (curso aislado): ${compositeKey}`);
             return;
           }
 
@@ -486,7 +487,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
           }
         } else if (sessionTextoId) {
           // Fallback para sesiones legacy sin courseId (no se usarán si hay courseId)
-          console.log(`  ⚠️ Sesión sin courseId: ${sessionTextoId}`);
+          logger.log(`  ⚠️ Sesión sin courseId: ${sessionTextoId}`);
           // NO mapear sesiones sin courseId para evitar conflictos
         }
       });
@@ -496,18 +497,18 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
         .filter(([, meta]) => (meta?.replacedCount || 0) > 0)
         .map(([key, meta]) => ({ key, chosenId: meta.chosenId, chosenTs: meta.chosenTs, seen: meta.replacedCount + 1 }));
       if (duplicatedKeys.length > 0) {
-        console.warn('⚠️ [TextoSelector] Duplicados de sesión por curso+texto detectados. Se eligió la más reciente.');
+        logger.warn('⚠️ [TextoSelector] Duplicados de sesión por curso+texto detectados. Se eligió la más reciente.');
         try {
           console.table(duplicatedKeys);
         } catch {
-          console.warn('Detalles duplicados:', duplicatedKeys);
+          logger.warn('Detalles duplicados:', duplicatedKeys);
         }
       }
 
       setLocalSessionsMap(sMap);
 
     } catch (error) {
-      console.error('Error loading dashboard:', error);
+      logger.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
     }
@@ -525,7 +526,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       if (result?.courseId) {
         const { updateCurrentSession } = await import('../../services/sessionManager');
         updateCurrentSession({ sourceCourseId: result.courseId });
-        console.log('✅ [JoinCourse] sourceCourseId actualizado en sesión:', result.courseId);
+        logger.log('✅ [JoinCourse] sourceCourseId actualizado en sesión:', result.courseId);
       }
       
       loadDashboard();
@@ -557,15 +558,15 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       if (sourceCourseId && textoLite.textoId) {
         const compositeKey = `${sourceCourseId}_${textoLite.textoId}`;
         existingSession = localSessionsMapRef.current?.[compositeKey];
-        console.log(`🔍 [Smart Resume] Buscando con clave: ${compositeKey}`, existingSession ? '✅ Encontrada' : '❌ No encontrada');
+        logger.log(`🔍 [Smart Resume] Buscando con clave: ${compositeKey}`, existingSession ? '✅ Encontrada' : '❌ No encontrada');
       }
 
       // 🆕 Ya no hacemos búsqueda exhaustiva - solo usamos clave compuesta
       // Si no hay sesión con clave compuesta, es una sesión nueva
 
       if (existingSession) {
-        console.log('🔄 [Smart Resume] Restaurando sesión del mismo curso:', existingSession.id);
-        console.log('📊 [Smart Resume] Análisis disponible:', !!existingSession.completeAnalysis);
+        logger.log('🔄 [Smart Resume] Restaurando sesión del mismo curso:', existingSession.id);
+        logger.log('📊 [Smart Resume] Análisis disponible:', !!existingSession.completeAnalysis);
         try {
           const rubricKeys = Object.keys(existingSession?.rubricProgress || {});
           const maxRubricTs = rubricKeys.reduce((max, key) => {
@@ -574,26 +575,26 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
             const bestScoreTs = scores.reduce((m, sc) => Math.max(m, Number(sc?.timestamp) || 0), 0);
             return Math.max(max, Number(rp?.lastUpdate) || 0, bestScoreTs);
           }, 0);
-          console.log('🧭 [Smart Resume] Debug rúbricas:', { rubrics: rubricKeys.length, maxRubricTs });
+          logger.log('🧭 [Smart Resume] Debug rúbricas:', { rubrics: rubricKeys.length, maxRubricTs });
         } catch {
           // noop
         }
         
         const success = await restoreSession(existingSession);
         if (success) {
-          console.log('✅ [Smart Resume] Sesión restaurada - saltando análisis');
+          logger.log('✅ [Smart Resume] Sesión restaurada - saltando análisis');
           // Cambiar a vista de Lectura Guiada
           window.dispatchEvent(new CustomEvent('app-change-tab', { detail: { tabId: 'lectura-guiada' } }));
           setOpeningText(null);
           return;
         } else {
-          console.warn('⚠️ [Smart Resume] Fallo al restaurar sesión, procediendo con carga normal');
+          logger.warn('⚠️ [Smart Resume] Fallo al restaurar sesión, procediendo con carga normal');
         }
       } else {
-        console.log('ℹ️ [Smart Resume] No se encontró sesión para este curso+texto, se creará nueva');
+        logger.log('ℹ️ [Smart Resume] No se encontró sesión para este curso+texto, se creará nueva');
       }
     } catch (e) {
-      console.warn('⚠️ [Smart Resume] Error en sistema Smart Resume:', e);
+      logger.warn('⚠️ [Smart Resume] Error en sistema Smart Resume:', e);
     }
 
     try {
@@ -646,7 +647,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       });
 
     } catch (err) {
-      console.error(err);
+      logger.error(err);
       alert('Error abriendo texto: ' + err.message);
     } finally {
       setOpeningText(null);
@@ -786,7 +787,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
         fileName: `progreso-${(reading.titulo || 'lectura').replace(/[^a-z0-9]/gi, '_')}-${new Date().toISOString().slice(0,10)}.pdf`,
       });
     } catch (error) {
-      console.error('Error exportando progreso como PDF:', error);
+      logger.error('Error exportando progreso como PDF:', error);
       alert('Error exportando el progreso');
     }
   };

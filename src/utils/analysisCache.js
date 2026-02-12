@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Sistema de Caché para Análisis de Texto
  * Guarda resultados de análisis IA en localStorage para evitar llamadas repetidas
@@ -34,7 +37,7 @@ export function getCachedAnalysis(textHash) {
     const cached = localStorage.getItem(cacheKey);
     
     if (!cached) {
-      console.log('📭 No hay análisis en caché para este texto');
+      logger.log('📭 No hay análisis en caché para este texto');
       return null;
     }
 
@@ -42,7 +45,7 @@ export function getCachedAnalysis(textHash) {
     
     // Verificar versión del caché
     if (version !== CACHE_VERSION) {
-      console.log('🔄 Caché de versión antigua, invalidando...');
+      logger.log('🔄 Caché de versión antigua, invalidando...');
       localStorage.removeItem(cacheKey);
       return null;
     }
@@ -50,7 +53,7 @@ export function getCachedAnalysis(textHash) {
     // Verificar expiración
     const age = Date.now() - timestamp;
     if (age > CACHE_DURATION_MS) {
-      console.log(`⏰ Caché expirado (${Math.round(age / (24 * 60 * 60 * 1000))} días), eliminando...`);
+      logger.log(`⏰ Caché expirado (${Math.round(age / (24 * 60 * 60 * 1000))} días), eliminando...`);
       localStorage.removeItem(cacheKey);
       return null;
     }
@@ -59,24 +62,24 @@ export function getCachedAnalysis(textHash) {
     // - Soportar análisis "completo" { analysis, questions: [] }
     // - Soportar análisis "simple" (objeto arbitrario)
     if (!data || typeof data !== 'object') {
-      console.warn('⚠️ Caché corrupto, eliminando...');
+      logger.warn('⚠️ Caché corrupto, eliminando...');
       localStorage.removeItem(cacheKey);
       return null;
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'questions') && !Array.isArray(data.questions)) {
-      console.warn('⚠️ Caché inválido (questions no es array), eliminando...');
+      logger.warn('⚠️ Caché inválido (questions no es array), eliminando...');
       localStorage.removeItem(cacheKey);
       return null;
     }
     
     const daysOld = Math.round(age / (24 * 60 * 60 * 1000));
-    console.log(`✅ Análisis encontrado en caché (${daysOld} días de antigüedad)`);
+    logger.log(`✅ Análisis encontrado en caché (${daysOld} días de antigüedad)`);
     
     return data;
     
   } catch (error) {
-    console.error('❌ Error leyendo caché:', error);
+    logger.error('❌ Error leyendo caché:', error);
     return null;
   }
 }
@@ -93,7 +96,7 @@ export function setCachedAnalysis(textHash, data) {
   try {
     // Validación tolerante: sólo rechazamos valores no serializables o no-objeto.
     if (typeof data !== 'object') {
-      console.warn('⚠️ Datos inválidos, no se guardarán en caché');
+      logger.warn('⚠️ Datos inválidos, no se guardarán en caché');
       return false;
     }
 
@@ -108,7 +111,7 @@ export function setCachedAnalysis(textHash, data) {
     };
 
     localStorage.setItem(cacheKey, JSON.stringify(cacheEntry));
-    console.log('💾 Análisis guardado en caché exitosamente');
+    logger.log('💾 Análisis guardado en caché exitosamente');
     
     // Actualizar stats
     updateCacheStats('save');
@@ -118,7 +121,7 @@ export function setCachedAnalysis(textHash, data) {
   } catch (error) {
     // QuotaExceededError: localStorage lleno
     if (error.name === 'QuotaExceededError') {
-      console.warn('⚠️ localStorage lleno, limpiando caché antiguo...');
+      logger.warn('⚠️ localStorage lleno, limpiando caché antiguo...');
       const cleared = forceClearOldCache(10); // Eliminar 10 entradas más antiguas
       if (cleared) {
         // Reintentar
@@ -130,16 +133,16 @@ export function setCachedAnalysis(textHash, data) {
             version: CACHE_VERSION
           };
           localStorage.setItem(cacheKey, JSON.stringify(cacheEntry));
-          console.log('💾 Análisis guardado después de limpiar caché');
+          logger.log('💾 Análisis guardado después de limpiar caché');
           return true;
         } catch (retryError) {
-          console.error('❌ No se pudo guardar en caché después de limpiar:', retryError);
+          logger.error('❌ No se pudo guardar en caché después de limpiar:', retryError);
           return false;
         }
       }
     }
     
-    console.error('❌ Error guardando en caché:', error);
+    logger.error('❌ Error guardando en caché:', error);
     return false;
   }
 }
@@ -156,7 +159,7 @@ function cleanupOldCache() {
       return 0; // No es necesario limpiar
     }
 
-    console.log(`🧹 Limpiando caché (${keys.length} entradas, límite ${MAX_CACHE_ENTRIES})`);
+    logger.log(`🧹 Limpiando caché (${keys.length} entradas, límite ${MAX_CACHE_ENTRIES})`);
     
     // Obtener timestamps de todas las entradas
     const entries = keys.map(key => {
@@ -180,11 +183,11 @@ function cleanupOldCache() {
       deleted++;
     });
 
-    console.log(`✅ ${deleted} entradas antiguas eliminadas`);
+    logger.log(`✅ ${deleted} entradas antiguas eliminadas`);
     return deleted;
     
   } catch (error) {
-    console.error('❌ Error limpiando caché:', error);
+    logger.error('❌ Error limpiando caché:', error);
     return 0;
   }
 }
@@ -216,11 +219,11 @@ function forceClearOldCache(count = 10) {
       localStorage.removeItem(key);
     });
 
-    console.log(`🗑️ ${toDelete.length} entradas forzadas a eliminar`);
+    logger.log(`🗑️ ${toDelete.length} entradas forzadas a eliminar`);
     return true;
     
   } catch (error) {
-    console.error('❌ Error en eliminación forzada:', error);
+    logger.error('❌ Error en eliminación forzada:', error);
     return false;
   }
 }
@@ -236,11 +239,11 @@ export function clearCachedAnalysis(textHash) {
   try {
     const cacheKey = `${CACHE_PREFIX}${textHash}`;
     localStorage.removeItem(cacheKey);
-    console.log('🗑️ Análisis eliminado del caché');
+    logger.log('🗑️ Análisis eliminado del caché');
     updateCacheStats('clear');
     return true;
   } catch (error) {
-    console.error('❌ Error eliminando caché:', error);
+    logger.error('❌ Error eliminando caché:', error);
     return false;
   }
 }
@@ -259,14 +262,14 @@ export function clearAllAnalysisCache() {
       deleted++;
     });
 
-    console.log(`🗑️ Todo el caché de análisis eliminado (${deleted} entradas)`);
+    logger.log(`🗑️ Todo el caché de análisis eliminado (${deleted} entradas)`);
     
     // Resetear stats
     localStorage.removeItem('analysis_cache_stats');
     
     return deleted;
   } catch (error) {
-    console.error('❌ Error eliminando todo el caché:', error);
+    logger.error('❌ Error eliminando todo el caché:', error);
     return 0;
   }
 }
@@ -316,7 +319,7 @@ export function getCacheStats() {
       ...customStats
     };
   } catch (error) {
-    console.error('❌ Error obteniendo stats de caché:', error);
+    logger.error('❌ Error obteniendo stats de caché:', error);
     return {
       totalEntries: 0,
       validEntries: 0,

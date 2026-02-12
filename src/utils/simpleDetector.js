@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Detector SIMPLE de tipos de párrafo
  * Enfoque visual y directo sin complejidad innecesaria
@@ -18,20 +21,20 @@ export function detectType(text) {
   if (length < 150) {
     // Todo mayúsculas
     if (trimmed === trimmed.toUpperCase() && /[A-ZÁÉÍÓÚÑ]/.test(trimmed)) {
-      console.log('🎯 TÍTULO detectado (mayúsculas):', trimmed.substring(0, 50));
+      logger.log('🎯 TÍTULO detectado (mayúsculas):', trimmed.substring(0, 50));
       return 'title';
     }
     
     // Empieza con palabras clave académicas comunes
     const keywords = /^(resumen|abstract|introducción|introduction|metodología|methodology|resultados|results|conclusión|conclusion|discusión|discussion|referencias|references|bibliografía|bibliography|capítulo|chapter|anexo|annex)/i;
     if (keywords.test(trimmed)) {
-      console.log('🎯 TÍTULO detectado (keyword):', trimmed.substring(0, 50));
+      logger.log('🎯 TÍTULO detectado (keyword):', trimmed.substring(0, 50));
       return 'title';
     }
     
     // Empieza con número + punto + palabra en mayúscula
     if (/^\d+\.\s+[A-ZÁÉÍÓÚÑ]/.test(trimmed) && length < 100) {
-      console.log('🎯 TÍTULO numerado:', trimmed.substring(0, 50));
+      logger.log('🎯 TÍTULO numerado:', trimmed.substring(0, 50));
       return 'title';
     }
   }
@@ -39,7 +42,7 @@ export function detectType(text) {
   // 2. SUBTÍTULO: Texto mediano sin punto final, empieza con mayúscula
   if (length >= 15 && length < 200 && !trimmed.endsWith('.')) {
     if (/^[A-ZÁÉÍÓÚÑ]/.test(trimmed)) {
-      console.log('📌 SUBTÍTULO detectado:', trimmed.substring(0, 50));
+      logger.log('📌 SUBTÍTULO detectado:', trimmed.substring(0, 50));
       return 'subtitle';
     }
   }
@@ -47,13 +50,13 @@ export function detectType(text) {
   // 3. LISTA: Empieza con marcador
   const listMarkers = /^(\d+[\.\)]\s+|[a-z][\.\)]\s+|•|–|—|\*|\-|►|▪|◆|○|●)/;
   if (listMarkers.test(trimmed)) {
-    console.log('📋 LISTA detectada:', trimmed.substring(0, 50));
+    logger.log('📋 LISTA detectada:', trimmed.substring(0, 50));
     return 'list';
   }
   
   // 4. CITA: Empieza con comillas o >
   if (trimmed.startsWith('"') || trimmed.startsWith('>')) {
-    console.log('💬 CITA detectada:', trimmed.substring(0, 50));
+    logger.log('💬 CITA detectada:', trimmed.substring(0, 50));
     return 'quote';
   }
   

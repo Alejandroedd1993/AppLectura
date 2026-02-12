@@ -9,6 +9,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import styled from 'styled-components';
 
+import logger from '../utils/logger';
 const LoadingContainer = styled.div`
   min-height: 100vh;
   display: flex;
@@ -70,13 +71,13 @@ export default function PrivateRoute({ children, requiredRole = null, redirectTo
 
   // No autenticado: redirigir a login
   if (!currentUser || !userData) {
-    console.log('🔒 [PrivateRoute] Usuario no autenticado, redirigiendo a', redirectTo);
+    logger.log('🔒 [PrivateRoute] Usuario no autenticado, redirigiendo a', redirectTo);
     return <Navigate to={redirectTo} replace />;
   }
 
   // Verificar rol si es requerido
   if (requiredRole && userData.role !== requiredRole) {
-    console.log('⛔ [PrivateRoute] Rol incorrecto. Esperado:', requiredRole, 'Actual:', userData.role);
+    logger.log('⛔ [PrivateRoute] Rol incorrecto. Esperado:', requiredRole, 'Actual:', userData.role);
     
     // Redirigir a la ruta apropiada según su rol
     if (userData.role === 'docente') {

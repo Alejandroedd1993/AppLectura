@@ -825,7 +825,7 @@ export default function RespuestaArgumentativa({ theme }) {
       }
 
     } catch (error) {
-      console.error('Error evaluando Respuesta Argumentativa:', error);
+      logger.error('Error evaluando Respuesta Argumentativa:', error);
       setError(error.message || 'Error al evaluar el argumento');
     } finally {
       // Limpiar step timeouts en cualquier caso (éxito o error)

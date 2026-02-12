@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { checkUnsaveDrafts } from '../../utils/checkUnsaveDrafts';
 import { AppContext } from '../../context/AppContext';
 
+import logger from '../../utils/logger';
 /**
  * Componente de advertencia para borradores sin evaluar
  * Se muestra cuando hay borradores que se perderán al cambiar de sesión
@@ -47,7 +48,7 @@ const DraftWarning = ({ theme }) => {
     // - `evaluation-complete`: compatibilidad con emisores legacy
     // - `artifact-submitted`: 🆕 cuando se entrega un artefacto al docente
     const handleEvaluationComplete = () => {
-      console.log('✅ [DraftWarning] Evaluación/entrega completada, re-verificando borradores...');
+      logger.log('✅ [DraftWarning] Evaluación/entrega completada, re-verificando borradores...');
       checkDrafts();
     };
     

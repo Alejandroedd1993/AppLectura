@@ -2,6 +2,7 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension, scoreToLevelDescriptor } from '../pedagogy/rubrics/criticalLiteracyRubric';
 
+import logger from '../utils/logger';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 const DIMENSION_KEY = 'metacognicion_etica_ia';
@@ -217,10 +218,10 @@ async function evaluateWithDeepSeek(tutorInteractions, verificacionFuentes, proc
     });
 
     const rawContent = extractContent(response);
-    console.log('🔍 [DeepSeek BitacoraEticaIA] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [DeepSeek BitacoraEticaIA] Respuesta cruda:', rawContent.slice(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [DeepSeek BitacoraEticaIA] Respuesta limpia:', cleanedContent.slice(0, 200));
+    logger.log('✅ [DeepSeek BitacoraEticaIA] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     if (!parsed.criterios_evaluados) {
@@ -228,7 +229,7 @@ async function evaluateWithDeepSeek(tutorInteractions, verificacionFuentes, proc
     }
     return parsed;
   } catch (error) {
-    console.error('❌ Error en evaluación DeepSeek (BitacoraEticaIA):', error);
+    logger.error('❌ Error en evaluación DeepSeek (BitacoraEticaIA):', error);
     return {
       criterios_evaluados: {
         registro_transparencia: { nivel: 3, documenta_interacciones: true, describe_proceso: true },
@@ -260,10 +261,10 @@ async function evaluateWithOpenAI(tutorInteractions, verificacionFuentes, proces
     });
 
     const rawContent = extractContent(response);
-    console.log('🔍 [OpenAI BitacoraEticaIA] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [OpenAI BitacoraEticaIA] Respuesta cruda:', rawContent.slice(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [OpenAI BitacoraEticaIA] Respuesta limpia:', cleanedContent.slice(0, 200));
+    logger.log('✅ [OpenAI BitacoraEticaIA] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     if (!parsed.profundidad_metacognitiva || !parsed.nivel_reflexion_etica) {
@@ -271,7 +272,7 @@ async function evaluateWithOpenAI(tutorInteractions, verificacionFuentes, proces
     }
     return parsed;
   } catch (error) {
-    console.error('❌ Error en evaluación OpenAI (BitacoraEticaIA):', error);
+    logger.error('❌ Error en evaluación OpenAI (BitacoraEticaIA):', error);
     return {
       profundidad_metacognitiva: {
         registro_transparencia: { demuestra_autoconsciencia: true, reflexiona_sobre_proceso: true, comentario: 'Análisis básico' },
@@ -407,21 +408,21 @@ function detectCriterioKey(comentario) {
  * @returns {Promise<Object>} Feedback criterial con niveles y evidencias
  */
 export async function evaluateBitacoraEticaIA({ tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones }) {
-  console.log('🤖 [BitacoraEticaIA] Iniciando evaluación dual...');
+  logger.log('🤖 [BitacoraEticaIA] Iniciando evaluación dual...');
 
   const startTime = Date.now();
 
   try {
     // FASE 1: Evaluación de transparencia y registro con DeepSeek
-    console.log('📊 Evaluando transparencia y registro (DeepSeek)...');
+    logger.log('📊 Evaluando transparencia y registro (DeepSeek)...');
     const deepseekResult = await evaluateWithDeepSeek(tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones);
 
     // FASE 2: Evaluación de profundidad metacognitiva con OpenAI
-    console.log('🧠 Evaluando profundidad metacognitiva (OpenAI)...');
+    logger.log('🧠 Evaluando profundidad metacognitiva (OpenAI)...');
     const openaiResult = await evaluateWithOpenAI(tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, deepseekResult);
 
     // FASE 3: Combinar feedback
-    console.log('🔧 Combinando feedback dual...');
+    logger.log('🔧 Combinando feedback dual...');
     const mergedFeedback = mergeFeedback(deepseekResult, openaiResult);
 
     // FASE 4: Añadir descriptores de rúbrica
@@ -436,13 +437,13 @@ export async function evaluateBitacoraEticaIA({ tutorInteractions, verificacionF
       duracion_ms: Date.now() - startTime
     };
 
-    console.log(`✅ Evaluación completada en ${finalFeedback.duracion_ms}ms`);
-    console.log(`📊 Nivel global: ${mergedFeedback.nivel_global}/4`);
+    logger.log(`✅ Evaluación completada en ${finalFeedback.duracion_ms}ms`);
+    logger.log(`📊 Nivel global: ${mergedFeedback.nivel_global}/4`);
 
     return finalFeedback;
 
   } catch (error) {
-    console.error('❌ Error en evaluación dual de BitacoraEticaIA:', error);
+    logger.error('❌ Error en evaluación dual de BitacoraEticaIA:', error);
     throw error;
   }
 }

@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRewards } from '../../context/PedagogyContext';
 
+import logger from '../../utils/logger';
 /**
  * 🎮 RewardsAnalytics - Panel de estadísticas y exportación
  * 
@@ -427,12 +428,12 @@ export default function RewardsAnalytics({ isOpen, onClose }) {
   // 🆕 Escuchar cambios en el estado de rewards
   useEffect(() => {
     const handleRewardsChange = () => {
-      console.log('📊 [RewardsAnalytics] Detectado cambio en rewards, refrescando...');
+      logger.log('📊 [RewardsAnalytics] Detectado cambio en rewards, refrescando...');
       setRefreshKey(k => k + 1);
     };
 
     const handleProgressSync = (e) => {
-      console.log('📊 [RewardsAnalytics] Detectado sync desde cloud:', e.detail);
+      logger.log('📊 [RewardsAnalytics] Detectado sync desde cloud:', e.detail);
       // Pequeño delay para asegurar que el engine ya procesó el importState
       setTimeout(() => setRefreshKey(k => k + 1), 100);
     };
@@ -448,7 +449,7 @@ export default function RewardsAnalytics({ isOpen, onClose }) {
   // 🆕 Refrescar al abrir el modal
   useEffect(() => {
     if (isOpen) {
-      console.log('📊 [RewardsAnalytics] Modal abierto, obteniendo datos actuales...');
+      logger.log('📊 [RewardsAnalytics] Modal abierto, obteniendo datos actuales...');
       setRefreshKey(k => k + 1);
     }
   }, [isOpen]);
@@ -457,11 +458,11 @@ export default function RewardsAnalytics({ isOpen, onClose }) {
   const getAnalyticsNow = useCallback(() => {
     const engine = typeof window !== 'undefined' ? window.__rewardsEngine : rewards;
     if (!engine) {
-      console.warn('📊 [RewardsAnalytics] No hay engine disponible');
+      logger.warn('📊 [RewardsAnalytics] No hay engine disponible');
       return null;
     }
     const state = engine.getState();
-    console.log('📊 [RewardsAnalytics] Estado actual:', {
+    logger.log('📊 [RewardsAnalytics] Estado actual:', {
       totalPoints: state.totalPoints,
       historyLength: state.history?.length,
       stats: state.stats
@@ -490,7 +491,7 @@ export default function RewardsAnalytics({ isOpen, onClose }) {
       // Persistir el estado vacío en localStorage
       engine.persist();
       
-      console.log('🗑️ [RewardsAnalytics] Puntos reiniciados correctamente');
+      logger.log('🗑️ [RewardsAnalytics] Puntos reiniciados correctamente');
       
       // Cerrar modales
       setShowConfirmReset(false);
@@ -502,7 +503,7 @@ export default function RewardsAnalytics({ isOpen, onClose }) {
       // Cerrar el panel principal después de un momento
       setTimeout(() => onClose(), 500);
     } catch (error) {
-      console.error('Error al reiniciar puntos:', error);
+      logger.error('Error al reiniciar puntos:', error);
     } finally {
       setIsResetting(false);
     }

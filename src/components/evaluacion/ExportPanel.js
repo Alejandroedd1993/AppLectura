@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { exportToCSV, calculateDetailedStats } from '../../services/analyticsService';
 
+import logger from '../../utils/logger';
 const PanelContainer = styled.div`
   background: ${props => props.theme.surface};
   border: 1px solid ${props => props.theme.border};
@@ -146,7 +147,7 @@ const ExportPanel = ({ rubricProgress = {}, theme }) => {
       setExportStatus('✅ CSV exportado exitosamente');
       setTimeout(() => setExportStatus(''), 3000);
     } catch (error) {
-      console.error('Error al exportar CSV:', error);
+      logger.error('Error al exportar CSV:', error);
       setExportStatus('❌ Error al exportar CSV');
       setTimeout(() => setExportStatus(''), 3000);
     }
@@ -199,7 +200,7 @@ const ExportPanel = ({ rubricProgress = {}, theme }) => {
       setExportStatus('✅ PDF exportado exitosamente');
       setTimeout(() => setExportStatus(''), 3000);
     } catch (error) {
-      console.error('Error al exportar PDF:', error);
+      logger.error('Error al exportar PDF:', error);
       setExportStatus('❌ Error al exportar PDF');
       setTimeout(() => setExportStatus(''), 3000);
     }
@@ -276,7 +277,7 @@ const ExportPanel = ({ rubricProgress = {}, theme }) => {
       setExportStatus('✅ Reporte TXT exportado exitosamente');
       setTimeout(() => setExportStatus(''), 3000);
     } catch (error) {
-      console.error('Error al exportar TXT:', error);
+      logger.error('Error al exportar TXT:', error);
       setExportStatus('❌ Error al exportar reporte');
       setTimeout(() => setExportStatus(''), 3000);
     }

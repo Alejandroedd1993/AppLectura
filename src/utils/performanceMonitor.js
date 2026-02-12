@@ -62,7 +62,7 @@ class PerformanceMonitor {
         }
 
       } catch (error) {
-        console.warn('Error inicializando observadores de performance:', error);
+        logger.warn('Error inicializando observadores de performance:', error);
       }
     }
   }
@@ -113,7 +113,7 @@ class PerformanceMonitor {
         performance.clearMeasures(operationName);
       }
     } catch (error) {
-      console.warn(`Error midiendo operación ${operationName}:`, error);
+      logger.warn(`Error midiendo operación ${operationName}:`, error);
     }
   }
 
@@ -260,7 +260,7 @@ class PerformanceMonitor {
       try {
         observer.disconnect();
       } catch (error) {
-        console.warn('Error desconectando observer:', error);
+        logger.warn('Error desconectando observer:', error);
       }
     });
     
@@ -284,6 +284,7 @@ export default performanceMonitor;
 // Importar React para el HOC
 import React from 'react';
 
+import logger from './logger';
 // Singleton estable: se crea UNA VEZ fuera del componente para evitar
 // que cada render genere un objeto nuevo con .bind() (invalida dependencias de useCallback/useMemo).
 const _stableMonitorApi = {

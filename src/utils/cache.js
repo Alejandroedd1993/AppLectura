@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Utilidades para manejo de caché de análisis de texto
  *
@@ -209,7 +212,7 @@ export const generateTextHash = (text, apiType) => {
 export const saveAnalysisToCache = (textHash, analysis) => {
   try {
     if (!textHash || !analysis) {
-      console.warn('Intento de guardar en caché con hash o análisis vacío');
+      logger.warn('Intento de guardar en caché con hash o análisis vacío');
       return false;
     }
 
@@ -224,7 +227,7 @@ export const saveAnalysisToCache = (textHash, analysis) => {
 
     return saved;
   } catch (error) {
-    console.error('Error al guardar análisis en caché:', error);
+    logger.error('Error al guardar análisis en caché:', error);
     // Si falla el guardado en caché, simplemente continuamos sin caché
     return false;
   }
@@ -242,7 +245,7 @@ export const getAnalysisFromCache = (textHash) => {
     // 1) Nueva caché (analysis_cache_text_*)
     const unified = getCachedAnalysis(textHash);
     if (unified) {
-      console.log(`Análisis recuperado de caché unificada. Hash: ${textHash.substring(0, 20)}...`);
+      logger.log(`Análisis recuperado de caché unificada. Hash: ${textHash.substring(0, 20)}...`);
       return unified;
     }
 
@@ -252,7 +255,7 @@ export const getAnalysisFromCache = (textHash) => {
     try {
       cache = JSON.parse(cacheString);
     } catch (error) {
-      console.error('Error al parsear caché legacy:', error);
+      logger.error('Error al parsear caché legacy:', error);
       return null;
     }
 
@@ -269,7 +272,7 @@ export const getAnalysisFromCache = (textHash) => {
           delete cache[textHash];
           localStorage.setItem(CACHE_CONFIG.STORAGE_KEY, JSON.stringify(cache));
         } catch {}
-        console.log(`Análisis migrado desde caché legacy. Hash: ${textHash.substring(0, 20)}...`);
+        logger.log(`Análisis migrado desde caché legacy. Hash: ${textHash.substring(0, 20)}...`);
         return legacyData;
       }
 
@@ -278,13 +281,13 @@ export const getAnalysisFromCache = (textHash) => {
       try {
         localStorage.setItem(CACHE_CONFIG.STORAGE_KEY, JSON.stringify(cache));
       } catch (error) {
-        console.error('Error al actualizar caché legacy expirada:', error);
+        logger.error('Error al actualizar caché legacy expirada:', error);
       }
     }
 
     return null;
   } catch (error) {
-    console.error('Error al recuperar análisis de caché:', error);
+    logger.error('Error al recuperar análisis de caché:', error);
     return null;
   }
 };
@@ -309,7 +312,7 @@ export const limpiarCache = () => {
     const message = `Caché limpiada. Se eliminaron ${keysToRemove.length} entradas.`;
     return { success: true, message };
   } catch (error) {
-    console.error('Error al limpiar la caché completa:', error);
+    logger.error('Error al limpiar la caché completa:', error);
     return { success: false, error: 'No se pudo limpiar la caché.' };
   }
 };
@@ -333,7 +336,7 @@ export const getCacheStats = () => {
       legacyEntries
     };
   } catch (error) {
-    console.error('Error al obtener estadísticas de caché:', error);
+    logger.error('Error al obtener estadísticas de caché:', error);
     return { error: error.message };
   }
 };

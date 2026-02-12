@@ -15,6 +15,7 @@ import { hashText } from '../utils/netUtils';
 import AlertMessage from '../components/AlertMessage';
 import SessionsHistory from './common/SessionsHistory';
 
+import logger from '../utils/logger';
 // Estilos optimizados para sidebar
 const CargaContainer = styled(motion.div)`
   background: ${props => props.theme.surface};
@@ -267,7 +268,7 @@ function CargaTexto() {
 
   // Manejar selección de archivo
   const handleFileSelect = useCallback(async (file) => {
-    console.log('🔍 Iniciando procesamiento de archivo:', file.name, file.type, file.size);
+    logger.log('🔍 Iniciando procesamiento de archivo:', file.name, file.type, file.size);
     setError('');
     setProcesando(true);
 
@@ -293,13 +294,13 @@ function CargaTexto() {
         throw new Error('Formato de archivo no soportado. Use TXT, PDF o DOCX');
       }
 
-      console.log('📋 Validación básica completada');
+      logger.log('📋 Validación básica completada');
 
       let contenido = '';
 
       // Procesar según el tipo de archivo
       if (fileName.endsWith('.txt') || file.type === 'text/plain') {
-        console.log('📝 Procesando archivo TXT...');
+        logger.log('📝 Procesando archivo TXT...');
         contenido = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target.result);
@@ -307,7 +308,7 @@ function CargaTexto() {
           reader.readAsText(file);
         });
       } else if (fileName.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        console.log('📄 Procesando archivo DOCX...');
+        logger.log('📄 Procesando archivo DOCX...');
         try {
           const mammoth = await import('mammoth');
           const arrayBuffer = await file.arrayBuffer();
@@ -317,17 +318,17 @@ function CargaTexto() {
           throw new Error(`Error al procesar DOCX: ${err.message}`);
         }
       } else if (fileName.endsWith('.pdf') || file.type === 'application/pdf') {
-        console.log('📕 Procesando archivo PDF...');
+        logger.log('📕 Procesando archivo PDF...');
         // Verificar si el backend está disponible
         const isBackendAvailable = await checkBackendAvailability();
 
         if (!isBackendAvailable) {
-          console.warn('🔄 Backend no disponible, usando procesamiento con fallback');
+          logger.warn('🔄 Backend no disponible, usando procesamiento con fallback');
           // En lugar de lanzar un error, usar el procesador con fallback
           const result = await procesarArchivo(file, {
             analyzeStructure: true,
             onProgress: (progress) => {
-              console.log('📊 Progreso:', progress.message || progress);
+              logger.log('📊 Progreso:', progress.message || progress);
             }
           });
 
@@ -335,7 +336,7 @@ function CargaTexto() {
           if (typeof result === 'object' && result.text) {
             contenido = result.text;
             if (result.hasStructure && result.structure) {
-              console.log('✨ Estructura detectada por IA:', result.structure);
+              logger.log('✨ Estructura detectada por IA:', result.structure);
               setTextStructure(result.structure);
             }
           } else {
@@ -349,37 +350,37 @@ function CargaTexto() {
             }
 
             // Analizar estructura del texto extraído
-            console.log('🤖 Analizando estructura del PDF con IA...');
+            logger.log('🤖 Analizando estructura del PDF con IA...');
             const result = await procesarArchivo(file, {
               analyzeStructure: true,
               onProgress: (progress) => {
-                console.log('📊 Progreso:', progress.message || progress);
+                logger.log('📊 Progreso:', progress.message || progress);
               }
             });
 
             if (typeof result === 'object' && result.text) {
               contenido = result.text;
               if (result.hasStructure && result.structure) {
-                console.log('✨ Estructura detectada por IA:', result.structure);
+                logger.log('✨ Estructura detectada por IA:', result.structure);
                 setTextStructure(result.structure);
               }
             } else {
               contenido = result;
             }
           } catch (backendError) {
-            console.warn('🔄 Error con backend, usando fallback:', backendError.message);
+            logger.warn('🔄 Error con backend, usando fallback:', backendError.message);
             // Si falla el backend, usar el procesador con fallback
             const result = await procesarArchivo(file, {
               analyzeStructure: true,
               onProgress: (progress) => {
-                console.log('📊 Progreso:', progress.message || progress);
+                logger.log('📊 Progreso:', progress.message || progress);
               }
             });
 
             if (typeof result === 'object' && result.text) {
               contenido = result.text;
               if (result.hasStructure && result.structure) {
-                console.log('✨ Estructura detectada por IA:', result.structure);
+                logger.log('✨ Estructura detectada por IA:', result.structure);
                 setTextStructure(result.structure);
               }
             } else {
@@ -395,7 +396,7 @@ function CargaTexto() {
         throw new Error('El archivo está vacío o no se pudo leer el contenido');
       }
 
-      console.log('� Contenido extraído:', contenido.length, 'caracteres');
+      logger.log('� Contenido extraído:', contenido.length, 'caracteres');
 
       // Crear metadatos básicos
       const words = contenido.split(/\s+/).filter(word => word.length > 0).length;
@@ -405,7 +406,7 @@ function CargaTexto() {
         tiempoLectura: Math.ceil(words / 200)
       };
 
-      console.log('📊 Metadatos calculados:', metadatos);
+      logger.log('📊 Metadatos calculados:', metadatos);
 
       const fileData = {
         name: file.name,
@@ -415,12 +416,12 @@ function CargaTexto() {
         metadatos: metadatos
       };
 
-      console.log('✅ Archivo procesado exitosamente, estableciendo en estado');
+      logger.log('✅ Archivo procesado exitosamente, estableciendo en estado');
       setArchivoSeleccionado(fileData);
       setArchivoFuente(file);
 
     } catch (err) {
-      console.error('❌ Error procesando archivo:', err);
+      logger.error('❌ Error procesando archivo:', err);
       setError(err.message || 'Error al procesar el archivo');
     } finally {
       setProcesando(false);
@@ -433,9 +434,9 @@ function CargaTexto() {
     setIsDragActive(false);
 
     const files = Array.from(e.dataTransfer.files);
-    console.log('📂 Archivos dropeados:', files.length, files);
+    logger.log('📂 Archivos dropeados:', files.length, files);
     if (files.length > 0) {
-      console.log('📝 Procesando primer archivo:', files[0].name);
+      logger.log('📝 Procesando primer archivo:', files[0].name);
       handleFileSelect(files[0]);
     }
   }, [handleFileSelect]);
@@ -461,12 +462,12 @@ function CargaTexto() {
       const confirmed = window.confirm(warningMessage);
 
       if (!confirmed) {
-        console.log('❌ [CargaTexto] Carga cancelada por el usuario');
+        logger.log('❌ [CargaTexto] Carga cancelada por el usuario');
         return;
       }
     }
 
-    console.log('handleSubmit ejecutado - Estado:', {
+    logger.log('handleSubmit ejecutado - Estado:', {
       archivoSeleccionado: !!archivoSeleccionado,
       contenidoArchivo: !!archivoSeleccionado?.contenido,
       textoIngresado: textoIngresado,
@@ -483,15 +484,15 @@ function CargaTexto() {
 
       if (archivoSeleccionado?.contenido) {
         contenidoFinal = archivoSeleccionado.contenido;
-        console.log('Usando contenido del archivo');
+        logger.log('Usando contenido del archivo');
       } else if (textoIngresado.trim()) {
         contenidoFinal = textoIngresado.trim();
-        console.log('Usando texto ingresado:', contenidoFinal);
+        logger.log('Usando texto ingresado:', contenidoFinal);
       } else {
         throw new Error('Por favor, selecciona un archivo o ingresa texto.');
       }
 
-      console.log('Estableciendo texto en contexto:', contenidoFinal.substring(0, 100) + '...');
+      logger.log('Estableciendo texto en contexto:', contenidoFinal.substring(0, 100) + '...');
 
       // 🆕 FIX CRÍTICO: Asegurar nuevo textoId por carga para evitar reutilizar cache/lectura anterior
       const sampleForId = contenidoFinal.length > 12000
@@ -503,7 +504,7 @@ function CargaTexto() {
       const derivedFileType = archivoFuente?.type || archivoSeleccionado?.type || null;
 
       if (switchLecture && typeof switchLecture === 'function') {
-        console.log('🔁 [CargaTexto] switchLecture() con nuevo textoId:', newTextoId);
+        logger.log('🔁 [CargaTexto] switchLecture() con nuevo textoId:', newTextoId);
         switchLecture({
           id: newTextoId,
           courseId: null,
@@ -514,37 +515,37 @@ function CargaTexto() {
         });
       } else {
         // Fallback conservador
-        console.warn('⚠️ [CargaTexto] switchLecture no disponible; usando setters legacy');
+        logger.warn('⚠️ [CargaTexto] switchLecture no disponible; usando setters legacy');
         setTexto(contenidoFinal);
       }
 
       // NUEVO: Trigger automático de análisis completo (Pre-lectura + Análisis Crítico con RAG)
-      console.log('🚀 [CargaTexto] Iniciando análisis automático del documento...');
-      console.log('🔍 [CargaTexto] analyzeDocument disponible:', !!analyzeDocument);
-      console.log('🔍 [CargaTexto] Tipo de analyzeDocument:', typeof analyzeDocument);
-      console.log('🔍 [CargaTexto] Longitud del texto:', contenidoFinal.length);
+      logger.log('🚀 [CargaTexto] Iniciando análisis automático del documento...');
+      logger.log('🔍 [CargaTexto] analyzeDocument disponible:', !!analyzeDocument);
+      logger.log('🔍 [CargaTexto] Tipo de analyzeDocument:', typeof analyzeDocument);
+      logger.log('🔍 [CargaTexto] Longitud del texto:', contenidoFinal.length);
 
       if (analyzeDocument && typeof analyzeDocument === 'function') {
         // Ejecutar análisis en background (no bloqueante)
-        console.log('✅ [CargaTexto] Llamando a analyzeDocument()...');
+        logger.log('✅ [CargaTexto] Llamando a analyzeDocument()...');
         analyzeDocument(contenidoFinal, newTextoId)
           .then(() => {
-            console.log('✅ [CargaTexto] analyzeDocument completado exitosamente');
+            logger.log('✅ [CargaTexto] analyzeDocument completado exitosamente');
             // Cambiar a pestaña DESPUÉS de que el análisis complete
             setTimeout(() => {
-              console.log('📖 [CargaTexto] Cambiando a pestaña de Lectura Guiada...');
+              logger.log('📖 [CargaTexto] Cambiando a pestaña de Lectura Guiada...');
               window.dispatchEvent(new CustomEvent('app-change-tab', {
                 detail: { tabId: 'lectura-guiada' }
               }));
             }, 500);
           })
           .catch(err => {
-            console.error('❌ [CargaTexto] Error en análisis automático:', err);
-            console.error('❌ [CargaTexto] Stack trace:', err.stack);
+            logger.error('❌ [CargaTexto] Error en análisis automático:', err);
+            logger.error('❌ [CargaTexto] Stack trace:', err.stack);
             // No mostrar error al usuario, el análisis es opcional
           });
       } else {
-        console.warn('⚠️ [CargaTexto] analyzeDocument NO está disponible o no es función');
+        logger.warn('⚠️ [CargaTexto] analyzeDocument NO está disponible o no es función');
       }
 
       // Guardar referencia del archivo original (especialmente PDF) para vista "Original"
@@ -574,7 +575,7 @@ function CargaTexto() {
           setArchivoActual(null);
         }
       } catch (eSetFile) {
-        console.warn('No se pudo asignar archivoActual:', eSetFile);
+        logger.warn('No se pudo asignar archivoActual:', eSetFile);
         setArchivoActual(null);
       }
 
@@ -583,10 +584,10 @@ function CargaTexto() {
       setArchivoFuente(null);
       setTextoIngresado('');
 
-      console.log('Análisis completado exitosamente');
+      logger.log('Análisis completado exitosamente');
 
     } catch (err) {
-      console.error('Error en handleSubmit:', err.message);
+      logger.error('Error en handleSubmit:', err.message);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -710,7 +711,7 @@ function CargaTexto() {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => {
-            console.log('Debug completo - Estado del botón:', {
+            logger.log('Debug completo - Estado del botón:', {
               loading,
               procesando,
               archivoSeleccionado: archivoSeleccionado,

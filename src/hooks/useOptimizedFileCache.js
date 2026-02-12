@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { generateTextHash } from '../utils/cache';
 
+import logger from '../utils/logger';
 /**
  * Configuración optimizada de la caché de archivos
  */
@@ -43,7 +44,7 @@ const useOptimizedFileCache = () => {
           const compressed = text.replace(/\s+/g, ' ').trim();
           return compressed;
         } catch (error) {
-          console.warn('Error comprimiendo texto:', error);
+          logger.warn('Error comprimiendo texto:', error);
           return text;
         }
       }
@@ -93,7 +94,7 @@ const useOptimizedFileCache = () => {
 
         lastUpdateTimeRef.current = now;
       } catch (error) {
-        console.warn('Error actualizando estadísticas de caché:', error);
+        logger.warn('Error actualizando estadísticas de caché:', error);
       }
     }, 250); // Debounce de 250ms
   }, []);
@@ -124,7 +125,7 @@ const useOptimizedFileCache = () => {
       setCacheStats(prev => ({ ...prev, hitCount: prev.hitCount + 1 }));
       return parsedData.data;
     } catch (error) {
-      console.warn('Error obteniendo de caché:', error);
+      logger.warn('Error obteniendo de caché:', error);
       setCacheStats(prev => ({ ...prev, missCount: prev.missCount + 1 }));
       return null;
     }
@@ -151,7 +152,7 @@ const useOptimizedFileCache = () => {
       // Verificar si hay espacio
       const estimatedSize = serializedData.length;
       if (estimatedSize > CACHE_CONFIG.MAX_SIZE_MB * 1024 * 1024 * 0.1) {
-        console.warn('Archivo muy grande para caché:', fileName);
+        logger.warn('Archivo muy grande para caché:', fileName);
         return false;
       }
 
@@ -161,7 +162,7 @@ const useOptimizedFileCache = () => {
       return true;
     } catch (error) {
       if (error.name === 'QuotaExceededError') {
-        console.warn('Cuota de localStorage excedida, limpiando caché...');
+        logger.warn('Cuota de localStorage excedida, limpiando caché...');
         limpiarCacheAntiguo();
         // Intentar guardar de nuevo
         try {
@@ -170,11 +171,11 @@ const useOptimizedFileCache = () => {
           updateStatsDebounced();
           return true;
         } catch (retryError) {
-          console.error('Error guardando en caché después de limpieza:', retryError);
+          logger.error('Error guardando en caché después de limpieza:', retryError);
           return false;
         }
       }
-      console.warn('Error guardando en caché:', error);
+      logger.warn('Error guardando en caché:', error);
       return false;
     }
   }, [compressText, updateStatsDebounced]);
@@ -214,9 +215,9 @@ const useOptimizedFileCache = () => {
       }
 
       updateStatsDebounced();
-      console.log(`Caché limpiada: ${entriesToRemove} entradas removidas`);
+      logger.log(`Caché limpiada: ${entriesToRemove} entradas removidas`);
     } catch (error) {
-      console.warn('Error limpiando caché:', error);
+      logger.warn('Error limpiando caché:', error);
     }
   }, [updateStatsDebounced]);
 
@@ -235,7 +236,7 @@ const useOptimizedFileCache = () => {
       
       return existed;
     } catch (error) {
-      console.warn('Error invalidando caché:', error);
+      logger.warn('Error invalidando caché:', error);
       return false;
     }
   }, [updateStatsDebounced]);
@@ -262,9 +263,9 @@ const useOptimizedFileCache = () => {
         missCount: 0
       });
 
-      console.log(`Caché completamente limpiada: ${keysToRemove.length} entradas removidas`);
+      logger.log(`Caché completamente limpiada: ${keysToRemove.length} entradas removidas`);
     } catch (error) {
-      console.warn('Error limpiando caché completa:', error);
+      logger.warn('Error limpiando caché completa:', error);
     }
   }, []);
 

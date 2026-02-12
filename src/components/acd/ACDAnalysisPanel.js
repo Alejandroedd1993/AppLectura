@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useACDAnalyzer, useRewards } from '../../context/PedagogyContext';
 
+import logger from '../../utils/logger';
 /**
  * 🔍 ACDAnalysisPanel - Panel de Análisis Crítico del Discurso
  * 
@@ -393,9 +394,9 @@ export default function ACDAnalysisPanel({ text, compact: _compact = false, rewa
         }
       }
       
-      console.log('🔍 Análisis ACD completado:', result);
+      logger.log('🔍 Análisis ACD completado:', result);
     } catch (error) {
-      console.error('Error en análisis ACD:', error);
+      logger.error('Error en análisis ACD:', error);
     } finally {
       setLoading(false);
     }

@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { useApiConfig } from '../hooks/useApiConfig';
 import { getAvailableProviders } from '../config/aiProviders';
 
+import logger from '../utils/logger';
 const SettingsPanel = ({ isOpen, onClose }) => {
   const { 
     currentProvider, 
@@ -66,21 +67,21 @@ const SettingsPanel = ({ isOpen, onClose }) => {
       
     } catch (error) {
       setSaveStatus(prev => ({ ...prev, [providerId]: 'error' }));
-      console.error('Error saving API key:', error);
+      logger.error('Error saving API key:', error);
     }
   };
 
   const handleProviderSwitch = (providerId) => {
-    console.log(`🔄 Intentando cambiar a proveedor: ${providerId}`);
+    logger.log(`🔄 Intentando cambiar a proveedor: ${providerId}`);
     
     // Permitir cambio a cualquier proveedor existente, sin validar disponibilidad
     const provider = providers.find(p => p.id === providerId);
     if (provider) {
       // Cambiar proveedor usando el hook en lugar de localStorage directo
       if (switchProvider(providerId)) {
-        console.log(`✅ Proveedor cambiado a: ${providerId}`);
+        logger.log(`✅ Proveedor cambiado a: ${providerId}`);
       } else {
-        console.log(`⚠️ No se pudo cambiar a: ${providerId}`);
+        logger.log(`⚠️ No se pudo cambiar a: ${providerId}`);
       }
     } else {
       alert('Proveedor no encontrado.');

@@ -18,6 +18,7 @@
 
 import { useEffect, useCallback, useRef } from 'react';
 
+import logger from '../utils/logger';
 const useKeyboardShortcuts = (shortcuts = {}, options = {}) => {
   const {
     enabled = true,
@@ -98,7 +99,7 @@ const useKeyboardShortcuts = (shortcuts = {}, options = {}) => {
     const handler = shortcutsRef.current[combination];
 
     if (debug) {
-      console.log('[useKeyboardShortcuts] Key combination:', combination);
+      logger.log('[useKeyboardShortcuts] Key combination:', combination);
     }
 
     if (handler && typeof handler === 'function') {
@@ -115,7 +116,7 @@ const useKeyboardShortcuts = (shortcuts = {}, options = {}) => {
         try {
           handler(event);
         } catch (error) {
-          console.error('[useKeyboardShortcuts] Error executing handler:', error);
+          logger.error('[useKeyboardShortcuts] Error executing handler:', error);
         }
       }
     }

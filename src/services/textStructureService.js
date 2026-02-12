@@ -1,3 +1,6 @@
+import logger from '../utils/logger';
+
+
 /**
  * @file Servicio para análisis estructural de textos con IA
  * @module textStructureService
@@ -38,7 +41,7 @@ export async function analyzeTextStructure(text, options = {}) {
     ? text.substring(0, maxLength) + '...'
     : text;
   
-  console.log(`📊 Analizando ${textToAnalyze.length} caracteres (original: ${text.length})`);
+  logger.log(`📊 Analizando ${textToAnalyze.length} caracteres (original: ${text.length})`);
 
   const prompt = `Analiza este texto académico e identifica su estructura.
 
@@ -122,7 +125,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
     const aiResponse = data.content || '';
 
     if (!aiResponse || aiResponse.length < 10) {
-      console.warn('⚠️ IA devolvió respuesta vacía o muy corta');
+      logger.warn('⚠️ IA devolvió respuesta vacía o muy corta');
       return {
         text,
         structure: [],
@@ -134,8 +137,8 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
     // Extraer JSON de la respuesta (puede venir con markdown)
     const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.warn('⚠️ IA no devolvió JSON válido, usando estructura básica');
-      console.log('Respuesta IA recibida:', aiResponse.substring(0, 200));
+      logger.warn('⚠️ IA no devolvió JSON válido, usando estructura básica');
+      logger.log('Respuesta IA recibida:', aiResponse.substring(0, 200));
       return {
         text,
         structure: [],
@@ -158,9 +161,9 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
 
   } catch (error) {
     if (error.name === 'AbortError') {
-      console.error('⏱️ Timeout en análisis estructural (30s excedidos)');
+      logger.error('⏱️ Timeout en análisis estructural (30s excedidos)');
     } else {
-      console.error('❌ Error en análisis estructural con IA:', error.message);
+      logger.error('❌ Error en análisis estructural con IA:', error.message);
     }
     
     // Fallback: devolver texto sin estructura (usará heurísticas)

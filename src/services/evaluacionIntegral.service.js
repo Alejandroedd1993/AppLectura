@@ -2,6 +2,7 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
 
+import logger from '../utils/logger';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 
@@ -73,7 +74,7 @@ function validarPrerequisitos(dimension, completeAnalysis) {
  * usando DeepSeek (rápido y económico)
  */
 async function generarPregunta({ texto, completeAnalysis, dimension, nivelDificultad = 'intermedio', onProgress }) {
-  console.log(`📝 [EvaluacionIntegral] Generando pregunta para dimensión: ${dimension}`);
+  logger.log(`📝 [EvaluacionIntegral] Generando pregunta para dimensión: ${dimension}`);
 
   // Emitir progreso: inicio
   if (onProgress) {
@@ -151,7 +152,7 @@ Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto d
 
     const pregunta = extractContent(response).trim();
     
-    console.log(`✅ Pregunta generada: ${pregunta.substring(0, 80)}...`);
+    logger.log(`✅ Pregunta generada: ${pregunta.substring(0, 80)}...`);
     
     if (onProgress) {
       onProgress({ step: 'completed', progress: 100 });
@@ -166,7 +167,7 @@ Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto d
     };
     
   } catch (error) {
-    console.error('❌ Error generando pregunta:', error);
+    logger.error('❌ Error generando pregunta:', error);
     throw new Error(`Error generando pregunta: ${error.message}`);
   }
 }
@@ -277,7 +278,7 @@ Ejemplo: ["hint 1", "hint 2", "hint 3"]`;
 
     return { hints, dimension, dimensionLabel: rubricDimension?.nombre || dimension };
   } catch (error) {
-    console.error('❌ Error generando hints:', error);
+    logger.error('❌ Error generando hints:', error);
     return { hints: [], dimension, error: error?.message || String(error) };
   }
 }
@@ -356,7 +357,7 @@ Esta pregunta evaluará tu reflexión sobre el uso ético de IA en tu proceso de
  * Evalúa respuesta del estudiante con dual AI
  */
 async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgress }) {
-  console.log(`📊 [EvaluacionIntegral] Evaluando respuesta para dimensión: ${dimension}`);
+  logger.log(`📊 [EvaluacionIntegral] Evaluando respuesta para dimensión: ${dimension}`);
 
   // ✅ Validación server-side de longitud
   if (!respuesta || respuesta.trim().length < 50) {
@@ -396,9 +397,9 @@ async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgr
     }
     const evaluacionFinal = combinarEvaluaciones(deepseekResult, openaiResult, dimension);
 
-    console.log(`✅ Evaluación completada en ${Date.now() - startTime}ms`);
-    console.log(`📊 Score: ${evaluacionFinal.score}/10, Nivel: ${evaluacionFinal.nivel}/4`);
-    console.log(`💰 Tokens usados - DeepSeek: ${tokensUsados.deepseek}, OpenAI: ${tokensUsados.openai}, Total: ${tokensUsados.deepseek + tokensUsados.openai}`);
+    logger.log(`✅ Evaluación completada en ${Date.now() - startTime}ms`);
+    logger.log(`📊 Score: ${evaluacionFinal.score}/10, Nivel: ${evaluacionFinal.nivel}/4`);
+    logger.log(`💰 Tokens usados - DeepSeek: ${tokensUsados.deepseek}, OpenAI: ${tokensUsados.openai}, Total: ${tokensUsados.deepseek + tokensUsados.openai}`);
 
     if (onProgress) {
       onProgress({ step: 'completed', progress: 100 });
@@ -407,7 +408,7 @@ async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgr
     return evaluacionFinal;
 
   } catch (error) {
-    console.error('❌ Error evaluando respuesta:', error);
+    logger.error('❌ Error evaluando respuesta:', error);
     throw error;
   }
 }
@@ -497,10 +498,10 @@ Responde SOLO con JSON:
 
   try {
     const rawContent = extractContent(response);
-    console.log('🔍 [DeepSeek] Respuesta cruda:', rawContent.substring(0, 200));
+    logger.log('🔍 [DeepSeek] Respuesta cruda:', rawContent.substring(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [DeepSeek] Respuesta limpia:', cleanedContent.substring(0, 200));
+    logger.log('✅ [DeepSeek] Respuesta limpia:', cleanedContent.substring(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     
@@ -511,8 +512,8 @@ Responde SOLO con JSON:
     
     return parsed;
   } catch (parseError) {
-    console.error('❌ [DeepSeek] Error parseando JSON:', parseError.message);
-    console.error('📄 [DeepSeek] Contenido recibido:', extractContent(response));
+    logger.error('❌ [DeepSeek] Error parseando JSON:', parseError.message);
+    logger.error('📄 [DeepSeek] Contenido recibido:', extractContent(response));
     
     // Fallback: retornar estructura básica válida
     return {
@@ -586,10 +587,10 @@ Responde SOLO con JSON:
 
   try {
     const rawContent = extractContent(response);
-    console.log('🔍 [OpenAI] Respuesta cruda:', rawContent.substring(0, 200));
+    logger.log('🔍 [OpenAI] Respuesta cruda:', rawContent.substring(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [OpenAI] Respuesta limpia:', cleanedContent.substring(0, 200));
+    logger.log('✅ [OpenAI] Respuesta limpia:', cleanedContent.substring(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     
@@ -600,8 +601,8 @@ Responde SOLO con JSON:
     
     return parsed;
   } catch (parseError) {
-    console.error('❌ [OpenAI] Error parseando JSON:', parseError.message);
-    console.error('📄 [OpenAI] Contenido recibido:', extractContent(response));
+    logger.error('❌ [OpenAI] Error parseando JSON:', parseError.message);
+    logger.error('📄 [OpenAI] Contenido recibido:', extractContent(response));
     
     // Fallback: retornar estructura básica válida
     return {

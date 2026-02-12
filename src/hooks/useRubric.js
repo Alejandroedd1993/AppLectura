@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 
+import logger from '../utils/logger';
 /**
  * Hook para cargar una rúbrica pedagógica (JSON estático por ahora)
  * Futuro: fetch remoto / versionado / i18n
@@ -18,7 +19,7 @@ export default function useRubric(rubricId = 'critical_literacy_v1') {
         const mod = await import('../pedagogy/rubrics/criticalLiteracy.rubric.json');
         if (!mounted) return;
         if (mod?.default?.meta?.id && mod.default.meta.id !== rubricId) {
-          console.warn('[useRubric] ID solicitado no coincide con el archivo cargado');
+          logger.warn('[useRubric] ID solicitado no coincide con el archivo cargado');
         }
         setData(mod.default);
       } catch (e) {

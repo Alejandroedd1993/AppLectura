@@ -2,6 +2,7 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension, scoreToLevelDescriptor } from '../pedagogy/rubrics/criticalLiteracyRubric';
 
+import logger from '../utils/logger';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 const DIMENSION_KEY = 'contextualizacion'; // Dimensión: Contextualización Socio-Histórica
@@ -191,10 +192,10 @@ async function evaluateWithDeepSeek(text, actores, conexiones, consecuencias, co
     });
 
     const rawContent = extractContent(response);
-    console.log('🔍 [DeepSeek MapaActores] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [DeepSeek MapaActores] Respuesta cruda:', rawContent.slice(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [DeepSeek MapaActores] Respuesta limpia:', cleanedContent.slice(0, 200));
+    logger.log('✅ [DeepSeek MapaActores] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     
@@ -205,9 +206,9 @@ async function evaluateWithDeepSeek(text, actores, conexiones, consecuencias, co
     
     return parsed;
   } catch (error) {
-    console.error('❌ Error en evaluación DeepSeek (MapaActores):', error);
+    logger.error('❌ Error en evaluación DeepSeek (MapaActores):', error);
     try {
-      if (response) console.error('📄 Contenido completo:', extractContent(response));
+      if (response) logger.error('📄 Contenido completo:', extractContent(response));
     } catch {
       // ignore
     }
@@ -245,10 +246,10 @@ async function evaluateWithOpenAI(text, actores, conexiones, consecuencias, cont
     });
 
     const rawContent = extractContent(response);
-    console.log('🔍 [OpenAI MapaActores] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [OpenAI MapaActores] Respuesta cruda:', rawContent.slice(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    console.log('✅ [OpenAI MapaActores] Respuesta limpia:', cleanedContent.slice(0, 200));
+    logger.log('✅ [OpenAI MapaActores] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     
@@ -259,9 +260,9 @@ async function evaluateWithOpenAI(text, actores, conexiones, consecuencias, cont
     
     return parsed;
   } catch (error) {
-    console.error('❌ Error en evaluación OpenAI (MapaActores):', error);
+    logger.error('❌ Error en evaluación OpenAI (MapaActores):', error);
     try {
-      if (response) console.error('📄 Contenido completo:', extractContent(response));
+      if (response) logger.error('📄 Contenido completo:', extractContent(response));
     } catch {
       // ignore
     }
@@ -384,21 +385,21 @@ function detectCriterioKey(comentario) {
  * @returns {Promise<Object>} Feedback criterial con niveles y evidencias
  */
 export async function evaluateMapaActores({ text, actores, contextoHistorico, conexiones, consecuencias }) {
-  console.log('🗺️ [MapaActores] Iniciando evaluación dual...');
+  logger.log('🗺️ [MapaActores] Iniciando evaluación dual...');
 
   const startTime = Date.now();
 
   try {
     // FASE 1: Evaluación contextual con DeepSeek
-    console.log('📊 Evaluando precisión contextual (DeepSeek)...');
+    logger.log('📊 Evaluando precisión contextual (DeepSeek)...');
     const deepseekResult = await evaluateWithDeepSeek(text, actores, conexiones, consecuencias, contextoHistorico);
 
     // FASE 2: Evaluación de profundidad con OpenAI
-    console.log('🧠 Evaluando profundidad socio-histórica (OpenAI)...');
+    logger.log('🧠 Evaluando profundidad socio-histórica (OpenAI)...');
     const openaiResult = await evaluateWithOpenAI(text, actores, conexiones, consecuencias, contextoHistorico, deepseekResult);
 
     // FASE 3: Combinar feedback
-    console.log('🔧 Combinando feedback dual...');
+    logger.log('🔧 Combinando feedback dual...');
     const mergedFeedback = mergeFeedback(deepseekResult, openaiResult);
 
     // FASE 4: Añadir descriptores de rúbrica
@@ -413,13 +414,13 @@ export async function evaluateMapaActores({ text, actores, contextoHistorico, co
       duracion_ms: Date.now() - startTime
     };
 
-    console.log(`✅ Evaluación completada en ${finalFeedback.duracion_ms}ms`);
-    console.log(`📊 Nivel global: ${mergedFeedback.nivel_global}/4`);
+    logger.log(`✅ Evaluación completada en ${finalFeedback.duracion_ms}ms`);
+    logger.log(`📊 Nivel global: ${mergedFeedback.nivel_global}/4`);
 
     return finalFeedback;
 
   } catch (error) {
-    console.error('❌ Error en evaluación dual de MapaActores:', error);
+    logger.error('❌ Error en evaluación dual de MapaActores:', error);
     throw error;
   }
 }

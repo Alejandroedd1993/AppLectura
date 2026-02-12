@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Utilidades para encriptar y desencriptar información sensible
  * 
@@ -45,7 +48,7 @@ export const encryptApiKey = (key) => {
     // Codificar en base64 para facilitar el almacenamiento
     return btoa(`${result}:${checksum}`);
   } catch (error) {
-    console.error('Error al encriptar clave API:', error);
+    logger.error('Error al encriptar clave API:', error);
     // En caso de error, devolver una versión base64 simple (fallback)
     return btoa(key);
   }
@@ -92,12 +95,12 @@ export const decryptApiKey = (encryptedKey) => {
     // Verificar checksum (opcional)
     const expectedChecksum = calculateChecksum(result);
     if (checksum !== expectedChecksum) {
-      console.warn('Advertencia: El checksum no coincide. La clave podría estar corrupta.');
+      logger.warn('Advertencia: El checksum no coincide. La clave podría estar corrupta.');
     }
     
     return result;
   } catch (error) {
-    console.error('Error al desencriptar clave:', error);
+    logger.error('Error al desencriptar clave:', error);
     return '';
   }
 };
@@ -122,7 +125,7 @@ export const guardarConfiguracionAPI = (config) => {
     });
     return { success: true, message: "Configuración guardada." };
   } catch (error) {
-    console.error('Error al guardar configuración de API:', error);
+    logger.error('Error al guardar configuración de API:', error);
     return { success: false, error: 'No se pudo guardar la configuración.' };
   }
 };
@@ -138,7 +141,7 @@ export const obtenerClaveAPI = (api) => {
     const decryptedKey = encryptedKey ? decryptApiKey(encryptedKey) : '';
     return { success: true, data: decryptedKey };
   } catch (error) {
-    console.error(`Error al obtener configuración para ${api}:`, error);
+    logger.error(`Error al obtener configuración para ${api}:`, error);
     return { success: false, error: 'No se pudo obtener la clave API.' };
   }
 };
@@ -159,10 +162,10 @@ export const obtenerConfiguracionAPI = () => {
       }
     });
     
-    console.log('Configuración obtenida:', configuracion);
+    logger.log('Configuración obtenida:', configuracion);
     return configuracion;
   } catch (error) {
-    console.error('Error al obtener configuración completa:', error);
+    logger.error('Error al obtener configuración completa:', error);
     return {};
   }
 };

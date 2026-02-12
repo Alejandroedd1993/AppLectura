@@ -1,3 +1,6 @@
+import logger from '../utils/logger';
+
+
 /**
  * 🆕 A1 FIX: Servicio de Análisis Básico Local
  * Genera análisis preliminar instantáneo usando heurísticas
@@ -171,7 +174,7 @@ export function generateBasicAnalysis(text) {
         return null;
     }
 
-    console.log('⚡ [BasicAnalysis] Generando análisis preliminar local...');
+    logger.log('⚡ [BasicAnalysis] Generando análisis preliminar local...');
     const startTime = Date.now();
 
     const genre = detectGenre(text);
@@ -234,8 +237,8 @@ export function generateBasicAnalysis(text) {
         }
     };
 
-    console.log(`✅ [BasicAnalysis] Análisis preliminar generado en ${Date.now() - startTime}ms`);
-    console.log(`   Género: ${genre}, Tipología: ${typology}, Complejidad: ${complexity}`);
+    logger.log(`✅ [BasicAnalysis] Análisis preliminar generado en ${Date.now() - startTime}ms`);
+    logger.log(`   Género: ${genre}, Tipología: ${typology}, Complejidad: ${complexity}`);
 
     return analysis;
 }
@@ -248,11 +251,11 @@ export function generateBasicAnalysis(text) {
  */
 export function mergeAnalysis(basic, deep) {
     if (!deep || !deep.prelecture) {
-        console.warn('⚠️ [BasicAnalysis] Análisis profundo inválido, retornando básico');
+        logger.warn('⚠️ [BasicAnalysis] Análisis profundo inválido, retornando básico');
         return basic;
     }
 
-    console.log('🔀 [BasicAnalysis] Combinando análisis básico con profundo...');
+    logger.log('🔀 [BasicAnalysis] Combinando análisis básico con profundo...');
 
     // El análisis profundo tiene prioridad, pero preservamos algunos datos del básico si faltan
     const merged = {

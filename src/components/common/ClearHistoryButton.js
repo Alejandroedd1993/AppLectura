@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
 
+import logger from '../../utils/logger';
 /**
  * Botón para eliminar todo el historial de la aplicación
  * Muestra un modal de confirmación antes de eliminar
@@ -21,7 +22,7 @@ const ClearHistoryButton = ({ theme }) => {
     try {
       const result = clearAllHistory();
       if (result.success) {
-        console.log(`🧹 Limpieza completada: ${result.removedCount} elementos eliminados`);
+        logger.log(`🧹 Limpieza completada: ${result.removedCount} elementos eliminados`);
         // Mostrar éxito brevemente y luego recargar la página
         setTimeout(() => {
           setShowConfirm(false);
@@ -34,7 +35,7 @@ const ClearHistoryButton = ({ theme }) => {
         setIsClearing(false);
       }
     } catch (error) {
-      console.error('Error al limpiar:', error);
+      logger.error('Error al limpiar:', error);
       alert('Error inesperado al limpiar');
       setIsClearing(false);
     }

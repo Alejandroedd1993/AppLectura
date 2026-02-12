@@ -18,6 +18,7 @@ import useActivityPersistence from '../hooks/useActivityPersistence';
 import { renderMarkdown } from '../utils/markdownUtils';
 import EvaluationProgressBar from './ui/EvaluationProgressBar';
 
+import logger from '../utils/logger';
 const BitacoraEticaIA = () => {
   const { modoOscuro, completeAnalysis, setError, updateRubricScore } = useContext(AppContext);
   const { progression } = usePedagogy();
@@ -48,7 +49,7 @@ const BitacoraEticaIA = () => {
         const log = JSON.parse(localStorage.getItem('tutorInteractionsLog') || '[]');
         setTutorInteractions(log);
       } catch (error) {
-        console.error('Error cargando log del tutor:', error);
+        logger.error('Error cargando log del tutor:', error);
         setTutorInteractions([]);
       }
     };
@@ -64,21 +65,21 @@ const BitacoraEticaIA = () => {
 
     // Escuchar evento de nueva interacción del tutor
     const handleNewInteraction = (event) => {
-      console.log('🎯 [BitacoraEticaIA] Evento recibido:', event.detail);
+      logger.log('🎯 [BitacoraEticaIA] Evento recibido:', event.detail);
       const interaction = event.detail;
       setTutorInteractions(prev => {
         const updated = [...prev, interaction];
-        console.log('📝 [BitacoraEticaIA] Guardando en localStorage:', updated);
+        logger.log('📝 [BitacoraEticaIA] Guardando en localStorage:', updated);
         localStorage.setItem('tutorInteractionsLog', JSON.stringify(updated));
         return updated;
       });
     };
 
-    console.log('👂 [BitacoraEticaIA] Registrando listener para tutor-interaction-logged');
+    logger.log('👂 [BitacoraEticaIA] Registrando listener para tutor-interaction-logged');
     window.addEventListener('tutor-interaction-logged', handleNewInteraction);
 
     return () => {
-      console.log('🔌 [BitacoraEticaIA] Removiendo listener');
+      logger.log('🔌 [BitacoraEticaIA] Removiendo listener');
       window.removeEventListener('tutor-interaction-logged', handleNewInteraction);
     };
   }, []);
@@ -156,7 +157,7 @@ const BitacoraEticaIA = () => {
         fileName: `bitacora-etica-ia-${new Date().toISOString().split('T')[0]}.pdf`,
       });
     } catch (error) {
-      console.error('Error exportando bitácora como PDF:', error);
+      logger.error('Error exportando bitácora como PDF:', error);
     }
   }, [tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones]);
 
@@ -242,7 +243,7 @@ const BitacoraEticaIA = () => {
       });
       
     } catch (error) {
-      console.error('Error evaluando Bitácora Ética de IA:', error);
+      logger.error('Error evaluando Bitácora Ética de IA:', error);
       setError(error.message || 'Error al evaluar la bitácora');
       // Limpiar timeouts en caso de error
       timeouts.forEach(clearTimeout);

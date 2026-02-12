@@ -24,6 +24,7 @@ import NextStepCard from './common/NextStepCard';
 import EnsayoIntegrador from './ensayoIntegrador/EnsayoIntegrador';
 import DashboardRubricas from './evaluacion/DashboardRubricas';
 
+import logger from '../utils/logger';
 // ============================================
 // STYLED COMPONENTS
 // ============================================
@@ -501,7 +502,7 @@ export default function SistemaEvaluacionMejorado() {
     },
     currentIndex: dimensionSeleccionada ? DIMENSIONES.findIndex(d => d.id === dimensionSeleccionada) : 0,
     onRehydrate: useCallback((data) => {
-      console.log('🔄 [SistemaEvaluacion] Rehidratando datos:', data);
+      logger.log('🔄 [SistemaEvaluacion] Rehidratando datos:', data);
       
       // Restaurar respuesta de la dimensión actual
       const savedAnswer = data.student_answers?.[dimensionSeleccionada];
@@ -563,16 +564,16 @@ export default function SistemaEvaluacionMejorado() {
       setProgressPercent(0);
       announceToScreenReader('Pregunta generada exitosamente. Puedes comenzar a responder.');
     } catch (err) {
-      console.error('❌ Error generando pregunta:', err);
-      console.error('Error type:', typeof err);
-      console.error('Error message:', err?.message);
-      console.error('Error stack:', err?.stack);
-      console.error('Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+      logger.error('❌ Error generando pregunta:', err);
+      logger.error('Error type:', typeof err);
+      logger.error('Error message:', err?.message);
+      logger.error('Error stack:', err?.stack);
+      logger.error('Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
       
       const evaluationError = createEvaluationError(err);
-      console.log('✅ Evaluation error created:', evaluationError);
-      console.log('Error type:', evaluationError.type);
-      console.log('Error message:', evaluationError.message);
+      logger.log('✅ Evaluation error created:', evaluationError);
+      logger.log('Error type:', evaluationError.type);
+      logger.log('Error message:', evaluationError.message);
       
       setError(evaluationError);
       
@@ -675,7 +676,7 @@ export default function SistemaEvaluacionMejorado() {
       setSugerencias(sugerenciasGeneradas);
 
     } catch (err) {
-      console.error('Error evaluando respuesta:', err);
+      logger.error('Error evaluando respuesta:', err);
       const evaluationError = createEvaluationError(err);
       setError(evaluationError);
       

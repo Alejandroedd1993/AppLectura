@@ -15,6 +15,7 @@
 
 import { LEGACY_KEYS, rewardsStateKey } from '../../utils/storageKeys.js';
 
+import logger from '../../utils/logger.js';
 /**
  * Eventos que generan puntos (alineados con pedagogía)
  */
@@ -190,7 +191,7 @@ class RewardsEngine {
     if (typeof window !== 'undefined' && !window.__firebaseUserLoading) {
       const cached = this.loadState();
       if (cached && cached.totalPoints > 0) {
-        console.warn('⚠️ [RewardsEngine] Usando caché local temporal, Firebase tendrá prioridad...');
+        logger.warn('⚠️ [RewardsEngine] Usando caché local temporal, Firebase tendrá prioridad...');
         this.state = cached;
       }
     }
@@ -201,10 +202,10 @@ class RewardsEngine {
    * Carga explícita desde caché local (fallback)
    */
   loadFromCache() {
-    console.log('📂 [RewardsEngine] Intentando cargar desde caché local...');
+    logger.log('📂 [RewardsEngine] Intentando cargar desde caché local...');
     const cached = this.loadState();
     if (cached && cached.totalPoints > 0) {
-      console.log('✅ [RewardsEngine] Caché local cargado:', cached.totalPoints, 'pts');
+      logger.log('✅ [RewardsEngine] Caché local cargado:', cached.totalPoints, 'pts');
       this.state = cached;
       // Notificar cambio
       if (typeof window !== 'undefined') {
@@ -226,7 +227,7 @@ class RewardsEngine {
    */
   setUserId(uid) {
     if (this.userId === uid) return;
-    console.log(`👤 [RewardsEngine] Cambiando usuario a: ${uid || 'ninguno'}`);
+    logger.log(`👤 [RewardsEngine] Cambiando usuario a: ${uid || 'ninguno'}`);
     this.userId = uid;
 
     // Si no hay usuario, limpiar estado en MEMORIA pero NO hacer reset con nuevo resetAt
@@ -241,7 +242,7 @@ class RewardsEngine {
    * Usado para logout - no queremos que parezca un "reset intencional"
    */
   clearStateWithoutReset() {
-    console.log('🧹 [RewardsEngine] Limpiando estado en memoria (logout)');
+    logger.log('🧹 [RewardsEngine] Limpiando estado en memoria (logout)');
     this.state = this.initialState();
     // NO establecer resetAt - dejarlo en 0 para que al re-login Firestore tenga prioridad
     // NO persistir en localStorage - el próximo usuario tendrá su propio key
@@ -314,7 +315,7 @@ class RewardsEngine {
         dailyLog: parsed.dailyLog || {}
       };
     } catch (err) {
-      console.warn('Error loading rewards state:', err);
+      logger.warn('Error loading rewards state:', err);
       return this.initialState();
     }
   }
@@ -370,7 +371,7 @@ class RewardsEngine {
         }));
       }
     } catch (err) {
-      console.warn('Error persisting rewards:', err);
+      logger.warn('Error persisting rewards:', err);
     }
   }
 
@@ -381,11 +382,11 @@ class RewardsEngine {
    * @returns {Object} { points, multiplier, totalEarned, message }
    */
   recordEvent(eventType, metadata = {}) {
-    console.log(`🎮 [RewardsEngine] recordEvent llamado: ${eventType}`, metadata);
+    logger.log(`🎮 [RewardsEngine] recordEvent llamado: ${eventType}`, metadata);
     
     const config = REWARD_EVENTS[eventType];
     if (!config) {
-      console.warn('Unknown reward event:', eventType);
+      logger.warn('Unknown reward event:', eventType);
       return { points: 0, multiplier: 1, totalEarned: 0, message: 'Evento desconocido' };
     }
 
@@ -396,7 +397,7 @@ class RewardsEngine {
       const currentCount = this.state.recordedMilestones?.[dailyKey] || 0;
       
       if (currentCount >= config.dailyLimit) {
-        console.log(`🛡️ [RewardsEngine] Límite diario alcanzado para ${eventType}: ${currentCount}/${config.dailyLimit}`);
+        logger.log(`🛡️ [RewardsEngine] Límite diario alcanzado para ${eventType}: ${currentCount}/${config.dailyLimit}`);
         return { 
           points: 0, 
           multiplier: 1, 
@@ -417,7 +418,7 @@ class RewardsEngine {
     if (resourceId && (config.points > 10 || config.dedupe === true)) {
       const milestoneKey = `${eventType}_${resourceId}`;
       if (this.state.recordedMilestones?.[milestoneKey]) {
-        console.log(`🛡️ [RewardsEngine] Evento duplicado evitado para ${milestoneKey}`);
+        logger.log(`🛡️ [RewardsEngine] Evento duplicado evitado para ${milestoneKey}`);
         return { points: 0, multiplier: 1, totalEarned: 0, message: 'Ya has ganado puntos por esto!' };
       }
       // Marcar como reclamado
@@ -470,7 +471,7 @@ class RewardsEngine {
     // Persistir
     this.persist();
 
-    console.log(`✅ [RewardsEngine] Evento registrado: ${eventType}, +${earnedPoints} pts, total: ${this.state.totalPoints}`);
+    logger.log(`✅ [RewardsEngine] Evento registrado: ${eventType}, +${earnedPoints} pts, total: ${this.state.totalPoints}`);
 
     return {
       points: basePoints,
@@ -672,7 +673,7 @@ class RewardsEngine {
     }
 
     this.state.stats = stats;
-    console.log('📊 [RewardsEngine] Stats recalculados desde historial');
+    logger.log('📊 [RewardsEngine] Stats recalculados desde historial');
   }
 
   /**
@@ -811,7 +812,7 @@ class RewardsEngine {
    */
   importState(externalState, merge = false) {
     if (!externalState || typeof externalState !== 'object') {
-      console.warn('⚠️ [RewardsEngine] Estado importado inválido');
+      logger.warn('⚠️ [RewardsEngine] Estado importado inválido');
       return;
     }
 
@@ -830,10 +831,10 @@ class RewardsEngine {
     // ⚠️ EXCEPCIÓN: Si el externo tiene un resetAt más reciente, es un reset intencional y SÍ debe sobrescribir
     if (externalPoints === 0 && externalHistory.length === 0 && (localPoints > 0 || localHistory.length > 0)) {
       if (!isExternalResetNewer) {
-        console.warn('⚠️ [RewardsEngine] Estado externo vacío sin reset reciente, preservando datos locales:', { localPoints, localHistory: localHistory.length });
+        logger.warn('⚠️ [RewardsEngine] Estado externo vacío sin reset reciente, preservando datos locales:', { localPoints, localHistory: localHistory.length });
         return; // No hacer nada, mantener estado local
       } else {
-        console.log('🗑️ [RewardsEngine] Reset intencional detectado (resetAt externo más reciente), aplicando estado vacío');
+        logger.log('🗑️ [RewardsEngine] Reset intencional detectado (resetAt externo más reciente), aplicando estado vacío');
         // Continuar con el import del estado vacío
       }
     }
@@ -844,7 +845,7 @@ class RewardsEngine {
     const localHasHistory = localHistory.length > 0;
 
     if (externalIsCorrupt && localHasHistory && !merge) {
-      console.warn('⚠️ [RewardsEngine] Estado externo corrupto (puntos sin historial). Haciendo merge con historial local...');
+      logger.warn('⚠️ [RewardsEngine] Estado externo corrupto (puntos sin historial). Haciendo merge con historial local...');
       // Forzar merge para preservar historial local
       merge = true;
     }
@@ -897,7 +898,7 @@ class RewardsEngine {
 
     // 🆕 FIX Pass 10: Si después de importar hay puntos pero no historial, crear entrada sintética
     if (this.state.totalPoints > 0 && (!this.state.history || this.state.history.length === 0)) {
-      console.log('🔧 [RewardsEngine] Creando entrada sintética para puntos sin historial...');
+      logger.log('🔧 [RewardsEngine] Creando entrada sintética para puntos sin historial...');
       this.state.history = [{
         event: 'LEGACY_POINTS_RECOVERED',
         label: '📜 Puntos Recuperados (Historial Previo)',
@@ -923,7 +924,7 @@ class RewardsEngine {
 
     // Persistir nuevo estado
     this.persist();
-    console.log('✅ [RewardsEngine] Estado importado exitosamente');
+    logger.log('✅ [RewardsEngine] Estado importado exitosamente');
   }
 
   /**

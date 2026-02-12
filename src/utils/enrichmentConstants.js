@@ -1,8 +1,9 @@
+import logger from './logger';
 export const ENRICHMENT_SENTINEL_PREFIX = 'Integra de forma crítica estos resultados externos en tu respuesta al usuario:';
 
 export function buildEnrichmentPrompt(results, includeCitations = true) {
   if (!results || !Array.isArray(results) || results.length === 0) {
-    console.warn('⚠️ [buildEnrichmentPrompt] Sin resultados válidos');
+    logger.warn('⚠️ [buildEnrichmentPrompt] Sin resultados válidos');
     return '';
   }
   
@@ -30,7 +31,7 @@ ${formattedResults}
 
 Usa esta información para enriquecer tu respuesta, citando las fuentes cuando sea relevante.${citationInstruction}`;
 
-  console.log('📝 [buildEnrichmentPrompt] Prompt construido con citaciones, longitud:', enrichedPrompt.length);
+  logger.log('📝 [buildEnrichmentPrompt] Prompt construido con citaciones, longitud:', enrichedPrompt.length);
   return enrichedPrompt;
 }
 

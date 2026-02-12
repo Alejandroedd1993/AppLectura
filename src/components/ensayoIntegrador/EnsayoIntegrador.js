@@ -11,6 +11,7 @@ import EnsayoEditor from './EnsayoEditor';
 import EssayFeedbackPanel from './EssayFeedbackPanel';
 import TeacherScoreOverrideBanner from '../artefactos/TeacherScoreOverrideBanner';
 
+import logger from '../../utils/logger';
 const Section = styled.section`
   margin-top: 1.5rem;
 `;
@@ -309,7 +310,7 @@ export default function EnsayoIntegrador({ theme }) {
         if (draftStatusTimerRef.current) clearTimeout(draftStatusTimerRef.current);
         draftStatusTimerRef.current = setTimeout(() => setDraftStatus(null), 3000);
       } catch (e) {
-        console.warn('⚠️ [EnsayoIntegrador] Error guardando borrador local:', e);
+        logger.warn('⚠️ [EnsayoIntegrador] Error guardando borrador local:', e);
       }
     }, DRAFT_SAVE_DELAY);
 
@@ -341,7 +342,7 @@ export default function EnsayoIntegrador({ theme }) {
         setPrefillHint('Se restauró tu borrador local guardado.');
       }
     } catch (e) {
-      console.warn('⚠️ [EnsayoIntegrador] Error cargando borrador local:', e);
+      logger.warn('⚠️ [EnsayoIntegrador] Error cargando borrador local:', e);
     }
     // Marcar que ya se intentó cargar el draft inicial
     initialDraftLoadedRef.current = true;
@@ -366,7 +367,7 @@ export default function EnsayoIntegrador({ theme }) {
       if (draftStatusTimerRef.current) clearTimeout(draftStatusTimerRef.current);
       draftStatusTimerRef.current = setTimeout(() => setDraftStatus(null), 4000);
     } catch (e) {
-      console.error('❌ [EnsayoIntegrador] Error guardando borrador en nube:', e);
+      logger.error('❌ [EnsayoIntegrador] Error guardando borrador en nube:', e);
       setDraftStatus(null);
     } finally {
       setCloudSaving(false);
@@ -644,14 +645,14 @@ export default function EnsayoIntegrador({ theme }) {
       // 🆕 Usar mensaje amigable si es EssayEvaluationError
       if (err instanceof EssayEvaluationError) {
         setSubmitError(err.userMessage);
-        console.error('📝 [EnsayoIntegrador] Error de evaluación:', {
+        logger.error('📝 [EnsayoIntegrador] Error de evaluación:', {
           code: err.code,
           message: err.message,
           details: err.details
         });
       } else {
         setSubmitError(err instanceof Error ? err.message : String(err));
-        console.error('📝 [EnsayoIntegrador] Error inesperado:', err);
+        logger.error('📝 [EnsayoIntegrador] Error inesperado:', err);
       }
     } finally {
       setLoading(false);

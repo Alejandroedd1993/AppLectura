@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * Validador de esquema de sesiones
  * Evita guardar datos corruptos que puedan romper la persistencia
@@ -290,7 +293,7 @@ export function validateAndSanitizeSession(session) {
   }
   
   // Intentar sanitizar
-  console.warn('⚠️ [Validator] Sesión tiene errores, intentando sanitizar:', validation.errors);
+  logger.warn('⚠️ [Validator] Sesión tiene errores, intentando sanitizar:', validation.errors);
   
   const sanitized = sanitizeSession(session);
   

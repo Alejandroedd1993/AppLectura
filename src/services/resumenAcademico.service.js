@@ -9,6 +9,7 @@
 
 import { chatCompletion, extractContent } from './unifiedAiService';
 
+import logger from '../utils/logger';
 /**
  * Valida que el resumen cumpla requisitos mínimos antes de evaluar
  * @param {string} resumen - Texto del resumen
@@ -148,7 +149,7 @@ ${citas.map((c, i) => `${i + 1}. "${c.cita}"`).join('\n')}
     });
     
     const rawContent = extractContent(response);
-    console.log('🔍 [DeepSeek ResumenAcademico] Respuesta cruda:', rawContent.slice(0, 200));
+    logger.log('🔍 [DeepSeek ResumenAcademico] Respuesta cruda:', rawContent.slice(0, 200));
     
     // Limpiar markdown
     let cleaned = rawContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -159,7 +160,7 @@ ${citas.map((c, i) => `${i + 1}. "${c.cita}"`).join('\n')}
       cleaned = jsonMatch[0];
     }
     
-    console.log('✅ [DeepSeek ResumenAcademico] Respuesta limpia:', cleaned.slice(0, 200));
+    logger.log('✅ [DeepSeek ResumenAcademico] Respuesta limpia:', cleaned.slice(0, 200));
     
     const parsed = JSON.parse(cleaned);
     if (!parsed.precision_resumen || !parsed.seleccion_citas || !parsed.estructura_coherencia) {
@@ -167,7 +168,7 @@ ${citas.map((c, i) => `${i + 1}. "${c.cita}"`).join('\n')}
     }
     return parsed;
   } catch (error) {
-    console.error('[ResumenService] Error DeepSeek:', error);
+    logger.error('[ResumenService] Error DeepSeek:', error);
     return {
       precision_resumen: { nivel: 3, evidencia: '', fortaleza: 'Análisis en proceso', mejora: 'Error en evaluación automática' },
       seleccion_citas: { nivel: 3, evidencia: '', fortaleza: 'Análisis en proceso', mejora: 'Error en evaluación automática' },
@@ -251,7 +252,7 @@ Analiza si el estudiante:
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(cleaned);
   } catch (error) {
-    console.error('[ResumenService] Error OpenAI:', error);
+    logger.error('[ResumenService] Error OpenAI:', error);
     throw new Error(`Error en análisis de inferencias: ${error.message}`);
   }
 }
@@ -408,7 +409,7 @@ function generarSiguientesPasos(criterios) {
  * @returns {Promise<Object>} Evaluación criterial completa
  */
 export async function evaluarResumenAcademico({ resumen, textoOriginal }) {
-  console.log('📝 [ResumenService] Iniciando evaluación dual...');
+  logger.log('📝 [ResumenService] Iniciando evaluación dual...');
   
   // Paso 1: Validación previa
   const validacion = validarResumenAcademico(resumen, textoOriginal);
@@ -416,7 +417,7 @@ export async function evaluarResumenAcademico({ resumen, textoOriginal }) {
     throw new Error(`Validación fallida: ${validacion.errors.join('; ')}`);
   }
   
-  console.log(`✅ [ResumenService] Validación pasada. Citas encontradas: ${validacion.citasEncontradas}`);
+  logger.log(`✅ [ResumenService] Validación pasada. Citas encontradas: ${validacion.citasEncontradas}`);
   
   // Paso 2: Extraer citas
   const citas = extraerCitas(resumen);
@@ -424,11 +425,11 @@ export async function evaluarResumenAcademico({ resumen, textoOriginal }) {
   // Paso 3: Ejecutar evaluaciones en paralelo
   const [deepseekResult, openaiResult] = await Promise.all([
     evaluarConDeepSeek({ resumen, textoOriginal, citas }).catch(err => {
-      console.warn('[ResumenService] DeepSeek falló, continuando solo con OpenAI:', err.message);
+      logger.warn('[ResumenService] DeepSeek falló, continuando solo con OpenAI:', err.message);
       return null;
     }),
     evaluarConOpenAI({ resumen, textoOriginal, citas }).catch(err => {
-      console.warn('[ResumenService] OpenAI falló, continuando solo con DeepSeek:', err.message);
+      logger.warn('[ResumenService] OpenAI falló, continuando solo con DeepSeek:', err.message);
       return null;
     })
   ]);
@@ -439,13 +440,13 @@ export async function evaluarResumenAcademico({ resumen, textoOriginal }) {
   }
   
   // Paso 5: Combinar resultados
-  console.log('🔀 [ResumenService] Combinando evaluaciones...');
+  logger.log('🔀 [ResumenService] Combinando evaluaciones...');
   const evaluacionFinal = combinarEvaluaciones(
     deepseekResult || {},
     openaiResult || {}
   );
   
-  console.log(`✅ [ResumenService] Evaluación completada. Nivel global: ${evaluacionFinal.nivel}/4`);
+  logger.log(`✅ [ResumenService] Evaluación completada. Nivel global: ${evaluacionFinal.nivel}/4`);
   
   return evaluacionFinal;
 }

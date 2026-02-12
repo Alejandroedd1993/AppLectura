@@ -5,6 +5,7 @@
 
 import webSearchService from './webSearchService';
 
+import logger from '../utils/logger';
 class CriticalLiteracyService {
   constructor() {
     this.analysisTypes = {
@@ -94,7 +95,7 @@ class CriticalLiteracyService {
    */
   async generateCriticalContext(texto, config = {}) {
     try {
-      console.log('🎯 Generando contexto crítico para literacidad');
+      logger.log('🎯 Generando contexto crítico para literacidad');
       
       const {
         analysisType = 'contexto-social',
@@ -123,7 +124,7 @@ class CriticalLiteracyService {
         suggestions: this.generateCriticalQuestions(texto, criticalContext)
       };
     } catch (error) {
-      console.error('❌ Error generando contexto crítico:', error);
+      logger.error('❌ Error generando contexto crítico:', error);
       return {
         success: false,
         error: error.message,

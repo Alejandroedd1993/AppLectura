@@ -5,6 +5,7 @@
 
 import { fetchWithTimeout } from '../utils/netUtils';
 
+import logger from '../utils/logger';
 class WebSearchService {
   constructor() {
     this.providers = {
@@ -36,7 +37,7 @@ class WebSearchService {
    */
   async searchWeb(query, _provider = this.defaultProvider, options = {}) {
     try {
-      console.log(`🔍 Buscando en web vía backend: "${query}"`);
+      logger.log(`🔍 Buscando en web vía backend: "${query}"`);
       
       const searchOptions = {
         maxResults: options.maxResults || this.maxResults,
@@ -50,7 +51,7 @@ class WebSearchService {
         maxResults: searchOptions.maxResults
       };
 
-      console.log('📤 [webSearchService] Enviando petición a /api/web-search:', requestBody);
+      logger.log('📤 [webSearchService] Enviando petición a /api/web-search:', requestBody);
 
       // ✅ USAR BACKEND en lugar de llamar APIs externas directamente
       const response = await fetchWithTimeout('/api/web-search', {
@@ -59,16 +60,16 @@ class WebSearchService {
         body: JSON.stringify(requestBody)
       }, 60000); // 60 segundos timeout para búsquedas
 
-      console.log('📥 [webSearchService] Respuesta recibida:', response.status, response.statusText);
+      logger.log('📥 [webSearchService] Respuesta recibida:', response.status, response.statusText);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('❌ [webSearchService] Error del backend:', errorData);
+        logger.error('❌ [webSearchService] Error del backend:', errorData);
         throw new Error(`Backend search error: ${response.status} - ${errorData.error || response.statusText}`);
       }
 
       const data = await response.json();
-      console.log('📊 [webSearchService] Datos recibidos del backend:', data);
+      logger.log('📊 [webSearchService] Datos recibidos del backend:', data);
       
       // Formatear resultados del backend al formato esperado por el frontend
       const formattedResults = (data.resultados || []).map(r => ({
@@ -80,11 +81,11 @@ class WebSearchService {
         publishedDate: r.fecha
       }));
       
-      console.log('✅ [webSearchService] Resultados formateados:', formattedResults.length);
+      logger.log('✅ [webSearchService] Resultados formateados:', formattedResults.length);
       return formattedResults;
       
     } catch (error) {
-      console.error('❌ Error en búsqueda web:', error);
+      logger.error('❌ Error en búsqueda web:', error);
       throw new Error(`Error en búsqueda web: ${error.message}`);
     }
   }
@@ -169,7 +170,7 @@ class WebSearchService {
    */
   async searchForCriticalContext(texto, tipoAnalisis, options = {}) {
     try {
-      console.log(`🔍 Iniciando búsqueda para literacidad crítica: ${tipoAnalisis}`);
+      logger.log(`🔍 Iniciando búsqueda para literacidad crítica: ${tipoAnalisis}`);
       
       const queries = this.generateCriticalLiteracyQueries(texto, tipoAnalisis);
       const allResults = [];
@@ -187,7 +188,7 @@ class WebSearchService {
             results: results.slice(0, 2) // Máximo 2 resultados por consulta
           });
         } catch (error) {
-          console.warn(`⚠️ Error en consulta "${query}":`, error.message);
+          logger.warn(`⚠️ Error en consulta "${query}":`, error.message);
         }
       }
       
@@ -198,7 +199,7 @@ class WebSearchService {
         summary: this.generateSearchSummary(allResults, tipoAnalisis)
       };
     } catch (error) {
-      console.error('❌ Error en búsqueda de literacidad crítica:', error);
+      logger.error('❌ Error en búsqueda de literacidad crítica:', error);
       throw error;
     }
   }
@@ -280,7 +281,7 @@ class WebSearchService {
       const data = await response.json();
       return data.configuracion?.modo_funcionamiento !== 'simulada';
     } catch (error) {
-      console.warn('⚠️ No se pudo verificar disponibilidad de búsqueda web:', error);
+      logger.warn('⚠️ No se pudo verificar disponibilidad de búsqueda web:', error);
       return false;
     }
   }

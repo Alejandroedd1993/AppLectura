@@ -9,6 +9,7 @@ import { loginWithEmail, loginWithGoogle, resetPassword } from '../../firebase/a
 import { useAuth } from '../../context/AuthContext';
 import { isConfigValid } from '../../firebase/config';
 
+import logger from '../../utils/logger';
 const LoginContainer = styled.div`
   min-height: 100vh;
   display: flex;
@@ -212,9 +213,9 @@ export default function Login() {
   const [success, setSuccess] = useState('');
   
   useEffect(() => {
-    console.log('🔍 [Login] Config status:', { isConfigValid });
+    logger.log('🔍 [Login] Config status:', { isConfigValid });
     if (!isConfigValid) {
-      console.error('❌ [Login] Configuración de Firebase inválida');
+      logger.error('❌ [Login] Configuración de Firebase inválida');
       setError('⚠️ Error Crítico: Faltan las credenciales de Firebase o son inválidas (placeholders). Verifica tu archivo .env (API Key y Auth Domain).');
     }
   }, []);
@@ -252,7 +253,7 @@ export default function Login() {
     try {
       await loginWithEmail(email, password);
       
-      console.log('✅ Login exitoso');
+      logger.log('✅ Login exitoso');
       setSuccess('¡Inicio de sesión exitoso! Bienvenido.');
       
       // AuthContext detectará el cambio automáticamente
@@ -270,17 +271,17 @@ export default function Login() {
     setLoading(true);
     
     try {
-      console.log('🔵 [Login] Iniciando proceso de Google Sign-In...');
+      logger.log('🔵 [Login] Iniciando proceso de Google Sign-In...');
       
       const result = await loginWithGoogle('estudiante'); // Rol por defecto
       
-      console.log('✅ [Login] Google Sign-In exitoso:', result);
+      logger.log('✅ [Login] Google Sign-In exitoso:', result);
       setSuccess('¡Inicio de sesión con Google exitoso!');
       
       // AuthContext detectará el cambio automáticamente y cerrará el login
       
     } catch (err) {
-      console.error('❌ [Login] Error en Google Sign-In:', err);
+      logger.error('❌ [Login] Error en Google Sign-In:', err);
       
       let msg = err.message;
       

@@ -8,6 +8,7 @@
 import webSearchService from './webSearchService';
 import { shouldSearchWeb, generateSearchQueries, extractKeywords } from './webSearchDetector';
 
+import logger from '../utils/logger';
 /**
  * Enriquece el texto con contexto web relevante usando RAG
  * 
@@ -18,11 +19,11 @@ import { shouldSearchWeb, generateSearchQueries, extractKeywords } from './webSe
  * @example
  * const enrichment = await enrichWithWebContext(texto, { genero_textual: 'noticia' });
  * if (enrichment.requires_web_search) {
- *   console.log('Fuentes:', enrichment.web_context.sources);
+ *   logger.log('Fuentes:', enrichment.web_context.sources);
  * }
  */
 export async function enrichWithWebContext(texto, metadata = {}) {
-  console.log('🔍 RAG: Verificando necesidad de búsqueda web...');
+  logger.log('🔍 RAG: Verificando necesidad de búsqueda web...');
   
   try {
     // ============================================================
@@ -31,7 +32,7 @@ export async function enrichWithWebContext(texto, metadata = {}) {
     const searchDecision = shouldSearchWeb(texto, metadata);
     
     if (!searchDecision.needsWeb) {
-      console.log('✅ RAG: Búsqueda web no requerida');
+      logger.log('✅ RAG: Búsqueda web no requerida');
       return {
         requires_web_search: false,
         search_decision: searchDecision,
@@ -40,8 +41,8 @@ export async function enrichWithWebContext(texto, metadata = {}) {
       };
     }
 
-    console.log(`🌐 RAG: Búsqueda web ACTIVADA (confianza: ${(searchDecision.confidence * 100).toFixed(1)}%)`);
-    console.log('   Razones:', searchDecision.reasons);
+    logger.log(`🌐 RAG: Búsqueda web ACTIVADA (confianza: ${(searchDecision.confidence * 100).toFixed(1)}%)`);
+    logger.log('   Razones:', searchDecision.reasons);
 
     // ============================================================
     // 2. GENERAR QUERIES INTELIGENTES
@@ -49,7 +50,7 @@ export async function enrichWithWebContext(texto, metadata = {}) {
     const queries = generateSearchQueries(texto, searchDecision);
     
     if (queries.length === 0) {
-      console.warn('⚠️ RAG: No se pudieron generar queries de búsqueda');
+      logger.warn('⚠️ RAG: No se pudieron generar queries de búsqueda');
       return {
         requires_web_search: true,
         search_decision: searchDecision,
@@ -58,13 +59,13 @@ export async function enrichWithWebContext(texto, metadata = {}) {
       };
     }
 
-    console.log(`📝 RAG: Generadas ${queries.length} queries de búsqueda:`);
-    queries.forEach(q => console.log(`   - [${q.type}] ${q.text}`));
+    logger.log(`📝 RAG: Generadas ${queries.length} queries de búsqueda:`);
+    queries.forEach(q => logger.log(`   - [${q.type}] ${q.text}`));
 
     // ============================================================
     // 3. EJECUTAR BÚSQUEDAS EN PARALELO
     // ============================================================
-    console.log('🔄 RAG: Ejecutando búsquedas web en paralelo...');
+    logger.log('🔄 RAG: Ejecutando búsquedas web en paralelo...');
     
     const searchPromises = queries.map(async (query) => {
       try {
@@ -81,7 +82,7 @@ export async function enrichWithWebContext(texto, metadata = {}) {
           success: true
         };
       } catch (error) {
-        console.warn(`⚠️ RAG: Búsqueda fallida para "${query.text}":`, error.message);
+        logger.warn(`⚠️ RAG: Búsqueda fallida para "${query.text}":`, error.message);
         return {
           query: query,
           results: [],
@@ -97,7 +98,7 @@ export async function enrichWithWebContext(texto, metadata = {}) {
     const successfulSearches = searchResults.filter(r => r.success && r.results.length > 0);
     
     if (successfulSearches.length === 0) {
-      console.warn('⚠️ RAG: Ninguna búsqueda retornó resultados');
+      logger.warn('⚠️ RAG: Ninguna búsqueda retornó resultados');
       return {
         requires_web_search: true,
         search_decision: searchDecision,
@@ -106,17 +107,17 @@ export async function enrichWithWebContext(texto, metadata = {}) {
       };
     }
 
-    console.log(`✅ RAG: ${successfulSearches.length}/${queries.length} búsquedas exitosas`);
+    logger.log(`✅ RAG: ${successfulSearches.length}/${queries.length} búsquedas exitosas`);
 
     // ============================================================
     // 4. PROCESAR Y ESTRUCTURAR CONTEXTO WEB
     // ============================================================
     const webContext = processWebResults(successfulSearches, texto);
     
-    console.log(`📊 RAG: Contexto web estructurado:`);
-    console.log(`   - ${webContext.sources.length} fuentes encontradas`);
-    console.log(`   - ${webContext.key_findings.length} hallazgos clave`);
-    console.log(`   - Categorías: ${webContext.categories.join(', ')}`);
+    logger.log(`📊 RAG: Contexto web estructurado:`);
+    logger.log(`   - ${webContext.sources.length} fuentes encontradas`);
+    logger.log(`   - ${webContext.key_findings.length} hallazgos clave`);
+    logger.log(`   - Categorías: ${webContext.categories.join(', ')}`);
 
     return {
       requires_web_search: true,
@@ -128,7 +129,7 @@ export async function enrichWithWebContext(texto, metadata = {}) {
     };
 
   } catch (error) {
-    console.error('❌ RAG: Error en enriquecimiento:', error);
+    logger.error('❌ RAG: Error en enriquecimiento:', error);
     return {
       requires_web_search: true,
       web_context: null,

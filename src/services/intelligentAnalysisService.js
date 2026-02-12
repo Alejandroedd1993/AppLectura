@@ -28,6 +28,7 @@ import { detectarContextoTexto, generarPreguntasContextualizadas } from './criti
 import { buscarContextoWeb } from './webContextService';
 import { chatCompletion, extractContent } from './unifiedAiService';
 
+import logger from '../utils/logger';
 /**
  * @deprecated NO USAR - Migrar a textAnalysisOrchestrator.performFullAnalysis()
  * 
@@ -46,7 +47,7 @@ export async function analizarTextoInteligente(texto, opciones = {}) {
     maxPreguntasPorDimension = 3
   } = opciones;
 
-  console.log('🧠 Iniciando análisis inteligente dual (DeepSeek → OpenAI)...');
+  logger.log('🧠 Iniciando análisis inteligente dual (DeepSeek → OpenAI)...');
   
   const startTime = Date.now();
   let contextoBasico;
@@ -57,25 +58,25 @@ export async function analizarTextoInteligente(texto, opciones = {}) {
     // ============================================
     // FASE 1: Análisis contextual básico (local)
     // ============================================
-    console.log('📊 Fase 1: Detección de contexto crítico (local)...');
+    logger.log('📊 Fase 1: Detección de contexto crítico (local)...');
     contextoBasico = detectarContextoTexto(texto);
-    console.log(`✅ Contexto detectado: ${contextoBasico.generoTextual}, ${contextoBasico.complejidadCritica}`);
+    logger.log(`✅ Contexto detectado: ${contextoBasico.generoTextual}, ${contextoBasico.complejidadCritica}`);
 
     // ============================================
     // FASE 2: Análisis rápido con DeepSeek
     // ============================================
-    console.log('🔥 Fase 2: Análisis rápido con DeepSeek...');
+    logger.log('🔥 Fase 2: Análisis rápido con DeepSeek...');
     const deepseekStart = Date.now();
     
     analisisDeepSeek = await analizarConDeepSeek(texto, contextoBasico);
     
     const deepseekTime = Date.now() - deepseekStart;
-    console.log(`✅ DeepSeek completado en ${deepseekTime}ms`);
+    logger.log(`✅ DeepSeek completado en ${deepseekTime}ms`);
 
     // ============================================
     // FASE 3: Profundización crítica con OpenAI
     // ============================================
-    console.log('🤖 Fase 3: Profundización crítica con OpenAI...');
+    logger.log('🤖 Fase 3: Profundización crítica con OpenAI...');
     const openaiStart = Date.now();
     
     profundizacionOpenAI = await profundizarConOpenAI(
@@ -85,23 +86,23 @@ export async function analizarTextoInteligente(texto, opciones = {}) {
     );
     
     const openaiTime = Date.now() - openaiStart;
-    console.log(`✅ OpenAI completado en ${openaiTime}ms`);
+    logger.log(`✅ OpenAI completado en ${openaiTime}ms`);
 
     // ============================================
     // FASE 4: Búsqueda web contextual (opcional)
     // ============================================
     let contextoWeb = null;
     if (incluirBusquedaWeb) {
-      console.log('🌐 Fase 4: Búsqueda web contextual...');
+      logger.log('🌐 Fase 4: Búsqueda web contextual...');
       try {
         contextoWeb = await buscarContextoWeb(
           texto,
           contextoBasico,
           analisisDeepSeek?.temas_identificados || contextoBasico.temasPrincipales
         );
-        console.log('✅ Contexto web obtenido');
+        logger.log('✅ Contexto web obtenido');
       } catch (error) {
-        console.warn('⚠️ Búsqueda web no disponible:', error.message);
+        logger.warn('⚠️ Búsqueda web no disponible:', error.message);
         contextoWeb = { modo_offline: true };
       }
     }
@@ -109,7 +110,7 @@ export async function analizarTextoInteligente(texto, opciones = {}) {
     // ============================================
     // FASE 5: Generación de preguntas enriquecidas
     // ============================================
-    console.log('💭 Fase 5: Generación de preguntas contextualizadas...');
+    logger.log('💭 Fase 5: Generación de preguntas contextualizadas...');
     
     const preguntasBase = generarPreguntasContextualizadas(contextoBasico, maxPreguntasPorDimension);
     
@@ -140,16 +141,16 @@ export async function analizarTextoInteligente(texto, opciones = {}) {
     });
 
     const totalTime = Date.now() - startTime;
-    console.log(`✅ Análisis inteligente completado en ${totalTime}ms`);
+    logger.log(`✅ Análisis inteligente completado en ${totalTime}ms`);
     
     return analisisUnificado;
 
   } catch (error) {
-    console.error('❌ Error en análisis inteligente:', error);
+    logger.error('❌ Error en análisis inteligente:', error);
     
     // Fallback: si al menos tenemos DeepSeek, usarlo
     if (analisisDeepSeek) {
-      console.log('⚠️ Usando solo análisis de DeepSeek (OpenAI falló)');
+      logger.log('⚠️ Usando solo análisis de DeepSeek (OpenAI falló)');
       return compilarAnalisisUnificado({
         texto,
         contextoBasico: contextoBasico || detectarContextoTexto(texto),
@@ -170,7 +171,7 @@ export async function analizarTextoInteligente(texto, opciones = {}) {
     }
 
     // Fallback completo: análisis básico sin IA
-    console.error('❌ Fallback a análisis básico sin IA');
+    logger.error('❌ Fallback a análisis básico sin IA');
     return fallbackAnalisisBasico(texto, contextoBasico || detectarContextoTexto(texto));
   }
 }
@@ -181,8 +182,8 @@ export async function analizarTextoInteligente(texto, opciones = {}) {
  */
 async function analizarConDeepSeek(texto, contextoBasico) {
   try {
-    console.log('🔥 Llamando a DeepSeek API (integrado en backend)...');
-    console.log('📊 Config:', {
+    logger.log('🔥 Llamando a DeepSeek API (integrado en backend)...');
+    logger.log('📊 Config:', {
       textLength: texto.length,
       provider: 'deepseek',
       nota: 'API key manejada por el backend'
@@ -223,8 +224,8 @@ Responde en JSON con esta estructura:
       timeoutMs: 15000
     });
 
-    console.log('✅ Respuesta DeepSeek recibida');
-    console.log('📦 Estructura de respuesta:', {
+    logger.log('✅ Respuesta DeepSeek recibida');
+    logger.log('📦 Estructura de respuesta:', {
       hasChoices: !!data?.choices,
       choicesLength: data?.choices?.length,
       hasMessage: !!data?.choices?.[0]?.message,
@@ -233,10 +234,10 @@ Responde en JSON con esta estructura:
     });
 
     const content = extractContent(data);
-    console.log('📝 Contenido extraído:', content ? `${content.substring(0, 100)}...` : 'VACÍO');
+    logger.log('📝 Contenido extraído:', content ? `${content.substring(0, 100)}...` : 'VACÍO');
     
     if (!content) {
-      console.error('❌ Estructura completa de data:', JSON.stringify(data, null, 2));
+      logger.error('❌ Estructura completa de data:', JSON.stringify(data, null, 2));
       throw new Error('Respuesta vacía de DeepSeek');
     }
 
@@ -248,11 +249,11 @@ Responde en JSON con esta estructura:
       .trim();
 
     const parsed = JSON.parse(cleaned);
-    console.log('✅ DeepSeek JSON parseado correctamente');
+    logger.log('✅ DeepSeek JSON parseado correctamente');
     return parsed;
 
   } catch (error) {
-    console.error('❌ Error detallado en DeepSeek:', {
+    logger.error('❌ Error detallado en DeepSeek:', {
       message: error.message,
       name: error.name,
       stack: error.stack?.substring(0, 200)
@@ -336,7 +337,7 @@ Responde en JSON:
     return JSON.parse(cleaned);
 
   } catch (error) {
-    console.error('❌ Error en OpenAI:', error);
+    logger.error('❌ Error en OpenAI:', error);
     
     // Fallback: profundización básica
     return {
@@ -448,7 +449,7 @@ function compilarAnalisisUnificado({
  * Fallback a análisis básico sin IA
  */
 async function fallbackAnalisisBasico(texto, contextoBasico) {
-  console.warn('⚠️ Usando análisis básico sin IA (fallback completo)');
+  logger.warn('⚠️ Usando análisis básico sin IA (fallback completo)');
 
   return {
     resumen: `Análisis básico del texto. Género: ${contextoBasico.generoTextual}. Temas: ${contextoBasico.temasPrincipales?.join(', ')}.`,

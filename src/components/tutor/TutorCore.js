@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 
+import logger from '../../utils/logger';
 // FASE 2: Integración pedagógica - ZDP Detector + Rewards
 let zdpDetector = null;
 let rewards = null;
@@ -21,7 +22,7 @@ try {
     React.useZDPIntegration = useZDPIntegration;
   }
 } catch (e) {
-  console.log('[TutorCore] PedagogyContext no disponible (entorno de test)');
+  logger.log('[TutorCore] PedagogyContext no disponible (entorno de test)');
 }
 
 /**
@@ -566,7 +567,7 @@ Adapta tu respuesta según señales del estudiante:
           // 🔇 REGENERACIÓN AUTOMÁTICA DESHABILITADA (causaba respuestas duplicadas)
           // Si la validación falla, solo loguear pero no regenerar
           if (!validation.isValid && validation.errors?.length > 0) {
-            console.log('ℹ️ [TutorCore] Validación con observaciones (no regenerando):', validation.errors);
+            logger.log('ℹ️ [TutorCore] Validación con observaciones (no regenerando):', validation.errors);
           }
 
           // Filtro anti-eco: evitar repetir lo mismo que el último assistant
@@ -578,7 +579,7 @@ Adapta tu respuesta según señales del estudiante:
           try { onAssistantMessage?.(msg, apiRef.current); } catch { /* noop */ }
           return; // Evitar continuar al fetch backend
         } catch (e) {
-          console.warn('[TutorCore] Fallback a backend tras error OpenAI global:', e?.message);
+          logger.warn('[TutorCore] Fallback a backend tras error OpenAI global:', e?.message);
         }
       }
 
@@ -667,7 +668,7 @@ Adapta tu respuesta según señales del estudiante:
       // 🔇 REGENERACIÓN AUTOMÁTICA DESHABILITADA (causaba respuestas duplicadas y lentitud)
       // Si la validación falla, solo loguear pero no regenerar
       if (!validation.isValid && validation.errors?.length > 0) {
-        console.log('ℹ️ [TutorCore] Validación con observaciones (no regenerando):', validation.errors);
+        logger.log('ℹ️ [TutorCore] Validación con observaciones (no regenerando):', validation.errors);
       }
 
       // Filtro anti-eco y actualización final
@@ -682,7 +683,7 @@ Adapta tu respuesta según señales del estudiante:
 
       // Ignorar AbortError (cancelación intencional de peticiones anteriores)
       if (e.name === 'AbortError') {
-        console.log('ℹ️ [TutorCore] Petición cancelada (AbortError), ignorando');
+        logger.log('ℹ️ [TutorCore] Petición cancelada (AbortError), ignorando');
         return; // No mostrar error al usuario
       }
 
@@ -694,7 +695,7 @@ Adapta tu respuesta según señales del estudiante:
         (e.message?.includes('HTTP') && parseInt(e.message.match(/HTTP (\d+)/)?.[1] || '0') >= 500);
 
       if (isRetryableError && retries < MAX_RETRIES) {
-        console.log(`🔄 [TutorCore] Reintentando... (${retries + 1}/${MAX_RETRIES})`);
+        logger.log(`🔄 [TutorCore] Reintentando... (${retries + 1}/${MAX_RETRIES})`);
         // Esperar un poco antes de reintentar (backoff exponencial)
         await new Promise(resolve => setTimeout(resolve, 1000 * (retries + 1)));
         await callBackendWith(messagesArr, retries + 1);
@@ -722,7 +723,7 @@ Adapta tu respuesta según señales del estudiante:
       if (myRequestId !== requestIdRef.current) return;
       addMessage(errMsg);
       try { onAssistantMessage?.(errMsg, apiRef.current); } catch { /* noop */ }
-      console.warn('[TutorCore] Error:', e);
+      logger.warn('[TutorCore] Error:', e);
     } finally {
       if (myRequestId === requestIdRef.current) {
         setLoading(false);
@@ -865,7 +866,7 @@ Adapta tu respuesta según señales del estudiante:
           detail: interactionLog
         }));
       } catch (e) {
-        console.warn('[TutorCore] Error logging interaction:', e);
+        logger.warn('[TutorCore] Error logging interaction:', e);
       }
 
       // ✨ FASE 2: Detectar nivel Bloom automáticamente
@@ -873,7 +874,7 @@ Adapta tu respuesta según señales del estudiante:
       if (zdpDetector) {
         try {
           bloomDetection = zdpDetector.detectLevel(prompt);
-          console.log('🧠 Nivel Bloom detectado:', bloomDetection);
+          logger.log('🧠 Nivel Bloom detectado:', bloomDetection);
 
           // Registrar puntos según nivel cognitivo
           if (rewards && bloomDetection?.current) {
@@ -883,10 +884,10 @@ Adapta tu respuesta según señales del estudiante:
               question: prompt.substring(0, 100),
               confidence: bloomDetection.confidence
             });
-            console.log('🎮 Puntos registrados:', result);
+            logger.log('🎮 Puntos registrados:', result);
           }
         } catch (e) {
-          console.warn('[TutorCore] Error en detección Bloom:', e);
+          logger.warn('[TutorCore] Error en detección Bloom:', e);
         }
       }
 
@@ -930,7 +931,7 @@ Adapta tu respuesta según señales del estudiante:
 
         // Si no hay contexto de lectura cargado, permitir cualquier pregunta
         if (!contextText) {
-          console.log('ℹ️ [TutorCore] Sin contexto de lectura, permitiendo pregunta libre');
+          logger.log('ℹ️ [TutorCore] Sin contexto de lectura, permitiendo pregunta libre');
           // Continuar sin restricción
         } else {
           const hasValidIntent = VALID_INTENTS.some(pattern => pattern.test(p));
@@ -958,24 +959,24 @@ Adapta tu respuesta según señales del estudiante:
 
             const ratio = promptTokens.length ? overlap / promptTokens.length : 1; // Default 1 (permitir)
 
-            console.log(`📊 [TutorCore] Análisis off-topic: overlap ${(ratio * 100).toFixed(1)}% (${overlap}/${promptTokens.length} tokens)`);
+            logger.log(`📊 [TutorCore] Análisis off-topic: overlap ${(ratio * 100).toFixed(1)}% (${overlap}/${promptTokens.length} tokens)`);
 
             // UMBRAL MUY BAJO: solo bloquear si < 5% de overlap (extremadamente diferente)
             if (ratio < 0.05 && promptTokens.length >= 5) {
-              console.warn('⚠️ [TutorCore] Pregunta posiblemente off-topic detectada');
+              logger.warn('⚠️ [TutorCore] Pregunta posiblemente off-topic detectada');
               const steer = 'Parece que tu pregunta podría estar sobre un tema diferente al texto que estamos analizando. Si quieres discutir este texto, puedo ayudarte. Si prefieres cambiar de tema, podemos hacerlo también. ¿En qué te gustaría que te ayude?';
               addMessage({ id: Date.now() + '-assistant-steer', role: 'assistant', content: steer });
               try { onAssistantMessage?.({ role: 'assistant', content: steer }, apiRef.current); } catch { /* noop */ }
               return Promise.resolve();
             } else {
-              console.log('✅ [TutorCore] Pregunta válida, permitiendo');
+              logger.log('✅ [TutorCore] Pregunta válida, permitiendo');
             }
           } else {
-            console.log('✅ [TutorCore] Pregunta con intención válida o conversación establecida, permitiendo');
+            logger.log('✅ [TutorCore] Pregunta con intención válida o conversación establecida, permitiendo');
           }
         }
       } catch (e) {
-        console.warn('[TutorCore] Error en validación off-topic:', e);
+        logger.warn('[TutorCore] Error en validación off-topic:', e);
         // En caso de error, permitir la pregunta (fail-safe)
       }
       addMessage({ id: Date.now() + '-user', role: 'user', content: prompt });
@@ -1029,7 +1030,7 @@ Adapta tu respuesta según señales del estudiante:
       let webEnrichment = '';
       if (ENABLE_WEB_ENRICHMENT && ['explain', 'explain|explicar', 'deep'].includes(action)) {
         try {
-          console.log('🌐 [TutorCore] Intentando enriquecimiento web con Tavily...');
+          logger.log('🌐 [TutorCore] Intentando enriquecimiento web con Tavily...');
           const searchQuery = frag.length > 100 ? frag.substring(0, 100) : frag;
 
           // Crear timeout manual compatible con todos los navegadores
@@ -1053,7 +1054,7 @@ Adapta tu respuesta según señales del estudiante:
               const data = await response.json();
 
               if (data.resultados && data.resultados.length > 0) {
-                console.log(`✅ [TutorCore] Enriquecido con ${data.resultados.length} fuentes (${data.api_utilizada})`);
+                logger.log(`✅ [TutorCore] Enriquecido con ${data.resultados.length} fuentes (${data.api_utilizada})`);
 
                 const fuentesTexto = data.resultados.map((r, i) => `
 [Fuente ${i + 1}]: ${r.titulo}
@@ -1077,23 +1078,23 @@ ${fuentesTexto}
 - Integra naturalmente, no como "según la fuente..."
 `;
               } else {
-                console.log('ℹ️ [TutorCore] Sin resultados web relevantes');
+                logger.log('ℹ️ [TutorCore] Sin resultados web relevantes');
               }
             } else {
-              console.warn('⚠️ [TutorCore] Error en búsqueda web:', response.status);
+              logger.warn('⚠️ [TutorCore] Error en búsqueda web:', response.status);
             }
           } catch (fetchError) {
             clearTimeout(timeoutId);
             // Error específico de fetch (timeout, red, etc.)
             if (fetchError.name === 'AbortError') {
-              console.warn('⚠️ [TutorCore] Timeout en búsqueda web (5s)');
+              logger.warn('⚠️ [TutorCore] Timeout en búsqueda web (5s)');
             } else {
-              console.warn('⚠️ [TutorCore] Error en fetch de búsqueda web:', fetchError.message);
+              logger.warn('⚠️ [TutorCore] Error en fetch de búsqueda web:', fetchError.message);
             }
           }
         } catch (error) {
           // Fallback silencioso: continuar sin enriquecimiento web
-          console.warn('⚠️ [TutorCore] Error general enriqueciendo con web:', error.message);
+          logger.warn('⚠️ [TutorCore] Error general enriqueciendo con web:', error.message);
         }
       }
 

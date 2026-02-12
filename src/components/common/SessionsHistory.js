@@ -18,6 +18,7 @@ import { checkUnsaveDrafts, getWarningMessage } from '../../utils/checkUnsaveDra
 import SessionCard from '../historial/SessionCard';
 import SessionFilters from '../historial/SessionFilters';
 
+import logger from '../../utils/logger';
 /**
  * Componente de historial de sesiones
  * 🔥 Ahora con sincronización Firebase automática
@@ -86,7 +87,7 @@ const SessionsHistory = ({ theme }) => {
         const limit = getSessionsLimit();
         setSessionLimit(limit);
         
-        console.log('📊 [SessionsHistory] Sesiones cargadas:', {
+        logger.log('📊 [SessionsHistory] Sesiones cargadas:', {
           total: mergedSessions.length,
           limit: limit.max,
           remaining: limit.remaining,
@@ -105,7 +106,7 @@ const SessionsHistory = ({ theme }) => {
         setSyncStatus(null);
       }
     } catch (error) {
-      console.error('❌ Error cargando sesiones:', error);
+      logger.error('❌ Error cargando sesiones:', error);
       // Fallback a sesiones locales
       const localSessions = getAllSessions();
       setSessions(localSessions);
@@ -133,7 +134,7 @@ const SessionsHistory = ({ theme }) => {
       alert(`✅ Sincronización de pendientes completada:\n${result.synced} sesiones sincronizadas\n${result.failed} fallidas`);
       loadSessions();
     } catch (error) {
-      console.error('❌ Error sincronizando pendientes:', error);
+      logger.error('❌ Error sincronizando pendientes:', error);
       alert('Error sincronizando pendientes. Revisa la consola.');
     } finally {
       setLoading(false);
@@ -141,7 +142,7 @@ const SessionsHistory = ({ theme }) => {
   }, [currentUser, loadSessions]);
 
   const handleSessionClick = useCallback(async (session) => {
-    console.log('🖱️ [SessionsHistory] Click en sesión:', {
+    logger.log('🖱️ [SessionsHistory] Click en sesión:', {
       id: session.id,
       timestamp: session.timestamp,
       hasText: !!session.text,
@@ -149,7 +150,7 @@ const SessionsHistory = ({ theme }) => {
     });
     
     if (!restoreSession) {
-      console.error('❌ restoreSession no disponible en contexto');
+      logger.error('❌ restoreSession no disponible en contexto');
       return;
     }
     
@@ -160,26 +161,26 @@ const SessionsHistory = ({ theme }) => {
       const confirmed = window.confirm(warningMessage);
       
       if (!confirmed) {
-        console.log('❌ [SessionsHistory] Cambio de sesión cancelado por el usuario');
+        logger.log('❌ [SessionsHistory] Cambio de sesión cancelado por el usuario');
         return;
       }
     }
     
-    console.log('📂 [SessionsHistory] Restaurando sesión:', session.id);
+    logger.log('📂 [SessionsHistory] Restaurando sesión:', session.id);
     const success = await restoreSession(session);
-    console.log('🔄 [SessionsHistory] Resultado restauración:', success ? '✅ Éxito' : '❌ Error');
+    logger.log('🔄 [SessionsHistory] Resultado restauración:', success ? '✅ Éxito' : '❌ Error');
     
     if (success) {
       setIsExpanded(false);
       // Cambiar a lectura guiada
       setTimeout(() => {
-        console.log('🔀 [SessionsHistory] Cambiando a tab "lectura-guiada"');
+        logger.log('🔀 [SessionsHistory] Cambiando a tab "lectura-guiada"');
         window.dispatchEvent(new CustomEvent('app-change-tab', { 
           detail: { tabId: 'lectura-guiada' } 
         }));
       }, 300);
     } else {
-      console.error('❌ [SessionsHistory] No se pudo restaurar la sesión');
+      logger.error('❌ [SessionsHistory] No se pudo restaurar la sesión');
     }
   }, [restoreSession, currentTextoId, rubricProgress]);
 
@@ -218,7 +219,7 @@ const SessionsHistory = ({ theme }) => {
 
   const handleCreateNewSession = useCallback(async () => {
     if (!texto || !createSession) {
-      console.warn('⚠️ No hay texto cargado para crear sesión');
+      logger.warn('⚠️ No hay texto cargado para crear sesión');
       return;
     }
     
@@ -232,7 +233,7 @@ const SessionsHistory = ({ theme }) => {
   // 🆕 NUEVA FUNCIÓN: Guardar cambios en sesión actual
   const handleSaveCurrentSession = useCallback(async () => {
     if (!texto) {
-      console.warn('⚠️ [SessionsHistory] No hay texto para guardar');
+      logger.warn('⚠️ [SessionsHistory] No hay texto para guardar');
       return;
     }
 
@@ -254,7 +255,7 @@ const SessionsHistory = ({ theme }) => {
         alert('❌ Error guardando sesión');
       }
     } else {
-      console.error('❌ updateCurrentSessionFromState no disponible');
+      logger.error('❌ updateCurrentSessionFromState no disponible');
     }
   }, [texto, updateCurrentSessionFromState, loadSessions]);
 
@@ -276,7 +277,7 @@ const SessionsHistory = ({ theme }) => {
       
       loadSessions();
     } catch (error) {
-      console.error('❌ Error sincronizando:', error);
+      logger.error('❌ Error sincronizando:', error);
       alert('Error sincronizando sesiones. Revisa la consola.');
     } finally {
       setLoading(false);
@@ -423,9 +424,9 @@ const SessionsHistory = ({ theme }) => {
         sections,
         fileName: `sesion-${session.id}-${new Date().toISOString().slice(0,10)}.pdf`,
       });
-      console.log('✅ Sesión exportada como PDF:', session.id);
+      logger.log('✅ Sesión exportada como PDF:', session.id);
     } catch (error) {
-      console.error('❌ Error exportando sesión:', error);
+      logger.error('❌ Error exportando sesión:', error);
       alert('Error exportando la sesión');
     }
   }, []);

@@ -1,3 +1,6 @@
+import logger from './logger';
+
+
 /**
  * @file Módulo con utilidades para exportar datos en PDF.
  * @module exportUtils
@@ -446,7 +449,7 @@ export const exportGenericPDF = async ({ title, sections = [], fileName = 'expor
     b.doc.save(fileName);
     return { success: true };
   } catch (error) {
-    console.error('Error generando PDF:', error);
+    logger.error('Error generando PDF:', error);
     return { success: false, error: error.message };
   }
 };
@@ -604,7 +607,7 @@ export const exportarResultadosPDF = async (analisis, _metadata = {}) => {
 
     return { success: true, message: 'Exportacion PDF iniciada.' };
   } catch (error) {
-    console.error('Error al exportar analisis como PDF:', error);
+    logger.error('Error al exportar analisis como PDF:', error);
     return { success: false, error: 'No se pudo generar el PDF.' };
   }
 };

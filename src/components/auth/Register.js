@@ -8,6 +8,7 @@ import styled from 'styled-components';
 import { registerWithEmail } from '../../firebase/auth';
 import { useNavigate, Link } from 'react-router-dom';
 
+import logger from '../../utils/logger';
 const RegisterContainer = styled.div`
   min-height: 100vh;
   display: flex;
@@ -240,7 +241,7 @@ export default function Register() {
       
       const { userData } = await registerWithEmail(email, password, nombre, role, metadata);
       
-      console.log('✅ Registro exitoso, redirigiendo...');
+      logger.log('✅ Registro exitoso, redirigiendo...');
       
       // Redirigir según el rol
       if (userData.role === 'docente') {

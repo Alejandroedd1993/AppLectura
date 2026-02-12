@@ -4,6 +4,7 @@ import useWebSearchTutor from '../../hooks/useWebSearchTutor';
 import { buildEnrichmentPrompt } from '../../utils/enrichmentConstants';
 import { useRewards } from '../../context/PedagogyContext';
 
+import logger from '../../utils/logger';
 const Btn = styled.button`
   padding: 0.5rem 0.9rem;
   background: ${p => p.theme?.success || '#16a34a'};
@@ -102,19 +103,19 @@ export default function WebEnrichmentButton({
   const handleClick = useCallback(async () => {
     if (disabled || !query?.trim()) return;
 
-    console.log('🔍 [WebEnrichmentButton] Iniciando búsqueda web:', query.trim());
+    logger.log('🔍 [WebEnrichmentButton] Iniciando búsqueda web:', query.trim());
 
     try {
       const contexto = contextBuilder ? contextBuilder(query) : '';
       const resultados = await search(query.trim(), contexto);
 
-      console.log('📊 [WebEnrichmentButton] Resultados:', resultados?.length || 0);
+      logger.log('📊 [WebEnrichmentButton] Resultados:', resultados?.length || 0);
 
       if (resultados && resultados.length) {
         // Construir contexto enriquecido con TODOS los resultados
         const enrichedContext = buildEnrichmentPrompt(resultados, true);
 
-        console.log('✅ [WebEnrichmentButton] Enviando al tutor automáticamente');
+        logger.log('✅ [WebEnrichmentButton] Enviando al tutor automáticamente');
 
         // Enviar directamente al tutor (sin modal)
         onEnriched?.(enrichedContext);
@@ -132,11 +133,11 @@ export default function WebEnrichmentButton({
         // Toast de éxito
         showToast(`✅ ${resultados.length} fuentes encontradas. Procesando respuesta...`);
       } else {
-        console.warn('⚠️ [WebEnrichmentButton] Sin resultados');
+        logger.warn('⚠️ [WebEnrichmentButton] Sin resultados');
         showToast('No se encontraron resultados. Intenta otra pregunta.', true);
       }
     } catch (e) {
-      console.error('❌ [WebEnrichmentButton] Error:', e);
+      logger.error('❌ [WebEnrichmentButton] Error:', e);
       showToast(`Error: ${e.message}`, true);
     }
   }, [disabled, query, search, contextBuilder, onEnriched, rewards, rewardsResourceId]);
