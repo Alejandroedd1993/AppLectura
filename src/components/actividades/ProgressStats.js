@@ -261,7 +261,8 @@ export default function ProgressStats({ rubricProgress }) {
     
     Object.entries(ARTEFACTO_CONFIG).forEach(([rubricId, config]) => {
       const data = rubricProgress[rubricId];
-      const formativeScores = data?.scores || [];
+      // 🛡️ Excluir scores de PracticaGuiada (solo artefactos reales)
+      const formativeScores = (data?.scores || []).filter(s => s.artefacto !== 'PracticaGuiada');
       const hasFormative = formativeScores.length > 0;
       const summative = data?.summative;
       const summativeScoreNum = Number(summative?.score);

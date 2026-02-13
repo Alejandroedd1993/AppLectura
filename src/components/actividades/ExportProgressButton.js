@@ -334,7 +334,8 @@ export default function ExportProgressButton({
 
     const rows = rubricIds.map((rubricId) => {
       const data = rubricProgress?.[rubricId];
-      const scores = data?.scores || [];
+      // 🛡️ Excluir scores de PracticaGuiada (solo artefactos reales)
+      const scores = (data?.scores || []).filter(s => s.artefacto !== 'PracticaGuiada');
       totalEvaluaciones += scores.length;
 
       if (scores.length === 0) {

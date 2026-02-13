@@ -179,7 +179,14 @@ export { DIMENSIONS };
 function getScoreInfo(rubricProgress, rubricId) {
   const data = rubricProgress?.[rubricId];
   if (!data?.scores?.length) return null;
-  const last = data.scores[data.scores.length - 1].score;
+
+  // 🛡️ Solo considerar scores de artefactos reales (excluir práctica)
+  const artifactScores = data.scores.filter(
+    (s) => s.artefacto !== 'PracticaGuiada'
+  );
+  if (!artifactScores.length) return null;
+
+  const last = artifactScores[artifactScores.length - 1].score;
   if (last >= 8.6) return { value: last.toFixed(1), color: '#10b981', label: 'Excelente' };
   if (last >= 5.6) return { value: last.toFixed(1), color: '#4CAF50', label: 'Bueno' };
   return { value: last.toFixed(1), color: '#FF9800', label: 'En progreso' };

@@ -281,7 +281,7 @@ const normalizeScore4 = (value) => {
 };
 
 export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimension }) {
-  const { texto, completeAnalysis, updateRubricScore, currentTextoId } = useContext(AppContext);
+  const { texto, completeAnalysis, currentTextoId } = useContext(AppContext);
   const { recordEvent } = useRewards() || {};
   const [selectedDimension, setSelectedDimension] = useState(fixedDimension || null);
   const [practiceConfig, setPracticeConfig] = useState(null);
@@ -498,25 +498,8 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
       setFeedback(res);
       setProgressStep(null);
 
-      // 🧭 Persistir como intento formativo (no sumativo)
-      // Nota: updateRubricScore usa rubrica1–5, por eso mapeamos por dimensión.
-      const dimensionToRubric = {
-        comprension_analitica: 'rubrica1',
-        acd: 'rubrica2',
-        contextualizacion: 'rubrica3',
-        argumentacion: 'rubrica4',
-        metacognicion_etica_ia: 'rubrica5'
-      };
-      const rubricId = dimensionToRubric[selectedDimension];
-      if (rubricId && updateRubricScore) {
-        updateRubricScore(rubricId, {
-          score: res?.score,
-          nivel: res?.nivel,
-          artefacto: 'PracticaGuiada',
-          criterios: res?.detalles,
-          textoId: lectureId || undefined
-        });
-      }
+      // ⚠️ IMPORTANTE: La práctica NO actualiza rubricProgress (calificación del artefacto).
+      // Solo otorga puntos de recompensa al score general del estudiante.
 
       // 🎮 Registrar recompensas por práctica opcional
       try {
@@ -561,7 +544,7 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
     } finally {
       setEvaluating(false);
     }
-  }, [texto, selectedDimension, question, answer, updateRubricScore, lectureId, practiceConfig, isCrossChallenge]);
+  }, [texto, selectedDimension, question, answer, lectureId, practiceConfig, isCrossChallenge]);
 
   const dims = useMemo(() => ([
     { id: 'comprension_analitica', name: 'Comprensión Analítica', icon: '📚' },

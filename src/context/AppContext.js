@@ -1641,9 +1641,12 @@ export const AppContextProvider = ({ children }) => {
 
       const newScores = [...(rubrica.scores || []), newScoreEntry];
 
-      // Calcular promedio (últimos 3 intentos o todos si son menos)
-      const recentScores = newScores.slice(-3);
-      const average = recentScores.reduce((sum, s) => sum + s.score, 0) / recentScores.length;
+      // Calcular promedio solo con scores de artefactos reales (excluir PracticaGuiada)
+      const artifactOnlyScores = newScores.filter(s => s.artefacto !== 'PracticaGuiada');
+      const recentScores = artifactOnlyScores.slice(-3);
+      const average = recentScores.length > 0
+        ? recentScores.reduce((sum, s) => sum + s.score, 0) / recentScores.length
+        : 0;
 
       // Registrar artefactos únicos
       const artefactosSet = new Set([...(rubrica.artefactos || []), newScoreEntry.artefacto]);
