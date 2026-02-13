@@ -848,10 +848,10 @@ Adapta tu respuesta según señales del estudiante:
       lastUserHashRef.current = hash;
       lastUserTsRef.current = now;
 
+      const currentLectureId = lastActionInfoRef.current?.lectureId || 'global';
+
       // 🤖 LOGGING PARA BITÁCORA ÉTICA IA
       try {
-        const currentLectureId = lastActionInfoRef.current?.lectureId || 'global';
-
         const interactionLog = {
           timestamp: new Date().toISOString(),
           lectureId: currentLectureId,
@@ -880,7 +880,7 @@ Adapta tu respuesta según señales del estudiante:
           if (rewards && bloomDetection?.current) {
             const eventType = `QUESTION_BLOOM_${bloomDetection.current.id}`;
             // 🔒 Generar resourceId para activar dedupe en niveles altos
-            const bloomResourceId = `bloom:${bloomDetection.current.id}:${prompt.slice(0, 60).replace(/\s+/g, '_')}`;
+            const bloomResourceId = `bloom:${currentLectureId}:${bloomDetection.current.id}:${prompt.slice(0, 60).replace(/\s+/g, '_')}`;
             const result = rewards.recordEvent(eventType, {
               bloomLevel: bloomDetection.current.id,
               question: prompt.substring(0, 100),

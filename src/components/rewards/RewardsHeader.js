@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRewards } from '../../context/PedagogyContext';
-import { ACHIEVEMENTS } from '../../pedagogy/rewards/rewardsEngine';
+import { resolveAchievement } from '../../pedagogy/rewards/rewardsEngine';
 import RewardsAnalytics from './RewardsAnalytics';
 
 import logger from '../../utils/logger';
@@ -268,7 +268,7 @@ export default function RewardsHeader({ onClickDetails }) {
         const newAchievements = newState.achievements?.length || 0;
         if (newAchievements > prevAchievements && !isInitialLoadRef.current) {
           const latestAchievementId = newState.achievements[newAchievements - 1];
-          const achievementData = ACHIEVEMENTS[latestAchievementId.toUpperCase()];
+          const achievementData = resolveAchievement(latestAchievementId);
           if (achievementData) {
             setAchievementPopup({ achievement: achievementData });
 

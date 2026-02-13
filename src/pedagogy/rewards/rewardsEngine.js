@@ -179,6 +179,38 @@ const ACHIEVEMENTS = {
   }
 };
 
+// Compatibilidad entre IDs cortos usados en código y keys del diccionario
+const ACHIEVEMENT_ID_ALIASES = {
+  first_question: 'FIRST_QUESTION',
+  critical_thinker: 'CRITICAL_THINKER',
+  acd_master: 'ACD_MASTER',
+  evidence_champion: 'EVIDENCE_CHAMPION',
+  ten_evals: 'TEN_EVALUATIONS',
+  perfect: 'PERFECT_SCORE',
+  all_dims: 'ALL_DIMENSIONS',
+  week_streak: 'WEEK_STREAK',
+  month_streak: 'MONTH_STREAK',
+  metacog_master: 'METACOGNITIVE_MASTER'
+};
+
+/**
+ * Resuelve un achievement por id corto/canónico.
+ * @param {string} achievementId
+ * @returns {object|null}
+ */
+function resolveAchievement(achievementId) {
+  if (!achievementId) return null;
+
+  const rawId = String(achievementId).trim();
+  const aliasKey = ACHIEVEMENT_ID_ALIASES[rawId] || rawId.toUpperCase();
+
+  if (ACHIEVEMENTS[aliasKey]) {
+    return ACHIEVEMENTS[aliasKey];
+  }
+
+  return Object.values(ACHIEVEMENTS).find(a => a.id === rawId) || null;
+}
+
 /**
  * Clase principal del motor de recompensas
  */
@@ -431,10 +463,12 @@ class RewardsEngine {
     }
 
     // 🆕 FIX Pass 11: Verificar límite diario si está configurado
+    let dailyKey = null;
+    let currentCount = 0;
     if (config.dailyLimit) {
       const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
-      const dailyKey = `${eventType}_daily_${today}`;
-      const currentCount = this.state.recordedMilestones?.[dailyKey] || 0;
+      dailyKey = `${eventType}_daily_${today}`;
+      currentCount = this.state.recordedMilestones?.[dailyKey] || 0;
       
       if (currentCount >= config.dailyLimit) {
         logger.log(`🛡️ [RewardsEngine] Límite diario alcanzado para ${eventType}: ${currentCount}/${config.dailyLimit}`);
@@ -446,10 +480,6 @@ class RewardsEngine {
           dailyLimitReached: true
         };
       }
-      
-      // Incrementar contador diario
-      if (!this.state.recordedMilestones) this.state.recordedMilestones = {};
-      this.state.recordedMilestones[dailyKey] = currentCount + 1;
     }
 
     // 🆕 Anti-farming: Verificar si es un evento único ya reclamado
@@ -464,6 +494,12 @@ class RewardsEngine {
       // Marcar como reclamado
       if (!this.state.recordedMilestones) this.state.recordedMilestones = {};
       this.state.recordedMilestones[milestoneKey] = Date.now();
+    }
+
+    // Incrementar contador diario SOLO si el evento fue aceptado
+    if (dailyKey) {
+      if (!this.state.recordedMilestones) this.state.recordedMilestones = {};
+      this.state.recordedMilestones[dailyKey] = currentCount + 1;
     }
 
     // Actualizar racha
@@ -777,7 +813,7 @@ class RewardsEngine {
    * Desbloquea un achievement
    */
   unlockAchievement(achievementId) {
-    const achievement = ACHIEVEMENTS[achievementId.toUpperCase()];
+    const achievement = resolveAchievement(achievementId);
     if (!achievement) return;
 
     if (this.state.achievements.includes(achievementId)) {
@@ -1001,7 +1037,9 @@ class RewardsEngine {
         availablePoints: this.state.availablePoints,
         spentPoints: this.state.spentPoints,
         achievements: this.state.achievements.length,
-        achievementsList: this.state.achievements.map(id => ACHIEVEMENTS[id.toUpperCase()]?.name)
+        achievementsList: this.state.achievements
+          .map(id => resolveAchievement(id)?.name)
+          .filter(Boolean)
       },
       history: this.state.history
     };
@@ -1054,7 +1092,7 @@ class RewardsEngine {
 }
 
 // Exportar ES6 para React
-export { RewardsEngine, REWARD_EVENTS, ACHIEVEMENTS, STREAK_MULTIPLIERS };
+export { RewardsEngine, REWARD_EVENTS, ACHIEVEMENTS, STREAK_MULTIPLIERS, resolveAchievement };
 
 if (typeof window !== 'undefined') {
   window.RewardsEngine = RewardsEngine;
