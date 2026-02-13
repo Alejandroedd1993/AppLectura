@@ -861,7 +861,7 @@ export default function TablaACD({ theme }) {
         if (marcoIdeologico && marcoIdeologico.trim().length > 50) {
           rewards.recordEvent('ACD_FRAME_IDENTIFIED', {
             frame: marcoIdeologico.substring(0, 100),
-            resourceId: rewardsResourceId
+            resourceId: `${rewardsResourceId}:acd_frame`
           });
         }
 
@@ -869,7 +869,7 @@ export default function TablaACD({ theme }) {
         if (estrategiasRetoricas && estrategiasRetoricas.trim().length > 50) {
           rewards.recordEvent('ACD_STRATEGY_IDENTIFIED', {
             strategies: estrategiasRetoricas.substring(0, 100),
-            resourceId: rewardsResourceId
+            resourceId: `${rewardsResourceId}:acd_strategy`
           });
         }
 
@@ -877,7 +877,7 @@ export default function TablaACD({ theme }) {
         if (vocesSilenciadas && vocesSilenciadas.trim().length > 50) {
           rewards.recordEvent('ACD_POWER_ANALYSIS', {
             analysis: vocesSilenciadas.substring(0, 100),
-            resourceId: rewardsResourceId
+            resourceId: `${rewardsResourceId}:acd_power`
           });
         }
 

@@ -879,10 +879,13 @@ Adapta tu respuesta según señales del estudiante:
           // Registrar puntos según nivel cognitivo
           if (rewards && bloomDetection?.current) {
             const eventType = `QUESTION_BLOOM_${bloomDetection.current.id}`;
+            // 🔒 Generar resourceId para activar dedupe en niveles altos
+            const bloomResourceId = `bloom:${bloomDetection.current.id}:${prompt.slice(0, 60).replace(/\s+/g, '_')}`;
             const result = rewards.recordEvent(eventType, {
               bloomLevel: bloomDetection.current.id,
               question: prompt.substring(0, 100),
-              confidence: bloomDetection.confidence
+              confidence: bloomDetection.confidence,
+              resourceId: bloomResourceId
             });
             logger.log('🎮 Puntos registrados:', result);
           }

@@ -772,6 +772,13 @@ export default function RespuestaArgumentativa({ theme }) {
 
       // 🎮 Registrar recompensas
       if (rewards) {
+        rewards.recordEvent('ARTIFACT_SUBMITTED', {
+          artefacto: 'RespuestaArgumentativa',
+          rubricId: 'rubrica4',
+          score: result.nivel_global * 2.5,
+          resourceId: rewardsResourceId
+        });
+
         rewards.recordEvent('EVALUATION_SUBMITTED', {
           artefacto: 'RespuestaArgumentativa',
           rubricId: 'rubrica4',

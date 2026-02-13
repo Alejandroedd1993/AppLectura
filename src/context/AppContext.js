@@ -1670,7 +1670,34 @@ export const AppContextProvider = ({ children }) => {
 
       logger.log(`✅ [updateRubricScore] ${rubricId} actualizada. Promedio: ${updatedRubrica.average}/10`);
 
-      // 🆕 DISPARAR EVENTO para sincronización optimizada
+      // � Disparar eventos de rewards para dimensiones (activar eventos huérfanos)
+      try {
+        const engine = typeof window !== 'undefined' ? window.__rewardsEngine : null;
+        if (engine && newScoreEntry.artefacto !== 'PracticaGuiada') {
+          // DIMENSION_UNLOCKED: primera vez que se evalúa un artefacto en esta dimensión
+          const prevArtifactScores = (rubrica.scores || []).filter(s => s.artefacto !== 'PracticaGuiada');
+          if (prevArtifactScores.length === 0) {
+            engine.recordEvent('DIMENSION_UNLOCKED', {
+              rubricId,
+              artefacto: newScoreEntry.artefacto,
+              resourceId: `dim_unlock:${rubricId}`
+            });
+          }
+
+          // DIMENSION_COMPLETED: promedio >= 6 con al menos 2 evaluaciones de artefactos
+          if (average >= 6 && artifactOnlyScores.length >= 2) {
+            engine.recordEvent('DIMENSION_COMPLETED', {
+              rubricId,
+              average: updatedRubrica.average,
+              resourceId: `dim_complete:${rubricId}`
+            });
+          }
+        }
+      } catch (_e) {
+        // no bloquear actualización de rúbrica por rewards
+      }
+
+      // �🆕 DISPARAR EVENTO para sincronización optimizada
       window.dispatchEvent(new CustomEvent('artifact-evaluated', {
         detail: {
           rubricId,

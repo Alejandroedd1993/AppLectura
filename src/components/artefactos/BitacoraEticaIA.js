@@ -12,7 +12,7 @@ import React, { useState, useEffect, useCallback, useContext, useMemo, useRef } 
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
-import { usePedagogy } from '../../context/PedagogyContext';
+import { usePedagogy, useRewards } from '../../context/PedagogyContext';
 import { evaluateBitacoraEticaIA } from '../../services/bitacoraEticaIA.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useRateLimit from '../../hooks/useRateLimit';
@@ -63,6 +63,7 @@ const DeclarationsContainer = styled.div`
 export default function BitacoraEticaIA({ theme }) {
   const { modoOscuro, completeAnalysis, setError, updateRubricScore, updateActivitiesProgress, sourceCourseId, currentTextoId, globalTutorInteractions, clearGlobalTutorLog, activitiesProgress } = useContext(AppContext);
   const { progression: _progression } = usePedagogy();
+  const rewards = useRewards(); // 🎮 Hook de recompensas
 
   // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
   const resetProcessedRef = useRef(null);
@@ -124,6 +125,7 @@ export default function BitacoraEticaIA({ theme }) {
   // Persistencia robusta
   const legacyDocumentId = completeAnalysis?.metadata?.document_id || null;
   const lectureId = currentTextoId || legacyDocumentId || 'global';
+  const rewardsResourceId = lectureId ? `${lectureId}:BitacoraEticaIA` : null;
   const persistenceKey = `bitacora_etica_ia_${lectureId}`;
   const legacyPersistenceIds = legacyDocumentId && legacyDocumentId !== lectureId
     ? [`bitacora_etica_ia_${legacyDocumentId}`]
@@ -684,7 +686,50 @@ export default function BitacoraEticaIA({ theme }) {
         textoId: lectureId && lectureId !== 'global' ? lectureId : null
       });
 
-      // 🆕 Despachar evento de completitud solo si es el primer éxito o mejora
+      // � Registrar recompensas
+      if (rewards) {
+        rewards.recordEvent('ARTIFACT_SUBMITTED', {
+          artefacto: 'BitacoraEticaIA',
+          rubricId: 'rubrica5',
+          score: result.nivel_global * 2.5,
+          resourceId: rewardsResourceId
+        });
+
+        rewards.recordEvent('EVALUATION_SUBMITTED', {
+          artefacto: 'BitacoraEticaIA',
+          rubricId: 'rubrica5',
+          resourceId: rewardsResourceId
+        });
+
+        rewards.recordEvent(`EVALUATION_LEVEL_${result.nivel_global}`, {
+          score: result.nivel_global * 2.5,
+          nivel: result.nivel_global,
+          artefacto: 'BitacoraEticaIA',
+          resourceId: rewardsResourceId
+        });
+
+        // 🧠 Reflexión metacognitiva (este artefacto ES metacognición ética)
+        if (reflexionEtica.length > 80) {
+          rewards.recordEvent('METACOGNITIVE_REFLECTION', {
+            length: reflexionEtica.length,
+            artefacto: 'BitacoraEticaIA',
+            resourceId: rewardsResourceId
+          });
+        }
+
+        // 🏆 Puntuación perfecta
+        if (result.nivel_global === 4) {
+          rewards.recordEvent('PERFECT_SCORE', {
+            score: 10,
+            artefacto: 'BitacoraEticaIA',
+            resourceId: rewardsResourceId
+          });
+        }
+
+        logger.log('🎮 [BitacoraEticaIA] Recompensas registradas');
+      }
+
+      // �🆕 Despachar evento de completitud solo si es el primer éxito o mejora
       const event = new CustomEvent('evaluation-complete', {
         detail: {
           artefacto: 'BitacoraEticaIA',
@@ -702,7 +747,7 @@ export default function BitacoraEticaIA({ theme }) {
       setLoadingEvaluation(false);
       setCurrentEvaluationStep(null);
     }
-  }, [isValidForEvaluation, evaluationAttempts, MAX_ATTEMPTS, rateLimit, tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, setError, updateRubricScore, lectureId, updateActivitiesProgress, persistence]);
+  }, [isValidForEvaluation, evaluationAttempts, MAX_ATTEMPTS, rateLimit, tutorInteractions, verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones, setError, updateRubricScore, lectureId, updateActivitiesProgress, persistence, rewards, rewardsResourceId]);
 
   useEffect(() => {
     handleEvaluateCriterialRef.current = handleEvaluateCriterial;
@@ -1874,4 +1919,4 @@ const SecondaryButton = styled.button`
   &:hover {
     background: ${props => props.theme.border};
   }
-`;
+`;

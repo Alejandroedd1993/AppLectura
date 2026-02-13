@@ -326,53 +326,37 @@ export default function ACDAnalysisPanel({ text, compact: _compact = false, rewa
       
       // Registrar puntos por análisis ACD (dedupe: una vez por texto)
       if (rewards) {
-        const toSafeKey = (value) => (value || '')
-          .toString()
-          .trim()
-          .toLowerCase()
-          .replace(/\s+/g, '_')
-          .replace(/[^a-z0-9_\-:]/g, '')
-          .slice(0, 120);
-
         let totalPoints = 0;
 
-        // Marcos ideológicos: una vez por texto y por marco
+        // Marcos ideológicos: una vez por texto (no por marco individual)
         if (result.ideologicalFrames && result.ideologicalFrames.length > 0) {
-          result.ideologicalFrames.forEach(frame => {
-            const safeFrameName = toSafeKey(frame?.name) || 'unknown';
-            const resourceId = rewardsResourceId
-              ? `${rewardsResourceId}:acd_frame:${safeFrameName}`
-              : undefined;
+          // 🔒 Dedupe normalizado: usar mismo resourceId base que TablaACD
+          const resourceId = rewardsResourceId
+            ? `${rewardsResourceId}:acd_frame`
+            : undefined;
 
-            const eventResult = rewards.recordEvent('ACD_FRAME_IDENTIFIED', {
-              frame: frame.name,
-              density: frame.density,
-              examples: frame.examples.length,
-              resourceId
-            });
-            totalPoints += eventResult.totalEarned || 0;
+          const eventResult = rewards.recordEvent('ACD_FRAME_IDENTIFIED', {
+            frame: result.ideologicalFrames[0]?.name || 'detected',
+            count: result.ideologicalFrames.length,
+            resourceId
           });
+          totalPoints += eventResult.totalEarned || 0;
         }
 
-        // Estrategias retóricas: una vez por texto y por estrategia
+        // Estrategias retóricas: una vez por texto
         if (result.rhetoricalStrategies && result.rhetoricalStrategies.length > 0) {
-          result.rhetoricalStrategies.forEach(strategy => {
-            const safeStrategyName = toSafeKey(strategy?.name) || 'unknown';
-            const resourceId = rewardsResourceId
-              ? `${rewardsResourceId}:acd_strategy:${safeStrategyName}`
-              : undefined;
+          const resourceId = rewardsResourceId
+            ? `${rewardsResourceId}:acd_strategy`
+            : undefined;
 
-            const eventResult = rewards.recordEvent('ACD_STRATEGY_IDENTIFIED', {
-              strategy: strategy.name,
-              occurrences: strategy.occurrences,
-              examples: Array.isArray(strategy.examples) ? strategy.examples.length : 0,
-              resourceId
-            });
-            totalPoints += eventResult.totalEarned || 0;
+          const eventResult = rewards.recordEvent('ACD_STRATEGY_IDENTIFIED', {
+            count: result.rhetoricalStrategies.length,
+            resourceId
           });
+          totalPoints += eventResult.totalEarned || 0;
         }
 
-        // Poder: una vez por texto (si se detecta algo)
+        // Poder: una vez por texto
         const detectedPower = result.powerRelations?.detected || {};
         const detectedTypes = Object.keys(detectedPower);
         if (detectedTypes.length > 0) {

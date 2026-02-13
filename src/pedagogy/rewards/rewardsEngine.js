@@ -26,9 +26,9 @@ const REWARD_EVENTS = {
   QUESTION_BLOOM_1: { points: 2, label: '📖 Pregunta Literal', dailyLimit: 20 },
   QUESTION_BLOOM_2: { points: 4, label: '💡 Pregunta Inferencial', dailyLimit: 15 },
   QUESTION_BLOOM_3: { points: 8, label: '🌍 Pregunta Aplicativa', dailyLimit: 10 },
-  QUESTION_BLOOM_4: { points: 15, label: '🔍 Pregunta Analítica', dailyLimit: 8 },
-  QUESTION_BLOOM_5: { points: 25, label: '⚖️ Pregunta Crítica (ACD)', dailyLimit: 5 },
-  QUESTION_BLOOM_6: { points: 40, label: '✨ Pregunta Propositiva', dailyLimit: 3 },
+  QUESTION_BLOOM_4: { points: 15, label: '🔍 Pregunta Analítica', dailyLimit: 8, dedupe: true },
+  QUESTION_BLOOM_5: { points: 25, label: '⚖️ Pregunta Crítica (ACD)', dailyLimit: 5, dedupe: true },
+  QUESTION_BLOOM_6: { points: 40, label: '✨ Pregunta Propositiva', dailyLimit: 3, dedupe: true },
 
   // Análisis Crítico del Discurso
   // 🆕 FIX Pass 11: Reducir puntos ACD (se duplicaban entre TablaACD y ACDAnalysisPanel)
@@ -39,10 +39,10 @@ const REWARD_EVENTS = {
   // Evaluación (calidad de respuesta)
   // 🆕 FIX Pass 11: Ajustar puntos de evaluación (eran excesivos en conjunto)
   EVALUATION_SUBMITTED: { points: 10, label: '📝 Evaluación Enviada', dedupe: true },
-  EVALUATION_LEVEL_1: { points: 5, label: '🥉 Nivel 1 - Inicial' },
-  EVALUATION_LEVEL_2: { points: 15, label: '🥈 Nivel 2 - Básico' },
-  EVALUATION_LEVEL_3: { points: 30, label: '🥇 Nivel 3 - Competente' },
-  EVALUATION_LEVEL_4: { points: 50, label: '💎 Nivel 4 - Avanzado' },
+  EVALUATION_LEVEL_1: { points: 5, label: '🥉 Nivel 1 - Inicial', dedupe: true },
+  EVALUATION_LEVEL_2: { points: 15, label: '🥈 Nivel 2 - Básico', dedupe: true },
+  EVALUATION_LEVEL_3: { points: 30, label: '🥇 Nivel 3 - Competente', dedupe: true },
+  EVALUATION_LEVEL_4: { points: 50, label: '💎 Nivel 4 - Avanzado', dedupe: true },
   // Nota: dedupe explícito para evitar farming por re-evaluación.
   // Se activará solo si el caller provee metadata.resourceId.
   QUOTE_USED: { points: 5, label: '📎 Cita Textual Usada', dedupe: true },
@@ -356,12 +356,47 @@ class RewardsEngine {
   }
 
   /**
+   * 🧹 Limpieza de datos obsoletos para evitar crecimiento ilimitado
+   */
+  _pruneStaleData() {
+    const now = Date.now();
+    const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
+
+    // Pruning dailyLog: mantener últimos 90 días
+    if (this.state.dailyLog && typeof this.state.dailyLog === 'object') {
+      const cutoffDate = new Date(now - NINETY_DAYS).toLocaleDateString('en-CA');
+      const keys = Object.keys(this.state.dailyLog);
+      if (keys.length > 90) {
+        for (const date of keys) {
+          if (date < cutoffDate) {
+            delete this.state.dailyLog[date];
+          }
+        }
+      }
+    }
+
+    // Pruning recordedMilestones: limpiar contadores _daily_ de hace más de 7 días
+    if (this.state.recordedMilestones && typeof this.state.recordedMilestones === 'object') {
+      const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA');
+      for (const key of Object.keys(this.state.recordedMilestones)) {
+        const dailyMatch = key.match(/_daily_(\d{4}-\d{2}-\d{2})$/);
+        if (dailyMatch && dailyMatch[1] < sevenDaysAgo) {
+          delete this.state.recordedMilestones[key];
+        }
+      }
+    }
+  }
+
+  /**
    * Persiste estado en localStorage
    */
   persist() {
     if (!this.storage) return;
 
     try {
+      // 🧹 Pruning periódico: dailyLog (90 días) y contadores diarios expirados
+      this._pruneStaleData();
+
       const storageKey = rewardsStateKey(this.userId);
       this.storage.setItem(storageKey, JSON.stringify(this.state));
 
@@ -713,8 +748,8 @@ class RewardsEngine {
       this.unlockAchievement('ten_evals');
     }
 
-    // PERFECT_SCORE
-    if (metadata.score === 10 && !this.state.achievements.includes('perfect')) {
+    // PERFECT_SCORE — acepta scores >= 9.5 para consistencia con artefactos
+    if (Number(metadata.score) >= 9.5 && !this.state.achievements.includes('perfect')) {
       this.unlockAchievement('perfect');
     }
 
