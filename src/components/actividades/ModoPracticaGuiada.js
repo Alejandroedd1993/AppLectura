@@ -109,6 +109,9 @@ const AnswerLabel = styled.div`
 
 const AnswerArea = styled.textarea`
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: block;
   min-height: 140px;
   resize: vertical;
   padding: 0.9rem;
@@ -173,6 +176,77 @@ const Message = styled.div`
   }
 `;
 
+const FeedbackPanel = styled.div`
+  margin-top: 0.9rem;
+  border: 1px solid ${p => p.theme.border};
+  border-radius: 10px;
+  background: ${p => p.theme.background};
+  padding: 0.9rem;
+`;
+
+const FeedbackGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+`;
+
+const FeedbackCard = styled.div`
+  border: 1px solid ${p => p.theme.border};
+  border-radius: 10px;
+  background: ${p => p.theme.surface};
+  padding: 0.75rem;
+`;
+
+const FeedbackCardTitle = styled.div`
+  font-weight: 800;
+  color: ${p => p.theme.textPrimary};
+  margin-bottom: 0.4rem;
+`;
+
+const CriteriaList = styled.div`
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.55rem;
+`;
+
+const CriterionRow = styled.div`
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+`;
+
+const CriterionLabel = styled.div`
+  color: ${p => p.theme.textSecondary};
+  font-size: 0.86rem;
+  font-weight: 700;
+`;
+
+const CriterionValue = styled.div`
+  color: ${p => p.theme.textPrimary};
+  font-size: 0.82rem;
+  font-weight: 800;
+`;
+
+const CriterionTrack = styled.div`
+  grid-column: 1 / -1;
+  height: 8px;
+  border-radius: 999px;
+  background: ${p => p.theme.border};
+  overflow: hidden;
+`;
+
+const CriterionFill = styled.div`
+  height: 100%;
+  width: ${p => `${Math.max(0, Math.min(100, (Number(p.$value || 0) / 4) * 100))}%`};
+  background: ${p => {
+    const v = Number(p.$value || 0);
+    if (v >= 3.5) return '#16a34a';
+    if (v >= 2.5) return '#f59e0b';
+    return '#ef4444';
+  }};
+`;
+
 const normalizeBullets = (text) => {
   if (!text || typeof text !== 'string') return [];
   const lines = text
@@ -198,6 +272,12 @@ const normalizeBullets = (text) => {
     if (uniq.length >= 5) break;
   }
   return uniq;
+};
+
+const normalizeScore4 = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(4, n));
 };
 
 export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimension }) {
@@ -255,6 +335,65 @@ export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimensi
   }, [feedback]);
 
   const feedbackBullets = useMemo(() => normalizeBullets(feedbackText), [feedbackText]);
+
+    const feedbackQuickComment = useMemo(() => {
+      if (!feedback || typeof feedback !== 'object') return '';
+
+      const comentario = String(feedback?.comentarioCritico || '').trim();
+      if (comentario) return comentario;
+
+      const mejora = Array.isArray(feedback?.mejoras)
+        ? feedback.mejoras.find((m) => typeof m === 'string' && m.trim().length > 0)
+        : '';
+      if (mejora) return `Sugerencia rápida: ${mejora}`;
+
+      const score = Number(feedback?.score ?? 0);
+      if (score >= 8) return 'Vas muy bien. Para subir al máximo nivel, profundiza con una evidencia textual más precisa.';
+      if (score >= 6) return 'Buen avance. Intenta fortalecer tu respuesta conectando una evidencia concreta con tu conclusión.';
+      return 'Sugerencia rápida: responde de forma más directa a la pregunta y apóyate en al menos una evidencia del texto.';
+    }, [feedback]);
+
+    const feedbackStrength = useMemo(() => {
+      const f = Array.isArray(feedback?.fortalezas) ? feedback.fortalezas : [];
+      const first = f.find((item) => typeof item === 'string' && item.trim().length > 0);
+      return first ? first.trim() : 'Respondiste la pregunta y mantuviste una idea central clara.';
+    }, [feedback]);
+
+    const feedbackAction = useMemo(() => {
+      const m = Array.isArray(feedback?.mejoras) ? feedback.mejoras : [];
+      const first = m.find((item) => typeof item === 'string' && item.trim().length > 0);
+      return first ? first.trim() : 'Incluye una evidencia textual breve y explica por qué sostiene tu conclusión.';
+    }, [feedback]);
+
+    const feedbackCriteria = useMemo(() => {
+      if (!feedback || typeof feedback !== 'object') return [];
+      const d = feedback?.detalles || {};
+      return [
+        { key: 'claridad', label: 'Claridad', value: normalizeScore4(d.claridad) },
+        { key: 'anclaje', label: 'Anclaje textual', value: normalizeScore4(d.anclaje) },
+        { key: 'completitud', label: 'Completitud', value: normalizeScore4(d.completitud) },
+        { key: 'profundidad', label: 'Profundidad crítica', value: normalizeScore4(d.profundidad) }
+      ].filter((c) => c.value > 0);
+    }, [feedback]);
+
+    const rewriteGuide = useMemo(() => {
+      return [
+        'Reescritura guiada (breve):',
+        '1) Responde la pregunta en una frase directa.',
+        '2) Añade una evidencia puntual del texto (idea o cita corta).',
+        '3) Cierra explicando la relación entre evidencia y conclusión.',
+        `\nPista específica: ${feedbackAction}`
+      ].join('\n');
+    }, [feedbackAction]);
+
+    const handleApplyImprovementGuide = useCallback(() => {
+      setAnswer((prev) => {
+        const current = String(prev || '').trim();
+        const marker = '--- Mejora guiada ---';
+        if (current.includes(marker)) return prev;
+        return `${current}${current ? '\n\n' : ''}${marker}\n${rewriteGuide}`;
+      });
+    }, [rewriteGuide]);
 
   const handleGeneratePracticeQuestion = useCallback(async () => {
     if (!texto || !selectedDimension) return;
@@ -643,18 +782,61 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
           )}
 
           {feedback && (
-            <Message theme={theme}>
-              {`✅ Resultado: ${Number(feedback?.score ?? 0)}/10 · Nivel ${Number(feedback?.nivel ?? 0)}/4`}
-              {feedbackBullets.length > 0 ? (
-                <ul>
-                  {feedbackBullets.map((b, i) => (
-                    <li key={i}>{b}</li>
-                  ))}
-                </ul>
-              ) : (
-                feedbackText ? `\n\n${feedbackText}` : ''
-              )}
-            </Message>
+            <>
+              <Message theme={theme}>
+                {`✅ Resultado: ${Number(feedback?.score ?? 0)}/10 · Nivel ${Number(feedback?.nivel ?? 0)}/4`}
+                {feedbackQuickComment ? `\n\n💡 ${feedbackQuickComment}` : ''}
+                {feedbackBullets.length > 0 ? (
+                  <ul>
+                    {feedbackBullets.map((b, i) => (
+                      <li key={i}>{b}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  feedbackText ? `\n\n${feedbackText}` : ''
+                )}
+              </Message>
+
+              <FeedbackPanel theme={theme} aria-label="Resumen de mejora">
+                <FeedbackGrid>
+                  <FeedbackCard theme={theme}>
+                    <FeedbackCardTitle theme={theme}>✅ Fortaleza principal</FeedbackCardTitle>
+                    <div>{feedbackStrength}</div>
+                  </FeedbackCard>
+
+                  <FeedbackCard theme={theme}>
+                    <FeedbackCardTitle theme={theme}>🎯 Mejora accionable</FeedbackCardTitle>
+                    <div>{feedbackAction}</div>
+                  </FeedbackCard>
+                </FeedbackGrid>
+
+                {feedbackCriteria.length > 0 && (
+                  <CriteriaList>
+                    {feedbackCriteria.map((c) => (
+                      <CriterionRow key={c.key}>
+                        <CriterionLabel theme={theme}>{c.label}</CriterionLabel>
+                        <CriterionValue theme={theme}>{c.value.toFixed(1)}/4</CriterionValue>
+                        <CriterionTrack theme={theme}>
+                          <CriterionFill $value={c.value} />
+                        </CriterionTrack>
+                      </CriterionRow>
+                    ))}
+                  </CriteriaList>
+                )}
+
+                <ActionsRow>
+                  <ActionBtn
+                    theme={theme}
+                    type="button"
+                    onClick={handleApplyImprovementGuide}
+                    disabled={evaluating || loadingQuestion}
+                    title="Inserta una guía breve para mejorar tu respuesta y reintentar"
+                  >
+                    ✨ Mejorar respuesta
+                  </ActionBtn>
+                </ActionsRow>
+              </FeedbackPanel>
+            </>
           )}
         </PracticeCard>
       )}

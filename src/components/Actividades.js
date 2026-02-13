@@ -648,7 +648,7 @@ export default function Actividades() {
                 }}>
                   <span style={{ fontSize: '1.2rem' }}>💡</span>
                   <span>
-                    <strong>Tip:</strong> Haz clic en cualquier tarjeta de rúbrica para ir directamente al artefacto correspondiente y revisarlo o mejorarlo.
+                    <strong>Tip:</strong> Haz clic en cualquier tarjeta de rúbrica para ir a la vista de dimensiones y abrir el artefacto correspondiente para revisarlo o mejorarlo.
                   </span>
                 </p>
 
