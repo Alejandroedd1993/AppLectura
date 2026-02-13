@@ -133,10 +133,96 @@ const BrandContent = styled.div`
 `;
 
 const BrandIcon = styled.div`
-  font-size: 52px;
   margin-bottom: 24px;
   line-height: 1;
+
+  svg {
+    width: 64px;
+    height: 64px;
+    filter: drop-shadow(0 4px 16px rgba(49, 144, 252, 0.25));
+  }
 `;
+
+/* Componente SVG del logo — cerebro geométrico en círculo */
+const BrainLogo = ({ size = 64, color = '#3190FC', className, style }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 200 200"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    style={style}
+    aria-hidden="true"
+  >
+    {/* Círculo exterior */}
+    <circle cx="100" cy="100" r="92" stroke={color} strokeWidth="7" fill="none" />
+    {/* Cerebro — hemisferio izquierdo */}
+    <path
+      d="M95 148 c-2,-6 -3,-14 -3,-20 0,-8 -4,-12 -12,-16 -10,-5 -14,-14 -14,-26 0,-8 -3,-12 -8,-14 -8,-3 -10,-8 -10,-18 0,-14 6,-22 18,-24 6,-1 12,1 16,5 3,3 7,5 10,5 4,0 5,-2 5,-8"
+      stroke={color}
+      strokeWidth="7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+    {/* Cerebro — hemisferio derecho */}
+    <path
+      d="M105 148 c2,-6 3,-14 3,-20 0,-8 4,-12 12,-16 10,-5 14,-14 14,-26 0,-8 3,-12 8,-14 8,-3 10,-8 10,-18 0,-14 -6,-22 -18,-24 -6,-1 -12,1 -16,5 -3,3 -7,5 -10,5 -4,0 -5,-2 -5,-8"
+      stroke={color}
+      strokeWidth="7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+    {/* Tallo central */}
+    <path
+      d="M100 148 L100 158"
+      stroke={color}
+      strokeWidth="7"
+      strokeLinecap="round"
+    />
+    {/* Surcos internos izquierda */}
+    <path
+      d="M68 72 c10,4 16,12 16,22"
+      stroke={color}
+      strokeWidth="5"
+      strokeLinecap="round"
+      fill="none"
+      opacity="0.6"
+    />
+    <path
+      d="M62 96 c8,2 14,8 18,16"
+      stroke={color}
+      strokeWidth="5"
+      strokeLinecap="round"
+      fill="none"
+      opacity="0.6"
+    />
+    {/* Surcos internos derecha */}
+    <path
+      d="M132 72 c-10,4 -16,12 -16,22"
+      stroke={color}
+      strokeWidth="5"
+      strokeLinecap="round"
+      fill="none"
+      opacity="0.6"
+    />
+    <path
+      d="M138 96 c-8,2 -14,8 -18,16"
+      stroke={color}
+      strokeWidth="5"
+      strokeLinecap="round"
+      fill="none"
+      opacity="0.6"
+    />
+    {/* Nodos de conexión (IA / red neuronal) */}
+    <circle cx="68" cy="72" r="3" fill={color} opacity="0.5" />
+    <circle cx="132" cy="72" r="3" fill={color} opacity="0.5" />
+    <circle cx="62" cy="96" r="3" fill={color} opacity="0.5" />
+    <circle cx="138" cy="96" r="3" fill={color} opacity="0.5" />
+  </svg>
+);
 
 const BrandName = styled.h1`
   font-size: 42px;
@@ -537,7 +623,7 @@ export default function Login() {
         <BrandPanel><BlobAccent /><BlobTeal /></BrandPanel>
         <FormPanel>
           <FormWrap style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📚</div>
+            <div style={{ marginBottom: 16 }}><BrainLogo size={56} color="#3190FC" /></div>
             <Greeting>AppLectura</Greeting>
             <GreetingSub>Cargando…</GreetingSub>
           </FormWrap>
@@ -622,7 +708,7 @@ export default function Login() {
         <BlobTeal />
 
         <BrandContent>
-          <BrandIcon>📚</BrandIcon>
+          <BrandIcon><BrainLogo size={64} color="#3190FC" /></BrandIcon>
           <BrandName>
             App<BrandAccent>Lectura</BrandAccent>
           </BrandName>
@@ -662,7 +748,7 @@ export default function Login() {
         <FormWrap>
           <FormHeader>
             <MobileBrand>
-              <span className="icon">📚</span>
+              <BrainLogo size={28} color="#3190FC" />
               <span className="name">AppLectura</span>
             </MobileBrand>
             <Greeting>Bienvenido<TypeCursor /></Greeting>
