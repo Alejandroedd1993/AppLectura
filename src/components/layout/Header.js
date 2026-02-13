@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import ClearHistoryButton from '../common/ClearHistoryButton';
 import SyncIndicator from '../common/SyncIndicator';
 import NotificationBell from '../common/NotificationBell';
+import BrainLogo from '../common/BrainLogo';
 import { lightTheme, darkTheme } from '../../styles/theme';
 import { useAuth } from '../../context/AuthContext';
 import { logout } from '../../firebase/auth';
@@ -40,6 +41,7 @@ const Header = ({ titulo = 'Mi App de Lectura', modoOscuro = false, onToggleModo
             ⬅️ Mis Cursos
           </BackButton>
         )}
+        <BrainLogo size={28} light={!modoOscuro} />
         <Title>{titulo}</Title>
       </LeftSection>
       <HeaderActions>

@@ -7,42 +7,48 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
+import BrainLogo from '../components/common/BrainLogo';
 
 import logger from '../utils/logger';
+
+const pulse = keyframes`
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.05); }
+`;
+
 const LoadingContainer = styled.div`
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #f4f1ec;
 `;
 
 const LoadingCard = styled.div`
   background: white;
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  padding: 60px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.08);
+  padding: 48px 60px;
   text-align: center;
-  
-  .spinner {
-    font-size: 48px;
-    animation: spin 2s linear infinite;
-  }
-  
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+
+  .logo-wrap {
+    animation: ${pulse} 2s ease-in-out infinite;
+    margin-bottom: 20px;
   }
   
   h2 {
-    margin: 20px 0 10px 0;
-    color: #333;
+    margin: 0 0 6px 0;
+    color: #2a2a28;
+    font-size: 18px;
+    font-weight: 600;
   }
   
   p {
-    color: #666;
+    color: #8a8880;
     margin: 0;
+    font-size: 14px;
   }
 `;
 
@@ -61,7 +67,7 @@ export default function PrivateRoute({ children, requiredRole = null, redirectTo
     return (
       <LoadingContainer>
         <LoadingCard>
-          <div className="spinner">🔄</div>
+          <div className="logo-wrap"><BrainLogo size={56} light /></div>
           <h2>Cargando...</h2>
           <p>Verificando autenticación</p>
         </LoadingCard>

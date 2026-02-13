@@ -1,18 +1,17 @@
 /**
  * Componente de Registro
- * Permite crear cuenta con Email/Password y seleccionar rol
- * 
- * Rediseñado para armonizar con el design system de la app:
+ * Armonizado con el diseño editorial del Login:
+ * - Fondo papel cálido (#f4f1ec)
+ * - Inputs con borde inferior editorial
+ * - BrainLogo SVG coherente
  * - Paleta: #3190FC (azul) + #009688 (teal)
- * - Fondo oscuro sofisticado
- * - Card con glassmorphism
- * - Animaciones de entrada
  */
 
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { registerWithEmail } from '../../firebase/auth';
 import { useNavigate, Link } from 'react-router-dom';
+import BrainLogo from '../common/BrainLogo';
 
 import logger from '../../utils/logger';
 
@@ -31,16 +30,6 @@ const fadeInUp = keyframes`
   }
 `;
 
-const shimmer = keyframes`
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
-`;
-
-const float = keyframes`
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-6px); }
-`;
-
 const spin = keyframes`
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -56,7 +45,7 @@ const RegisterContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0a1628 0%, #1a2744 50%, #0d2137 100%);
+  background: #f4f1ec;
   padding: 20px;
   position: relative;
   overflow: hidden;
@@ -65,24 +54,24 @@ const RegisterContainer = styled.div`
   &::before {
     content: '';
     position: absolute;
-    top: -50%;
-    right: -20%;
-    width: 600px;
-    height: 600px;
+    top: -40%;
+    right: -15%;
+    width: 500px;
+    height: 500px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(49, 144, 252, 0.08) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(49, 144, 252, 0.06) 0%, transparent 70%);
     pointer-events: none;
   }
 
   &::after {
     content: '';
     position: absolute;
-    bottom: -30%;
+    bottom: -25%;
     left: -10%;
-    width: 500px;
-    height: 500px;
+    width: 400px;
+    height: 400px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(0, 150, 136, 0.06) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(0, 150, 136, 0.05) 0%, transparent 70%);
     pointer-events: none;
   }
 
@@ -95,14 +84,10 @@ const RegisterContainer = styled.div`
 `;
 
 const RegisterCard = styled.div`
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 
-    0 20px 60px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: white;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.08);
   padding: 44px 40px;
   max-width: 500px;
   width: 100%;
@@ -112,7 +97,7 @@ const RegisterCard = styled.div`
 
   @media (max-width: 480px) {
     padding: 28px 24px;
-    border-radius: 16px;
+    border-radius: 12px;
     margin: 0 8px;
   }
 `;
@@ -121,39 +106,24 @@ const LogoArea = styled.div`
   text-align: center;
   margin-bottom: 32px;
   animation: ${fadeInUp} 0.6s ease-out 0.1s both;
-`;
-
-const LogoIcon = styled.div`
-  font-size: 48px;
-  margin-bottom: 12px;
-  animation: ${float} 4s ease-in-out infinite;
-  filter: drop-shadow(0 4px 12px rgba(49, 144, 252, 0.3));
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-  }
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 `;
 
 const LogoTitle = styled.h1`
   font-size: clamp(26px, 6vw, 34px);
   font-weight: 700;
   background: linear-gradient(135deg, #3190FC 0%, #009688 100%);
-  background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin: 0 0 6px 0;
+  margin: 16px 0 6px 0;
   letter-spacing: -0.5px;
-  animation: ${shimmer} 3s linear infinite;
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-    background-size: 100% auto;
-  }
 `;
 
 const LogoSubtitle = styled.p`
-  color: rgba(255, 255, 255, 0.55);
+  color: #8a8880;
   margin: 0;
   font-size: clamp(13px, 3.5vw, 15px);
   font-weight: 400;
@@ -174,38 +144,37 @@ const InputGroup = styled.div`
 `;
 
 const Label = styled.label`
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  color: #6b6860;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 1px;
 `;
 
 const Input = styled.input`
-  padding: 13px 16px;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1.5px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  padding: 12px 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid #d4d0c8;
+  border-radius: 0;
   font-size: 15px;
-  color: #e8ecf0;
+  color: #2a2a28;
   font-family: inherit;
-  transition: all 0.25s ease;
+  transition: border-color 0.25s ease;
   min-height: 44px;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.3);
+    color: #b5b0a6;
   }
 
   &:focus {
     outline: none;
-    border-color: #3190FC;
-    background: rgba(49, 144, 252, 0.08);
-    box-shadow: 0 0 0 3px rgba(49, 144, 252, 0.15);
+    border-bottom-color: #3190FC;
   }
 
   &:disabled {
-    background: rgba(255, 255, 255, 0.03);
-    color: rgba(255, 255, 255, 0.3);
+    background: transparent;
+    color: #b5b0a6;
     cursor: not-allowed;
   }
 `;
@@ -218,9 +187,9 @@ const RoleSelector = styled.div`
 
 const RoleOption = styled.button`
   padding: 20px;
-  border: 1.5px solid ${props => props.$selected ? '#3190FC' : 'rgba(255, 255, 255, 0.12)'};
+  border: 2px solid ${props => props.$selected ? '#3190FC' : '#d4d0c8'};
   border-radius: 12px;
-  background: ${props => props.$selected ? 'rgba(49, 144, 252, 0.12)' : 'rgba(255, 255, 255, 0.04)'};
+  background: ${props => props.$selected ? 'rgba(49, 144, 252, 0.06)' : '#faf9f7'};
   cursor: pointer;
   transition: all 0.25s ease;
   text-align: center;
@@ -228,7 +197,7 @@ const RoleOption = styled.button`
 
   &:hover:not(:disabled) {
     border-color: #3190FC;
-    background: rgba(49, 144, 252, 0.08);
+    background: rgba(49, 144, 252, 0.04);
     transform: translateY(-2px);
   }
 
@@ -244,61 +213,39 @@ const RoleOption = styled.button`
 
   .title {
     font-weight: 600;
-    color: ${props => props.$selected ? '#3190FC' : 'rgba(255, 255, 255, 0.85)'};
+    color: ${props => props.$selected ? '#3190FC' : '#2a2a28'};
     margin-bottom: 4px;
     font-size: 14px;
   }
 
   .description {
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.45);
+    color: #8a8880;
   }
 `;
 
 const PrimaryButton = styled.button`
   padding: 14px 20px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.25s ease;
-  min-height: 44px;
+  min-height: 48px;
   font-family: inherit;
-  letter-spacing: 0.3px;
-  background: linear-gradient(135deg, #3190FC 0%, #009688 100%);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  background: #1a2744;
   color: white;
-  position: relative;
-  overflow: hidden;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.15),
-      transparent
-    );
-    transition: left 0.5s ease;
-  }
 
   &:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(49, 144, 252, 0.35);
-
-    &::before {
-      left: 100%;
-    }
+    background: #243352;
+    box-shadow: 0 4px 16px rgba(26, 39, 68, 0.3);
   }
 
   &:active:not(:disabled) {
-    transform: translateY(0);
-    box-shadow: 0 4px 12px rgba(49, 144, 252, 0.25);
+    background: #0f1a2e;
   }
 
   &:disabled {
@@ -309,10 +256,10 @@ const PrimaryButton = styled.button`
 
 const ErrorMessage = styled.div`
   padding: 12px 14px;
-  background: rgba(217, 48, 37, 0.12);
+  background: #fef2f2;
   border-left: 3px solid #ef4444;
   border-radius: 8px;
-  color: #fca5a5;
+  color: #b91c1c;
   font-size: 13px;
   line-height: 1.5;
   animation: ${fadeInUp} 0.3s ease-out;
@@ -322,7 +269,7 @@ const LoginPrompt = styled.div`
   text-align: center;
   margin-top: 24px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.45);
+  color: #8a8880;
   animation: ${fadeInUp} 0.6s ease-out 0.4s both;
 
   a {
@@ -332,14 +279,14 @@ const LoginPrompt = styled.div`
 
     &:hover {
       text-decoration: underline;
-      color: #5BA5FD;
+      color: #2070d6;
     }
   }
 `;
 
 const PasswordRequirements = styled.div`
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: #8a8880;
   margin-top: -6px;
 
   ul {
@@ -360,7 +307,7 @@ const LoadingSpinner = styled.span`
   display: inline-block;
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   border-top-color: white;
   border-radius: 50%;
   animation: ${spin} 0.6s linear infinite;
@@ -374,8 +321,8 @@ const CardGlow = styled.div`
   left: -1px;
   right: -1px;
   bottom: -1px;
-  border-radius: 21px;
-  background: linear-gradient(135deg, rgba(49, 144, 252, 0.2), transparent 40%, transparent 60%, rgba(0, 150, 136, 0.2));
+  border-radius: 17px;
+  background: linear-gradient(135deg, rgba(49, 144, 252, 0.08), transparent 40%, transparent 60%, rgba(0, 150, 136, 0.08));
   z-index: -1;
   opacity: 0;
   transition: opacity 0.4s ease;
@@ -459,7 +406,7 @@ export default function Register() {
       <RegisterCard>
         <CardGlow />
         <LogoArea>
-          <LogoIcon>📚</LogoIcon>
+          <BrainLogo size={56} light />
           <LogoTitle>Crear Cuenta</LogoTitle>
           <LogoSubtitle>Únete a AppLectura</LogoSubtitle>
         </LogoArea>
