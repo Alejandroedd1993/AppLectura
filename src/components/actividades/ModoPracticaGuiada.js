@@ -6,6 +6,7 @@ import HintsSystem from '../evaluacion/HintsSystem';
 import { evaluarRespuesta, generarPregunta, generarHintsParaPregunta, generarDesafioCruzado } from '../../services/evaluacionIntegral.service';
 import { evaluarConRetry, generarConRetry } from '../../services/retryWrapper';
 import { useRewards } from '../../context/PedagogyContext';
+import usePracticeHistory from '../../hooks/usePracticeHistory';
 
 const Box = styled.div`
   background: ${p => p.theme.cardBg};
@@ -247,6 +248,206 @@ const CriterionFill = styled.div`
   }};
 `;
 
+// ─── Session Progress Dashboard ─────────────────────────────────────
+
+const ProgressDashboard = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: ${p => p.theme.surface};
+  border: 1px solid ${p => p.theme.border};
+  border-radius: 10px;
+`;
+
+const StatCard = styled.div`
+  text-align: center;
+  padding: 0.5rem;
+`;
+
+const StatValue = styled.div`
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: ${p => p.$color || p.theme.primary};
+`;
+
+const StatLabel = styled.div`
+  font-size: 0.72rem;
+  color: ${p => p.theme.textSecondary};
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 0.15rem;
+`;
+
+const TrendBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: ${p => {
+    if (p.$trend === 'improving') return '#dcfce7';
+    if (p.$trend === 'declining') return '#fee2e2';
+    return '#f3f4f6';
+  }};
+  color: ${p => {
+    if (p.$trend === 'improving') return '#16a34a';
+    if (p.$trend === 'declining') return '#dc2626';
+    return '#6b7280';
+  }};
+`;
+
+const WeakCriterionTag = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: ${p => p.theme.primary}12;
+  color: ${p => p.theme.textSecondary};
+  border: 1px solid ${p => p.theme.border};
+`;
+
+// ─── Reflection Panel ───────────────────────────────────────────────
+
+const ReflectionPanel = styled.div`
+  margin-top: 0.75rem;
+  border: 2px solid ${p => p.theme.primary}40;
+  border-radius: 10px;
+  background: ${p => p.theme.primary}08;
+  padding: 1rem;
+`;
+
+const ReflectionTitle = styled.div`
+  font-weight: 800;
+  color: ${p => p.theme.textPrimary};
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+`;
+
+const ReflectionPrompt = styled.p`
+  font-size: 0.88rem;
+  color: ${p => p.theme.textSecondary};
+  margin: 0 0 0.5rem 0;
+  line-height: 1.5;
+`;
+
+const ReflectionArea = styled.textarea`
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: block;
+  min-height: 80px;
+  resize: vertical;
+  padding: 0.7rem;
+  border-radius: 8px;
+  border: 1px solid ${p => p.theme.border};
+  background: ${p => p.theme.background};
+  color: ${p => p.theme.textPrimary};
+  outline: none;
+  line-height: 1.5;
+  font-size: 0.88rem;
+
+  &:focus {
+    border-color: ${p => p.theme.primary};
+    box-shadow: 0 0 0 3px ${p => p.theme.primary}22;
+  }
+`;
+
+const ReflectionSaved = styled.div`
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: #16a34a;
+  font-weight: 600;
+`;
+
+// ─── History Panel ──────────────────────────────────────────────────
+
+const HistoryToggle = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: 1px solid ${p => p.theme.border};
+  color: ${p => p.theme.textSecondary};
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 0.5rem;
+
+  &:hover {
+    background: ${p => p.theme.surface};
+  }
+`;
+
+const HistoryList = styled.div`
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 260px;
+  overflow-y: auto;
+`;
+
+const HistoryItem = styled.div`
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: ${p => p.theme.surface};
+  border: 1px solid ${p => p.theme.border};
+  font-size: 0.82rem;
+`;
+
+const HistoryScore = styled.div`
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: white;
+  background: ${p => {
+    const s = Number(p.$score || 0);
+    if (s >= 8) return '#16a34a';
+    if (s >= 5.5) return '#f59e0b';
+    return '#ef4444';
+  }};
+`;
+
+const HistoryMeta = styled.div`
+  color: ${p => p.theme.textSecondary};
+  font-size: 0.75rem;
+`;
+
+const TREND_LABELS = {
+  improving: { icon: '📈', text: 'Mejorando' },
+  stable: { icon: '➡️', text: 'Estable' },
+  declining: { icon: '📉', text: 'A reforzar' }
+};
+
+const CRITERIA_LABELS = {
+  claridad: 'Claridad',
+  anclaje: 'Anclaje',
+  completitud: 'Completitud',
+  profundidad: 'Profundidad',
+  comprension: 'Comprensión',
+  originalidad: 'Originalidad'
+};
+
 const normalizeBullets = (text) => {
   if (!text || typeof text !== 'string') return [];
   const lines = text
@@ -297,6 +498,20 @@ export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimensi
   const [evaluating, setEvaluating] = useState(false);
   const [error, setError] = useState(null);
   const [progressStep, setProgressStep] = useState(null);
+
+  // ─── Practice History & Reflection ──────────────────────────────
+  const {
+    stats: practiceStats,
+    recentAttempts,
+    startAttempt,
+    recordAttempt,
+    addReflection
+  } = usePracticeHistory(selectedDimension);
+  const [lastAttemptId, setLastAttemptId] = useState(null);
+  const [reflectionText, setReflectionText] = useState('');
+  const [reflectionSaved, setReflectionSaved] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [hintsRevealed, setHintsRevealed] = useState(0);
 
   const hintsKey = useMemo(() => {
     const base = practiceConfig?.practiceId || `${practiceConfig?.dimension || selectedDimension || 'practice'}:${practiceConfig?.difficulty || 'default'}`;
@@ -395,6 +610,41 @@ export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimensi
       });
     }, [rewriteGuide]);
 
+    // ─── Reflexión metacognitiva ────────────────────────────────────
+    const reflectionPrompts = useMemo(() => {
+      if (!feedback) return null;
+      const score = Number(feedback?.score ?? 0);
+      const weakCrit = practiceStats?.criteria?.weakest?.[0];
+
+      if (score >= 8) {
+        return '¿Qué estrategia usaste que te funcionó bien? ¿Cómo podrías aplicarla en otra dimensión?';
+      }
+      if (weakCrit) {
+        const label = CRITERIA_LABELS[weakCrit.key] || weakCrit.key;
+        return `Tu criterio más débil fue "${label}". ¿Qué podrías hacer diferente la próxima vez para mejorarlo?`;
+      }
+      return '¿Qué fue lo más difícil de responder esta pregunta? ¿Qué harías diferente si volvieras a intentarlo?';
+    }, [feedback, practiceStats]);
+
+    const handleSaveReflection = useCallback(() => {
+      if (!lastAttemptId || !reflectionText.trim()) return;
+      addReflection(lastAttemptId, reflectionText.trim());
+      setReflectionSaved(true);
+
+      // Registrar evento metacognitivo para rewards
+      try {
+        recordEvent?.('METACOGNITIVE_REFLECTION', {
+          resourceId: `${lectureId || 'no-lectura'}:${selectedDimension}:reflection:${lastAttemptId}`,
+          reflectionLength: reflectionText.trim().length
+        });
+      } catch (_e) { /* no bloquear */ }
+    }, [lastAttemptId, reflectionText, addReflection, recordEvent, lectureId, selectedDimension]);
+
+    // Callback para rastrear hints revelados (pasado a HintsSystem)
+    const handleHintRevealed = useCallback((idx) => {
+      setHintsRevealed((prev) => Math.max(prev, idx + 1));
+    }, []);
+
   const handleGeneratePracticeQuestion = useCallback(async () => {
     if (!texto || !selectedDimension) return;
 
@@ -406,6 +656,11 @@ export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimensi
     setFeedback(null);
     setAnswer('');
     setProgressStep('generating');
+    setLastAttemptId(null);
+    setReflectionText('');
+    setReflectionSaved(false);
+    setHintsRevealed(0);
+    startAttempt(); // ⏱️ Marcar inicio para medir tiempo
 
     try {
       const res = await generarConRetry(
@@ -500,6 +755,30 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
 
       // ⚠️ IMPORTANTE: La práctica NO actualiza rubricProgress (calificación del artefacto).
       // Solo otorga puntos de recompensa al score general del estudiante.
+
+      // 📝 Registrar intento en historial persistente
+      try {
+        const attemptId = recordAttempt({
+          dimension: selectedDimension,
+          difficulty: practiceConfig?.difficulty || 'medium',
+          question: question?.pregunta,
+          answer,
+          score: res?.score,
+          nivel: res?.nivel,
+          hintsUsed: hintsRevealed,
+          isCrossChallenge,
+          feedbackSummary: {
+            fortaleza: res?.fortalezas?.[0] || '',
+            mejora: res?.mejoras?.[0] || '',
+            criterios: res?.detalles || null
+          }
+        });
+        setLastAttemptId(attemptId);
+        setReflectionText('');
+        setReflectionSaved(false);
+      } catch (_e) {
+        // no bloquear por historial
+      }
 
       // 🎮 Registrar recompensas por práctica opcional
       try {
@@ -606,6 +885,11 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
     setAnswer('');
     setQuestionHints(null);
     setProgressStep('generating');
+    setLastAttemptId(null);
+    setReflectionText('');
+    setReflectionSaved(false);
+    setHintsRevealed(0);
+    startAttempt(); // ⏱️ Marcar inicio
 
     // Elegir una segunda dimensión diferente al azar
     const otherDims = dims.filter(d => d.id !== selectedDimension);
@@ -640,6 +924,47 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
         Practica con preguntas reflexivas cortas. Sin impacto en tu evaluación sumativa.
         Gana puntos extra por cada pregunta respondida. ¡Los desafíos cruzados otorgan bonus!
       </Subtitle>
+
+      {/* 📊 Mini-dashboard de progreso de práctica */}
+      {selectedDimension && practiceStats.total > 0 && (
+        <ProgressDashboard theme={theme}>
+          <StatCard>
+            <StatValue theme={theme}>{practiceStats.total}</StatValue>
+            <StatLabel theme={theme}>Intentos</StatLabel>
+          </StatCard>
+          <StatCard>
+            <StatValue $color={practiceStats.avgScore >= 7 ? '#16a34a' : practiceStats.avgScore >= 5 ? '#f59e0b' : '#ef4444'} theme={theme}>
+              {practiceStats.avgScore}
+            </StatValue>
+            <StatLabel theme={theme}>Promedio</StatLabel>
+          </StatCard>
+          <StatCard>
+            <StatValue $color="#8b5cf6" theme={theme}>{practiceStats.bestScore}</StatValue>
+            <StatLabel theme={theme}>Mejor</StatLabel>
+          </StatCard>
+          <StatCard>
+            <StatValue theme={theme}>
+              {practiceStats.streak > 0 ? `🔥 ${practiceStats.streak}` : '—'}
+            </StatValue>
+            <StatLabel theme={theme}>Racha ≥6</StatLabel>
+          </StatCard>
+          <StatCard>
+            <TrendBadge $trend={practiceStats.trend}>
+              {TREND_LABELS[practiceStats.trend]?.icon} {TREND_LABELS[practiceStats.trend]?.text}
+            </TrendBadge>
+            <StatLabel theme={theme} style={{ marginTop: '0.3rem' }}>Tendencia</StatLabel>
+          </StatCard>
+          {practiceStats.criteria?.weakest?.[0] && (
+            <StatCard>
+              <WeakCriterionTag theme={theme}>
+                🎯 {CRITERIA_LABELS[practiceStats.criteria.weakest[0].key] || practiceStats.criteria.weakest[0].key}
+                {' '}({practiceStats.criteria.weakest[0].avg})
+              </WeakCriterionTag>
+              <StatLabel theme={theme} style={{ marginTop: '0.3rem' }}>A reforzar</StatLabel>
+            </StatCard>
+          )}
+        </ProgressDashboard>
+      )}
 
       {/* Solo mostrar grid de dimensiones si no hay fixedDimension */}
       {!fixedDimension && (
@@ -679,6 +1004,7 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
             key={hintsKey}
             hints={effectiveHints}
             maxHints={practiceConfig?.level?.hintsAvailable ?? 3}
+            onHintRevealed={handleHintRevealed}
             theme={theme}
           />
           {loadingHints && (
@@ -819,6 +1145,76 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
                   </ActionBtn>
                 </ActionsRow>
               </FeedbackPanel>
+
+              {/* 🧠 Reflexión metacognitiva */}
+              {reflectionPrompts && (
+                <ReflectionPanel theme={theme}>
+                  <ReflectionTitle theme={theme}>
+                    <span>🧠</span>
+                    <span>Reflexión rápida</span>
+                  </ReflectionTitle>
+                  <ReflectionPrompt theme={theme}>{reflectionPrompts}</ReflectionPrompt>
+                  {reflectionSaved ? (
+                    <ReflectionSaved>✅ Reflexión guardada — ¡Excelente práctica metacognitiva!</ReflectionSaved>
+                  ) : (
+                    <>
+                      <ReflectionArea
+                        theme={theme}
+                        value={reflectionText}
+                        onChange={(e) => setReflectionText(e.target.value)}
+                        placeholder="Escribe brevemente tu reflexión…"
+                      />
+                      <ActionsRow>
+                        <ActionBtn
+                          theme={theme}
+                          type="button"
+                          onClick={handleSaveReflection}
+                          disabled={!reflectionText.trim()}
+                          title="Guarda tu reflexión y gana puntos extra"
+                        >
+                          💾 Guardar reflexión (+pts)
+                        </ActionBtn>
+                      </ActionsRow>
+                    </>
+                  )}
+                </ReflectionPanel>
+              )}
+            </>
+          )}
+
+          {/* 📜 Historial de intentos */}
+          {recentAttempts.length > 0 && (
+            <>
+              <HistoryToggle theme={theme} onClick={() => setShowHistory(v => !v)}>
+                📜 {showHistory ? 'Ocultar' : 'Ver'} historial ({recentAttempts.length})
+              </HistoryToggle>
+
+              {showHistory && (
+                <HistoryList>
+                  {recentAttempts.map((attempt) => (
+                    <HistoryItem key={attempt.id} theme={theme}>
+                      <HistoryScore $score={attempt.score}>
+                        {Number(attempt.score || 0).toFixed(0)}
+                      </HistoryScore>
+                      <div>
+                        <div style={{ color: theme.textPrimary, fontWeight: 600, fontSize: '0.82rem' }}>
+                          {(attempt.question || '').slice(0, 80)}{(attempt.question || '').length > 80 ? '…' : ''}
+                        </div>
+                        <HistoryMeta theme={theme}>
+                          {attempt.isCrossChallenge ? '⚡ Cruzado' : `📊 Nivel ${attempt.nivel}/4`}
+                          {attempt.hintsUsed ? ` · 💡${attempt.hintsUsed} hints` : ''}
+                          {attempt.reflection ? ' · 🧠' : ''}
+                          {' · '}
+                          {new Date(attempt.timestamp).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                        </HistoryMeta>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: theme.textSecondary }}>
+                        {attempt.difficulty === 'hard' ? '🔴' : attempt.difficulty === 'easy' ? '🟢' : '🟡'}
+                      </div>
+                    </HistoryItem>
+                  ))}
+                </HistoryList>
+              )}
             </>
           )}
         </PracticeCard>
