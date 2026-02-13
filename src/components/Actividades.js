@@ -1,7 +1,7 @@
 /**
- * Componente Actividades
- * REORGANIZACIÓN ARQUITECTÓNICA: Ahora contiene ejercicios prácticos y feedback
- * MIGRADO desde AnalisisTexto: Preguntas personalizadas + Feedback formativo
+ * Componente Actividades (V2)
+ * ARQUITECTURA: Checkpoint MCQ → 5 DimensionCards (Práctica + Artefacto) → Progreso
+ * Práctica es andamiaje OPCIONAL con puntos extra y desafíos cruzados.
  * OPTIMIZACIÓN: Lazy loading de artefactos para reducir bundle inicial
  */
 
@@ -13,7 +13,6 @@ import DashboardRubricas from './evaluacion/DashboardRubricas';
 import NextStepCard from './common/NextStepCard';
 import DraftWarning from './common/DraftWarning';
 import ErrorBoundary from './common/ErrorBoundary';
-import EstimatedTimeBadge from './ui/EstimatedTimeBadge';
 import logger from '../utils/logger';
 
 // ✅ EAGER: Componentes ligeros que se usan siempre
@@ -22,6 +21,8 @@ import ProgressStats from './actividades/ProgressStats';
 import ExportProgressButton from './actividades/ExportProgressButton';
 import ModoPracticaGuiada from './actividades/ModoPracticaGuiada';
 import AnalyticsPanel from './evaluacion/AnalyticsPanel';
+import DimensionCard, { DIMENSIONS } from './actividades/DimensionCard';
+import { generatePracticePlan } from '../services/practiceService';
 
 // ✅ LAZY: Artefactos pesados (solo cargan cuando se necesitan)
 const ResumenAcademico = lazy(() => import('./artefactos/ResumenAcademico'));
@@ -91,27 +92,6 @@ const Tab = styled.button`
   
   &:active:not(:disabled) {
     transform: translateY(0);
-  }
-`;
-
-const StatusBadge = styled.span`
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.7rem;
-  padding: 2px 6px;
-  border-radius: 10px;
-  margin-left: 0.25rem;
-  font-weight: 700;
-  background: ${props => props.$color ? `${props.$color}20` : 'transparent'};
-  color: ${props => props.$color || 'inherit'};
-  border: 1px solid ${props => props.$color ? `${props.$color}60` : 'transparent'};
-  white-space: nowrap;
-  animation: ${props => props.$status === 'excellent' ? 'pulse 2s infinite' : 'none'};
-  
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
   }
 `;
 
@@ -315,28 +295,23 @@ export default function Actividades() {
     getCitations,
     globalTutorInteractions
   } = useContext(AppContext);
-  // ✅ CORREGIDO: Iniciar con 'preparacion' según orden pedagógico
-  const [activeSection, setActiveSection] = useState('preparacion');
+  // Vista principal: 'checkpoint' | 'dimensiones' | 'progreso'
+  const [activeSection, setActiveSection] = useState('checkpoint');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // Obtener documentId del análisis
   const documentId = completeAnalysis?.metadata?.document_id || null;
   const lectureId = currentTextoId || documentId || null;
 
-  // 🔎 Estado de preparación (MCQ + Síntesis completados)
-  // Usar activitiesProgress del contexto en lugar de localStorage
+  // 🔎 Estado de preparación (MCQ completado)
   const preparacionCompletada = lectureId
     ? activitiesProgress?.[lectureId]?.preparation?.completed || false
     : false;
 
-
-
-  // 🔒 Redirigir a preparación si se intenta acceder a artefactos sin completarla
+  // Auto-navegar a dimensiones cuando se completa el checkpoint
   React.useEffect(() => {
-    const artefactosSections = ['resumen', 'tabla-acd', 'mapa-actores', 'respuesta-argumentativa', 'bitacora-etica'];
-    if (!preparacionCompletada && artefactosSections.includes(activeSection)) {
-      logger.log('🚫 [Actividades] Acceso denegado a artefacto sin preparación, redirigiendo...');
-      setActiveSection('preparacion');
+    if (preparacionCompletada && activeSection === 'checkpoint') {
+      setActiveSection('dimensiones');
     }
   }, [preparacionCompletada, activeSection]);
 
@@ -462,6 +437,54 @@ export default function Actividades() {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [showResetConfirm]);
 
+  // Dimensiones recomendadas (las más débiles según rubricProgress)
+  const recommendedDimensions = useMemo(() => {
+    try {
+      const plan = generatePracticePlan(rubricProgress);
+      return plan?.dimensions?.map(d => d.id) || [];
+    } catch { return []; }
+  }, [rubricProgress]);
+
+  // Mapeo de dimensión → componente artefacto
+  const ARTIFACT_MAP = useMemo(() => ({
+    comprension_analitica: { Component: ResumenAcademico, label: 'Resumen Académico' },
+    acd: { Component: TablaACD, label: 'Análisis del Discurso' },
+    contextualizacion: { Component: MapaActores, label: 'Mapa de Actores' },
+    argumentacion: { Component: RespuestaArgumentativa, label: 'Respuesta Argumentativa' },
+    metacognicion_etica_ia: { Component: BitacoraEticaIA, label: 'Bitácora Ética IA' }
+  }), []);
+
+  // Render helpers para DimensionCard
+  const renderPractice = useCallback((dimension) => (
+    <ModoPracticaGuiada
+      theme={theme}
+      rubricProgress={rubricProgress}
+      fixedDimension={dimension.id}
+    />
+  ), [theme, rubricProgress]);
+
+  const renderArtifact = useCallback((dimension) => {
+    const mapping = ARTIFACT_MAP[dimension.id];
+    if (!mapping) return null;
+    const { Component, label } = mapping;
+    return (
+      <Suspense fallback={
+        <LoadingFallback theme={theme}>
+          <Spinner theme={theme} />
+          <LoadingText theme={theme}>{dimension.icon} Cargando {label}...</LoadingText>
+        </LoadingFallback>
+      }>
+        <ErrorBoundary
+          theme={theme}
+          componentName={label}
+          onReset={() => logger.log(`🔄 Reseteando ${label}`)}
+        >
+          <Component theme={theme} />
+        </ErrorBoundary>
+      </Suspense>
+    );
+  }, [theme, ARTIFACT_MAP]);
+
   return (
     <Container theme={theme}>
       <Header theme={theme}>
@@ -483,150 +506,48 @@ export default function Actividades() {
         <HeaderDescription theme={theme}>
           {!preparacionCompletada ? (
             <>
-              ✅ <strong>Primero completa la Preparación</strong> (autoevaluación + síntesis) para desbloquear los artefactos académicos formales.
+              🧠 <strong>Completa el checkpoint rápido</strong> para desbloquear las 5 dimensiones de literacidad crítica.
             </>
           ) : (
             <>
-              Preparación completada ✅ • Ahora puedes crear tus artefactos de análisis crítico con evaluación formativa.
+              Checkpoint completado ✅ • Elige una dimensión. Puedes practicar (opcional, +puntos) o ir directo al artefacto.
             </>
           )}
         </HeaderDescription>
       </Header>
 
-      {/* 🆕 Advertencia de borradores sin evaluar */}
       <DraftWarning theme={theme} />
 
-      {/* Navegación por pestañas - ORDEN PEDAGÓGICO ÓPTIMO */}
+      {/* Navegación simplificada: 3 vistas */}
       <TabsContainer role="tablist" aria-label="Actividades de literacidad crítica">
-        {/* 1️⃣ PRIMERO: Preparación obligatoria */}
         <Tab
           role="tab"
-          aria-selected={activeSection === 'preparacion'}
-          aria-controls="panel-preparacion"
-          $active={activeSection === 'preparacion'}
-          onClick={() => setActiveSection('preparacion')}
+          aria-selected={activeSection === 'checkpoint'}
+          $active={activeSection === 'checkpoint'}
+          onClick={() => setActiveSection('checkpoint')}
           theme={theme}
         >
-          <span>📋</span>
-          Preparación
+          <span>🧠</span>
+          Checkpoint
           {preparacionCompletada && ' ✅'}
         </Tab>
 
-        {/* 🎮 Práctica guiada (sin bloqueo) */}
         <Tab
           role="tab"
-          aria-selected={activeSection === 'practica'}
-          aria-controls="panel-practica"
-          $active={activeSection === 'practica'}
-          onClick={() => setActiveSection('practica')}
-          theme={theme}
-        >
-          <span>🎮</span>
-          Práctica
-        </Tab>
-
-        {/* 2️⃣-6️⃣ LUEGO: Artefactos de las 5 rúbricas (bloqueados hasta completar preparación) */}
-        <Tab
-          role="tab"
-          aria-selected={activeSection === 'resumen'}
-          aria-controls="panel-resumen"
-          $active={activeSection === 'resumen'}
-          onClick={() => preparacionCompletada && setActiveSection('resumen')}
+          aria-selected={activeSection === 'dimensiones'}
+          $active={activeSection === 'dimensiones'}
+          onClick={() => preparacionCompletada && setActiveSection('dimensiones')}
           disabled={!preparacionCompletada}
           theme={theme}
         >
           <span>📚</span>
-          Resumen Académico
-          <EstimatedTimeBadge minutes={15} theme={theme} compact />
+          Dimensiones
           {!preparacionCompletada && ' 🔒'}
-          {artefactoStatuses.rubrica1.icon && preparacionCompletada && (
-            <StatusBadge $status={artefactoStatuses.rubrica1.status} $color={artefactoStatuses.rubrica1.color}>
-              {artefactoStatuses.rubrica1.icon} {artefactoStatuses.rubrica1.label}
-            </StatusBadge>
-          )}
-        </Tab>
-        <Tab
-          role="tab"
-          aria-selected={activeSection === 'tabla-acd'}
-          aria-controls="panel-tabla-acd"
-          $active={activeSection === 'tabla-acd'}
-          onClick={() => preparacionCompletada && setActiveSection('tabla-acd')}
-          disabled={!preparacionCompletada}
-          theme={theme}
-        >
-          <span>🔍</span>
-          Análisis del Discurso
-          <EstimatedTimeBadge minutes={18} theme={theme} compact />
-          {!preparacionCompletada && ' 🔒'}
-          {artefactoStatuses.rubrica2.icon && preparacionCompletada && (
-            <StatusBadge $status={artefactoStatuses.rubrica2.status} $color={artefactoStatuses.rubrica2.color}>
-              {artefactoStatuses.rubrica2.icon} {artefactoStatuses.rubrica2.label}
-            </StatusBadge>
-          )}
-        </Tab>
-        <Tab
-          role="tab"
-          aria-selected={activeSection === 'mapa-actores'}
-          aria-controls="panel-mapa-actores"
-          $active={activeSection === 'mapa-actores'}
-          onClick={() => preparacionCompletada && setActiveSection('mapa-actores')}
-          disabled={!preparacionCompletada}
-          theme={theme}
-        >
-          <span>🗺️</span>
-          Mapa de Actores
-          <EstimatedTimeBadge minutes={12} theme={theme} compact />
-          {!preparacionCompletada && ' 🔒'}
-          {artefactoStatuses.rubrica3.icon && preparacionCompletada && (
-            <StatusBadge $status={artefactoStatuses.rubrica3.status} $color={artefactoStatuses.rubrica3.color}>
-              {artefactoStatuses.rubrica3.icon} {artefactoStatuses.rubrica3.label}
-            </StatusBadge>
-          )}
-        </Tab>
-        <Tab
-          role="tab"
-          aria-selected={activeSection === 'respuesta-argumentativa'}
-          aria-controls="panel-respuesta-argumentativa"
-          $active={activeSection === 'respuesta-argumentativa'}
-          onClick={() => preparacionCompletada && setActiveSection('respuesta-argumentativa')}
-          disabled={!preparacionCompletada}
-          theme={theme}
-        >
-          <span>💭</span>
-          Respuesta Argumentativa
-          <EstimatedTimeBadge minutes={20} theme={theme} compact />
-          {!preparacionCompletada && ' 🔒'}
-          {artefactoStatuses.rubrica4.icon && preparacionCompletada && (
-            <StatusBadge $status={artefactoStatuses.rubrica4.status} $color={artefactoStatuses.rubrica4.color}>
-              {artefactoStatuses.rubrica4.icon} {artefactoStatuses.rubrica4.label}
-            </StatusBadge>
-          )}
-        </Tab>
-        <Tab
-          role="tab"
-          aria-selected={activeSection === 'bitacora-etica'}
-          aria-controls="panel-bitacora-etica"
-          $active={activeSection === 'bitacora-etica'}
-          onClick={() => preparacionCompletada && setActiveSection('bitacora-etica')}
-          disabled={!preparacionCompletada}
-          theme={theme}
-        >
-          <span>🤖</span>
-          Bitácora Ética IA
-          <EstimatedTimeBadge minutes={10} theme={theme} compact />
-          {!preparacionCompletada && ' 🔒'}
-          {artefactoStatuses.rubrica5.icon && preparacionCompletada && (
-            <StatusBadge $status={artefactoStatuses.rubrica5.status} $color={artefactoStatuses.rubrica5.color}>
-              {artefactoStatuses.rubrica5.icon} {artefactoStatuses.rubrica5.label}
-            </StatusBadge>
-          )}
         </Tab>
 
-        {/* 7️⃣ DESPUÉS: Metacognición y progreso */}
         <Tab
           role="tab"
           aria-selected={activeSection === 'progreso'}
-          aria-controls="panel-progreso"
           $active={activeSection === 'progreso'}
           onClick={() => setActiveSection('progreso')}
           theme={theme}
@@ -636,191 +557,12 @@ export default function Actividades() {
         </Tab>
       </TabsContainer>
 
-      {/* Contenido según sección activa */}
+      {/* ═══════════ CONTENIDO ═══════════ */}
       <AnimatePresence mode="wait">
-        {activeSection === 'resumen' && (
+        {/* ─── CHECKPOINT ─── */}
+        {activeSection === 'checkpoint' && (
           <motion.div
-            key="resumen"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Suspense fallback={
-              <LoadingFallback theme={theme}>
-                <Spinner theme={theme} />
-                <LoadingText theme={theme}>📚 Cargando Resumen Académico...</LoadingText>
-              </LoadingFallback>
-            }>
-              <ErrorBoundary
-                theme={theme}
-                componentName="Resumen Académico"
-                onReset={() => logger.log('🔄 Reseteando Resumen Académico')}
-              >
-                <ResumenAcademico theme={theme} />
-              </ErrorBoundary>
-            </Suspense>
-
-            {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso */}
-            <NextStepCard
-              icon="🔍"
-              title="Siguiente Paso: Análisis Crítico del Discurso"
-              description="Has creado tu resumen académico. Ahora profundiza identificando marcos ideológicos, estrategias retóricas y voces presentes/silenciadas."
-              actionLabel="Ir a Análisis del Discurso →"
-              onAction={() => setActiveSection('tabla-acd')}
-              theme={theme}
-              variant="primary"
-            />
-          </motion.div>
-        )}
-
-        {activeSection === 'tabla-acd' && (
-          <motion.div
-            key="tabla-acd"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Suspense fallback={
-              <LoadingFallback theme={theme}>
-                <Spinner theme={theme} />
-                <LoadingText theme={theme}>🔍 Cargando Tabla ACD...</LoadingText>
-              </LoadingFallback>
-            }>
-              <ErrorBoundary
-                theme={theme}
-                componentName="Tabla ACD"
-                onReset={() => logger.log('🔄 Reseteando Tabla ACD')}
-              >
-                <TablaACD theme={theme} />
-              </ErrorBoundary>
-            </Suspense>
-
-            {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso */}
-            <NextStepCard
-              icon="🗺️"
-              title="Siguiente Paso: Mapa de Actores y Consecuencias"
-              description="Has completado tu Tabla ACD. Ahora contextualiza el texto identificando actores sociales, conexiones e impacto."
-              actionLabel="Ir a Mapa de Actores →"
-              onAction={() => setActiveSection('mapa-actores')}
-              theme={theme}
-              variant="primary"
-            />
-          </motion.div>
-        )}
-
-        {activeSection === 'mapa-actores' && (
-          <motion.div
-            key="mapa-actores"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Suspense fallback={
-              <LoadingFallback theme={theme}>
-                <Spinner theme={theme} />
-                <LoadingText theme={theme}>🗺️ Cargando Mapa de Actores...</LoadingText>
-              </LoadingFallback>
-            }>
-              <ErrorBoundary
-                theme={theme}
-                componentName="Mapa de Actores"
-                onReset={() => logger.log('🔄 Reseteando Mapa de Actores')}
-              >
-                <MapaActores theme={theme} />
-              </ErrorBoundary>
-            </Suspense>
-
-            {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso */}
-            <NextStepCard
-              icon="💭"
-              title="Siguiente Paso: Respuesta Argumentativa"
-              description="Has completado el Mapa de Actores. Ahora construye tu propia postura fundamentada con tesis, evidencias y contraargumentos."
-              actionLabel="Ir a Respuesta Argumentativa →"
-              onAction={() => setActiveSection('respuesta-argumentativa')}
-              theme={theme}
-              variant="primary"
-            />
-          </motion.div>
-        )}
-
-        {activeSection === 'respuesta-argumentativa' && (
-          <motion.div
-            key="respuesta-argumentativa"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Suspense fallback={
-              <LoadingFallback theme={theme}>
-                <Spinner theme={theme} />
-                <LoadingText theme={theme}>💭 Cargando Respuesta Argumentativa...</LoadingText>
-              </LoadingFallback>
-            }>
-              <ErrorBoundary
-                theme={theme}
-                componentName="Respuesta Argumentativa"
-                onReset={() => logger.log('🔄 Reseteando Respuesta Argumentativa')}
-              >
-                <RespuestaArgumentativa theme={theme} />
-              </ErrorBoundary>
-            </Suspense>
-
-            {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso */}
-            <NextStepCard
-              icon="🤖"
-              title="Siguiente Paso: Bitácora Ética del Uso de IA"
-              description="Has completado tu Respuesta Argumentativa. Ahora reflexiona sobre el uso ético y responsable de IA en tu aprendizaje."
-              actionLabel="Ir a Bitácora Ética →"
-              onAction={() => setActiveSection('bitacora-etica')}
-              theme={theme}
-              variant="primary"
-            />
-          </motion.div>
-        )}
-
-        {activeSection === 'bitacora-etica' && (
-          <motion.div
-            key="bitacora-etica"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Suspense fallback={
-              <LoadingFallback theme={theme}>
-                <Spinner theme={theme} />
-                <LoadingText theme={theme}>🤖 Cargando Bitácora Ética IA...</LoadingText>
-              </LoadingFallback>
-            }>
-              <ErrorBoundary
-                theme={theme}
-                componentName="Bitácora Ética IA"
-                onReset={() => logger.log('🔄 Reseteando Bitácora Ética')}
-              >
-                <BitacoraEticaIA theme={theme} />
-              </ErrorBoundary>
-            </Suspense>
-
-            {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso según flujo pedagógico */}
-            <NextStepCard
-              icon="📊"
-              title="Siguiente Paso: Revisa tu Progreso"
-              description="Has completado las 5 rúbricas de literacidad crítica. Ahora visualiza tu progreso y reflexiona sobre tu evolución en las diferentes dimensiones del análisis crítico."
-              actionLabel="Ver Mi Progreso →"
-              onAction={() => setActiveSection('progreso')}
-              theme={theme}
-              variant="primary"
-            />
-          </motion.div>
-        )}
-
-        {activeSection === 'preparacion' && (
-          <motion.div
-            key="preparacion"
+            key="checkpoint"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
@@ -828,14 +570,13 @@ export default function Actividades() {
           >
             <PreguntasPersonalizadas theme={theme} />
 
-            {/* ✅ GUÍA PEDAGÓGICA: Siguiente paso (solo si completó preparación) */}
             {preparacionCompletada && (
               <NextStepCard
                 icon="📚"
-                title="¡Preparación Completada! Siguiente: Resumen Académico"
-                description="Has validado tu comprensión del texto. Ahora crea tu primer artefacto formal: un resumen académico estructurado con evaluación criterial."
-                actionLabel="Ir a Resumen Académico →"
-                onAction={() => setActiveSection('resumen')}
+                title="¡Checkpoint Completado! Explora las dimensiones"
+                description="Elige cualquiera de las 5 dimensiones. Puedes practicar con preguntas reflexivas (+puntos) o ir directo a crear tu artefacto."
+                actionLabel="Ir a Dimensiones →"
+                onAction={() => setActiveSection('dimensiones')}
                 theme={theme}
                 variant="primary"
               />
@@ -843,18 +584,32 @@ export default function Actividades() {
           </motion.div>
         )}
 
-        {activeSection === 'practica' && (
+        {/* ─── DIMENSIONES (5 cards) ─── */}
+        {activeSection === 'dimensiones' && (
           <motion.div
-            key="practica"
+            key="dimensiones"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-            <ModoPracticaGuiada theme={theme} rubricProgress={rubricProgress} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {DIMENSIONS.map((dim) => (
+                <DimensionCard
+                  key={dim.id}
+                  dimension={dim}
+                  theme={theme}
+                  rubricProgress={rubricProgress}
+                  isRecommended={recommendedDimensions.includes(dim.id)}
+                  renderPractice={renderPractice}
+                  renderArtifact={renderArtifact}
+                />
+              ))}
+            </div>
           </motion.div>
         )}
 
+        {/* ─── PROGRESO ─── */}
         {activeSection === 'progreso' && (
           <motion.div
             key="progreso"
@@ -871,21 +626,9 @@ export default function Actividades() {
                 </SectionTitle>
                 <DashboardRubricas
                   theme={theme}
-                  onSelectRubric={(rubricId) => {
-                    // Mapeo de rúbricas a secciones de artefactos
-                    const rubricToSection = {
-                      'rubrica1': 'resumen',
-                      'rubrica2': 'tabla-acd',
-                      'rubrica3': 'mapa-actores',
-                      'rubrica4': 'respuesta-argumentativa',
-                      'rubrica5': 'bitacora-etica'
-                    };
-
-                    const targetSection = rubricToSection[rubricId];
-                    if (targetSection) {
-                      logger.log(`📍 Navegando a artefacto: ${targetSection}`);
-                      setActiveSection(targetSection);
-                    }
+                  onSelectRubric={() => {
+                    // Navegar a dimensiones al hacer clic en una rúbrica
+                    setActiveSection('dimensiones');
                   }}
                 />
 

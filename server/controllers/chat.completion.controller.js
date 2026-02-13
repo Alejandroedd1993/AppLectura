@@ -75,6 +75,7 @@ export async function createChatCompletion(req, res) {
       max_tokens = 1200,
       apiKey,
       stream = false,
+      response_format,
     } = req.body || {};
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -209,6 +210,7 @@ export async function createChatCompletion(req, res) {
       temperature,
       max_tokens: resolvedMaxTokens,
       stream: false,
+      ...(response_format?.type === 'json_object' ? { response_format: { type: 'json_object' } } : {}),
     });
 
     const latencyMs = Date.now() - startTime;

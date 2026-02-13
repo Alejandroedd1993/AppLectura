@@ -1524,6 +1524,27 @@ export const AppContextProvider = ({ children }) => {
       return rewardsSaved;
     }
 
+    // 🛡️ Compactar activitiesProgress para evitar commits gigantes en Firestore
+    const compactedPayload = (() => {
+      if (!payloadWithoutRewards || typeof payloadWithoutRewards !== 'object') return payloadWithoutRewards;
+      if (!Object.prototype.hasOwnProperty.call(payloadWithoutRewards, 'activitiesProgress')) return payloadWithoutRewards;
+
+      const ap = payloadWithoutRewards.activitiesProgress;
+      if (!ap || typeof ap !== 'object') return payloadWithoutRewards;
+
+      const scoped = {};
+      ['index', 'general', targetTextoId].forEach((key) => {
+        if (key && Object.prototype.hasOwnProperty.call(ap, key)) {
+          scoped[key] = ap[key];
+        }
+      });
+
+      return {
+        ...payloadWithoutRewards,
+        activitiesProgress: Object.keys(scoped).length > 0 ? scoped : ap
+      };
+    })();
+
     try {
       // Etapa 2: si el hook está activo y el write es para el doc de progreso actual,
       // usar SIEMPRE el writer del hook (evita escrituras residuales por rutas legacy).
@@ -1532,14 +1553,14 @@ export const AppContextProvider = ({ children }) => {
         typeof saveProgressViaHook === 'function' &&
         targetTextoId === progressDocId
       ) {
-        const ok = await saveProgressViaHook(payloadWithoutRewards);
+        const ok = await saveProgressViaHook(compactedPayload);
         return Boolean(rewardsSaved && ok !== false);
       }
 
-      await saveStudentProgress(currentUser.uid, targetTextoId, payloadWithoutRewards);
+      await saveStudentProgress(currentUser.uid, targetTextoId, compactedPayload);
 
       // Airbag local (merge para soportar writes incrementales, p.ej. una sola rúbrica)
-      writeFirestoreBackupMerged(currentUser.uid, targetTextoId, payloadWithoutRewards);
+      writeFirestoreBackupMerged(currentUser.uid, targetTextoId, compactedPayload);
       return rewardsSaved;
     } catch (error) {
       logger.error('❌ [AppContext] Error guardando progreso por lectura:', error);
@@ -2396,8 +2417,23 @@ export const AppContextProvider = ({ children }) => {
 
       const targetTextoId = lastActivitiesTouchedTextoIdRef.current || currentTextoId || null;
 
+      // 🛡️ Reducir payload: sincronizar solo el progreso relevante para el texto activo/tocado
+      const scopedActivitiesProgress = (() => {
+        if (!activitiesProgress || typeof activitiesProgress !== 'object') return activitiesProgress;
+        if (!targetTextoId) return activitiesProgress;
+
+        const scoped = {};
+        ['index', 'general', targetTextoId].forEach((key) => {
+          if (Object.prototype.hasOwnProperty.call(activitiesProgress, key)) {
+            scoped[key] = activitiesProgress[key];
+          }
+        });
+
+        return Object.keys(scoped).length > 0 ? scoped : activitiesProgress;
+      })();
+
       const progressData = {
-        activitiesProgress,
+        activitiesProgress: scopedActivitiesProgress,
         sourceCourseId, // 🆕 CRÍTICO: Vincular con el curso
         lastSync: new Date().toISOString(),
         userId: currentUser.uid,

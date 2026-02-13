@@ -31,6 +31,7 @@ export async function chatCompletion({
   apiKey,
   temperature = 0.7,
   max_tokens = 800,
+  response_format,
   signal,
   timeoutMs = CHAT_TIMEOUT_MS  // 🆕 A5 FIX: Usar constante unificada
 }) {
@@ -41,15 +42,32 @@ export async function chatCompletion({
     messages,
     temperature,
     max_tokens,
-    ...(apiKey ? { apiKey } : {})
+    ...(apiKey ? { apiKey } : {}),
+    ...(response_format ? { response_format } : {})
   };
 
-  const res = await fetchWithTimeout(url, {
+  const doRequest = async (bodyPayload) => fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(bodyPayload),
     signal
   }, timeoutMs);
+
+  let res = await doRequest(payload);
+
+  // Fallback automático: si la apiKey enviada por cliente es inválida (401),
+  // reintentar SIN apiKey para usar la del servidor.
+  if (!res.ok && res.status === 401 && apiKey) {
+    const retryPayload = {
+      provider,
+      model: model || defaultModels[provider] || defaultModels.openai,
+      messages,
+      temperature,
+      max_tokens,
+      ...(response_format ? { response_format } : {})
+    };
+    res = await doRequest(retryPayload);
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');

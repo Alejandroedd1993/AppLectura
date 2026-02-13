@@ -3,8 +3,54 @@ import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
 
 import logger from '../utils/logger';
-const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
+
+function isAiAuthOrConfigError(error) {
+  const msg = String(error?.message || error || '').toLowerCase();
+  return msg.includes('401') ||
+    msg.includes('incorrect api key') ||
+    msg.includes('falta api key') ||
+    msg.includes('unauthorized');
+}
+
+function buildFallbackPregunta({ rubricDimension, nivelDificultad, dimension }) {
+  const guia = rubricDimension?.preguntasGuia?.[0];
+  if (guia) return guia;
+
+  const nombre = rubricDimension?.nombre || dimension;
+  const porNivel = {
+    basico: `¿Qué evidencia del texto te ayuda a analizar la dimensión ${nombre}?`,
+    intermedio: `¿Qué relación puedes establecer entre una evidencia del texto y la dimensión ${nombre}?`,
+    avanzado: `¿Qué tensión o contradicción detectas en el texto al evaluar la dimensión ${nombre}?`
+  };
+  return porNivel[nivelDificultad] || porNivel.intermedio;
+}
+
+function buildFallbackDesafioCruzado({ dimA, dimB }) {
+  return `¿Cómo se relacionan ${dimA?.nombre || 'la primera dimensión'} y ${dimB?.nombre || 'la segunda dimensión'} para sostener (o cuestionar) el sentido principal del texto?`;
+}
+
+function getClientOpenAIApiKey() {
+  if (typeof window === 'undefined' || !window.localStorage) return undefined;
+
+  try {
+    const direct = window.localStorage.getItem('openai_api_key');
+    if (direct && direct.trim()) return direct.trim();
+
+    // Compatibilidad con keys scopeadas por usuario: openai_api_key:<uid>
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith('openai_api_key:')) {
+        const scoped = window.localStorage.getItem(key);
+        if (scoped && scoped.trim()) return scoped.trim();
+      }
+    }
+  } catch (err) {
+    logger.warn('⚠️ No se pudo leer openai_api_key desde localStorage', err);
+  }
+
+  return undefined;
+}
 
 const BIAS_SAFETY_RULES = `
 EQUIDAD Y NO DISCRIMINACIÓN (OBLIGATORIO):
@@ -71,9 +117,8 @@ function validarPrerequisitos(dimension, completeAnalysis) {
 
 /**
  * Genera pregunta contextualizada basada en el análisis del texto
- * usando DeepSeek (rápido y económico)
  */
-async function generarPregunta({ texto, completeAnalysis, dimension, nivelDificultad = 'intermedio', onProgress }) {
+async function generarPregunta({ texto, completeAnalysis, dimension, nivelDificultad = 'intermedio', onProgress, skipPrerequisitos = false }) {
   logger.log(`📝 [EvaluacionIntegral] Generando pregunta para dimensión: ${dimension}`);
 
   // Emitir progreso: inicio
@@ -83,7 +128,7 @@ async function generarPregunta({ texto, completeAnalysis, dimension, nivelDificu
 
   // ✅ Validar prerequisitos pedagógicos
   const validacion = validarPrerequisitos(dimension, completeAnalysis);
-  if (!validacion.valido) {
+  if (!skipPrerequisitos && !validacion.valido) {
     // Retornar objeto con info de prerequisitos en lugar de throw error
     return {
       needsPrerequisites: true,
@@ -120,7 +165,7 @@ ${contextoAnalisis}
 
 ${BIAS_SAFETY_RULES}
 
-TAREA: Genera UNA pregunta de nivel ${nivelDificultad} que evalúe la dimensión "${rubricDimension.nombre}".
+TAREA: Genera UNA pregunta REFLEXIVA de nivel ${nivelDificultad} que evalúe la dimensión "${rubricDimension.nombre}".
 
 CRITERIOS DE LA PREGUNTA:
 ${rubricDimension.criterios?.map((c, idx) => `${idx + 1}. ${c.nombre}: ${c.descripcion}`).join('\n') || ''}
@@ -128,10 +173,16 @@ ${rubricDimension.criterios?.map((c, idx) => `${idx + 1}. ${c.nombre}: ${c.descr
 PREGUNTAS GUÍA DE LA RÚBRICA:
 ${rubricDimension.preguntasGuia?.map((p, idx) => `${idx + 1}. ${p}`).join('\n') || ''}
 
-IMPORTANTE:
+IMPORTANTE - ESTILO DE PREGUNTA:
+- Debe ser BREVE y promover reflexión, no requerir ensayos largos
+- El estudiante debe poder responder en 1-3 oraciones (30-150 palabras)
+- Tipos válidos de pregunta según nivel:
+  · Literal: "¿Qué dice el texto sobre X?" / "¿Cuál es la postura del autor?"
+  · Inferencial: "¿Qué implica que el autor use X estrategia?" / "¿Qué voz está ausente?"
+  · Crítica: "¿Cuál sería un contraargumento válido?" / "¿Qué sesgo detectas?"
+  · Metacognitiva: "¿Cómo cambió tu perspectiva al leer esto?"
 - La pregunta debe ser específica al texto (usar ejemplos concretos del análisis)
-- Debe requerir pensamiento crítico, no solo recordar información
-- Debe permitir evaluar uno o más criterios de la rúbrica
+- NO pidas "explica detalladamente" ni "desarrolla un análisis completo"
 - Nivel ${nivelDificultad}: ${{
   basico: 'Identificar elementos básicos',
   intermedio: 'Analizar relaciones y patrones',
@@ -141,9 +192,11 @@ IMPORTANTE:
 Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto de la pregunta).`;
 
   try {
+    const apiKey = getClientOpenAIApiKey();
     const response = await chatCompletion({
-      provider: 'deepseek',
-      model: DEEPSEEK_MODEL,
+      provider: 'openai',
+      model: OPENAI_MODEL,
+      apiKey,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
       max_tokens: 300, // ⬆️ Aumentado para preguntas complejas
@@ -167,6 +220,25 @@ Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto d
     };
     
   } catch (error) {
+    // ✅ Fallback local: no bloquear práctica por credenciales de proveedor
+    if (isAiAuthOrConfigError(error)) {
+      logger.warn('⚠️ Error de autenticación/configuración IA al generar pregunta. Aplicando fallback local.');
+      const preguntaFallback = buildFallbackPregunta({ rubricDimension, nivelDificultad, dimension });
+
+      if (onProgress) {
+        onProgress({ step: 'completed', progress: 100 });
+      }
+
+      return {
+        pregunta: preguntaFallback,
+        dimension,
+        dimensionLabel: rubricDimension.nombre,
+        nivelDificultad,
+        contextoUsado: contextoAnalisis.substring(0, 200),
+        isFallback: true
+      };
+    }
+
     logger.error('❌ Error generando pregunta:', error);
     throw new Error(`Error generando pregunta: ${error.message}`);
   }
@@ -202,7 +274,8 @@ async function generarHintsParaPregunta({
   pregunta,
   nivelDificultad = 'intermedio',
   count = 5,
-  onProgress
+  onProgress,
+  skipPrerequisitos = false
 }) {
   if (!texto || !pregunta || !dimension) {
     return { hints: [], dimension };
@@ -213,7 +286,7 @@ async function generarHintsParaPregunta({
   }
 
   const validacion = validarPrerequisitos(dimension, completeAnalysis);
-  if (!validacion.valido) {
+  if (!skipPrerequisitos && !validacion.valido) {
     return { hints: [], dimension, needsPrerequisites: true, ...validacion };
   }
 
@@ -251,9 +324,11 @@ Responde SOLO con un JSON válido: un array de strings.
 Ejemplo: ["hint 1", "hint 2", "hint 3"]`;
 
   try {
+    const apiKey = getClientOpenAIApiKey();
     const response = await chatCompletion({
-      provider: 'deepseek',
-      model: DEEPSEEK_MODEL,
+      provider: 'openai',
+      model: OPENAI_MODEL,
+      apiKey,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.4,
       max_tokens: 450,
@@ -278,6 +353,16 @@ Ejemplo: ["hint 1", "hint 2", "hint 3"]`;
 
     return { hints, dimension, dimensionLabel: rubricDimension?.nombre || dimension };
   } catch (error) {
+    if (isAiAuthOrConfigError(error)) {
+      logger.warn('⚠️ Error de autenticación/configuración IA al generar hints. Aplicando fallback local.');
+      const hintsFallback = [
+        'Identifica una frase del texto que se relacione directamente con la pregunta.',
+        'Distingue qué afirma explícitamente el autor y qué estás infiriendo tú.',
+        'Conecta tu respuesta con una evidencia breve del texto (palabra, idea o cita corta).'
+      ];
+      return { hints: hintsFallback, dimension, dimensionLabel: rubricDimension?.nombre || dimension, isFallback: true };
+    }
+
     logger.error('❌ Error generando hints:', error);
     return { hints: [], dimension, error: error?.message || String(error) };
   }
@@ -360,8 +445,8 @@ async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgr
   logger.log(`📊 [EvaluacionIntegral] Evaluando respuesta para dimensión: ${dimension}`);
 
   // ✅ Validación server-side de longitud
-  if (!respuesta || respuesta.trim().length < 50) {
-    throw new Error('La respuesta debe tener al menos 50 caracteres');
+  if (!respuesta || respuesta.trim().length < 30) {
+    throw new Error('La respuesta debe tener al menos 30 caracteres');
   }
   
   if (respuesta.length > 2000) {
@@ -369,7 +454,7 @@ async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgr
   }
 
   const startTime = Date.now();
-  let tokensUsados = { deepseek: 0, openai: 0 }; // ✅ Tracking de tokens
+  let tokensUsados = { estructural: 0, profundidad: 0 }; // ✅ Tracking de tokens
 
   try {
     // Emitir progreso: inicio
@@ -377,29 +462,29 @@ async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgr
       onProgress({ step: 'submitting', progress: 0 });
     }
 
-    // FASE 1: Evaluación estructural con DeepSeek
+    // FASE 1: Evaluación estructural
     if (onProgress) {
       onProgress({ step: 'evaluating_structure', progress: 25 });
     }
-    const deepseekResult = await evaluarConDeepSeek({ texto, pregunta, respuesta, dimension });
-    tokensUsados.deepseek = deepseekResult.usage?.total_tokens || 0; // ✅ Capturar uso
+    const estructuralResult = await evaluarEstructural({ texto, pregunta, respuesta, dimension });
+    tokensUsados.estructural = estructuralResult.usage?.total_tokens || 0; // ✅ Capturar uso
 
-    // FASE 2: Evaluación de profundidad con OpenAI
+    // FASE 2: Evaluación de profundidad crítica
     if (onProgress) {
       onProgress({ step: 'evaluating_depth', progress: 50 });
     }
-    const openaiResult = await evaluarConOpenAI({ texto, pregunta, respuesta, dimension, deepseekResult });
-    tokensUsados.openai = openaiResult.usage?.total_tokens || 0; // ✅ Capturar uso
+    const profundidadResult = await evaluarProfundidad({ texto, pregunta, respuesta, dimension, estructuralResult });
+    tokensUsados.profundidad = profundidadResult.usage?.total_tokens || 0; // ✅ Capturar uso
 
     // FASE 3: Combinar resultados
     if (onProgress) {
       onProgress({ step: 'combining', progress: 90 });
     }
-    const evaluacionFinal = combinarEvaluaciones(deepseekResult, openaiResult, dimension);
+    const evaluacionFinal = combinarEvaluaciones(estructuralResult, profundidadResult, dimension);
 
     logger.log(`✅ Evaluación completada en ${Date.now() - startTime}ms`);
     logger.log(`📊 Score: ${evaluacionFinal.score}/10, Nivel: ${evaluacionFinal.nivel}/4`);
-    logger.log(`💰 Tokens usados - DeepSeek: ${tokensUsados.deepseek}, OpenAI: ${tokensUsados.openai}, Total: ${tokensUsados.deepseek + tokensUsados.openai}`);
+    logger.log(`💰 Tokens usados - Estructural: ${tokensUsados.estructural}, Profundidad: ${tokensUsados.profundidad}, Total: ${tokensUsados.estructural + tokensUsados.profundidad}`);
 
     if (onProgress) {
       onProgress({ step: 'completed', progress: 100 });
@@ -408,6 +493,36 @@ async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgr
     return evaluacionFinal;
 
   } catch (error) {
+    // ✅ Fallback: si falla por autenticación/configuración, devolver evaluación básica
+    if (isAiAuthOrConfigError(error)) {
+      logger.warn('⚠️ Error de autenticación/configuración IA al evaluar respuesta. Aplicando fallback local.');
+
+      if (onProgress) {
+        onProgress({ step: 'completed', progress: 100 });
+      }
+
+      const rubricaId = DIMENSION_MAP[dimension] || dimension;
+      const rubricDimension = getDimension(rubricaId);
+
+      return {
+        dimension,
+        dimensionLabel: rubricDimension?.nombre || dimension,
+        score: 5,
+        nivel: 2,
+        scoreEstructural: 2.5,
+        scoreProfundidad: 2.5,
+        fortalezas: ['Respuesta proporcionada — no fue posible evaluarla con IA'],
+        mejoras: ['Revisa tu API key de OpenAI para obtener evaluaciones detalladas'],
+        evidencias: [],
+        comentarioCritico: 'La evaluación automática no está disponible en este momento. Tu respuesta ha sido registrada con una puntuación provisional.',
+        detalles: {
+          claridad: 2, anclaje: 2, completitud: 2,
+          profundidad: 2, comprension: 2, originalidad: 2
+        },
+        isFallback: true
+      };
+    }
+
     logger.error('❌ Error evaluando respuesta:', error);
     throw error;
   }
@@ -447,9 +562,9 @@ function cleanJsonResponse(text) {
 }
 
 /**
- * Evaluación con DeepSeek (validación estructural)
+ * Evaluación estructural (claridad, anclaje textual, completitud)
  */
-async function evaluarConDeepSeek({ texto, pregunta, respuesta, dimension }) {
+async function evaluarEstructural({ texto, pregunta, respuesta, dimension }) {
   const rubricaId = DIMENSION_MAP[dimension] || dimension;
   const rubricDimension = getDimension(rubricaId);
 
@@ -486,9 +601,11 @@ Responde SOLO con JSON:
   "mejoras_estructurales": ["mejora 1"]
 }`;
 
+  const apiKey = getClientOpenAIApiKey();
   const response = await chatCompletion({
-    provider: 'deepseek',
-    model: DEEPSEEK_MODEL,
+    provider: 'openai',
+    model: OPENAI_MODEL,
+    apiKey,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.2,
     max_tokens: 800,
@@ -498,22 +615,22 @@ Responde SOLO con JSON:
 
   try {
     const rawContent = extractContent(response);
-    logger.log('🔍 [DeepSeek] Respuesta cruda:', rawContent.substring(0, 200));
+    logger.log('🔍 [Estructural] Respuesta cruda:', rawContent.substring(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    logger.log('✅ [DeepSeek] Respuesta limpia:', cleanedContent.substring(0, 200));
+    logger.log('✅ [Estructural] Respuesta limpia:', cleanedContent.substring(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     
     // Validar que tiene los campos esperados
     if (!parsed.claridad || !parsed.anclaje_textual || !parsed.completitud) {
-      throw new Error('Respuesta JSON incompleta de DeepSeek');
+      throw new Error('Respuesta JSON incompleta de evaluación estructural');
     }
     
     return parsed;
   } catch (parseError) {
-    logger.error('❌ [DeepSeek] Error parseando JSON:', parseError.message);
-    logger.error('📄 [DeepSeek] Contenido recibido:', extractContent(response));
+    logger.error('❌ [Estructural] Error parseando JSON:', parseError.message);
+    logger.error('📄 [Estructural] Contenido recibido:', extractContent(response));
     
     // Fallback: retornar estructura básica válida
     return {
@@ -530,9 +647,9 @@ Responde SOLO con JSON:
 }
 
 /**
- * Evaluación con OpenAI (profundidad crítica)
+ * Evaluación de profundidad crítica
  */
-async function evaluarConOpenAI({ texto: _texto, pregunta, respuesta, dimension, deepseekResult }) {
+async function evaluarProfundidad({ texto: _texto, pregunta, respuesta, dimension, estructuralResult }) {
   const rubricaId = DIMENSION_MAP[dimension] || dimension;
   const rubricDimension = getDimension(rubricaId);
 
@@ -547,7 +664,7 @@ RESPUESTA DEL ESTUDIANTE:
 ${respuesta}
 
 EVALUACIÓN ESTRUCTURAL PREVIA:
-${JSON.stringify(deepseekResult, null, 2)}
+${JSON.stringify(estructuralResult, null, 2)}
 
 ${BIAS_SAFETY_RULES}
 
@@ -575,9 +692,11 @@ Responde SOLO con JSON:
   "oportunidades_profundizacion": ["sugerencia 1"]
 }`;
 
+  const apiKey = getClientOpenAIApiKey();
   const response = await chatCompletion({
     provider: 'openai',
     model: OPENAI_MODEL,
+    apiKey,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.3,
     max_tokens: 1000,
@@ -587,22 +706,22 @@ Responde SOLO con JSON:
 
   try {
     const rawContent = extractContent(response);
-    logger.log('🔍 [OpenAI] Respuesta cruda:', rawContent.substring(0, 200));
+    logger.log('🔍 [Profundidad] Respuesta cruda:', rawContent.substring(0, 200));
     
     const cleanedContent = cleanJsonResponse(rawContent);
-    logger.log('✅ [OpenAI] Respuesta limpia:', cleanedContent.substring(0, 200));
+    logger.log('✅ [Profundidad] Respuesta limpia:', cleanedContent.substring(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
     
     // Validar que tiene los campos esperados
     if (!parsed.profundidad_critica || !parsed.comprension_dimension) {
-      throw new Error('Respuesta JSON incompleta de OpenAI');
+      throw new Error('Respuesta JSON incompleta de evaluación de profundidad');
     }
     
     return parsed;
   } catch (parseError) {
-    logger.error('❌ [OpenAI] Error parseando JSON:', parseError.message);
-    logger.error('📄 [OpenAI] Contenido recibido:', extractContent(response));
+    logger.error('❌ [Profundidad] Error parseando JSON:', parseError.message);
+    logger.error('📄 [Profundidad] Contenido recibido:', extractContent(response));
     
     // Fallback: retornar estructura básica válida
     return {
@@ -618,24 +737,24 @@ Responde SOLO con JSON:
 }
 
 /**
- * Combina evaluaciones de ambas IAs
+ * Combina evaluaciones de ambas fases
  */
-function combinarEvaluaciones(deepseek, openai, dimension) {
+function combinarEvaluaciones(estructural, profundidad, dimension) {
   const rubricaId = DIMENSION_MAP[dimension] || dimension;
   const rubricDimension = getDimension(rubricaId);
 
-  // Calcular score estructural (DeepSeek)
+  // Calcular score estructural
   const scoreEstructural = (
-    (deepseek.claridad || 0) +
-    (deepseek.anclaje_textual || 0) +
-    (deepseek.completitud || 0)
+    (estructural.claridad || 0) +
+    (estructural.anclaje_textual || 0) +
+    (estructural.completitud || 0)
   ) / 3;
 
-  // Calcular score de profundidad (OpenAI)
+  // Calcular score de profundidad
   const scoreProfundidad = (
-    (openai.profundidad_critica || 0) +
-    (openai.comprension_dimension || 0) +
-    (openai.originalidad || 0)
+    (profundidad.profundidad_critica || 0) +
+    (profundidad.comprension_dimension || 0) +
+    (profundidad.originalidad || 0)
   ) / 3;
 
   // Score final ponderado (60% estructura, 40% profundidad)
@@ -644,13 +763,13 @@ function combinarEvaluaciones(deepseek, openai, dimension) {
 
   // Combinar fortalezas y mejoras
   const fortalezas = [
-    ...(deepseek.fortalezas_estructurales || []),
-    ...(openai.fortalezas_criticas || [])
+    ...(estructural.fortalezas_estructurales || []),
+    ...(profundidad.fortalezas_criticas || [])
   ];
 
   const mejoras = [
-    ...(deepseek.mejoras_estructurales || []),
-    ...(openai.oportunidades_profundizacion || [])
+    ...(estructural.mejoras_estructurales || []),
+    ...(profundidad.oportunidades_profundizacion || [])
   ];
 
   return {
@@ -662,15 +781,15 @@ function combinarEvaluaciones(deepseek, openai, dimension) {
     scoreProfundidad: Math.round(scoreProfundidad * 10) / 10,
     fortalezas,
     mejoras,
-    evidencias: deepseek.evidencias_encontradas || [],
-    comentarioCritico: openai.comentario_critico || '',
+    evidencias: estructural.evidencias_encontradas || [],
+    comentarioCritico: profundidad.comentario_critico || '',
     detalles: {
-      claridad: deepseek.claridad,
-      anclaje: deepseek.anclaje_textual,
-      completitud: deepseek.completitud,
-      profundidad: openai.profundidad_critica,
-      comprension: openai.comprension_dimension,
-      originalidad: openai.originalidad
+      claridad: estructural.claridad,
+      anclaje: estructural.anclaje_textual,
+      completitud: estructural.completitud,
+      profundidad: profundidad.profundidad_critica,
+      comprension: profundidad.comprension_dimension,
+      originalidad: profundidad.originalidad
     }
   };
 }
@@ -741,7 +860,105 @@ function sugerirArtefactos(evaluacion, rubricProgress) {
   return sugerencias.slice(0, 2); // Máximo 2 sugerencias
 }
 
-export { generarPregunta, generarHintsParaPregunta, evaluarRespuesta, sugerirArtefactos, validarPrerequisitos, DIMENSION_MAP };
+/**
+ * Genera un desafío cruzado que combina dos dimensiones en una pregunta reflexiva.
+ * Promueve transferencia lateral y pensamiento integrador.
+ */
+async function generarDesafioCruzado({ texto, completeAnalysis, dimensionA, dimensionB, nivelDificultad = 'intermedio', onProgress }) {
+  logger.log(`⚡ [EvaluacionIntegral] Generando desafío cruzado: ${dimensionA} × ${dimensionB}`);
 
+  if (onProgress) onProgress({ step: 'generating', progress: 0 });
+
+  const rubricaIdA = DIMENSION_MAP[dimensionA];
+  const rubricaIdB = DIMENSION_MAP[dimensionB];
+  const dimA = rubricaIdA ? getDimension(rubricaIdA) : null;
+  const dimB = rubricaIdB ? getDimension(rubricaIdB) : null;
+
+  if (!dimA || !dimB) {
+    throw new Error(`Dimensiones no encontradas: ${dimensionA}, ${dimensionB}`);
+  }
+
+  const contextoA = construirContextoAnalisis(completeAnalysis, dimensionA);
+  const contextoB = construirContextoAnalisis(completeAnalysis, dimensionB);
+
+  const prompt = `Eres un evaluador experto en literacidad crítica.
+
+DESAFÍO CRUZADO: Combina DOS dimensiones en UNA pregunta reflexiva.
+
+DIMENSIÓN A: ${dimA.nombre}
+DIMENSIÓN B: ${dimB.nombre}
+
+TEXTO (extracto):
+"""
+${texto.substring(0, 1200)}...
+"""
+
+${contextoA}
+${contextoB}
+
+${BIAS_SAFETY_RULES}
+
+TAREA: Genera UNA pregunta reflexiva de nivel ${nivelDificultad} que INTEGRE ambas dimensiones.
+
+EJEMPLOS del tipo de pregunta esperada:
+- "${dimA.nombre} + ${dimB.nombre}": "¿Cómo influye [elemento de dim A] en [aspecto de dim B] dentro de este texto?"
+- Pregunta que requiera conectar conceptos de ambas dimensiones.
+
+REGLAS:
+- La respuesta esperada debe ser BREVE (1-3 oraciones, 30-150 palabras).
+- No pidas "desarrolla" ni "explica detalladamente".
+- La pregunta debe ser específica al texto analizado.
+- Debe ser más desafiante que una pregunta de dimensión única.
+
+Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto).`;
+
+  try {
+    const apiKey = getClientOpenAIApiKey();
+    const response = await chatCompletion({
+      provider: 'openai',
+      model: OPENAI_MODEL,
+      apiKey,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.75,
+      max_tokens: 300,
+      timeoutMs: 30000
+    });
+
+    const pregunta = extractContent(response).trim();
+    logger.log(`✅ Desafío cruzado generado: ${pregunta.substring(0, 80)}...`);
+
+    if (onProgress) onProgress({ step: 'completed', progress: 100 });
+
+    return {
+      pregunta,
+      isCrossChallenge: true,
+      dimensions: [dimensionA, dimensionB],
+      dimensionLabels: [dimA.nombre, dimB.nombre],
+      nivelDificultad
+    };
+  } catch (error) {
+    // ✅ Fallback local: mantener funcionalidad aun sin API key válida
+    if (isAiAuthOrConfigError(error)) {
+      logger.warn('⚠️ Error de autenticación/configuración IA al generar desafío cruzado. Aplicando fallback local.');
+      const preguntaFallback = buildFallbackDesafioCruzado({ dimA, dimB });
+
+      if (onProgress) onProgress({ step: 'completed', progress: 100 });
+
+      return {
+        pregunta: preguntaFallback,
+        isCrossChallenge: true,
+        dimensions: [dimensionA, dimensionB],
+        dimensionLabels: [dimA.nombre, dimB.nombre],
+        nivelDificultad,
+        isFallback: true
+      };
+    }
+
+    logger.error('❌ Error generando desafío cruzado:', error);
+    throw new Error(`Error generando desafío cruzado: ${error.message}`);
+  }
+}
+
+export { generarPregunta, generarHintsParaPregunta, evaluarRespuesta, sugerirArtefactos, validarPrerequisitos, generarDesafioCruzado, DIMENSION_MAP };
 
 

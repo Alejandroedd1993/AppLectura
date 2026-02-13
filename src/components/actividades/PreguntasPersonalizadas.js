@@ -1,15 +1,14 @@
 /**
- * Componente de Ejercicios Guiados (Rediseñado)
- * Sistema de 3 capas: MCQ → Síntesis → Unlock Artefactos
- * ARQUITECTURA SIMPLIFICADA: Sin selector de dimensiones
+ * Componente de Checkpoint Rápido
+ * Gate ligero: MCQ reflexivo → desbloquea dimensiones
+ * ARQUITECTURA V2: Solo MCQ como activación cognitiva previa
  */
 
 import React, { useState, useContext, useCallback, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
 import MCQExercise from './MCQExercise';
-import SynthesisQuestions from './SynthesisQuestions';
 
 import logger from '../../utils/logger';
 // ==============================================================================
@@ -20,43 +19,6 @@ const Container = styled.div`
   max-width: 1000px;
   margin: 0 auto;
   padding: 1.5rem;
-`;
-
-const TabsContainer = styled.div`
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 2rem;
-  border-bottom: 2px solid ${p => p.theme.border};
-  padding-bottom: 0.5rem;
-`;
-
-const Tab = styled.button`
-  padding: 0.75rem 1.5rem;
-  background: ${p => p.$active ? p.theme.primary : 'transparent'};
-  color: ${p => p.$active ? 'white' : p.theme.textPrimary};
-  border: none;
-  border-bottom: 3px solid ${p => p.$active ? p.theme.primary : 'transparent'};
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  opacity: ${p => p.$locked ? 0.4 : 1};
-  cursor: ${p => p.$locked ? 'not-allowed' : 'pointer'};
-  
-  &:hover:not(:disabled) {
-    background: ${p => p.$active ? p.theme.primary : p.theme.surface};
-  }
-  
-  &:disabled {
-    cursor: not-allowed;
-  }
-`;
-
-const LockBadge = styled.span`
-  font-size: 0.9rem;
 `;
 
 const EmptyState = styled.div`
@@ -190,14 +152,10 @@ const PreguntasPersonalizadas = ({ theme }) => {
     currentTextoId
   } = useContext(AppContext);
 
-  // Estado local
-  const [activeTab, setActiveTab] = useState('mcq');
-
-  // Obtener datos del análisis primero
+  // Obtener datos del análisis
   const documentId = completeAnalysis?.metadata?.document_id || null;
   const lectureId = currentTextoId || documentId || null;
   const mcqQuestions = completeAnalysis?.critical?.mcqQuestions || [];
-  const synthesisQuestions = completeAnalysis?.critical?.synthesisQuestions || [];
 
   // 🆕 Memoizar progreso del documento para evitar re-renders
   const docProgress = useMemo(() =>
@@ -207,76 +165,45 @@ const PreguntasPersonalizadas = ({ theme }) => {
 
   const [mcqCompleted, setMcqCompleted] = useState(false);
   const [mcqResults, setMcqResults] = useState(null);
-  const [synthesisCompleted, setSynthesisCompleted] = useState(false);
-  const [synthesisAnswers, setSynthesisAnswers] = useState(null);
 
   // 🔄 Sincronizar estado local con contexto cuando cambia documentId o activitiesProgress
   useEffect(() => {
     if (lectureId && docProgress) {
-      logger.log('🔄 [PreguntasPersonalizadas] Sincronizando con contexto:', docProgress);
-      setMcqCompleted(docProgress.mcqPassed || false);
+      logger.log('🔄 [Checkpoint] Sincronizando con contexto:', docProgress);
+      setMcqCompleted(docProgress.mcqPassed || docProgress.completed || false);
       setMcqResults(docProgress.mcqResults || null);
-      setSynthesisCompleted(docProgress.completed || false);
-      setSynthesisAnswers(docProgress.synthesisAnswers || null);
 
       if (docProgress.completed) {
-        logger.log('✅ [PreguntasPersonalizadas] Preparación COMPLETADA restaurada desde contexto');
-      } else if (docProgress.mcqPassed) {
-        logger.log('✅ [PreguntasPersonalizadas] MCQ completado, activando síntesis');
-        setActiveTab('synthesis');
+        logger.log('✅ [Checkpoint] Preparación COMPLETADA restaurada desde contexto');
       }
     } else {
-      // Resetear si no hay documento
       setMcqCompleted(false);
       setMcqResults(null);
-      setSynthesisCompleted(false);
-      setSynthesisAnswers(null);
-      setActiveTab('mcq');
-      logger.log('🆕 [PreguntasPersonalizadas] Nueva preparación inicializada');
+      logger.log('🆕 [Checkpoint] Nuevo checkpoint inicializado');
     }
   }, [lectureId, docProgress]);
 
-  // Handlers
+  // Handler: MCQ aprobado → preparación completada directamente
   const handleMCQComplete = useCallback((results) => {
-    logger.log('✅ [EjerciciosGuiados] MCQ completado:', results);
+    logger.log('✅ [Checkpoint] MCQ completado:', results);
     setMcqResults(results);
     setMcqCompleted(results.passed);
 
-    // 💾 Guardar resultados MCQ en context
-    if (lectureId && markPreparationProgress) {
-      markPreparationProgress(lectureId, {
-        mcqPassed: results.passed,
-        mcqResults: results
-      });
-      logger.log('💾 [PreguntasPersonalizadas] Resultados MCQ guardados en contexto');
-    }
-
-    if (results.passed) {
-      setActiveTab('synthesis');
-    }
-  }, [lectureId, markPreparationProgress]);
-
-  const handleSynthesisComplete = useCallback((answers) => {
-    logger.log('✅ [EjerciciosGuiados] Síntesis completada, desbloqueando artefactos...');
-    setSynthesisAnswers(answers);
-    setSynthesisCompleted(true);
-
-    // 💾 Guardar preparación completada en context
-    if (lectureId && markPreparationProgress) {
+    if (results.passed && lectureId && markPreparationProgress) {
+      // 💾 MCQ aprobado = preparación completada (sin paso de síntesis)
       markPreparationProgress(lectureId, {
         completed: true,
-        mcqPassed: mcqResults?.passed || false,
-        mcqResults,
-        synthesisAnswers: answers
+        mcqPassed: true,
+        mcqResults: results
       });
-      logger.log('💾 [PreguntasPersonalizadas] Preparación y respuestas guardadas en contexto');
-    }
+      logger.log('💾 [Checkpoint] Preparación completada tras MCQ aprobado');
 
-    // Disparar evento para desbloquear artefactos
-    window.dispatchEvent(new CustomEvent('exercises-completed', {
-      detail: { mcqResults, synthesisAnswers: answers }
-    }));
-  }, [lectureId, markPreparationProgress, mcqResults]);
+      // Disparar evento para desbloquear dimensiones
+      window.dispatchEvent(new CustomEvent('exercises-completed', {
+        detail: { mcqResults: results }
+      }));
+    }
+  }, [lectureId, markPreparationProgress]);
 
   // Verificaciones de estado
   if (!texto) {
@@ -311,14 +238,14 @@ const PreguntasPersonalizadas = ({ theme }) => {
     );
   }
 
-  if (mcqQuestions.length === 0 || synthesisQuestions.length === 0) {
+  if (mcqQuestions.length === 0) {
     return (
       <Container>
         <EmptyState>
           <EmptyIcon>⚠️</EmptyIcon>
-          <EmptyTitle theme={theme}>No se generaron preguntas de preparación</EmptyTitle>
+          <EmptyTitle theme={theme}>No se generaron preguntas de checkpoint</EmptyTitle>
           <EmptyDescription theme={theme}>
-            El análisis se completó pero no se generaron las preguntas de preparación.
+            El análisis se completó pero no se generaron las preguntas de activación.
             <br /><br />
             <strong>Esto puede suceder si:</strong>
             <br />• El texto es muy corto
@@ -331,8 +258,8 @@ const PreguntasPersonalizadas = ({ theme }) => {
     );
   }
 
-  // 🆕 Si la preparación ya fue completada, mostrar resumen bloqueado
-  if (synthesisCompleted) {
+  // Si el checkpoint ya fue completado, mostrar resumen
+  if (mcqCompleted) {
     const mcqScore = mcqResults ? `${mcqResults.correct}/${mcqResults.total}` : 'N/A';
     const mcqPercentage = mcqResults ? Math.round((mcqResults.correct / mcqResults.total) * 100) : 0;
 
@@ -343,158 +270,67 @@ const PreguntasPersonalizadas = ({ theme }) => {
           animate={{ opacity: 1, scale: 1 }}
           theme={theme}
         >
-          <CompletionIcon>🎓</CompletionIcon>
+          <CompletionIcon>✅</CompletionIcon>
           <CompletionTitle theme={theme}>
-            ¡Preparación Completada Exitosamente!
+            ¡Checkpoint Completado!
           </CompletionTitle>
           <CompletionText theme={theme}>
-            Has demostrado comprensión del texto y completado las reflexiones de síntesis.
-            Los 5 artefactos académicos ya están desbloqueados para que puedas crear y recibir evaluación formativa.
+            Has activado tu comprensión del texto. Las 5 dimensiones de literacidad crítica
+            están desbloqueadas. Explora cada una a tu ritmo.
           </CompletionText>
 
           <ResultsGrid>
             <ResultCard theme={theme}>
-              <ResultLabel theme={theme}>Autoevaluación MCQ</ResultLabel>
+              <ResultLabel theme={theme}>Reflexión Inicial</ResultLabel>
               <ResultValue $success={mcqPercentage >= 70} theme={theme}>
                 {mcqScore}
               </ResultValue>
               <div style={{ fontSize: '0.85rem', color: mcqPercentage >= 70 ? '#10b981' : '#f59e0b', marginTop: '0.5rem' }}>
-                {mcqPercentage}% {mcqPercentage >= 70 ? '✅ Aprobado' : '⚠️ Aprobado'}
-              </div>
-            </ResultCard>
-
-            <ResultCard theme={theme}>
-              <ResultLabel theme={theme}>Preguntas de Síntesis</ResultLabel>
-              <ResultValue $success theme={theme}>
-                2/2
-              </ResultValue>
-              <div style={{ fontSize: '0.85rem', color: '#10b981', marginTop: '0.5rem' }}>
-                ✅ Completadas
+                {mcqPercentage}% ✅ Aprobado
               </div>
             </ResultCard>
           </ResultsGrid>
 
           <CompletionText theme={theme} style={{ marginTop: '1.5rem', fontSize: '0.95rem' }}>
-            💡 <strong>Siguiente paso:</strong> Ve a las pestañas de artefactos (Resumen Académico, Análisis del Discurso, etc.)
-            para crear tus trabajos y recibir evaluación criterial con feedback dual de IA.
+            💡 <strong>Siguiente paso:</strong> Elige una dimensión para comenzar.
+            Puedes practicar con preguntas reflexivas opcionales (+puntos extra) o ir directo a crear tu artefacto.
           </CompletionText>
-
-          <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#3b82f615', borderRadius: '8px' }}>
-            <div style={{ fontSize: '0.9rem', color: theme.textSecondary }}>
-              🔒 <strong>Nota:</strong> La preparación es un checkpoint único.
-              Una vez completada, no necesitas volver a hacerla.
-              Enfócate ahora en crear y mejorar tus artefactos académicos.
-            </div>
-          </div>
         </CompletionCard>
       </Container>
     );
   }
 
-  // Contenido normal si no ha completado la preparación
+  // Contenido: MCQ como checkpoint rápido de activación cognitiva
   return (
     <Container>
-      {/* Banner informativo */}
-      {!synthesisCompleted && (
-        <InfoBanner
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
+      <InfoBanner
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        theme={theme}
+      >
+        <InfoIcon>🧠</InfoIcon>
+        <InfoContent>
+          <InfoTitle theme={theme}>Checkpoint de Activación</InfoTitle>
+          <InfoText theme={theme}>
+            Responde estas preguntas reflexivas para activar tu comprensión del texto.
+            Al aprobar, se desbloquean las 5 dimensiones de literacidad crítica.
+            <strong> ~3 minutos</strong>
+          </InfoText>
+        </InfoContent>
+      </InfoBanner>
+
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        <MCQExercise
+          questions={mcqQuestions}
+          onComplete={handleMCQComplete}
+          initialResults={mcqResults}
           theme={theme}
-        >
-          <InfoIcon>💡</InfoIcon>
-          <InfoContent>
-            <InfoTitle theme={theme}>Preparación Obligatoria</InfoTitle>
-            <InfoText theme={theme}>
-              Completa esta preparación para desbloquear los artefactos académicos formales.
-              <strong> Paso 1:</strong> Autoevaluación rápida (5 MCQ) ·
-              <strong> Paso 2:</strong> Preguntas de síntesis (2 reflexiones) ·
-              <strong> Resultado:</strong> Acceso a los 5 artefactos evaluados
-            </InfoText>
-          </InfoContent>
-        </InfoBanner>
-      )}
-
-      {/* Tabs de navegación */}
-      <TabsContainer theme={theme}>
-        <Tab
-          $active={activeTab === 'mcq'}
-          onClick={() => setActiveTab('mcq')}
-          theme={theme}
-        >
-          📋 Autoevaluación Rápida
-          {mcqCompleted && ' ✅'}
-        </Tab>
-
-        <Tab
-          $active={activeTab === 'synthesis'}
-          $locked={!mcqCompleted}
-          onClick={() => mcqCompleted && setActiveTab('synthesis')}
-          disabled={!mcqCompleted}
-          theme={theme}
-        >
-          💭 Preguntas de Síntesis
-          {!mcqCompleted && <LockBadge>🔒</LockBadge>}
-          {synthesisCompleted && ' ✅'}
-        </Tab>
-      </TabsContainer>
-
-      {/* Contenido de las tabs */}
-      <AnimatePresence mode="wait">
-        {activeTab === 'mcq' && (
-          <motion.div
-            key="mcq"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <MCQExercise
-              questions={mcqQuestions}
-              onComplete={handleMCQComplete}
-              initialResults={mcqResults}
-              theme={theme}
-            />
-          </motion.div>
-        )}
-
-        {activeTab === 'synthesis' && mcqCompleted && (
-          <motion.div
-            key="synthesis"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.3 }}
-          >
-            <SynthesisQuestions
-              questions={synthesisQuestions}
-              onComplete={handleSynthesisComplete}
-              initialAnswers={synthesisAnswers}
-              theme={theme}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Mensaje de finalización */}
-      {synthesisCompleted && (
-        <InfoBanner
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          theme={theme}
-          style={{ marginTop: '2rem', borderColor: '#10b981', background: '#10b98110' }}
-        >
-          <InfoIcon>🎉</InfoIcon>
-          <InfoContent>
-            <InfoTitle theme={theme}>✅ ¡Preparación completada exitosamente!</InfoTitle>
-            <InfoText theme={theme}>
-              Has demostrado comprensión básica del texto y completado las reflexiones de síntesis.
-              Los artefactos académicos ya están desbloqueados.
-              <br /><br />
-              <strong>Siguiente paso:</strong> Navega a las otras pestañas (Resumen Académico, Análisis del Discurso, Mapa de Actores, etc.) para crear tus producciones formales con evaluación criterial.
-            </InfoText>
-          </InfoContent>
-        </InfoBanner>
-      )}
+        />
+      </motion.div>
     </Container>
   );
 };

@@ -3,8 +3,9 @@ import styled from 'styled-components';
 import { AppContext } from '../../context/AppContext';
 import GuidedPracticeMode from '../evaluacion/GuidedPracticeMode';
 import HintsSystem from '../evaluacion/HintsSystem';
-import { evaluarRespuesta, generarPregunta, generarHintsParaPregunta } from '../../services/evaluacionIntegral.service';
+import { evaluarRespuesta, generarPregunta, generarHintsParaPregunta, generarDesafioCruzado } from '../../services/evaluacionIntegral.service';
 import { evaluarConRetry, generarConRetry } from '../../services/retryWrapper';
+import { useRewards } from '../../context/PedagogyContext';
 
 const Box = styled.div`
   background: ${p => p.theme.cardBg};
@@ -199,10 +200,12 @@ const normalizeBullets = (text) => {
   return uniq;
 };
 
-export default function ModoPracticaGuiada({ theme, rubricProgress }) {
+export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimension }) {
   const { texto, completeAnalysis, updateRubricScore, currentTextoId } = useContext(AppContext);
-  const [selectedDimension, setSelectedDimension] = useState(null);
+  const { recordEvent } = useRewards() || {};
+  const [selectedDimension, setSelectedDimension] = useState(fixedDimension || null);
   const [practiceConfig, setPracticeConfig] = useState(null);
+  const [isCrossChallenge, setIsCrossChallenge] = useState(false);
   const hintsRef = useRef(null);
 
   const [question, setQuestion] = useState(null);
@@ -273,6 +276,7 @@ export default function ModoPracticaGuiada({ theme, rubricProgress }) {
           completeAnalysis,
           dimension: selectedDimension,
           nivelDificultad,
+          skipPrerequisitos: true,
           onProgress: (p) => setProgressStep(p?.step || null)
         }
       );
@@ -314,6 +318,7 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
           pregunta,
           nivelDificultad,
           count: 5,
+          skipPrerequisitos: true,
           onProgress: (p) => {
             if (p?.step) setProgressStep(p.step);
           }
@@ -374,12 +379,27 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
         });
       }
 
-      // 🎮 Hook mínimo a recompensas (no farmable): submission + dimension completed (dedupe)
+      // 🎮 Registrar recompensas por práctica opcional
       try {
-        const engine = window.__rewardsEngine;
         const resourceBase = `${lectureId || 'no-lectura'}:${selectedDimension}:${practiceConfig?.practiceId || 'practice'}`;
 
-        engine?.recordEvent?.('EVALUATION_SUBMITTED', {
+        // Recompensa por responder pregunta de práctica
+        recordEvent?.('PRACTICE_QUESTION_ANSWERED', {
+          resourceId: `${resourceBase}:answered`,
+          score: res?.score,
+          nivel: res?.nivel,
+          difficulty: practiceConfig?.difficulty || null
+        });
+
+        // Recompensa por desafío cruzado
+        if (isCrossChallenge) {
+          recordEvent?.('CROSS_CHALLENGE_COMPLETED', {
+            resourceId: `${resourceBase}:cross`,
+            score: res?.score
+          });
+        }
+
+        recordEvent?.('EVALUATION_SUBMITTED', {
           resourceId: `${resourceBase}:submitted`,
           score: res?.score,
           nivel: res?.nivel,
@@ -387,7 +407,7 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
         });
 
         if (Number(res?.nivel || 0) >= 3) {
-          engine?.recordEvent?.('DIMENSION_COMPLETED', {
+          recordEvent?.('PRACTICE_DIMENSION_COMPLETED', {
             resourceId: `${lectureId || 'no-lectura'}:${selectedDimension}`,
             score: res?.score,
             nivel: res?.nivel
@@ -402,7 +422,7 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
     } finally {
       setEvaluating(false);
     }
-  }, [texto, selectedDimension, question, answer, updateRubricScore, lectureId, practiceConfig]);
+  }, [texto, selectedDimension, question, answer, updateRubricScore, lectureId, practiceConfig, isCrossChallenge]);
 
   const dims = useMemo(() => ([
     { id: 'comprension_analitica', name: 'Comprensión Analítica', icon: '📚' },
@@ -411,6 +431,14 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
     { id: 'argumentacion', name: 'Argumentación', icon: '💭' },
     { id: 'metacognicion_etica_ia', name: 'Ética IA', icon: '🤖' }
   ]), []);
+
+  // Sync fixedDimension prop
+  useEffect(() => {
+    if (fixedDimension && fixedDimension !== selectedDimension) {
+      setSelectedDimension(fixedDimension);
+      setPracticeConfig(null);
+    }
+  }, [fixedDimension]); // eslint-disable-line
 
   useEffect(() => {
     if (!practiceConfig) return;
@@ -446,14 +474,54 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
     handleGenerateQuestionHints();
   }, [practiceConfig, question, handleGenerateQuestionHints]);
 
+  // Handler para desafío cruzado
+  const handleCrossChallenge = useCallback(async () => {
+    if (!texto || !selectedDimension) return;
+    setLoadingQuestion(true);
+    setIsCrossChallenge(true);
+    setError(null);
+    setFeedback(null);
+    setAnswer('');
+    setQuestionHints(null);
+    setProgressStep('generating');
+
+    // Elegir una segunda dimensión diferente al azar
+    const otherDims = dims.filter(d => d.id !== selectedDimension);
+    const secondDim = otherDims[Math.floor(Math.random() * otherDims.length)];
+
+    try {
+      const res = await generarConRetry(
+        generarDesafioCruzado,
+        {
+          texto,
+          completeAnalysis,
+          dimensionA: selectedDimension,
+          dimensionB: secondDim.id,
+          nivelDificultad,
+          onProgress: (p) => setProgressStep(p?.step || null)
+        }
+      );
+      setQuestion(res);
+    } catch (e) {
+      setQuestion(null);
+      setError(e?.message || 'No se pudo generar el desafío cruzado.');
+    } finally {
+      setLoadingQuestion(false);
+      setProgressStep(null);
+    }
+  }, [texto, selectedDimension, completeAnalysis, nivelDificultad, dims]);
+
   return (
-    <Box theme={theme} role="region" aria-label="Modo Práctica Guiada">
-      <Title theme={theme}>🎮 Modo Práctica Guiada</Title>
+    <Box theme={theme} role="region" aria-label="Práctica Guiada">
+      <Title theme={theme}>🎮 Práctica Guiada</Title>
       <Subtitle theme={theme}>
-        Practica sin impacto en tu evaluación sumativa. Selecciona una dimensión y activa el modo guiado para recibir un plan y hints.
+        Practica con preguntas reflexivas cortas. Sin impacto en tu evaluación sumativa.
+        Gana puntos extra por cada pregunta respondida. ¡Los desafíos cruzados otorgan bonus!
       </Subtitle>
 
-      <DimGrid>
+      {/* Solo mostrar grid de dimensiones si no hay fixedDimension */}
+      {!fixedDimension && (
+        <DimGrid>
         {dims.map((d) => (
           <DimBtn
             key={d.id}
@@ -471,11 +539,15 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
           </DimBtn>
         ))}
       </DimGrid>
+      )}
 
       <GuidedPracticeMode
         rubricProgress={rubricProgress}
         selectedDimension={selectedDimension}
-        onStartPractice={(cfg) => setPracticeConfig(cfg)}
+        onStartPractice={(cfg) => {
+          setIsCrossChallenge(false);
+          setPracticeConfig(cfg);
+        }}
         theme={theme}
       />
 
@@ -499,8 +571,8 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
         <PracticeCard theme={theme} aria-label="Pregunta de práctica">
           <PracticeHeader>
             <PracticeTitle theme={theme}>
-              <span>❓</span>
-              <span>Pregunta de práctica</span>
+              <span>{isCrossChallenge ? '⚡' : '❓'}</span>
+              <span>{isCrossChallenge ? 'Desafío Cruzado' : 'Pregunta de práctica'}</span>
             </PracticeTitle>
             <Meta theme={theme}>
               {selectedDimension ? `Dimensión: ${selectedDimension}` : 'Sin dimensión'}
@@ -525,7 +597,7 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
             </QuestionBox>
           )}
 
-          <AnswerLabel theme={theme}>Tu respuesta (mín. 50 caracteres)</AnswerLabel>
+          <AnswerLabel theme={theme}>Tu respuesta (mín. 30 caracteres)</AnswerLabel>
           <AnswerArea
             theme={theme}
             value={answer}
@@ -538,7 +610,7 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
             <ActionBtn
               theme={theme}
               type="button"
-              onClick={handleGeneratePracticeQuestion}
+              onClick={() => { setIsCrossChallenge(false); handleGeneratePracticeQuestion(); }}
               disabled={!texto || !selectedDimension || loadingQuestion || evaluating}
             >
               🔄 Nueva pregunta
@@ -547,10 +619,20 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
             <ActionBtn
               theme={theme}
               type="button"
+              onClick={handleCrossChallenge}
+              disabled={!texto || !selectedDimension || loadingQuestion || evaluating}
+              title="Desafío cruzado: combina 2 dimensiones (+50 pts bonus)"
+            >
+              ⚡ Desafío cruzado
+            </ActionBtn>
+
+            <ActionBtn
+              theme={theme}
+              type="button"
               $variant="primary"
               onClick={handleEvaluatePracticeAnswer}
-              disabled={!question?.pregunta || loadingQuestion || evaluating || (answer.trim().length < 50)}
-              title={answer.trim().length < 50 ? 'Tu respuesta debe tener al menos 50 caracteres' : 'Evaluar respuesta'}
+              disabled={!question?.pregunta || loadingQuestion || evaluating || (answer.trim().length < 30)}
+              title={answer.trim().length < 30 ? 'Tu respuesta debe tener al menos 30 caracteres' : 'Evaluar respuesta'}
             >
               {evaluating ? '⏳ Evaluando…' : '🧪 Evaluar respuesta'}
             </ActionBtn>

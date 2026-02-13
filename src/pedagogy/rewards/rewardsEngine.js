@@ -80,6 +80,11 @@ const REWARD_EVENTS = {
   // Entrega de artefactos
   ARTIFACT_SUBMITTED: { points: 20, label: '📦 Artefacto Entregado', dedupe: true },
 
+  // Práctica opcional (andamiaje)
+  PRACTICE_QUESTION_ANSWERED: { points: 8, label: '🎮 Pregunta de Práctica', dedupe: true },
+  PRACTICE_DIMENSION_COMPLETED: { points: 30, label: '🏅 Dimensión Practicada', dedupe: true },
+  CROSS_CHALLENGE_COMPLETED: { points: 50, label: '⚡ Desafío Cruzado Superado', dedupe: true },
+
   // 🆕 Evento sintético para recuperación de puntos legacy
   LEGACY_POINTS_RECOVERED: { points: 0, label: '📜 Puntos Recuperados (Historial Previo)', dedupe: false }
 };
