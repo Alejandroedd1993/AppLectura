@@ -100,9 +100,8 @@ export async function requireFirebaseAuth(req, res, next) {
 
     const projectId = getProjectId();
     if (!projectId) {
-      return res.status(500).json({
-        error: 'FIREBASE_PROJECT_ID no está configurado en el backend'
-      });
+      console.warn('⚠️ [firebaseAuth] ENFORCE_FIREBASE_AUTH=true pero FIREBASE_PROJECT_ID no está configurado. Se omite validación para evitar caída del servicio.');
+      return next();
     }
 
     const token = parseBearerToken(req);
