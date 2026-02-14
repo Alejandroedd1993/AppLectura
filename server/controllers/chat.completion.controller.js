@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+﻿import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -71,6 +71,7 @@ export async function createChatCompletion(req, res) {
       provider = 'deepseek',
       model,
       messages,
+      apiKey,
       temperature = 0.7,
       max_tokens = 1200,
       stream = false,
@@ -87,15 +88,17 @@ export async function createChatCompletion(req, res) {
     const configuredCap = safeNumber(process.env.CHAT_MAX_TOKENS_CAP, 4096);
     const resolvedMaxTokens = Math.min(Number(max_tokens || DEFAULT_MAX_TOKENS), configuredCap);
 
-    // Resolver API key efectiva (SIN fallbacks inseguros)
-    const effectiveApiKey = apiKey || cfg.apiKey;
-    if (!effectiveApiKey) {
-      return res.status(400).json({
-        error: `Falta API key para proveedor ${provider}. Configúrala en el servidor (.env) o envíala desde el cliente.`
+    // Seguridad: usar SIEMPRE API key del servidor (Render), nunca desde cliente
+    if (req.body && req.body.apiKey) {
+      console.warn('âš ï¸ [chat/completion] apiKey recibida desde cliente e ignorada por polÃ­tica de seguridad');
+    }
+    if (!cfg.apiKey) {
+      return res.status(503).json({
+        error: `Proveedor ${provider} no configurado en servidor`
       });
     }
 
-    const client = new OpenAI({ apiKey: effectiveApiKey, baseURL: cfg.baseURL });
+    const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
     const selectedModel = model || cfg.defaultModel;
 
     if (provider === 'openai') {
@@ -119,6 +122,16 @@ export async function createChatCompletion(req, res) {
       }
     }
 
+    if (provider === 'gemini') {
+      const allowed = parseAllowedModels(process.env.GEMINI_ALLOWED_MODELS, 'gemini-1.5-flash');
+      if (!allowed.has(selectedModel)) {
+        return res.status(400).json({
+          error: `Modelo Gemini no permitido: ${selectedModel}`,
+          allowed_models: Array.from(allowed)
+        });
+      }
+    }
+
     const logUsage = String(process.env.CHAT_USAGE_LOG || '').trim().toLowerCase() === 'true';
     const messageStats = summarizeMessages(messages);
     const requestTag = {
@@ -134,11 +147,11 @@ export async function createChatCompletion(req, res) {
       ua: req.get('user-agent') || ''
     };
 
-    // 🚀 CACHE CHECK: buscar respuesta cacheada antes de llamar a la API
+    // ðŸš€ CACHE CHECK: buscar respuesta cacheada antes de llamar a la API
     const cachedContent = getCachedResponse(messages, temperature, provider, selectedModel);
     if (cachedContent) {
       if (logUsage) {
-        console.log('⚡ [chat/completion] CACHE HIT', { ...requestTag, cached: true, stream: !!stream });
+        console.log('âš¡ [chat/completion] CACHE HIT', { ...requestTag, cached: true, stream: !!stream });
       }
       if (stream) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -183,7 +196,7 @@ export async function createChatCompletion(req, res) {
       });
 
       if (logUsage) {
-        console.log('📊 [chat/completion] stream start', requestTag);
+        console.log('ðŸ“Š [chat/completion] stream start', requestTag);
       }
 
       for await (const part of streamResp) {
@@ -215,7 +228,7 @@ export async function createChatCompletion(req, res) {
     const latencyMs = Date.now() - startTime;
 
     if (logUsage) {
-      console.log('📊 [chat/completion] usage', {
+      console.log('ðŸ“Š [chat/completion] usage', {
         ...requestTag,
         latencyMs,
         usage: completion.usage || null
@@ -238,7 +251,7 @@ export async function createChatCompletion(req, res) {
       latencyMs
     });
   } catch (error) {
-    console.error('❌ Error en createChatCompletion:', error);
+    console.error('âŒ Error en createChatCompletion:', error);
     const status = error.status || 500;
     res.status(status).json({ error: error.message || 'Error interno generando completion' });
   }
@@ -249,7 +262,8 @@ export function getChatCacheStats(req, res) {
     const stats = getCacheStats();
     return res.json(stats);
   } catch (error) {
-    console.error('❌ Error obteniendo cache stats:', error);
-    return res.status(500).json({ error: 'Error obteniendo estadísticas' });
+    console.error('âŒ Error obteniendo cache stats:', error);
+    return res.status(500).json({ error: 'Error obteniendo estadÃ­sticas' });
   }
 }
+
