@@ -92,10 +92,7 @@ function validateTokenClaims(payload, projectId) {
 
 export async function requireFirebaseAuth(req, res, next) {
   try {
-    const enforce = String(
-      process.env.ENFORCE_FIREBASE_AUTH ||
-      (process.env.NODE_ENV === 'production' ? 'true' : 'false')
-    ).toLowerCase() === 'true';
+    const enforce = String(process.env.ENFORCE_FIREBASE_AUTH || 'false').toLowerCase() === 'true';
 
     if (!enforce) {
       return next();
