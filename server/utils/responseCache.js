@@ -10,12 +10,12 @@ const CACHE_MAX_SIZE = parseInt(process.env.CACHE_MAX_SIZE || '500', 10);
 const cache = new Map();
 const cacheStats = { hits: 0, misses: 0, evictions: 0, totalSavedMs: 0 };
 
-function generateCacheKey(messages, temperature) {
+function generateCacheKey(messages, temperature, provider = '', model = '') {
   const relevantMessages = messages
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .map(m => `${m.role}:${m.content}`)
     .join('|');
-  const keyString = `${relevantMessages}|temp:${temperature}`;
+  const keyString = `${provider}:${model}|${relevantMessages}|temp:${temperature}`;
   return crypto.createHash('sha256').update(keyString).digest('hex').slice(0, 16);
 }
 
@@ -39,9 +39,9 @@ function evictIfNeeded() {
   }
 }
 
-export function getCachedResponse(messages, temperature = 0.7) {
+export function getCachedResponse(messages, temperature = 0.7, provider = '', model = '') {
   if (!CACHE_ENABLED) return null;
-  const key = generateCacheKey(messages, temperature);
+  const key = generateCacheKey(messages, temperature, provider, model);
   const entry = cache.get(key);
   if (!entry) {
     cacheStats.misses++;
@@ -59,12 +59,12 @@ export function getCachedResponse(messages, temperature = 0.7) {
   return entry.content;
 }
 
-export function setCachedResponse(messages, temperature, content, latencyMs = 0) {
+export function setCachedResponse(messages, temperature, content, latencyMs = 0, provider = '', model = '') {
   if (!CACHE_ENABLED) return;
   if (!content || typeof content !== 'string') return;
   if (content.startsWith('⚠️')) return;
   evictIfNeeded();
-  const key = generateCacheKey(messages, temperature);
+  const key = generateCacheKey(messages, temperature, provider, model);
   cache.set(key, {
     content,
     createdAt: Date.now(),

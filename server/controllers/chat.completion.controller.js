@@ -73,7 +73,6 @@ export async function createChatCompletion(req, res) {
       messages,
       temperature = 0.7,
       max_tokens = 1200,
-      apiKey,
       stream = false,
       response_format,
     } = req.body || {};
@@ -136,7 +135,7 @@ export async function createChatCompletion(req, res) {
     };
 
     // 🚀 CACHE CHECK: buscar respuesta cacheada antes de llamar a la API
-    const cachedContent = getCachedResponse(messages, temperature);
+    const cachedContent = getCachedResponse(messages, temperature, provider, selectedModel);
     if (cachedContent) {
       if (logUsage) {
         console.log('⚡ [chat/completion] CACHE HIT', { ...requestTag, cached: true, stream: !!stream });
@@ -199,7 +198,7 @@ export async function createChatCompletion(req, res) {
 
       const latencyMs = Date.now() - startTime;
       if (streamedContent.length > 10) {
-        setCachedResponse(messages, temperature, streamedContent, latencyMs);
+        setCachedResponse(messages, temperature, streamedContent, latencyMs, provider, selectedModel);
       }
       return res.end();
     }
@@ -227,7 +226,7 @@ export async function createChatCompletion(req, res) {
     const content = choice?.message?.content || '';
 
     if (content.length > 10) {
-      setCachedResponse(messages, temperature, content, latencyMs);
+      setCachedResponse(messages, temperature, content, latencyMs, provider, selectedModel);
     }
     return res.json({
       provider,

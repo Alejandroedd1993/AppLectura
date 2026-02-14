@@ -1,6 +1,7 @@
 import express from 'express';
 import { evaluateAnswer, evaluateComprehensive, bulkEvaluate } from '../controllers/assessment.controller.js';
 import { assessmentLimiter } from '../middleware/rateLimiters.js';
+import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 
 const router = express.Router();
 
@@ -64,6 +65,8 @@ const validateComprehensiveInput = (req, res, next) => {
 };
 
 // Rutas
+router.use(requireFirebaseAuth);
+
 router.post('/evaluate', assessmentLimiter, validateAssessmentInput, evaluateAnswer);
 router.post('/evaluate-comprehensive', assessmentLimiter, validateComprehensiveInput, evaluateComprehensive);
 router.post('/bulk-evaluate', assessmentLimiter, bulkEvaluate);

@@ -51,7 +51,7 @@ app.set('trust proxy', 1);
 // CONFIGURAR AI CLIENT PARA EVALUACIÓN CRITERIAL
 // ============================================================================
 const aiClient = {
-  async complete({ provider = 'deepseek', prompt, response_format }) {
+  async complete({ provider = 'deepseek', prompt, response_format, max_tokens = 2500 }) {
     // Configurar cliente según provider
     const config = {
       deepseek: {
@@ -73,8 +73,21 @@ const aiClient = {
       apiKey: selectedConfig.apiKey,
     });
 
+    // Construir response_format: pasar schema si el proveedor lo soporta
+    let resolvedFormat;
+    if (response_format?.type === 'json_object') {
+      resolvedFormat = { type: 'json_object' };
+      // OpenAI soporta json_schema con structured outputs
+      if (response_format.schema && provider === 'openai') {
+        resolvedFormat = {
+          type: 'json_schema',
+          json_schema: { name: 'evaluation', schema: response_format.schema, strict: false }
+        };
+      }
+    }
+
     try {
-      console.log(`🤖 [aiClient] Usando ${provider} con modelo ${selectedConfig.model}`);
+      console.log(`🤖 [aiClient] Usando ${provider} con modelo ${selectedConfig.model}, max_tokens: ${max_tokens}`);
       
       const completion = await client.chat.completions.create({
         model: selectedConfig.model,
@@ -83,8 +96,8 @@ const aiClient = {
           { role: 'user', content: prompt }
         ],
         temperature: 0.3,
-        max_tokens: 2500,
-        response_format: response_format?.type === 'json_object' ? { type: 'json_object' } : undefined
+        max_tokens,
+        response_format: resolvedFormat
       });
 
       const content = completion.choices[0].message.content;
