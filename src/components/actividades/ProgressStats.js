@@ -252,6 +252,27 @@ const NIVEL_CONFIG = {
 export default function ProgressStats({ rubricProgress }) {
   const stats = useMemo(() => {
     if (!rubricProgress) return null;
+
+    const hasSummativeAttempt = (summative) => {
+      if (!summative || typeof summative !== 'object') return false;
+      const status = String(summative.status || '').toLowerCase();
+      const attemptsUsed = Number(summative.attemptsUsed || 0);
+      return (
+        attemptsUsed > 0 ||
+        status === 'submitted' ||
+        status === 'graded' ||
+        Number(summative.submittedAt || 0) > 0 ||
+        Number(summative.gradedAt || 0) > 0
+      );
+    };
+
+    const getSummativeScore = (summative) => {
+      if (String(summative?.status || '').toLowerCase() !== 'graded') return 0;
+      const override = Number(summative?.teacherOverrideScore);
+      if (Number.isFinite(override) && override > 0) return override;
+      const score = Number(summative?.score);
+      return Number.isFinite(score) && score > 0 ? score : 0;
+    };
     
     const artefactos = [];
     let totalCompleted = 0;
@@ -265,21 +286,21 @@ export default function ProgressStats({ rubricProgress }) {
       const formativeScores = (data?.scores || []).filter(s => s.artefacto !== 'PracticaGuiada');
       const hasFormative = formativeScores.length > 0;
       const summative = data?.summative;
-      const summativeScoreNum = Number(summative?.score);
-      const hasSummative =
-        summative &&
-        summative.status === 'graded' &&
-        Number.isFinite(summativeScoreNum) &&
-        summativeScoreNum > 0;
+      const hasSummative = hasSummativeAttempt(summative);
+      const summativeScoreNum = getSummativeScore(summative);
       const hasAny = hasFormative || hasSummative;
       
       const lastFormative = hasFormative ? formativeScores[formativeScores.length - 1] : null;
       const formativeHighestScore = hasFormative ? Math.max(...formativeScores.map(s => s.score)) : 0;
       const formativeAttempts = formativeScores.length;
 
-      const scoreForNivel = lastFormative?.score ?? (hasSummative ? summativeScoreNum : 0);
-      const nivel = lastFormative?.nivel ?? summative?.nivel ?? (scoreForNivel > 0 ? Math.ceil(scoreForNivel / 2.5) : 0);
+      const scoreForNivel = hasSummative ? summativeScoreNum : (lastFormative?.score ?? 0);
+      const nivel = hasSummative
+        ? (summative?.nivel ?? (scoreForNivel > 0 ? Math.ceil(scoreForNivel / 2.5) : 0))
+        : (lastFormative?.nivel ?? (scoreForNivel > 0 ? Math.ceil(scoreForNivel / 2.5) : 0));
       const isCompleted = scoreForNivel > 0 && nivel >= 3; // Nivel 3+ considerado completado
+
+      const summativeAttempts = hasSummative ? Math.max(1, Number(summative?.attemptsUsed || 1)) : 0;
 
       artefactos.push({
         rubricId,
@@ -300,8 +321,8 @@ export default function ProgressStats({ rubricProgress }) {
       if (hasAny) {
         dimensionesEvaluadas++;
         if (isCompleted) totalCompleted++;
-        totalScore += (lastFormative?.score ?? (hasSummative ? summativeScoreNum : 0));
-        totalAttempts += formativeAttempts + (hasSummative ? 1 : 0);
+        totalScore += scoreForNivel;
+        totalAttempts += formativeAttempts + summativeAttempts;
       }
     });
     

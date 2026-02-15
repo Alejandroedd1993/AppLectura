@@ -4,8 +4,19 @@
  */
 
 import { fetchWithTimeout } from '../utils/netUtils';
+import { auth } from '../firebase/config';
 
 import logger from '../utils/logger';
+async function getAuthHeader() {
+  try {
+    const idToken = await auth?.currentUser?.getIdToken?.();
+    return idToken ? { Authorization: `Bearer ${idToken}` } : {};
+  } catch (err) {
+    logger.warn('[webSearchService] No se pudo obtener Firebase ID token:', err?.message || err);
+    return {};
+  }
+}
+
 class WebSearchService {
   constructor() {
     this.providers = {
@@ -50,13 +61,14 @@ class WebSearchService {
         type: options.analysisType || 'general',
         maxResults: searchOptions.maxResults
       };
+      const authHeader = await getAuthHeader();
 
       logger.log('📤 [webSearchService] Enviando petición a /api/web-search:', requestBody);
 
       // ✅ USAR BACKEND en lugar de llamar APIs externas directamente
       const response = await fetchWithTimeout('/api/web-search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify(requestBody)
       }, 60000); // 60 segundos timeout para búsquedas
 

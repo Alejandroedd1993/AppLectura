@@ -3,6 +3,7 @@
 
 import { fetchWithTimeout } from '../utils/netUtils';
 import { getBackendUrl } from '../utils/backendUtils';
+import { auth } from '../firebase/config';
 import { CHAT_TIMEOUT_MS, NETWORK_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 const defaultModels = {
@@ -17,18 +18,28 @@ const defaultModels = {
  * @param {Array} opts.messages - [{ role, content }]
  * @param {String} [opts.provider='deepseek'] - 'deepseek' | 'openai' | 'gemini'
  * @param {String} [opts.model] - opcional, auto por provider si no se pasa
- * @param {String} [opts.apiKey] - opcional, se envía solo si se define
  * @param {Number} [opts.temperature=0.7]
  * @param {Number} [opts.max_tokens=800]
  * @param {AbortSignal} [opts.signal]
  * @param {Number} [opts.timeoutMs=30000]
  * @returns {Promise<Object>} JSON de respuesta del backend (estilo OpenAI)
  */
+async function getAuthHeader() {
+  try {
+    const user = auth?.currentUser;
+    if (!user) return {};
+    const idToken = await user.getIdToken();
+    if (!idToken) return {};
+    return { Authorization: `Bearer ${idToken}` };
+  } catch {
+    return {};
+  }
+}
+
 export async function chatCompletion({
   messages,
   provider = 'deepseek',
   model,
-  apiKey,
   temperature = 0.7,
   max_tokens = 800,
   response_format,
@@ -42,32 +53,20 @@ export async function chatCompletion({
     messages,
     temperature,
     max_tokens,
-    ...(apiKey ? { apiKey } : {}),
     ...(response_format ? { response_format } : {})
   };
 
-  const doRequest = async (bodyPayload) => fetchWithTimeout(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(bodyPayload),
-    signal
-  }, timeoutMs);
+  const doRequest = async (bodyPayload) => {
+    const authHeader = await getAuthHeader();
+    return fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader },
+      body: JSON.stringify(bodyPayload),
+      signal
+    }, timeoutMs);
+  };
 
-  let res = await doRequest(payload);
-
-  // Fallback automático: si la apiKey enviada por cliente es inválida (401),
-  // reintentar SIN apiKey para usar la del servidor.
-  if (!res.ok && res.status === 401 && apiKey) {
-    const retryPayload = {
-      provider,
-      model: model || defaultModels[provider] || defaultModels.openai,
-      messages,
-      temperature,
-      max_tokens,
-      ...(response_format ? { response_format } : {})
-    };
-    res = await doRequest(retryPayload);
-  }
+  const res = await doRequest(payload);
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -88,9 +87,10 @@ export async function chatCompletion({
  */
 export async function analyzeText({ texto, api = 'deepseek', extra = {}, signal, timeoutMs = NETWORK_TIMEOUT_MS }) {  // 🆕 A5 FIX
   const url = `${getBackendUrl()}/api/analysis/text`;
+  const authHeader = await getAuthHeader();
   const res = await fetchWithTimeout(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader },
     body: JSON.stringify({ texto, api, ...extra }),
     signal
   }, timeoutMs);

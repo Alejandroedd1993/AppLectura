@@ -10,6 +10,7 @@ import { procesarArchivo } from '../utils/fileProcessor';
 import { checkBackendAvailability, processPdfWithBackend } from '../utils/backendUtils';
 import { checkUnsaveDrafts, getWarningMessage } from '../utils/checkUnsaveDrafts';
 import { hashText } from '../utils/netUtils';
+import { uploadSessionPdfFile } from '../firebase/firestore';
 
 // Componentes de UI
 import AlertMessage from '../components/AlertMessage';
@@ -252,10 +253,11 @@ function CargaTexto() {
     currentTextoId,
     rubricProgress,
     activitiesProgress, // 🆕 FASE 4: Para verificar artefactos ya entregados
-    switchLecture
+    switchLecture,
+    currentUser
   } = useContext(AppContext);
 
-  const { isDocente } = useAuth();
+  const { isDocente: _isDocente } = useAuth();
 
   const theme = modoOscuro ? darkTheme : lightTheme;
 
@@ -503,6 +505,26 @@ function CargaTexto() {
       const derivedFileName = archivoFuente?.name || archivoSeleccionado?.name || null;
       const derivedFileType = archivoFuente?.type || archivoSeleccionado?.type || null;
 
+      let persistedFileURL = null;
+      const selectedOriginalFile = archivoFuente || null;
+      const isPdfOriginal = !!selectedOriginalFile && (
+        String(selectedOriginalFile.type || '').toLowerCase() === 'application/pdf' ||
+        String(selectedOriginalFile.name || '').toLowerCase().endsWith('.pdf')
+      );
+
+      if (isPdfOriginal && currentUser?.uid) {
+        try {
+          persistedFileURL = await uploadSessionPdfFile({
+            file: selectedOriginalFile,
+            userId: currentUser.uid,
+            textoId: newTextoId
+          });
+          logger.log('✅ [CargaTexto] fileURL persistente creada para PDF local');
+        } catch (uploadError) {
+          logger.warn('⚠️ [CargaTexto] No se pudo subir PDF para restauración futura:', uploadError?.message || uploadError);
+        }
+      }
+
       if (switchLecture && typeof switchLecture === 'function') {
         logger.log('🔁 [CargaTexto] switchLecture() con nuevo textoId:', newTextoId);
         switchLecture({
@@ -511,7 +533,7 @@ function CargaTexto() {
           content: contenidoFinal,
           fileName: derivedFileName,
           fileType: derivedFileType,
-          fileURL: null
+          fileURL: persistedFileURL || null
         });
       } else {
         // Fallback conservador
@@ -568,6 +590,7 @@ function CargaTexto() {
             name: resolvedName,
             type: isPdfFile ? 'application/pdf' : (resolvedType || 'text/plain'),
             size: resolvedSize,
+            fileURL: isPdfFile ? (persistedFileURL || null) : null,
             objectUrl,
             lastUpdated: Date.now()
           });
@@ -592,7 +615,7 @@ function CargaTexto() {
     } finally {
       setLoading(false);
     }
-  }, [archivoSeleccionado, textoIngresado, setTexto, setLoading, setError, analyzeDocument, switchLecture, currentTextoId, rubricProgress, texto, archivoFuente, setArchivoActual, archivoActual, setCompleteAnalysis, setTextStructure]);
+  }, [archivoSeleccionado, textoIngresado, setTexto, setLoading, setError, analyzeDocument, switchLecture, currentTextoId, rubricProgress, texto, archivoFuente, setArchivoActual, archivoActual, setCompleteAnalysis, setTextStructure, currentUser]);
 
   // Quitar archivo seleccionado
   const removeFile = useCallback(() => {
@@ -764,11 +787,8 @@ function CargaTexto() {
       )}
 
 
-      {/* Historial de Sesiones - Solo visible para docentes */}
-      {/* Para estudiantes, el historial está integrado en "Mis Cursos" */}
-      {isDocente && (
-        <SessionsHistory theme={modoOscuro ? darkTheme : lightTheme} />
-      )}
+      {/* Historial de Sesiones - Visible para todos los usuarios */}
+      <SessionsHistory theme={modoOscuro ? darkTheme : lightTheme} />
     </CargaContainer>
   );
 }

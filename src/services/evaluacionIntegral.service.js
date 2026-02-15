@@ -30,28 +30,6 @@ function buildFallbackDesafioCruzado({ dimA, dimB }) {
   return `¿Cómo se relacionan ${dimA?.nombre || 'la primera dimensión'} y ${dimB?.nombre || 'la segunda dimensión'} para sostener (o cuestionar) el sentido principal del texto?`;
 }
 
-function getClientOpenAIApiKey() {
-  if (typeof window === 'undefined' || !window.localStorage) return undefined;
-
-  try {
-    const direct = window.localStorage.getItem('openai_api_key');
-    if (direct && direct.trim()) return direct.trim();
-
-    // Compatibilidad con keys scopeadas por usuario: openai_api_key:<uid>
-    for (let i = 0; i < window.localStorage.length; i += 1) {
-      const key = window.localStorage.key(i);
-      if (key && key.startsWith('openai_api_key:')) {
-        const scoped = window.localStorage.getItem(key);
-        if (scoped && scoped.trim()) return scoped.trim();
-      }
-    }
-  } catch (err) {
-    logger.warn('⚠️ No se pudo leer openai_api_key desde localStorage', err);
-  }
-
-  return undefined;
-}
-
 const BIAS_SAFETY_RULES = `
 EQUIDAD Y NO DISCRIMINACIÓN (OBLIGATORIO):
 - No uses estereotipos, lenguaje racista/sexista ni generalizaciones sobre grupos.
@@ -70,7 +48,7 @@ const DIMENSION_MAP = {
   acd: 'acd',
   contextualizacion: 'contextualizacion',
   argumentacion: 'argumentacion',
-  metacognicion_etica_ia: 'comprensionAnalitica' // Fallback temporal hasta implementar esta dimensión
+  metacognicion_etica_ia: 'argumentacion' // Mapeo más afín en pensamiento crítico/ético
 };
 
 /**
@@ -168,7 +146,7 @@ ${BIAS_SAFETY_RULES}
 TAREA: Genera UNA pregunta REFLEXIVA de nivel ${nivelDificultad} que evalúe la dimensión "${rubricDimension.nombre}".
 
 CRITERIOS DE LA PREGUNTA:
-${rubricDimension.criterios?.map((c, idx) => `${idx + 1}. ${c.nombre}: ${c.descripcion}`).join('\n') || ''}
+${rubricDimension.criterios?.map((c, idx) => `${idx + 1}. ${typeof c === 'string' ? c : `${c.nombre}: ${c.descripcion}`}`).join('\n') || ''}
 
 PREGUNTAS GUÍA DE LA RÚBRICA:
 ${rubricDimension.preguntasGuia?.map((p, idx) => `${idx + 1}. ${p}`).join('\n') || ''}
@@ -192,11 +170,9 @@ IMPORTANTE - ESTILO DE PREGUNTA:
 Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto de la pregunta).`;
 
   try {
-    const apiKey = getClientOpenAIApiKey();
     const response = await chatCompletion({
       provider: 'openai',
       model: OPENAI_MODEL,
-      apiKey,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
       max_tokens: 300, // ⬆️ Aumentado para preguntas complejas
@@ -324,11 +300,9 @@ Responde SOLO con un JSON válido: un array de strings.
 Ejemplo: ["hint 1", "hint 2", "hint 3"]`;
 
   try {
-    const apiKey = getClientOpenAIApiKey();
     const response = await chatCompletion({
       provider: 'openai',
       model: OPENAI_MODEL,
-      apiKey,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.4,
       max_tokens: 450,
@@ -601,11 +575,9 @@ Responde SOLO con JSON:
   "mejoras_estructurales": ["mejora 1"]
 }`;
 
-  const apiKey = getClientOpenAIApiKey();
   const response = await chatCompletion({
     provider: 'openai',
     model: OPENAI_MODEL,
-    apiKey,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.2,
     max_tokens: 800,
@@ -692,11 +664,9 @@ Responde SOLO con JSON:
   "oportunidades_profundizacion": ["sugerencia 1"]
 }`;
 
-  const apiKey = getClientOpenAIApiKey();
   const response = await chatCompletion({
     provider: 'openai',
     model: OPENAI_MODEL,
-    apiKey,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.3,
     max_tokens: 1000,
@@ -913,11 +883,9 @@ REGLAS:
 Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto).`;
 
   try {
-    const apiKey = getClientOpenAIApiKey();
     const response = await chatCompletion({
       provider: 'openai',
       model: OPENAI_MODEL,
-      apiKey,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.75,
       max_tokens: 300,

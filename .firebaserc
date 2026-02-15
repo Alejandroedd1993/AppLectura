@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "applectura-cb058"
-  }
+  },
+  "targets": {
+    "applectura-cb058": {
+      "hosting": {
+        "applectura": [
+          "applectura-cb058"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

@@ -4,7 +4,7 @@
  * @version 2.0.0
  */
 
-import React, { useState, useContext, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useContext, useMemo, useCallback } from 'react';
 import { AppContext } from '../../context/AppContext';
 // Usar el entrypoint de hooks que exporta el hook estable (useNotasEstudioHook)
 import useNotasEstudio from '../../hooks/notes';
@@ -25,8 +25,8 @@ import useMediaQuery from '../../hooks/useMediaQuery';
  */
 const NotasEstudio = () => {
   // Contexto global
-  const { texto, modoOscuro, completeAnalysis, notasAutoGeneradas, currentTextoId } = useContext(AppContext);
-  
+  const { texto, modoOscuro, completeAnalysis, currentTextoId } = useContext(AppContext);
+
   // Hook personalizado para gestión de estado (ahora con análisis completo)
   const {
     notas,
@@ -50,21 +50,13 @@ const NotasEstudio = () => {
   // Estado local para la visibilidad del panel
   const [mostrarConfiguracion, setMostrarConfiguracion] = useState(false);
   const [mostrarPractice, setMostrarPractice] = useState(false);
-  const [mostrarNotificacion, setMostrarNotificacion] = useState(false);
+
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
 
   // Hook de study items (mismo texto) para mostrar conteo rápido
   const { dueItems, items } = useStudyItems(texto, currentTextoId);
 
-  const hasCompleteAnalysis = !!completeAnalysis;
 
-  // 🆕 FASE 2: Detectar cuando hay análisis disponible y notas no generadas
-  useEffect(() => {
-    if (hasCompleteAnalysis && notasAutoGeneradas && !notas) {
-      setMostrarNotificacion(true);
-      logger.log('🎓 [NotasEstudio] Análisis disponible, mostrando notificación');
-    }
-  }, [hasCompleteAnalysis, notasAutoGeneradas, notas]);
 
   // Tema basado en modo oscuro
   const theme = useMemo(() => ({
@@ -80,7 +72,7 @@ const NotasEstudio = () => {
     lightText: modoOscuro ? '#aaa' : '#666'
   }), [modoOscuro]);
 
-  const isSmallScreen = useMediaQuery('(max-width: 640px)');
+
   const isNarrowScreen = useMediaQuery('(max-width: 768px)');
 
   // Función para alternar la visibilidad del panel de configuración
@@ -115,7 +107,7 @@ const NotasEstudio = () => {
   // Mensaje de estado cuando no hay texto
   if (!texto) {
     return (
-      <div style={{ 
+      <div style={{
         backgroundColor: theme.background,
         color: theme.text,
         padding: '20px',
@@ -129,7 +121,7 @@ const NotasEstudio = () => {
   }
 
   return (
-    <div style={{ 
+    <div style={{
       backgroundColor: theme.background,
       color: theme.text,
       padding: isNarrowScreen ? tokens.spacing.md : tokens.spacing.lg,
@@ -140,143 +132,18 @@ const NotasEstudio = () => {
     }}>
       <NotasAnimations />
 
-      {/* 🆕 FASE 2: Notificación de notas disponibles - MEJORADO */}
-      {mostrarNotificacion && !notas && hasCompleteAnalysis && (
-        <>
-          <div style={{
-            backgroundColor: theme.secondary,
-            color: '#fff',
-            padding: tokens.spacing.lg,
-            borderRadius: tokens.borderRadius.lg,
-            marginBottom: tokens.spacing.lg,
-            display: 'flex',
-            flexDirection: isSmallScreen ? 'column' : 'row',
-            gap: tokens.spacing.md,
-            alignItems: isSmallScreen ? 'stretch' : 'center',
-            boxShadow: tokens.boxShadow.lg,
-            animation: 'slideDown 0.3s ease-out',
-            border: `1px solid ${theme.secondary}`
-          }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: tokens.spacing.sm,
-                marginBottom: tokens.spacing.sm
-              }}>
-                <span style={{ fontSize: tokens.fontSize.xl }}>✅</span>
-                <strong style={{ 
-                  fontSize: tokens.fontSize.lg,
-                  fontWeight: tokens.fontWeight.bold
-                }}>
-                  ¡Análisis completo disponible!
-                </strong>
-              </div>
-              <p style={{ 
-                margin: 0, 
-                fontSize: tokens.fontSize.base, 
-                opacity: 0.95,
-                lineHeight: tokens.lineHeight.relaxed
-              }}>
-                Las notas de estudio se pueden generar usando el contexto completo del análisis académico realizado.
-              </p>
-            </div>
-            
-            <div style={{ 
-              display: 'flex', 
-              gap: tokens.spacing.sm,
-              flexDirection: isSmallScreen ? 'column' : 'row',
-              alignItems: 'stretch'
-            }}>
-              <button
-                onClick={() => {
-                  setMostrarNotificacion(false);
-                  regenerarNotas();
-                }}
-                style={{
-                  backgroundColor: '#fff',
-                  color: theme.secondary,
-                  border: 'none',
-                  borderRadius: tokens.borderRadius.md,
-                  padding: `${tokens.spacing.md} ${tokens.spacing.lg}`,
-                  cursor: 'pointer',
-                  fontWeight: tokens.fontWeight.bold,
-                  fontSize: tokens.fontSize.base,
-                  whiteSpace: 'nowrap',
-                  boxShadow: tokens.boxShadow.md,
-                  transition: tokens.transition.all,
-                  minHeight: tokens.components.button.minHeight
-                }}
-                onMouseOver={(e) => {
-                  e.target.style.transform = 'translateY(-2px)';
-                  e.target.style.boxShadow = tokens.boxShadow.lg;
-                }}
-                onMouseOut={(e) => {
-                  e.target.style.transform = 'translateY(0)';
-                  e.target.style.boxShadow = tokens.boxShadow.md;
-                }}
-                onFocus={(e) => {
-                  e.target.style.transform = 'translateY(-2px)';
-                  e.target.style.boxShadow = tokens.boxShadow.lg;
-                }}
-                onBlur={(e) => {
-                  e.target.style.transform = 'translateY(0)';
-                  e.target.style.boxShadow = tokens.boxShadow.md;
-                }}
-              >
-                Generar Notas Ahora
-              </button>
-              
-              <button
-                onClick={() => setMostrarNotificacion(false)}
-                style={{
-                  backgroundColor: 'transparent',
-                  color: '#fff',
-                  border: `${tokens.borderWidth.normal} solid rgba(255,255,255,0.5)`,
-                  borderRadius: tokens.borderRadius.md,
-                  padding: `${tokens.spacing.sm} ${tokens.spacing.md}`,
-                  cursor: 'pointer',
-                  fontSize: tokens.fontSize.base,
-                  fontWeight: tokens.fontWeight.medium,
-                  transition: tokens.transition.all,
-                  minHeight: tokens.components.button.minHeight
-                }}
-                onMouseOver={(e) => {
-                  e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                  e.target.style.borderColor = 'rgba(255,255,255,0.8)';
-                }}
-                onMouseOut={(e) => {
-                  e.target.style.backgroundColor = 'transparent';
-                  e.target.style.borderColor = 'rgba(255,255,255,0.5)';
-                }}
-                onFocus={(e) => {
-                  e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                  e.target.style.borderColor = 'rgba(255,255,255,0.8)';
-                }}
-                onBlur={(e) => {
-                  e.target.style.backgroundColor = 'transparent';
-                  e.target.style.borderColor = 'rgba(255,255,255,0.5)';
-                }}
-              >
-                Ahora no
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-      
       {/* Header con botón de configuración */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'flex-start',
         marginBottom: tokens.spacing.lg,
         gap: tokens.spacing.md,
         flexWrap: 'wrap'
       }}>
         <div style={{ flex: 1, minWidth: '250px' }}>
-          <h2 style={{ 
-            color: theme.text, 
+          <h2 style={{
+            color: theme.text,
             margin: `0 0 ${tokens.spacing.xs} 0`,
             fontSize: tokens.fontSize['2xl'],
             fontWeight: tokens.fontWeight.bold,
@@ -310,15 +177,15 @@ const NotasEstudio = () => {
             </div>
           )}
         </div>
-        
-        <div style={{ 
-          display: 'flex', 
+
+        <div style={{
+          display: 'flex',
           gap: tokens.spacing.sm,
           flexWrap: 'wrap'
         }}>
           {/* Solo mostrar botón de práctica si hay items de estudio */}
           {items?.length > 0 && (
-            <button 
+            <button
               onClick={() => setMostrarPractice(p => !p)}
               aria-expanded={mostrarPractice}
               style={{
@@ -351,31 +218,31 @@ const NotasEstudio = () => {
               )}
             </button>
           )}
-          <button 
+          <button
             onClick={toggleConfiguracion}
-          aria-expanded={mostrarConfiguracion}
-          aria-controls="panel-configuracion"
-          style={{
-            backgroundColor: mostrarConfiguracion ? theme.secondary : 'transparent',
-            color: mostrarConfiguracion ? '#fff' : theme.secondary,
-            border: `${tokens.borderWidth.normal} solid ${theme.secondary}`,
-            borderRadius: tokens.borderRadius.md,
-            padding: `${tokens.spacing.md} ${tokens.spacing.lg}`,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: tokens.spacing.sm,
-            fontWeight: tokens.fontWeight.semibold,
-            fontSize: tokens.fontSize.base,
-            minHeight: tokens.components.button.minHeight,
-            transition: tokens.transition.normal
-          }}
-        >
-          <span>{mostrarConfiguracion ? 'Ocultar' : 'Mostrar'} configuración</span>
-          <span style={{
-            transition: tokens.transition.transform,
-            transform: mostrarConfiguracion ? 'rotate(180deg)' : 'rotate(0deg)'
-          }}>▼</span>
+            aria-expanded={mostrarConfiguracion}
+            aria-controls="panel-configuracion"
+            style={{
+              backgroundColor: mostrarConfiguracion ? theme.secondary : 'transparent',
+              color: mostrarConfiguracion ? '#fff' : theme.secondary,
+              border: `${tokens.borderWidth.normal} solid ${theme.secondary}`,
+              borderRadius: tokens.borderRadius.md,
+              padding: `${tokens.spacing.md} ${tokens.spacing.lg}`,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: tokens.spacing.sm,
+              fontWeight: tokens.fontWeight.semibold,
+              fontSize: tokens.fontSize.base,
+              minHeight: tokens.components.button.minHeight,
+              transition: tokens.transition.normal
+            }}
+          >
+            <span>{mostrarConfiguracion ? 'Ocultar' : 'Mostrar'} configuración</span>
+            <span style={{
+              transition: tokens.transition.transform,
+              transform: mostrarConfiguracion ? 'rotate(180deg)' : 'rotate(0deg)'
+            }}>▼</span>
           </button>
         </div>
       </div>
@@ -463,7 +330,7 @@ const NotasEstudio = () => {
 
       {/* Panel de configuración */}
       {mostrarConfiguracion && (
-        <ConfiguracionPanel 
+        <ConfiguracionPanel
           theme={theme}
           tipoTexto={tipoTexto}
           setTipoTexto={setTipoTexto}
@@ -500,22 +367,22 @@ const NotasEstudio = () => {
       {cargando ? (
         <LoadingSpinner theme={theme} />
       ) : error ? (
-        <ErrorDisplay 
-          error={error} 
-          onRetry={regenerarNotas} 
-          theme={theme} 
-          modoOscuro={modoOscuro} 
+        <ErrorDisplay
+          error={error}
+          onRetry={regenerarNotas}
+          theme={theme}
+          modoOscuro={modoOscuro}
         />
       ) : (
         <div>
           {notas ? (
             <>
               <NotasContenido notas={notas} theme={theme} />
-              <CronogramaRepaso 
-                cronograma={cronograma} 
-                notasRepasadas={notasRepasadas} 
-                theme={theme} 
-                marcarRepasoCompletado={marcarRepasoCompletado} 
+              <CronogramaRepaso
+                cronograma={cronograma}
+                notasRepasadas={notasRepasadas}
+                theme={theme}
+                marcarRepasoCompletado={marcarRepasoCompletado}
               />
             </>
           ) : (

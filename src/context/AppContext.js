@@ -29,6 +29,7 @@ import {
   mergeSessions,
   subscribeToUserSessions
 } from '../firebase/firestore';
+import { auth } from '../firebase/config';
 // (firebase/sessionManager) quedó deprecado en AppContext; se mantiene en otros módulos.
 import { useSessionMaintenance } from '../hooks/useSessionMaintenance';
 import useFirestorePersistence from '../hooks/useFirestorePersistence';
@@ -47,8 +48,8 @@ export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhos
 logger.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
 
 // 1. Crear el Contexto
-export const 
-AppContext = createContext();
+export const
+  AppContext = createContext();
 
 /**
  * Este componente Provider encapsula la lógica del estado global
@@ -592,6 +593,21 @@ export const AppContextProvider = ({ children }) => {
     logger.log('✅ [AppContext] Lectura cambiada atómicamente con sesión aislada');
   }, []);
 
+  // 🆕 MODO ENFOQUE GLOBAL - Única fuente de verdad para toda la app
+  const [focusMode, _setFocusMode] = useState(false);
+
+  const setFocusMode = useCallback((val) => {
+    logger.log('🎯 [AppContext] Cambiando modo enfoque:', val);
+    _setFocusMode(val);
+  }, []);
+
+  const toggleFocusMode = useCallback(() => {
+    _setFocusMode(prev => {
+      logger.log('🎯 [AppContext] toggleFocusMode:', !prev);
+      return !prev;
+    });
+  }, []);
+
   // Debug wrapper para compatibilidad
   const setTextoWithDebug = useCallback((nuevoTexto) => {
     logger.log('🔄 AppContext - Estableciendo nuevo texto, longitud:', nuevoTexto?.length || 0);
@@ -736,7 +752,7 @@ export const AppContextProvider = ({ children }) => {
   // 🛡️ NO guardar si está vacío - evita sobrescribir datos buenos durante el cambio de lectura
   useEffect(() => {
     if (!currentUser?.uid || !currentTextoId || disableLocalProgressMirror || useFirestorePersistenceHook) return;
-    
+
     // 🛡️ PROTECCIÓN: No guardar estado vacío en localStorage
     // Esto evita sobrescribir datos existentes durante el reseteo al cambiar de lectura
     const hasData = Object.keys(rubricProgress).some(k => (rubricProgress[k]?.formative?.scores?.length || rubricProgress[k]?.scores?.length || 0) > 0);
@@ -744,7 +760,7 @@ export const AppContextProvider = ({ children }) => {
       logger.log(`ℹ️ [AppContext] Omitiendo guardar rubricProgress vacío para ${currentTextoId}`);
       return;
     }
-    
+
     const key = rubricProgressKey(currentUser.uid, currentTextoId);
     localStorage.setItem(key, JSON.stringify(rubricProgress));
     logger.log(`💾 [AppContext] rubricProgress guardado en localStorage para ${currentTextoId}`);
@@ -774,21 +790,30 @@ export const AppContextProvider = ({ children }) => {
 
         // 🔄 DETECTAR RESET: Si lastResetAt existe, limpiar datos locales
         if (progress?.lastResetAt) {
-          const resetTime = progress.lastResetAt?.seconds 
-            ? progress.lastResetAt.seconds * 1000 
+          const resetTime = progress.lastResetAt?.seconds
+            ? progress.lastResetAt.seconds * 1000
             : (typeof progress.lastResetAt === 'number' ? progress.lastResetAt : 0);
-          
+
           if (resetTime > 0) {
             logger.log('🔄 [AppContext] Reset detectado en Firestore, limpiando localStorage...');
-            
+
             // Limpiar localStorage de rubricProgress
             const rubricKey = rubricProgressKey(currentUser.uid, currentTextoId);
             localStorage.removeItem(rubricKey);
-            
+
             // Limpiar localStorage de activitiesProgress
             const activitiesKey = activitiesProgressKey(currentUser.uid, currentTextoId);
             localStorage.removeItem(activitiesKey);
-            
+
+            // 🔧 CRITICAL FIX: También limpiar el firestore_backup_* para evitar restauración zombie
+            try {
+              const backupKey = `firestore_backup_${currentUser.uid}_${currentTextoId}`;
+              localStorage.removeItem(backupKey);
+              logger.log('🧹 [AppContext] firestore_backup limpiado tras reset inicial');
+            } catch (e) {
+              // Silencioso
+            }
+
             // Limpiar cualquier key de activity_results_ relacionada
             Object.keys(localStorage).forEach(k => {
               if (k.includes('activity_results_') && k.includes(currentTextoId)) {
@@ -796,7 +821,7 @@ export const AppContextProvider = ({ children }) => {
                 logger.log('🧹 [AppContext] Limpiado localStorage key:', k);
               }
             });
-            
+
             // Aplicar datos de Firestore (reseteados) directamente
             if (progress.rubricProgress) {
               setRubricProgress(normalizeRubricProgress(progress.rubricProgress));
@@ -811,7 +836,7 @@ export const AppContextProvider = ({ children }) => {
         if (progress?.rubricProgress && Object.keys(progress.rubricProgress).length > 0) {
           // 🔄 También verificar si alguna rúbrica individual tiene resetAt
           const anyResetAt = Object.values(progress.rubricProgress).some(r => r?.resetAt);
-          
+
           if (anyResetAt) {
             logger.log('🔄 [AppContext] Reset de rúbrica detectado, reemplazando datos');
             const rubricKey = rubricProgressKey(currentUser.uid, currentTextoId);
@@ -819,7 +844,7 @@ export const AppContextProvider = ({ children }) => {
             setRubricProgress(normalizeRubricProgress(progress.rubricProgress));
             return;
           }
-          
+
           // Tiene progreso guardado en Firestore para ESTA lectura específica
           // 🛡️ REEMPLAZAR (no merge) - los datos de Firestore son la fuente de verdad
           // El useEffect anterior ya cargó datos locales; si cloud tiene datos más completos, usarlos
@@ -827,31 +852,38 @@ export const AppContextProvider = ({ children }) => {
             const normalizedCloud = normalizeRubricProgress(progress.rubricProgress);
             const normalizedLocal = normalizeRubricProgress(prevLocal);
             // Comparar: si cloud tiene más datos o es más reciente, usar cloud
-            const cloudHasData = Object.keys(normalizedCloud).some(k => 
+            const cloudHasData = Object.keys(normalizedCloud).some(k =>
               (normalizedCloud[k]?.scores?.length || normalizedCloud[k]?.formative?.scores?.length || 0) > 0
             );
-            const localHasData = Object.keys(normalizedLocal).some(k => 
+            const localHasData = Object.keys(normalizedLocal).some(k =>
               (normalizedLocal[k]?.scores?.length || normalizedLocal[k]?.formative?.scores?.length || 0) > 0
             );
-            
+
             // Si solo cloud tiene datos, usar cloud
             if (cloudHasData && !localHasData) {
               logger.log('✅ [AppContext] rubricProgress cargado desde Firestore (cloud tiene datos, local vacío)');
               return normalizedCloud;
             }
-            
+
             // Si ambos tienen datos, hacer merge por timestamp
             if (cloudHasData && localHasData) {
               const merged = createEmptyRubricProgressV2();
               const allKeys = new Set([...Object.keys(normalizedLocal), ...Object.keys(normalizedCloud)]);
-              
+
               allKeys.forEach(rubricKey => {
                 const cloudRubric = normalizedCloud[rubricKey];
                 const localRubric = normalizedLocal[rubricKey];
-                
+
+                // 🔧 FIX: Si cloud tiene resetAt, SIEMPRE usar cloud (fue reseteado por docente)
+                if (cloudRubric?.resetAt) {
+                  logger.log(`🔄 [AppContext] Rúbrica ${rubricKey} reseteada por docente, usando datos del cloud`);
+                  merged[rubricKey] = cloudRubric;
+                  return;
+                }
+
                 const cloudTime = cloudRubric?.lastUpdate || 0;
                 const localTime = localRubric?.lastUpdate || 0;
-                
+
                 if (cloudTime > localTime && cloudRubric?.scores?.length) {
                   merged[rubricKey] = cloudRubric;
                 } else if (localRubric?.scores?.length) {
@@ -859,7 +891,7 @@ export const AppContextProvider = ({ children }) => {
                 } else if (cloudRubric?.scores?.length) {
                   merged[rubricKey] = cloudRubric;
                 }
-                
+
                 // 🏆 SIEMPRE preservar teacherOverrideScore del cloud (el docente es la fuente de verdad)
                 if (cloudRubric?.teacherOverrideScore > 0) {
                   if (!merged[rubricKey]) merged[rubricKey] = localRubric || cloudRubric || {};
@@ -870,11 +902,11 @@ export const AppContextProvider = ({ children }) => {
                   };
                 }
               });
-              
+
               logger.log('✅ [AppContext] rubricProgress MERGED (cloud+local) para texto:', currentTextoId);
               return normalizeRubricProgress(merged);
             }
-            
+
             // Si solo local tiene datos, mantener local
             logger.log('ℹ️ [AppContext] Manteniendo datos locales (cloud vacío)');
             return normalizedLocal;
@@ -1047,12 +1079,12 @@ export const AppContextProvider = ({ children }) => {
     const currentDocId = currentTextoIdRef.current || 'global_progress';
 
     // 🔄 DETECTAR RESET: Si Firestore tiene lastResetAt, verificar si es más reciente
-    const remoteResetAt = progressData.lastResetAt?.seconds 
-      ? progressData.lastResetAt.seconds * 1000 
+    const remoteResetAt = progressData.lastResetAt?.seconds
+      ? progressData.lastResetAt.seconds * 1000
       : (typeof progressData.lastResetAt === 'number' ? progressData.lastResetAt : 0);
-    
+
     const hasRecentReset = remoteResetAt > 0;
-    
+
     if (hasRecentReset) {
       logger.log('🔄 [AppContext] Detectado RESET desde Firestore, timestamp:', new Date(remoteResetAt).toISOString());
     }
@@ -1086,7 +1118,7 @@ export const AppContextProvider = ({ children }) => {
               return normalizedRemote;
             }
           }
-          
+
           const mergedRubrics = { ...normalizedLocal };
           let hasChanges = false;
 
@@ -1152,7 +1184,7 @@ export const AppContextProvider = ({ children }) => {
             // 🔄 Detectar reset en artefactos - PRIORIDAD A DATOS REMOTOS SI HAY RESET
             const remoteArtifacts = remoteDoc?.artifacts || {};
             const anyArtifactReset = Object.values(remoteArtifacts).some(a => a?.resetBy === 'docente');
-            
+
             if (anyArtifactReset || hasRecentReset) {
               // 🆕 SIEMPRE usar datos remotos si hay resetBy='docente' en cualquier artefacto
               // El docente tiene autoridad para resetear, así que sus datos tienen prioridad
@@ -1600,7 +1632,19 @@ export const AppContextProvider = ({ children }) => {
 
   // Setter estable para archivo actual
   const setArchivoActualStable = useCallback((archivo) => {
-    setArchivoActual(archivo || null);
+    const normalizedFile = archivo || null;
+    setArchivoActual(normalizedFile);
+
+    // Mantener activeLecture sincronizado con metadata de archivo para restauraciones futuras
+    if (normalizedFile && typeof normalizedFile === 'object') {
+      setActiveLecture(prev => ({
+        ...prev,
+        fileName: normalizedFile.name || normalizedFile.fileName || prev.fileName || null,
+        fileType: normalizedFile.type || normalizedFile.fileType || prev.fileType || null,
+        fileURL: normalizedFile.fileURL || normalizedFile.url || prev.fileURL || null,
+        lastModified: Date.now()
+      }));
+    }
   }, []);
 
   // NUEVO: Setter estable para estructura del texto
@@ -1792,41 +1836,41 @@ export const AppContextProvider = ({ children }) => {
         : Math.max(Number(current.summative?.attemptsUsed || 0), Number(essayData.attemptsUsed || 1));
       const shouldEnableRevision = isDraft
         ? Boolean(current.summative?.allowRevision || false)
-        : (essayData.allowRevision !== undefined 
-            ? Boolean(essayData.allowRevision)
-            : (nextAttemptsUsed === 1 && score != null) || Boolean(current.summative?.allowRevision));
+        : (essayData.allowRevision !== undefined
+          ? Boolean(essayData.allowRevision)
+          : (nextAttemptsUsed === 1 && score != null) || Boolean(current.summative?.allowRevision));
 
       // 🆕 Para borradores: guardar en draftContent sin tocar essayContent (la versión calificada)
       const nextSummative = isDraft
         ? {
-            ...(current.summative || {}),
-            draftContent: essayData.essayContent || essayData.draftContent || current.summative?.draftContent || null,
-            draftDimension: essayData.dimension || current.summative?.draftDimension || null,
-            draftSavedAt: now,
-            // Preservar todos los campos calificados existentes
-            score: current.summative?.score ?? null,
-            nivel: current.summative?.nivel ?? null,
-            status: current.summative?.status === 'graded' ? 'graded' : 'draft',
-            submittedAt,
-            gradedAt,
-            attemptsUsed: nextAttemptsUsed,
-            allowRevision: shouldEnableRevision,
-          }
+          ...(current.summative || {}),
+          draftContent: essayData.essayContent || essayData.draftContent || current.summative?.draftContent || null,
+          draftDimension: essayData.dimension || current.summative?.draftDimension || null,
+          draftSavedAt: now,
+          // Preservar todos los campos calificados existentes
+          score: current.summative?.score ?? null,
+          nivel: current.summative?.nivel ?? null,
+          status: current.summative?.status === 'graded' ? 'graded' : 'draft',
+          submittedAt,
+          gradedAt,
+          attemptsUsed: nextAttemptsUsed,
+          allowRevision: shouldEnableRevision,
+        }
         : {
-            ...(current.summative || {}),
-            ...essayData,
-            score,
-            nivel,
-            status,
-            submittedAt,
-            gradedAt,
-            attemptsUsed: nextAttemptsUsed,
-            allowRevision: shouldEnableRevision,
-            // Limpiar borrador al enviar oficialmente
-            draftContent: null,
-            draftDimension: null,
-            draftSavedAt: null,
-          };
+          ...(current.summative || {}),
+          ...essayData,
+          score,
+          nivel,
+          status,
+          submittedAt,
+          gradedAt,
+          attemptsUsed: nextAttemptsUsed,
+          allowRevision: shouldEnableRevision,
+          // Limpiar borrador al enviar oficialmente
+          draftContent: null,
+          draftDimension: null,
+          draftSavedAt: null,
+        };
 
       const finalScore = score != null ? score : (current.finalScore != null ? Number(current.finalScore) : null);
       const certified = Number.isFinite(finalScore) ? finalScore >= 6 : Boolean(current.certified);
@@ -2317,7 +2361,7 @@ export const AppContextProvider = ({ children }) => {
         logger.log('🗑️ [AppContext] Reset de puntos detectado, sincronizando inmediatamente...');
         logger.log('🗑️ [AppContext] Usuario actual para reset:', currentUser?.uid);
         if (debounceTimer) clearTimeout(debounceTimer);
-        
+
         // Sincronizar inmediatamente
         (async () => {
           try {
@@ -2341,7 +2385,7 @@ export const AppContextProvider = ({ children }) => {
             logger.log('🗑️ [AppContext] Llamando saveGlobalProgress con uid:', currentUser.uid);
             await saveGlobalProgress(progressData);
             logger.log('✅ [AppContext] Reset de puntos sincronizado a Firestore para uid:', currentUser.uid);
-            
+
             // Marcar como recién sincronizado desde local para evitar que el listener lo sobrescriba
             lastRewardsStateFromCloudAtRef.current = Date.now();
           } catch (error) {
@@ -2746,11 +2790,22 @@ export const AppContextProvider = ({ children }) => {
         return null;
       }
 
+      const resolvedFileURL = archivoActual?.fileURL || activeLecture?.fileURL || null;
+      const resolvedFileName = archivoActual?.name || activeLecture?.fileName || 'texto_manual';
+      const resolvedFileType = archivoActual?.type || activeLecture?.fileType || 'text/plain';
+
+      const normalizedArchivoActual = {
+        ...(archivoActual || {}),
+        name: resolvedFileName,
+        type: resolvedFileType,
+        fileURL: resolvedFileURL
+      };
+
       const sessionData = {
         texto,
         currentTextoId, // 🆕
         sourceCourseId, // 🆕 CRÍTICO: ID del curso para sincronización
-        archivoActual,
+        archivoActual: normalizedArchivoActual,
         completeAnalysis,
         rubricProgress,
         savedCitations,
@@ -2774,7 +2829,7 @@ export const AppContextProvider = ({ children }) => {
       logger.error('❌ [AppContext.createSession] Stack:', error.stack);
       return null;
     }
-  }, [texto, archivoActual, completeAnalysis, rubricProgress, savedCitations, activitiesProgress, modoOscuro, currentTextoId, sourceCourseId, currentUser, userData]);
+  }, [texto, archivoActual, activeLecture, completeAnalysis, rubricProgress, savedCitations, activitiesProgress, modoOscuro, currentTextoId, sourceCourseId, currentUser, userData]);
 
   // 🆕 NUEVA FUNCIÓN: Actualizar sesión actual con cambios
   const updateCurrentSessionFromState = useCallback(async () => {
@@ -2890,7 +2945,45 @@ export const AppContextProvider = ({ children }) => {
         // 🆕 CRÍTICO: Si es un PDF con fileURL, descargar el archivo para poder mostrarlo
         const isPDF = session.text?.fileType === 'application/pdf' ||
           session.text?.fileName?.toLowerCase().endsWith('.pdf');
-        let fileURL = session.text?.fileURL;
+        let fileURL =
+          session.text?.fileURL ||
+          session.text?.metadata?.fileURL ||
+          activeLecture?.fileURL ||
+          archivoActual?.fileURL ||
+          null;
+
+        // 🆕 FALLBACK LOCAL: intentar recuperar fileURL desde otras sesiones del mismo texto
+        if (isPDF && !fileURL) {
+          try {
+            const textoIdForLookup = session.currentTextoId || session.text?.metadata?.id || session.text?.textoId || null;
+            const fileNameForLookup = session.text?.fileName || session.text?.metadata?.fileName || null;
+            const candidates = getAllSessions();
+
+            const match = candidates.find((candidate) => {
+              const candidateFileURL = candidate?.text?.fileURL || candidate?.text?.metadata?.fileURL || null;
+              if (!candidateFileURL) return false;
+
+              const candidateTextoId = candidate?.currentTextoId || candidate?.text?.metadata?.id || candidate?.text?.textoId || null;
+              if (textoIdForLookup && candidateTextoId && candidateTextoId === textoIdForLookup) {
+                return true;
+              }
+
+              const candidateFileName = candidate?.text?.fileName || candidate?.text?.metadata?.fileName || null;
+              if (!textoIdForLookup && fileNameForLookup && candidateFileName === fileNameForLookup) {
+                return true;
+              }
+
+              return false;
+            });
+
+            if (match) {
+              fileURL = match.text?.fileURL || match.text?.metadata?.fileURL || null;
+              logger.log('✅ [AppContext] fileURL recuperada desde otra sesión local/cloud');
+            }
+          } catch (localRecoverError) {
+            logger.warn('⚠️ [AppContext] No se pudo recuperar fileURL desde sesiones locales:', localRecoverError);
+          }
+        }
 
         // 🆕 FALLBACK: Si no hay fileURL pero tenemos textoId, buscar en Firestore
         if (isPDF && !fileURL && (session.currentTextoId || session.text?.metadata?.id)) {
@@ -2910,44 +3003,82 @@ export const AppContextProvider = ({ children }) => {
         }
 
         if (isPDF && fileURL) {
-          logger.log('📄 [AppContext] Restaurando PDF desde Storage...');
-          try {
-            const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
-            const proxyUrl = `${BACKEND_BASE_URL}/api/storage/proxy?url=${encodeURIComponent(fileURL)}`;
-            const res = await fetch(proxyUrl);
+          logger.log('📄 [AppContext] Restaurando PDF. fileURL:', fileURL?.substring(0, 80));
+          let pdfRestored = false;
 
-            if (res.ok) {
-              const blob = await res.blob();
-              const objectUrl = URL.createObjectURL(blob);
-              const file = new File([blob], session.text.fileName, { type: session.text.fileType });
-
-              setArchivoActualStable({
-                name: session.text.fileName,
-                type: session.text.fileType,
-                fileURL: fileURL,
-                file: file,
-                objectUrl: objectUrl
-              });
-              logger.log('✅ [AppContext] PDF restaurado correctamente');
-            } else {
-              logger.warn('⚠️ [AppContext] No se pudo descargar el PDF, mostrando como texto');
-              setArchivoActualStable({
-                name: session.text.fileName,
-                type: session.text.fileType
-              });
+          // ── INTENTO 1: Fetch DIRECTO desde Firebase Storage (sin proxy) ──
+          if (!pdfRestored) {
+            try {
+              logger.log('📄 [AppContext] Intento 1: fetch directo...');
+              const directRes = await fetch(fileURL, { mode: 'cors' });
+              if (directRes.ok) {
+                const blob = await directRes.blob();
+                if (blob.size > 500) { // Sanity: un PDF real pesa >500 bytes
+                  const objectUrl = URL.createObjectURL(blob);
+                  const file = new File([blob], session.text.fileName || 'documento.pdf', { type: 'application/pdf' });
+                  setArchivoActualStable({ name: session.text.fileName, type: 'application/pdf', fileURL, file, objectUrl });
+                  logger.log('✅ [AppContext] PDF restaurado via fetch directo:', blob.size, 'bytes');
+                  pdfRestored = true;
+                }
+              }
+            } catch (directErr) {
+              logger.warn('⚠️ [AppContext] Fetch directo falló (CORS?):', directErr.message);
             }
-          } catch (pdfError) {
-            logger.warn('⚠️ [AppContext] Error descargando PDF:', pdfError);
-            setArchivoActualStable({
-              name: session.text.fileName,
-              type: session.text.fileType
-            });
           }
+
+          // ── INTENTO 2: Proxy backend ──
+          if (!pdfRestored) {
+            try {
+              logger.log('📄 [AppContext] Intento 2: proxy backend...');
+              const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+              const proxyUrl = `${BACKEND_BASE_URL}/api/storage/proxy?url=${encodeURIComponent(fileURL)}`;
+              const proxyRes = await fetch(proxyUrl);
+              if (proxyRes.ok) {
+                const blob = await proxyRes.blob();
+                if (blob.size > 500) {
+                  const objectUrl = URL.createObjectURL(blob);
+                  const file = new File([blob], session.text.fileName || 'documento.pdf', { type: 'application/pdf' });
+                  setArchivoActualStable({ name: session.text.fileName, type: 'application/pdf', fileURL, file, objectUrl });
+                  logger.log('✅ [AppContext] PDF restaurado via proxy:', blob.size, 'bytes');
+                  pdfRestored = true;
+                }
+              }
+            } catch (proxyErr) {
+              logger.warn('⚠️ [AppContext] Proxy falló:', proxyErr.message);
+            }
+          }
+
+          // ── INTENTO 3: Pasar URL directa a react-pdf (sin descargar previamente) ──
+          if (!pdfRestored) {
+            logger.log('📄 [AppContext] Intento 3: pasando URL directa a visor PDF');
+            setArchivoActualStable({
+              name: session.text.fileName || 'documento.pdf',
+              type: 'application/pdf',
+              fileURL: fileURL,
+              objectUrl: fileURL  // react-pdf intentará cargarlo internamente
+            });
+            pdfRestored = true; // No ideal, pero al menos le da una oportunidad al visor
+          }
+        } else if (isPDF && !fileURL) {
+          // PDF sin URL - establecer archivoActual para que VisorTexto muestre diagnóstico
+          logger.warn('⚠️ [AppContext] PDF detectado pero sin fileURL. textoId:', session.currentTextoId);
+          setArchivoActualStable({
+            name: session.text?.fileName || 'documento.pdf',
+            type: 'application/pdf',
+            fileURL: null,
+            __pdfDiag: {
+              textoId: session.currentTextoId || session.text?.metadata?.id || 'N/A',
+              fileName: session.text?.fileName || 'N/A',
+              sessionId: session.id || 'N/A',
+              reason: 'fileURL no encontrada en sesión, sesiones locales, ni Firestore'
+            }
+          });
         } else if (session.text?.fileName && session.text?.fileType) {
           // Texto plano - solo guardar referencia
           setArchivoActualStable({
             name: session.text.fileName,
-            type: session.text.fileType
+            type: session.text.fileType,
+            fileURL: fileURL || null
           });
         }
 
@@ -2964,7 +3095,7 @@ export const AppContextProvider = ({ children }) => {
         const sessionRubricKeys = Object.keys(session.rubricProgress || {}).filter(
           k => (session.rubricProgress[k]?.formative?.scores?.length || session.rubricProgress[k]?.scores?.length || 0) > 0
         );
-        
+
         if (currentUser?.uid && textoIdRestored && sessionRubricKeys.length === 0) {
           logger.log('🔄 [AppContext] Sesión sin rúbricas, intentando cargar desde Firestore...');
           try {
@@ -3002,7 +3133,7 @@ export const AppContextProvider = ({ children }) => {
         logger.log('🔓 [AppContext] Auto-guardado re-habilitado y protección liberada');
       }, 500);
     }
-  }, [setTextoWithDebug, setCompleteAnalysis, setArchivoActualStable, setRubricProgress, setSavedCitations, setActivitiesProgress, setCurrentTextoId, setSourceCourseId]);
+  }, [setTextoWithDebug, setCompleteAnalysis, setArchivoActualStable, setRubricProgress, setSavedCitations, setActivitiesProgress, setCurrentTextoId, setSourceCourseId, currentUser, activeLecture, archivoActual]);
 
   // 🆕 AUTO-GUARDAR sesión cuando el análisis se complete
   useEffect(() => {
@@ -3321,6 +3452,16 @@ export const AppContextProvider = ({ children }) => {
     // Identificador efectivo: el pasado por parámetro (prioridad) o el más reciente del estado
     const effectiveId = textId || currentTextoIdRef.current;
 
+    // Cuota mensual para análisis libre (solo estudiantes): 4 análisis/mes
+    const FREE_ANALYSIS_MONTHLY_LIMIT = 4;
+    const getMonthlyQuotaKey = (uid) => {
+      const now = new Date();
+      const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      return `free_analysis_quota_${uid}_${monthKey}`;
+    };
+
+    const isFreeAnalysisMode = !sourceCourseIdRef.current;
+
     // 🆕 FIX CRÍTICO: Capturar TODO el estado AL INICIO para evitar closure stale
     // Estos valores se usarán cuando el análisis termine, incluso si el usuario cambió de lectura
     const capturedState = {
@@ -3479,6 +3620,101 @@ export const AppContextProvider = ({ children }) => {
       }
     }
 
+    // 🔒 Límite de análisis libre: máximo 4 por mes por alumno
+    // Se evalúa tras cachés para no consumir cuota cuando hay cache hit.
+    // Persistencia dual: localStorage (rápido) + Firestore global_progress (multi-dispositivo).
+    if (!forceReanalyze && isStudent && currentUser?.uid && isFreeAnalysisMode) {
+      try {
+        const uid = currentUser.uid;
+        const now = new Date();
+        const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const quotaKey = getMonthlyQuotaKey(uid);
+
+        // 1) Leer cuota local
+        const localRaw = localStorage.getItem(quotaKey);
+        const localUsage = localRaw ? JSON.parse(localRaw) : { count: 0, updatedAt: null };
+        const localCount = Number.isFinite(Number(localUsage?.count)) ? Number(localUsage.count) : 0;
+
+        // 2) Leer cuota cloud (global_progress) para sincronizar entre dispositivos
+        let cloudCount = 0;
+        try {
+          const cloudProgress = await getStudentProgress(uid, 'global_progress');
+          const cloudMonthCount = cloudProgress?.freeAnalysisQuota?.[monthKey]?.count;
+          cloudCount = Number.isFinite(Number(cloudMonthCount)) ? Number(cloudMonthCount) : 0;
+        } catch (cloudReadError) {
+          logger.warn('⚠️ [AppContext.analyzeDocument] No se pudo leer cuota desde Firestore (se usa fallback local):', cloudReadError?.message || cloudReadError);
+        }
+
+        // Usar el máximo para evitar subcontar en escenarios multi-dispositivo
+        const syncedCount = Math.max(localCount, cloudCount);
+
+        if (syncedCount >= FREE_ANALYSIS_MONTHLY_LIMIT) {
+          const message = `Has alcanzado tu cuota de análisis libre (${FREE_ANALYSIS_MONTHLY_LIMIT} por mes). Intenta de nuevo el próximo mes o continúa con lecturas de curso.`;
+          logger.warn('⛔ [AppContext.analyzeDocument] Cuota mensual de análisis libre alcanzada:', {
+            uid,
+            localCount,
+            cloudCount,
+            syncedCount,
+            limit: FREE_ANALYSIS_MONTHLY_LIMIT
+          });
+
+          // Mantener localStorage alineado con el máximo conocido
+          localStorage.setItem(quotaKey, JSON.stringify({
+            count: syncedCount,
+            updatedAt: Date.now(),
+            monthKey,
+            source: cloudCount >= localCount ? 'cloud' : 'local'
+          }));
+
+          setError(message);
+          setLoading(false);
+          setAnalysisAttempted(true);
+          return;
+        }
+
+        const nextCount = syncedCount + 1;
+
+        // 3) Persistir local inmediato
+        localStorage.setItem(quotaKey, JSON.stringify({
+          count: nextCount,
+          updatedAt: Date.now(),
+          monthKey,
+          lastTextoId: effectiveId || null,
+          source: 'local+cloud'
+        }));
+
+        // 4) Persistir cloud (best effort) en students/{uid}/progress/global_progress
+        // Campo nuevo: freeAnalysisQuota.{YYYY-MM}.count
+        try {
+          await saveStudentProgress(uid, 'global_progress', {
+            freeAnalysisQuota: {
+              [monthKey]: {
+                count: nextCount,
+                limit: FREE_ANALYSIS_MONTHLY_LIMIT,
+                updatedAt: Date.now(),
+                scope: 'free-analysis'
+              }
+            },
+            syncType: 'free_analysis_quota'
+          });
+        } catch (cloudWriteError) {
+          logger.warn('⚠️ [AppContext.analyzeDocument] No se pudo guardar cuota en Firestore (se mantiene local):', cloudWriteError?.message || cloudWriteError);
+        }
+
+        logger.log('📊 [AppContext.analyzeDocument] Cuota análisis libre consumida:', {
+          uid,
+          monthKey,
+          localCount,
+          cloudCount,
+          used: nextCount,
+          remaining: Math.max(0, FREE_ANALYSIS_MONTHLY_LIMIT - nextCount),
+          limit: FREE_ANALYSIS_MONTHLY_LIMIT
+        });
+      } catch (quotaError) {
+        logger.warn('⚠️ [AppContext.analyzeDocument] No se pudo validar cuota de análisis libre:', quotaError?.message || quotaError);
+      }
+    }
+
     setLoading(true);
     setError('');
     setAnalysisAttempted(true);
@@ -3535,12 +3771,22 @@ export const AppContextProvider = ({ children }) => {
         // Crear AbortController con timeout de 5 minutos (alineado con backend)
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 segundos
+        let authHeader = {};
+        try {
+          const idToken = await auth?.currentUser?.getIdToken?.();
+          if (idToken) {
+            authHeader = { Authorization: `Bearer ${idToken}` };
+          }
+        } catch (tokenError) {
+          logger.warn('[AppContext] No se pudo obtener Firebase ID token para prelecture:', tokenError?.message || tokenError);
+        }
 
         // 🆕 A4 FIX: Llamada al backend con retry automático para errores de red
         const response = await fetchWithRetry(`${BACKEND_URL}/api/analysis/prelecture`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...authHeader
           },
           body: JSON.stringify({
             text: text,
@@ -3854,7 +4100,7 @@ export const AppContextProvider = ({ children }) => {
       logger.error('❌ [AppContext] Error en análisis profundo de background:', err);
     });
 
-  }, [texto, archivoActual, rubricProgress, savedCitations, modoOscuro, setCompleteAnalysis]);
+  }, [texto, archivoActual, rubricProgress, savedCitations, modoOscuro, setCompleteAnalysis, currentUser?.uid, isStudent]);
 
   // MEJORA: Añadir un efecto para actualizar la clase en el body y mejorar la consistencia del tema.
   useEffect(() => {
@@ -3962,28 +4208,28 @@ export const AppContextProvider = ({ children }) => {
 
         // 🔄 DETECTAR RESET: Si lastResetAt existe, limpiar datos locales ANTES del merge
         if (initialData.lastResetAt) {
-          const resetTime = initialData.lastResetAt?.seconds 
-            ? initialData.lastResetAt.seconds * 1000 
+          const resetTime = initialData.lastResetAt?.seconds
+            ? initialData.lastResetAt.seconds * 1000
             : (typeof initialData.lastResetAt === 'number' ? initialData.lastResetAt : 0);
-          
+
           if (resetTime > 0) {
             logger.log('🔄 [AppContext] RESET DETECTADO en carga inicial - limpiando datos locales...');
-            
+
             // Limpiar localStorage
             const rubricKey = rubricProgressKey(currentUser.uid, progressDocId);
             const activitiesKey = activitiesProgressKey(currentUser.uid, progressDocId);
             localStorage.removeItem(rubricKey);
             localStorage.removeItem(activitiesKey);
-            
+
             // Limpiar cualquier key relacionada
             Object.keys(localStorage).forEach(k => {
-              if ((k.includes('activity_results_') || k.includes('rubric') || k.includes('activities')) 
-                  && k.includes(progressDocId)) {
+              if ((k.includes('activity_results_') || k.includes('rubric') || k.includes('activities'))
+                && k.includes(progressDocId)) {
                 localStorage.removeItem(k);
                 logger.log('🧹 [AppContext] Limpiado localStorage key:', k);
               }
             });
-            
+
             // Aplicar datos reseteados de Firestore directamente (sin merge)
             if (initialData.rubricProgress) {
               setRubricProgress(normalizeRubricProgress(initialData.rubricProgress));
@@ -3991,32 +4237,32 @@ export const AppContextProvider = ({ children }) => {
             } else {
               setRubricProgress(emptyRubricProgress);
             }
-            
+
             if (initialData.activitiesProgress) {
               setActivitiesProgress(initialData.activitiesProgress);
               logger.log('✅ [AppContext] activitiesProgress reemplazado tras reset (carga inicial)');
             } else {
               setActivitiesProgress({});
             }
-            
+
             // Emitir evento para que componentes UI se actualicen
             window.dispatchEvent(new CustomEvent('progress-reset-from-teacher', {
               detail: { type: 'full-reset', timestamp: resetTime }
             }));
-            
+
             // Marcar que Firebase terminó de cargar
             if (typeof window !== 'undefined') {
               window.__firebaseUserLoading = false;
             }
-            
+
             return; // Salir temprano, no hacer merge
           }
         }
-        
+
         // 🔄 También detectar reset parcial en artefactos individuales
         const checkArtifactResets = (activitiesData) => {
           if (!activitiesData) return { hasResets: false, resetArtifacts: [] };
-          
+
           const resetArtifacts = [];
           Object.keys(activitiesData).forEach(docId => {
             const doc = activitiesData[docId];
@@ -4028,35 +4274,35 @@ export const AppContextProvider = ({ children }) => {
               }
             });
           });
-          
+
           return { hasResets: resetArtifacts.length > 0, resetArtifacts };
         };
-        
+
         const { hasResets, resetArtifacts } = checkArtifactResets(initialData.activitiesProgress);
         if (hasResets) {
           logger.log('🔄 [AppContext] Reset parcial detectado en artefactos:', resetArtifacts);
-          
+
           // Limpiar localStorage para actividades
           const activitiesKey = activitiesProgressKey(currentUser.uid, progressDocId);
           localStorage.removeItem(activitiesKey);
-          
+
           // Aplicar activitiesProgress de Firestore directamente
           setActivitiesProgress(initialData.activitiesProgress);
-          
+
           // También actualizar rubricProgress correspondiente
           if (initialData.rubricProgress) {
             setRubricProgress(normalizeRubricProgress(initialData.rubricProgress));
           }
-          
+
           window.dispatchEvent(new CustomEvent('progress-reset-from-teacher', {
             detail: { type: 'artifact-reset', artifacts: resetArtifacts }
           }));
-          
+
           // Marcar que Firebase terminó de cargar
           if (typeof window !== 'undefined') {
             window.__firebaseUserLoading = false;
           }
-          
+
           return; // Salir temprano
         }
 
@@ -4179,20 +4425,50 @@ export const AppContextProvider = ({ children }) => {
         if (backup) {
           logger.log('📦 [AppContext] Usando firestore_backup_* como fallback de progreso');
 
-          if (backup.rubricProgress && Object.keys(backup.rubricProgress).length > 0) {
-            lastRubricProgressFromCloudAtRef.current = Date.now();
-            setRubricProgress(prevLocal => ({
-              ...normalizeRubricProgress(prevLocal),
-              ...normalizeRubricProgress(backup.rubricProgress)
-            }));
-          }
+          // 🔧 CRITICAL FIX: Si el backup tiene lastResetAt, verificar que no sea data pre-reset.
+          // Si hay un reset reciente, NO aplicar backup — los datos están reseteados en Firestore
+          // y el backup local puede contener datos antiguos (pre-reset).
+          const backupResetAt = (() => {
+            const lr = backup.lastResetAt;
+            if (!lr) return 0;
+            if (lr?.seconds) return lr.seconds * 1000;
+            if (typeof lr === 'number') return lr;
+            return 0;
+          })();
 
-          if (backup.activitiesProgress && Object.keys(backup.activitiesProgress).length > 0) {
-            lastActivitiesProgressFromCloudAtRef.current = Date.now();
-            setActivitiesProgress(prevLocal => ({
-              ...prevLocal,
-              ...backup.activitiesProgress
-            }));
+          // También verificar si alguna rúbrica tiene resetBy='docente'
+          const hasResetByDocente = backup.rubricProgress
+            ? Object.values(backup.rubricProgress).some(r => r?.resetBy === 'docente')
+            : false;
+
+          if (backupResetAt > 0 || hasResetByDocente) {
+            logger.log('🛡️ [AppContext] Backup tiene marcas de reset de docente — aplicando datos reseteados del backup');
+            // Aplicar los datos del backup tal cual (ya contienen el estado reseteado)
+            if (backup.rubricProgress) {
+              lastRubricProgressFromCloudAtRef.current = Date.now();
+              setRubricProgress(normalizeRubricProgress(backup.rubricProgress));
+            }
+            if (backup.activitiesProgress) {
+              lastActivitiesProgressFromCloudAtRef.current = Date.now();
+              setActivitiesProgress(backup.activitiesProgress);
+            }
+          } else {
+            // Sin reset — merge normal con datos locales
+            if (backup.rubricProgress && Object.keys(backup.rubricProgress).length > 0) {
+              lastRubricProgressFromCloudAtRef.current = Date.now();
+              setRubricProgress(prevLocal => ({
+                ...normalizeRubricProgress(prevLocal),
+                ...normalizeRubricProgress(backup.rubricProgress)
+              }));
+            }
+
+            if (backup.activitiesProgress && Object.keys(backup.activitiesProgress).length > 0) {
+              lastActivitiesProgressFromCloudAtRef.current = Date.now();
+              setActivitiesProgress(prevLocal => ({
+                ...prevLocal,
+                ...backup.activitiesProgress
+              }));
+            }
           }
         }
 
@@ -4222,52 +4498,69 @@ export const AppContextProvider = ({ children }) => {
         // 🔄 DETECTAR RESET EN TIEMPO REAL: Si lastResetAt existe, aplicar reset inmediato
         // ⚠️ Solo procesar si es un reset NUEVO (no ya procesado)
         if (progressData.lastResetAt) {
-          const resetTime = progressData.lastResetAt?.seconds 
-            ? progressData.lastResetAt.seconds * 1000 
+          const resetTime = progressData.lastResetAt?.seconds
+            ? progressData.lastResetAt.seconds * 1000
             : (typeof progressData.lastResetAt === 'number' ? progressData.lastResetAt : 0);
-          
+
           // 🆕 FIX: Solo procesar si este reset es MÁS RECIENTE que el último procesado
           if (resetTime > 0 && resetTime > lastProcessedResetTimeRef.current) {
             logger.log('🔄 [AppContext] RESET NUEVO DETECTADO en tiempo real - aplicando cambios...', {
               resetTime,
               lastProcessed: lastProcessedResetTimeRef.current
             });
-            
+
             // Marcar como procesado ANTES de aplicar para evitar re-entradas
             lastProcessedResetTimeRef.current = resetTime;
-            
+
             // Limpiar localStorage
             const rubricKey = rubricProgressKey(currentUser.uid, progressDocId);
             const activitiesKey = activitiesProgressKey(currentUser.uid, progressDocId);
             localStorage.removeItem(rubricKey);
             localStorage.removeItem(activitiesKey);
-            
+
+            // 🔧 CRITICAL FIX: También limpiar el firestore_backup_* para evitar que
+            // restaure datos pre-reset si Firestore falla en la próxima carga
+            try {
+              const backupKey = `firestore_backup_${currentUser.uid}_${progressDocId}`;
+              localStorage.removeItem(backupKey);
+              logger.log('🧹 [AppContext] firestore_backup limpiado tras reset de docente');
+            } catch (e) {
+              // Silencioso
+            }
+
+            // Limpiar cualquier key de activity_results_ relacionada
+            Object.keys(localStorage).forEach(k => {
+              if (k.includes('activity_results_') && k.includes(progressDocId)) {
+                localStorage.removeItem(k);
+              }
+            });
+
             // Aplicar datos reseteados directamente
             if (progressData.rubricProgress) {
               setRubricProgress(normalizeRubricProgress(progressData.rubricProgress));
             } else {
               setRubricProgress(emptyRubricProgress);
             }
-            
+
             if (progressData.activitiesProgress) {
               setActivitiesProgress(progressData.activitiesProgress);
             } else {
               setActivitiesProgress({});
             }
-            
+
             window.dispatchEvent(new CustomEvent('progress-reset-from-teacher', {
               detail: { type: 'realtime-reset', timestamp: resetTime }
             }));
-            
+
             logger.log('✅ [AppContext] Reset aplicado desde evento en tiempo real');
             return; // Salir, no hacer merge normal
           }
         }
-        
+
         // 🔄 También detectar reset parcial en artefactos individuales
         const checkArtifactResets = (activitiesData) => {
           if (!activitiesData) return { hasResets: false, resetArtifacts: [] };
-          
+
           const resetArtifacts = [];
           Object.keys(activitiesData).forEach(docId => {
             const doc = activitiesData[docId];
@@ -4279,26 +4572,26 @@ export const AppContextProvider = ({ children }) => {
               }
             });
           });
-          
+
           return { hasResets: resetArtifacts.length > 0, resetArtifacts };
         };
-        
+
         const { hasResets, resetArtifacts } = checkArtifactResets(progressData.activitiesProgress);
         if (hasResets) {
           logger.log('🔄 [AppContext] Reset parcial detectado en artefactos (realtime):', resetArtifacts);
-          
+
           // Aplicar activitiesProgress de Firestore directamente
           setActivitiesProgress(progressData.activitiesProgress);
-          
+
           // También actualizar rubricProgress correspondiente
           if (progressData.rubricProgress) {
             setRubricProgress(normalizeRubricProgress(progressData.rubricProgress));
           }
-          
+
           window.dispatchEvent(new CustomEvent('progress-reset-from-teacher', {
             detail: { type: 'artifact-reset-realtime', artifacts: resetArtifacts }
           }));
-          
+
           logger.log('✅ [AppContext] Reset parcial aplicado');
           return; // Salir
         }
@@ -4317,6 +4610,15 @@ export const AppContextProvider = ({ children }) => {
             Object.keys(normalizedRemote).forEach(rubricId => {
               const remoteRubric = normalizedRemote[rubricId];
               const localRubric = normalizedLocal[rubricId];
+
+              // 🔧 CRITICAL FIX: Si la rúbrica remota tiene resetAt + resetBy='docente',
+              // SIEMPRE usar la versión remota y descartar datos locales (son pre-reset)
+              if (remoteRubric?.resetAt && remoteRubric?.resetBy === 'docente') {
+                logger.log(`🛡️ [Sync] ${rubricId}: Rúbrica reseteada por docente — usando datos remotos (reseteados)`);
+                mergedRubrics[rubricId] = remoteRubric;
+                hasChanges = true;
+                return;
+              }
 
               // Si no existe localmente, agregar directamente
               if (!localRubric || !localRubric.scores || localRubric.scores.length === 0) {
@@ -4523,7 +4825,7 @@ export const AppContextProvider = ({ children }) => {
           // 🆕 FIX: Si local tiene resetAt reciente, SIEMPRE preferir local (reset intencional)
           const localResetAt = localRewardsState.resetAt || 0;
           const remoteResetAt = remoteState.resetAt || 0;
-          
+
           // Solo considerar "reset reciente" si:
           // 1. Local tiene un resetAt válido (> 0) - evita falsos positivos después de logout
           // 2. Local resetAt es más reciente que el remoto
@@ -4639,7 +4941,7 @@ export const AppContextProvider = ({ children }) => {
           // 🆕 FIX: Si local tiene resetAt reciente, SIEMPRE preferir local (reset intencional)
           const localResetAt = localRewardsState.resetAt || 0;
           const remoteResetAt = remoteState.resetAt || 0;
-          
+
           // Solo considerar "reset reciente" si resetAt local es válido (> 0)
           const localWasResetRecently = localResetAt > 0 && localResetAt > remoteResetAt && (Date.now() - localResetAt) < 10000;
 
@@ -4885,8 +5187,10 @@ export const AppContextProvider = ({ children }) => {
     saveCurrentTextToFirestore,
     syncRubricProgressToFirestore,
     saveEvaluationToFirestore,
-    syncCitationsToFirestore
-  }), [setTextoWithDebug, handleApiKeyChange, toggleModoOscuro, setLoadingStable, setErrorStable, setArchivoActualStable, setTextStructureStable, analyzeDocument, updateRubricScore, updateFormativeScore, submitSummativeEssay, checkEssayPrerequisites, clearRubricProgress, resetAllProgress, saveCitation, deleteCitation, getCitations, clearDocumentCitations, updateActivitiesProgress, markPreparationProgress, resetActivitiesProgress, clearAllHistory, createSession, updateCurrentSessionFromState, restoreSession, saveCurrentTextToFirestore, syncRubricProgressToFirestore, saveEvaluationToFirestore, syncCitationsToFirestore]);
+    syncCitationsToFirestore,
+    setFocusMode,          // 🆕 Setter directo
+    toggleFocusMode        // 🆕 Toggle global
+  }), [setTextoWithDebug, handleApiKeyChange, toggleModoOscuro, setLoadingStable, setErrorStable, setArchivoActualStable, setTextStructureStable, analyzeDocument, updateRubricScore, updateFormativeScore, submitSummativeEssay, checkEssayPrerequisites, clearRubricProgress, resetAllProgress, saveCitation, deleteCitation, getCitations, clearDocumentCitations, updateActivitiesProgress, markPreparationProgress, resetActivitiesProgress, clearAllHistory, createSession, updateCurrentSessionFromState, restoreSession, saveCurrentTextToFirestore, syncRubricProgressToFirestore, saveEvaluationToFirestore, syncCitationsToFirestore, setFocusMode, toggleFocusMode]);
 
   const dynamicValues = useMemo(() => ({
     texto,
@@ -4917,8 +5221,9 @@ export const AppContextProvider = ({ children }) => {
     sessionConflict,
     conflictingSessionInfo,
     // 🆕 P9 FIX: Estado de sincronización con Firestore
-    syncStatus
-  }), [texto, openAIApiKey, modoOscuro, loading, error, archivoActual, textStructure, completeAnalysis, analysisAttempted, currentTextoId, sourceCourseId, rubricProgress, savedCitations, notasAutoGeneradasByTextoId, currentUser, userData, activitiesProgress, sessionConflict, conflictingSessionInfo, syncStatus]);
+    syncStatus,
+    focusMode              // 🆕 Única fuente de verdad expuesta
+  }), [texto, openAIApiKey, modoOscuro, loading, error, archivoActual, textStructure, completeAnalysis, analysisAttempted, currentTextoId, sourceCourseId, rubricProgress, savedCitations, notasAutoGeneradasByTextoId, currentUser, userData, activitiesProgress, sessionConflict, conflictingSessionInfo, syncStatus, focusMode]);
 
   const contextValue = useMemo(() => ({
     ...dynamicValues,

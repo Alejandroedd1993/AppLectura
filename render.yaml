@@ -22,5 +22,9 @@ services:
         sync: false
       - key: TAVILY_API_KEY
         sync: false
+      - key: FIREBASE_PROJECT_ID
+        value: applectura-cb058
+      - key: ENFORCE_FIREBASE_AUTH
+        value: "true"
     healthCheckPath: /health
     # NOTA: Frontend se desplegará en Firebase Hosting, no aquí

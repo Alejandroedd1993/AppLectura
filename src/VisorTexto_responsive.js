@@ -535,7 +535,7 @@ const ProgressBar = styled.div`
 `;
 
 function VisorTextoResponsive({ texto, onParagraphClick }) {
-  const { textStructure, archivoActual, saveCitation, completeAnalysis, currentTextoId, currentUser, userData } = useContext(AppContext);
+  const { textStructure, archivoActual, activeLecture, saveCitation, completeAnalysis, currentTextoId, currentUser, userData, setFocusMode } = useContext(AppContext);
 
   // 🆕 Bug 6 FIX: Medir tiempo real de lectura (solo estudiantes con texto activo)
   const isStudent = userData?.role === 'estudiante';
@@ -545,12 +545,10 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     isActive: isStudent && !!texto && !!currentTextoId
   });
 
-  const [_enfoque, setEnfoque] = useState(false);
   const [selectionInfo, setSelectionInfo] = useState(null); // {x,y,text}
   const [showSaveSuccess, setShowSaveSuccess] = useState(false); // 🆕 Feedback visual al guardar cita
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('💾 ¡Cita guardada!');
   const [annotationMode, setAnnotationMode] = useState(null); // null | { text, x, y, tipo, nota }
-  const _lockRef = useRef(false);
   const virtuosoRef = useRef(null);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [progress, setProgress] = useState(0); // 0..1
@@ -562,7 +560,6 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   const [activeIndex, setActiveIndex] = useState(-1);
   const isVirtualizedRef = useRef(false);
   const paraRefs = useRef([]); // sólo cuando no hay virtualización
-  const _lastPointerTypeRef = useRef('mouse');
   const selectionInfoRef = useRef(null);
 
   // 🆕 Estados para modo PDF (scroll continuo)
@@ -572,9 +569,15 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
 
   // 🆕 Detectar si el contenido actual es un PDF
   const isPDF = useMemo(() => {
-    return archivoActual && (
-      archivoActual.type === 'application/pdf' ||
-      archivoActual.name?.toLowerCase().endsWith('.pdf')
+    if (!archivoActual) return false;
+    const mime = String(archivoActual.type || archivoActual.fileType || '').toLowerCase();
+    const fileName = String(archivoActual.name || archivoActual.fileName || '').toLowerCase();
+    const fileURL = String(archivoActual.fileURL || archivoActual.url || '').toLowerCase();
+
+    return (
+      mime.includes('pdf') ||
+      fileName.endsWith('.pdf') ||
+      fileURL.includes('.pdf')
     );
   }, [archivoActual]);
 
@@ -589,6 +592,9 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     }
 
     logger.log('📄 [VisorTexto] Preparando nuevo PDF:', archivoActual.name);
+    logger.log('📄 [VisorTexto] archivoActual keys:', Object.keys(archivoActual || {}));
+    logger.log('📄 [VisorTexto] fileURL:', archivoActual?.fileURL?.substring?.(0, 60) || 'null');
+    logger.log('📄 [VisorTexto] activeLecture.fileURL:', activeLecture?.fileURL?.substring?.(0, 60) || 'null');
 
     // Si es un File object, usarlo directamente
     if (archivoActual.file instanceof File) {
@@ -597,16 +603,53 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       return;
     }
 
-    // Si tiene objectUrl, usarlo
+    // Si tiene objectUrl (puede ser blob URL o Firebase Storage URL), usarlo
     if (archivoActual.objectUrl) {
       logger.log('📄 [VisorTexto] Usando objectUrl');
       setPdfSource(archivoActual.objectUrl);
       return;
     }
 
-    logger.warn('⚠️ [VisorTexto] No se encontró fuente válida para PDF');
+    // Si tiene fileURL persistida (historial/sesión), usarla directamente.
+    if (typeof archivoActual.fileURL === 'string' && archivoActual.fileURL.trim()) {
+      logger.log('📄 [VisorTexto] Usando fileURL directa');
+      setPdfSource(archivoActual.fileURL);
+      return;
+    }
+
+    // Fallback: metadata de la lectura activa
+    if (typeof activeLecture?.fileURL === 'string' && activeLecture.fileURL.trim()) {
+      logger.log('📄 [VisorTexto] Usando fileURL desde activeLecture');
+      setPdfSource(activeLecture.fileURL);
+      return;
+    }
+
+    // 🆕 FALLBACK ASÍNCRONO: intentar recuperar fileURL desde Firestore usando textoId
+    const textoId = currentTextoId || activeLecture?.id || null;
+    if (textoId) {
+      logger.log('📄 [VisorTexto] Intentando recuperar fileURL desde Firestore para:', textoId);
+      (async () => {
+        try {
+          const { doc, getDoc } = await import('firebase/firestore');
+          const { db } = await import('./firebase/config');
+          const snap = await getDoc(doc(db, 'textos', textoId));
+          if (snap.exists() && snap.data().fileURL) {
+            logger.log('✅ [VisorTexto] fileURL recuperada de Firestore');
+            setPdfSource(snap.data().fileURL);
+            return;
+          }
+        } catch (fbErr) {
+          logger.warn('⚠️ [VisorTexto] Firestore fallback falló:', fbErr.message);
+        }
+        logger.warn('⚠️ [VisorTexto] No se encontró fuente válida para PDF');
+        setPdfSource(null);
+      })();
+      return; // El async se encargará de setPdfSource
+    }
+
+    logger.warn('⚠️ [VisorTexto] No se encontró fuente válida para PDF (sin textoId)');
     setPdfSource(null);
-  }, [isPDF, archivoActual]);
+  }, [isPDF, archivoActual, activeLecture?.fileURL, activeLecture?.id, currentTextoId]);
 
   useEffect(() => { selectionInfoRef.current = selectionInfo; }, [selectionInfo]);
 
@@ -669,22 +712,6 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   const tiempoLectura = useMemo(() => estimarTiempoLectura(texto || ''), [texto]);
 
   // Sin resaltado persistente
-
-  const _toggleEnfoque = useCallback(() => {
-    setEnfoque(prev => {
-      const next = !prev;
-      try {
-        window.dispatchEvent(new CustomEvent('visor-focus-mode', { detail: { active: next } }));
-      } catch { }
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    const handler = (e) => { if (typeof e?.detail?.active === 'boolean') setEnfoque(e.detail.active); };
-    window.addEventListener('visor-focus-mode-external', handler);
-    return () => window.removeEventListener('visor-focus-mode-external', handler);
-  }, []);
 
   const handleParagraphClick = useCallback((idx, contenido) => { if (onParagraphClick) onParagraphClick(idx, contenido); }, [onParagraphClick]);
 
@@ -1314,7 +1341,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       <ToolsBar aria-label="herramientas-lectura">
         <button aria-label="disminuir-tamano" onClick={() => setFontSize(f => Math.max(MIN_FONT_SIZE, f - 1))}>A−</button>
         <button aria-label="aumentar-tamano" onClick={() => setFontSize(f => Math.min(MAX_FONT_SIZE, f + 1))}>A+</button>
-        <button aria-label="reset-visor" onClick={() => { setFontSize(DEFAULT_FONT_SIZE); setSearchQuery(''); setSearchHits([]); setCurrentHit(-1); setEnfoque(false); }}>Reset</button>
+        <button aria-label="reset-visor" onClick={() => { setFontSize(DEFAULT_FONT_SIZE); setSearchQuery(''); setSearchHits([]); setCurrentHit(-1); setFocusMode(false); }}>Reset</button>
         <input
           type="search"
           placeholder="Buscar en el texto..."
@@ -1338,18 +1365,28 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   ) : null;
 
   // 🆕 Renderizado dual: PDF (scroll continuo) vs Texto
-  const body = isPDF && pdfSource ? (
+  const body = isPDF ? (
     <>
       {pdfHeaderChrome}
-      <PDFViewer
-        key={`pdf-${archivoActual?.name || 'none'}-${archivoActual?.size || 0}-${pdfScale.toFixed(2)}`}
-        file={pdfSource}
-        scale={pdfScale}
-        searchQuery={searchQuery}
-        onSearchNavigation={handlePdfSearchNavigation}
-        onDocumentLoad={({ numPages }) => setPdfNumPages(numPages)}
-        onSelection={handlePdfSelection}
-      />
+      {pdfSource ? (
+        <PDFViewer
+          key={`pdf-${archivoActual?.name || 'none'}-${archivoActual?.size || 0}-${pdfScale.toFixed(2)}`}
+          file={pdfSource}
+          scale={pdfScale}
+          searchQuery={searchQuery}
+          onSearchNavigation={handlePdfSearchNavigation}
+          onDocumentLoad={({ numPages }) => setPdfNumPages(numPages)}
+          onSelection={handlePdfSelection}
+        />
+      ) : (
+        <MetaBar style={{ flexDirection: 'column', gap: '0.5rem', padding: '1.5rem', textAlign: 'center' }}>
+          <span>⚠️ No se pudo restaurar la fuente del PDF.</span>
+          <span>Abre nuevamente el archivo desde tu lectura asignada.</span>
+          <span style={{ fontSize: '0.7rem', opacity: 0.5, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+            Diag: textoId={currentTextoId || 'null'} | fileURL={archivoActual?.fileURL ? 'sí(' + archivoActual.fileURL.substring(0, 40) + '…)' : 'null'} | aL.fileURL={activeLecture?.fileURL ? 'sí' : 'null'} | keys={Object.keys(archivoActual || {}).join(',')}
+          </span>
+        </MetaBar>
+      )}
     </>
   ) : isVirtualized ? (
     <Virtuoso
@@ -1405,7 +1442,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
           <textarea
             placeholder={annotationMode.tipo === 'reflexion' ? '¿Qué te hace pensar este fragmento?'
               : annotationMode.tipo === 'pregunta' ? '¿Qué pregunta te surge?'
-              : 'Escribe tu comentario sobre este fragmento…'}
+                : 'Escribe tu comentario sobre este fragmento…'}
             value={annotationMode.nota}
             onChange={e => setAnnotationMode(prev => ({ ...prev, nota: e.target.value }))}
             onPaste={e => e.preventDefault()}

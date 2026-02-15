@@ -4,7 +4,7 @@ import styled, { ThemeProvider } from 'styled-components';
 
 // 🚀 PERF: Log silenciado en producción
 const __DEV__ = process.env.NODE_ENV !== 'production';
-const devLog = __DEV__ ? console.log.bind(console) : () => {};
+const devLog = __DEV__ ? console.log.bind(console) : () => { };
 
 // Estilos globales de accesibilidad
 import './styles/a11y.css';
@@ -198,20 +198,22 @@ const SidebarContainer = styled.aside`
   border-right: 1px solid ${props => props.theme.border};
   display: flex;
   flex-direction: column;
+  position: relative;
   
   @media (min-width: 768px) {
-    width: ${props => props.$collapsed ? '60px' : '320px'};
-    min-width: ${props => props.$collapsed ? '60px' : '320px'};
+    width: ${props => props.$collapsed ? '40px' : '320px'};
+    min-width: ${props => props.$collapsed ? '40px' : '320px'};
     max-height: calc(100dvh - 80px);
     position: sticky;
     top: 80px;
-    transition: width 0.3s ease;
-    overflow-y: auto;
+    transition: width 0.3s ease, min-width 0.3s ease;
+    overflow-y: ${props => props.$collapsed ? 'hidden' : 'auto'};
+    overflow-x: hidden;
   }
   
   @media (min-width: 1200px) {
-    width: ${props => props.$collapsed ? '60px' : '380px'};
-    min-width: ${props => props.$collapsed ? '60px' : '380px'};
+    width: ${props => props.$collapsed ? '40px' : '380px'};
+    min-width: ${props => props.$collapsed ? '40px' : '380px'};
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -265,6 +267,12 @@ const TabsContainer = styled.div`
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
+
+  /* Compactar en modo enfoque */
+  ${props => props.$focusMode && `
+    padding: 0.25rem 0.75rem;
+    gap: 0.25rem;
+  `}
 `;
 
 const ViewContent = styled.div`
@@ -285,27 +293,38 @@ const ViewContent = styled.div`
   @media (prefers-reduced-motion: reduce) {
     animation: none;
   }
+
+  /* En modo enfoque: aprovechar toda la pantalla */
+  ${props => props.$focusMode && `
+    max-height: calc(100vh - 60px);
+    @media (min-width: 768px) {
+      max-height: calc(100vh - 60px);
+    }
+  `}
 `;
 
 const CollapseButton = styled.button`
   position: absolute;
-  top: 1rem;
-  right: -15px;
+  top: 0.75rem;
+  right: 4px;
   width: 30px;
   height: 30px;
   border-radius: 50%;
   background: ${props => props.theme.primary};
   color: white;
-  border: none;
+  border: 2px solid ${props => props.theme.surface};
   display: none;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 10;
   transition: all 0.2s ease;
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
   
   &:hover {
     transform: scale(1.1);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
   }
   
   @media (min-width: 768px) {
@@ -396,7 +415,9 @@ function AppContent() {
     sessionConflict,
     conflictingSessionInfo,
     setArchivoActual,
-    analyzeDocument // Para análisis automático al seleccionar texto
+    analyzeDocument, // Para análisis automático al seleccionar texto
+    focusMode,       // 🆕 GLOBAL
+    setFocusMode     // 🆕 GLOBAL
   } = useContext(AppContext);
 
   // Firebase Authentication
@@ -432,7 +453,6 @@ function AppContent() {
   }, [currentUser]);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
   const [showStudentDashboard, setShowStudentDashboard] = useState(!texto); // Mostrar dashboard si no hay texto
 
   // Auto-colapsar sidebar cuando hay texto cargado y cambia la pestaña a lectura
@@ -751,7 +771,9 @@ function AppContent() {
                     </TeacherModeButton>
                   </TeacherModeSwitch>
                 )}
-                <RewardsHeader onClickDetails={() => devLog('TODO: Abrir panel de detalles')} />
+                {!isDocente && (
+                  <RewardsHeader onClickDetails={() => devLog('TODO: Abrir panel de detalles')} />
+                )}
               </>
             </Header>
           )}
@@ -791,7 +813,7 @@ function AppContent() {
 
               <ContentArea>
                 <ReadingContainer $focusMode={focusMode}>
-                  <TabsContainer>
+                  <TabsContainer $focusMode={focusMode}>
                     <TabNavigation
                       tabs={pestanasFixed}
                       activeTab={vistaActiva}
@@ -805,6 +827,7 @@ function AppContent() {
 
                   <ViewContent
                     key={vistaActiva}
+                    $focusMode={focusMode}
                   >
                     <ErrorBoundary>
                       {loading && vistaActiva !== 'prelectura' && <LoadingOverlay />}

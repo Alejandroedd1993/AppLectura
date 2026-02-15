@@ -4,8 +4,8 @@ import styled from 'styled-components';
 
 // 🚀 PERF: Log silenciado en producción para evitar overhead de serialización
 const __DEV__ = process.env.NODE_ENV !== 'production';
-const devLog = __DEV__ ? console.log.bind(console) : () => {};
-const devWarn = __DEV__ ? console.warn.bind(console) : () => {};
+const devLog = __DEV__ ? console.log.bind(console) : () => { };
+const devWarn = __DEV__ ? console.warn.bind(console) : () => { };
 import { AppContext } from '../context/AppContext';
 import VisorTextoResponsive from '../VisorTexto_responsive';
 import TutorDock from './tutor/TutorDock';
@@ -54,6 +54,13 @@ const TopBar = styled.div`
   @media (max-width: 640px) {
     gap: 0.5rem;
   }
+
+  /* Modo enfoque: barra compacta */
+  ${p => p.$compact && `
+    padding: 0.35rem 0.75rem;
+    gap: 0.5rem;
+    strong { font-size: 0.8rem; }
+  `}
 `;
 
 const ActionsGroup = styled.div`
@@ -249,7 +256,15 @@ const SendBtn = styled.button`
 `;
 
 export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followUps = true }) {
-  const { texto, setTexto: _setTexto, modoOscuro, currentTextoId, completeAnalysis } = useContext(AppContext);
+  const {
+    texto,
+    setTexto: _setTexto,
+    modoOscuro,
+    currentTextoId,
+    completeAnalysis,
+    focusMode,        // 🆕 GLOBAL
+    toggleFocusMode   // 🆕 GLOBAL
+  } = useContext(AppContext);
   const isTestEnv = typeof process !== 'undefined' && process.env && process.env.JEST_WORKER_ID;
   // FASE 2: Detectar si hay provider pedagógico disponible
   const pedagogyMaybe = useContext(PedagogyContext);
@@ -262,7 +277,6 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
   const [showNotes, setShowNotes] = useState(false);
   const [tutorExpanded, setTutorExpanded] = useState(false);
   const [tutorWidth, setTutorWidth] = useState(420);
-  const [focusMode, setFocusMode] = useState(false);
   const pendingPromptRef = React.useRef(null);
   const [tutorReady, setTutorReady] = useState(false);
   const promptInputRef = React.useRef(null);
@@ -283,17 +297,17 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
   const handleCloseTutor = useCallback(() => setShowTutor(false), []);
   const handleToggleExpand = useCallback(() => setTutorExpanded(v => !v), []);
   const handleCloseNotes = useCallback(() => setShowNotes(false), []);
-  const handleToggleFocus = useCallback(() => setFocusMode(f => !f), []);
+  const handleToggleFocus = toggleFocusMode; // 🆕 Reemplazar por versión global
 
   // Verificar disponibilidad de búsqueda web en el backend
   useEffect(() => {
     fetch('/api/web-search/test')
       .then(res => res.json())
       .then(data => {
-        const available = data.configuracion?.serper_disponible || 
-                         data.configuracion?.bing_disponible ||
-                         data.configuracion?.tavily_disponible ||
-                         data.api_utilizada !== 'simulada';
+        const available = data.configuracion?.serper_disponible ||
+          data.configuracion?.bing_disponible ||
+          data.configuracion?.tavily_disponible ||
+          data.api_utilizada !== 'simulada';
         setWebSearchAvailable(available);
         devLog('🌐 Búsqueda web disponible:', available, '- API:', data.configuracion?.modo_funcionamiento);
       })
@@ -307,27 +321,27 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
   const enviarPromptDirecto = useCallback(() => {
     const currentPrompt = promptRef.current;
     if (!currentPrompt.trim()) return;
-    
+
     devLog('📤 [ReadingWorkspace] enviarPromptDirecto - Enviando prompt:', currentPrompt.trim());
-    
+
     if (!showTutorRef.current) {
       devLog('📖 [ReadingWorkspace] Tutor cerrado, abriéndolo primero');
       setShowTutor(true);
-      pendingPromptRef.current = { 
+      pendingPromptRef.current = {
         prompt: currentPrompt.trim(),
-        fullText: textoRef.current 
+        fullText: textoRef.current
       };
     } else {
       devLog('✅ [ReadingWorkspace] Tutor abierto, enviando evento inmediatamente');
-      const ev = new CustomEvent('tutor-external-prompt', { 
-        detail: { 
-          prompt: currentPrompt.trim(), 
-          fullText: textoRef.current 
-        } 
+      const ev = new CustomEvent('tutor-external-prompt', {
+        detail: {
+          prompt: currentPrompt.trim(),
+          fullText: textoRef.current
+        }
       });
       window.dispatchEvent(ev);
     }
-    
+
     setPrompt('');
   }, []); // deps vacías — usa refs para valores actuales
 
@@ -357,7 +371,7 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
   useEffect(() => {
     devLog('🔄 [ReadingWorkspace] useEffect tutor-ready listener, showTutor:', showTutor);
     if (!showTutor) return;
-    
+
     // Esperar a que el TutorDock señale que está listo
     const onReady = () => {
       devLog('🎉 [ReadingWorkspace] Recibido evento tutor-ready');
@@ -366,14 +380,14 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
         devLog('📤 [ReadingWorkspace] Hay acción pendiente, enviando tutor-external-prompt:', pendingPromptRef.current);
         const { prompt, action, fragment, webContext } = pendingPromptRef.current;
         try {
-          const ev = new CustomEvent('tutor-external-prompt', { 
-            detail: { 
-              prompt, 
-              action, 
-              fragment, 
+          const ev = new CustomEvent('tutor-external-prompt', {
+            detail: {
+              prompt,
+              action,
+              fragment,
               webContext,
-              fullText: texto 
-            } 
+              fullText: texto
+            }
           });
           window.dispatchEvent(ev);
           devLog('✅ [ReadingWorkspace] tutor-external-prompt enviado exitosamente');
@@ -413,11 +427,11 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
         }
       }
     }, 120);
-    return () => { 
+    return () => {
       devLog('🧹 [ReadingWorkspace] Limpiando listener tutor-ready y fallbacks');
       window.removeEventListener('tutor-ready', onReady);
-      cancelAnimationFrame(rafId); 
-      clearTimeout(timeoutId); 
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId);
     };
   }, [showTutor, texto, tutorReady]);
 
@@ -469,37 +483,37 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
     const handler = (e) => {
       devLog('📨 ReadingWorkspace recibió evento reader-action:', e.detail);
       const { action, text } = e.detail || {};
-      
+
       devLog('🎬 Ejecutando acción:', action, 'con texto:', text?.substring(0, 30));
-      
+
       // Caso especial: notes NO debe activar el tutor
       if (action === 'notes') {
         devLog('📝 Creando nota sin activar tutor');
         setShowNotes(true); // Abrir panel de notas
         if (text && notesApi && typeof notesApi.createNote === 'function') {
-          notesApi.createNote(text, { createdAt: Date.now(), kind:'note' });
+          notesApi.createNote(text, { createdAt: Date.now(), kind: 'note' });
           devLog('✅ Nota creada exitosamente');
         } else {
           devWarn('⚠️ notesApi no disponible:', notesApi);
         }
         return; // Salir completamente del handler
       }
-      
-      switch(action) {
+
+      switch (action) {
         case 'explain':
           if (showTutor) {
             devLog('✅ [ReadingWorkspace] Tutor ya abierto, enviando evento inmediatamente');
             window.dispatchEvent(new CustomEvent('tutor-external-prompt', {
-              detail: { 
+              detail: {
                 prompt: `Actúa como profesor experto. Explica de forma clara y didáctica el significado, contexto e importancia de este fragmento: "${text}". Incluye ejemplos si es pertinente.`,
                 action: 'explain',
                 fragment: text,
-                fullText: texto 
+                fullText: texto
               }
             }));
           } else {
             devLog('⏳ [ReadingWorkspace] Tutor cerrado, guardando acción pendiente');
-            pendingPromptRef.current = { 
+            pendingPromptRef.current = {
               prompt: `Actúa como profesor experto. Explica de forma clara y didáctica el significado, contexto e importancia de este fragmento: "${text}". Incluye ejemplos si es pertinente.`,
               action: 'explain',
               fragment: text
@@ -508,21 +522,21 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
             setTutorExpanded(true);
           }
           break;
-          
+
         case 'summarize':
           if (showTutor) {
             devLog('✅ Tutor ya abierto, enviando evento inmediatamente');
             window.dispatchEvent(new CustomEvent('tutor-external-prompt', {
-              detail: { 
+              detail: {
                 prompt: `Resume en máximo 3 puntos las ideas PRINCIPALES y CLAVE de este fragmento. Sé conciso y directo: "${text}"`,
                 action: 'summarize',
                 fragment: text,
-                fullText: texto 
+                fullText: texto
               }
             }));
           } else {
             devLog('⏳ Tutor cerrado, guardando acción pendiente');
-            pendingPromptRef.current = { 
+            pendingPromptRef.current = {
               prompt: `Resume en máximo 3 puntos las ideas PRINCIPALES y CLAVE de este fragmento. Sé conciso y directo: "${text}"`,
               action: 'summarize',
               fragment: text
@@ -531,14 +545,14 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
             setTutorExpanded(true);
           }
           break;
-          
+
         case 'question':
           if (showTutor) {
             devLog('✅ Tutor ya abierto, precargando prompt');
             setPrompt(`Genera 3 preguntas de comprensión profunda sobre: "${text.slice(0, 100)}..."`);
           } else {
             devLog('⏳ Tutor cerrado, guardando prompt pendiente');
-            pendingPromptRef.current = { 
+            pendingPromptRef.current = {
               prompt: `Genera 3 preguntas de comprensión profunda (nivel análisis/evaluación según Bloom) sobre este fragmento: "${text}"`,
               action: 'question',
               fragment: text
@@ -555,7 +569,7 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
 
   return (
     <WorkspaceLayout>
-      <TopBar>
+      <TopBar $compact={focusMode}>
         <ActionsGroup>
           <strong>📘 Lectura Guiada</strong>
         </ActionsGroup>
@@ -599,29 +613,29 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
                 rewardsResourceId={lectureId}
                 onEnriched={(enriched) => {
                   devLog('🌐 [ReadingWorkspace] Prompt enriquecido con web:', enriched.substring(0, 100));
-                  
+
                   // Si el tutor no está visible, mostrarlo primero
                   if (!showTutor) {
                     devLog('📖 [ReadingWorkspace] Mostrando tutor antes de enviar prompt enriquecido');
                     setShowTutor(true);
                     // Guardar prompt original y contexto enriquecido
-                    pendingPromptRef.current = { 
+                    pendingPromptRef.current = {
                       prompt: prompt.trim(), // Pregunta original del usuario
                       webContext: enriched   // Contexto web para el sistema
                     };
                   } else {
                     // Tutor ya visible, enviar directamente
-                    const ev = new CustomEvent('tutor-external-prompt', { 
-                      detail: { 
+                    const ev = new CustomEvent('tutor-external-prompt', {
+                      detail: {
                         prompt: prompt.trim(),  // Pregunta original
                         webContext: enriched,   // Contexto web
-                        fullText: texto 
-                      } 
+                        fullText: texto
+                      }
                     });
                     window.dispatchEvent(ev);
                     devLog('✅ [ReadingWorkspace] Evento tutor-external-prompt enviado con búsqueda web');
                   }
-                  
+
                   setPrompt(''); // Limpiar prompt tras enriquecer
                 }}
               />
@@ -630,9 +644,9 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
           </>
         )}
         {showTutor && (
-          <TutorDock 
-            followUps={followUps} 
-            expanded={tutorExpanded} 
+          <TutorDock
+            followUps={followUps}
+            expanded={tutorExpanded}
             onToggleExpand={handleToggleExpand}
             onClose={handleCloseTutor}
           >

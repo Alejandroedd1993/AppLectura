@@ -153,6 +153,17 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
             if (isBackupExpired(parsed)) {
               try { localStorage.removeItem(localKey); } catch { /* ignore */ }
             } else {
+              // 🔧 CRITICAL FIX: Verificar si el backup tiene marcas de reset del docente.
+              // Si lastResetAt está presente, el backup es post-reset y es seguro usarlo.
+              // Pero si hay rúbricas con datos Y resetBy='docente' con scores vacíos,
+              // eso significa que el backup ya refleja el reset — usar tal cual.
+              const hasResetMarks = parsed.lastResetAt || 
+                (parsed.rubricProgress && Object.values(parsed.rubricProgress).some(r => r?.resetBy === 'docente'));
+              
+              if (hasResetMarks) {
+                logger.log('🛡️ [FirestorePersistence] Backup tiene marcas de reset de docente — aplicando tal cual');
+              }
+
               const stamped = getBackupTimestampMs(parsed) ? parsed : stampBackupMeta(parsed);
               if (stamped !== parsed) {
                 try { localStorage.setItem(localKey, JSON.stringify(stamped)); } catch { /* ignore */ }
@@ -304,6 +315,8 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
    *
    * 🔧 M5 FIX: Ignora actualizaciones remotas mientras haya un autosave pendiente (saveTimeoutRef activo)
    * para evitar que el listener pise cambios locales aún no enviados.
+   * 🔧 CRITICAL FIX: EXCEPTO si el update remoto contiene lastResetAt (reset del docente),
+   * en cuyo caso se cancela el save pendiente y se aplica el reset inmediatamente.
    */
   useEffect(() => {
     if (!currentUser || !textoId || !enabled || !isEstudiante) return;
@@ -314,10 +327,56 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
       currentUser.uid, 
       textoId, 
       (updatedData) => {
-        // 🔧 M5 FIX: si hay un save pendiente, ignorar la actualización remota
+        // 🔧 CRITICAL FIX: Detectar reset del docente — SIEMPRE tiene prioridad
+        if (updatedData?.lastResetAt) {
+          const resetTime = updatedData.lastResetAt?.seconds
+            ? updatedData.lastResetAt.seconds * 1000
+            : (typeof updatedData.lastResetAt === 'number' ? updatedData.lastResetAt : 0);
+          
+          if (resetTime > 0) {
+            logger.log('🔄 [FirestorePersistence] RESET DEL DOCENTE detectado — cancelando save pendiente y aplicando reset');
+            
+            // Cancelar cualquier save pendiente (contiene datos PRE-reset)
+            if (saveTimeoutRef.current) {
+              clearTimeout(saveTimeoutRef.current);
+              saveTimeoutRef.current = null;
+              logger.log('🛡️ [FirestorePersistence] Save pendiente CANCELADO (contenía datos pre-reset)');
+            }
+            
+            // Aplicar el reset inmediatamente
+            if (onRehydrate && hasRehydratedRef.current) {
+              onRehydrate(updatedData);
+              setSynced(true);
+            }
+            return;
+          }
+        }
+
+        // También detectar reset parcial en artefactos individuales
+        if (updatedData?.activitiesProgress) {
+          const hasArtifactReset = Object.values(updatedData.activitiesProgress).some(docProgress => {
+            const artifacts = docProgress?.artifacts || {};
+            return Object.values(artifacts).some(a => a?.resetBy === 'docente' && a?.submitted === false);
+          });
+
+          if (hasArtifactReset) {
+            logger.log('🔄 [FirestorePersistence] Reset PARCIAL de artefactos detectado — aplicando');
+            if (saveTimeoutRef.current) {
+              clearTimeout(saveTimeoutRef.current);
+              saveTimeoutRef.current = null;
+            }
+            if (onRehydrate && hasRehydratedRef.current) {
+              onRehydrate(updatedData);
+              setSynced(true);
+            }
+            return;
+          }
+        }
+
+        // 🔧 M5 FIX: si hay un save pendiente (no-reset), ignorar la actualización remota
         // para evitar pisar cambios locales en curso
         if (saveTimeoutRef.current) {
-          logger.log('🛡️ [FirestorePersistence] Ignorando update remoto (save pendiente)');
+          logger.log('🛡️ [FirestorePersistence] Ignorando update remoto (save pendiente, no es reset)');
           return;
         }
         if (updatedData && onRehydrate && hasRehydratedRef.current) {

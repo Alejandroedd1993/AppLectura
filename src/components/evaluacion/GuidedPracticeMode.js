@@ -325,33 +325,34 @@ const NoSelectionText = styled.div`
 /**
  * Componente de Modo de Práctica Guiada
  */
-const GuidedPracticeMode = ({ 
-  rubricProgress, 
+const GuidedPracticeMode = ({
+  rubricProgress,
   selectedDimension,
   onStartPractice,
-  theme 
+  onDeactivate,
+  theme
 }) => {
   const [showPlan, setShowPlan] = useState(false);
   const [selectedDifficulty, setSelectedDifficulty] = useState(null);
-  
+
   // Generar plan de práctica personalizado
-  const practicePlan = useMemo(() => 
+  const practicePlan = useMemo(() =>
     generatePracticePlan(rubricProgress),
     [rubricProgress]
   );
-  
+
   // Determinar nivel actual para la dimensión seleccionada
   const currentLevel = useMemo(() => {
     if (!selectedDimension) return DIFFICULTY_LEVELS.EASY;
     return determineDifficultyLevel(rubricProgress, selectedDimension);
   }, [rubricProgress, selectedDimension]);
-  
+
   // Obtener hints para la dimensión y dificultad seleccionadas
   const availableHints = useMemo(() => {
     if (!selectedDimension || !selectedDifficulty) return [];
     return getHintsForDimension(selectedDimension, selectedDifficulty);
   }, [selectedDimension, selectedDifficulty]);
-  
+
   const handleStartPractice = () => {
     const difficulty = selectedDifficulty || currentLevel.id;
     if (onStartPractice) {
@@ -364,7 +365,7 @@ const GuidedPracticeMode = ({
       });
     }
   };
-  
+
   if (!showPlan) {
     return (
       <ToggleModeButton
@@ -378,7 +379,7 @@ const GuidedPracticeMode = ({
       </ToggleModeButton>
     );
   }
-  
+
   return (
     <ModeContainer
       theme={theme}
@@ -396,7 +397,7 @@ const GuidedPracticeMode = ({
           <span>ACTIVO</span>
         </ModeBadge>
       </ModeHeader>
-      
+
       {/* Banner de selección de dimensión */}
       {!selectedDimension && (
         <NoSelectionBanner theme={theme}>
@@ -404,13 +405,13 @@ const GuidedPracticeMode = ({
           <NoSelectionText theme={theme}>
             <h4>Selecciona una Dimensión Primero</h4>
             <p>
-              Para comenzar la práctica guiada, primero debes seleccionar una de las 5 dimensiones 
+              Para comenzar la práctica guiada, primero debes seleccionar una de las 5 dimensiones
               en las tarjetas de arriba. Cada dimensión evalúa un aspecto diferente de tu literacidad crítica.
             </p>
           </NoSelectionText>
         </NoSelectionBanner>
       )}
-      
+
       {/* Recomendación personalizada */}
       {selectedDimension && (
         <RecommendationBanner theme={theme}>
@@ -421,7 +422,7 @@ const GuidedPracticeMode = ({
           </RecommendationText>
         </RecommendationBanner>
       )}
-      
+
       {/* Plan de práctica */}
       <PracticePlanCard theme={theme}>
         <PlanTitle theme={theme}>
@@ -430,16 +431,16 @@ const GuidedPracticeMode = ({
         <PlanDescription theme={theme}>
           Tiempo estimado: {practicePlan.estimatedTime}
         </PlanDescription>
-        
+
         {/* Estadísticas de progreso */}
         <StatsGrid>
           {Object.entries(practicePlan.statistics).map(([difficulty, stats]) => (
             <StatCard key={difficulty} theme={theme}>
-              <StatValue 
+              <StatValue
                 theme={theme}
                 $color={
                   difficulty === 'easy' ? '#10b981' :
-                  difficulty === 'medium' ? '#f59e0b' : '#ef4444'
+                    difficulty === 'medium' ? '#f59e0b' : '#ef4444'
                 }
               >
                 {stats.completed}
@@ -450,7 +451,7 @@ const GuidedPracticeMode = ({
             </StatCard>
           ))}
         </StatsGrid>
-        
+
         {/* Pasos del plan */}
         <StepsContainer>
           {practicePlan.steps.map((step) => (
@@ -464,7 +465,7 @@ const GuidedPracticeMode = ({
           ))}
         </StepsContainer>
       </PracticePlanCard>
-      
+
       {/* Información de dimensión seleccionada */}
       {selectedDimension && (
         <PracticePlanCard theme={theme}>
@@ -478,7 +479,7 @@ const GuidedPracticeMode = ({
           </PlanDescription>
         </PracticePlanCard>
       )}
-      
+
       {/* Selector de dificultad */}
       <PlanTitle theme={theme}>
         🎚️ Selecciona tu Nivel de Dificultad
@@ -511,7 +512,7 @@ const GuidedPracticeMode = ({
           </DifficultyCard>
         ))}
       </DifficultySelector>
-      
+
       {/* Sistema de hints preview */}
       {selectedDifficulty && selectedDimension && availableHints.length > 0 && (
         <AnimatePresence>
@@ -526,7 +527,7 @@ const GuidedPracticeMode = ({
           </motion.div>
         </AnimatePresence>
       )}
-      
+
       {/* Botones de acción */}
       <ActionButton
         theme={theme}
@@ -542,14 +543,14 @@ const GuidedPracticeMode = ({
         <span>🚀</span>
         <span>
           {!selectedDimension ? 'Selecciona una Dimensión' :
-           !selectedDifficulty ? 'Selecciona un Nivel de Dificultad' :
-           'Comenzar Práctica'}
+            !selectedDifficulty ? 'Selecciona un Nivel de Dificultad' :
+              'Comenzar Práctica'}
         </span>
       </ActionButton>
-      
+
       {selectedDimension && selectedDifficulty && (
-        <PlanDescription theme={theme} style={{ 
-          textAlign: 'center', 
+        <PlanDescription theme={theme} style={{
+          textAlign: 'center',
           marginTop: '0.75rem',
           fontSize: '0.85rem',
           color: theme.success
@@ -557,10 +558,13 @@ const GuidedPracticeMode = ({
           ✅ Todo listo para comenzar tu práctica guiada en <strong>{selectedDimension}</strong> nivel <strong>{DIFFICULTY_LEVELS[selectedDifficulty.toUpperCase()].label}</strong>
         </PlanDescription>
       )}
-      
+
       <ToggleModeButton
         theme={theme}
-        onClick={() => setShowPlan(false)}
+        onClick={() => {
+          setShowPlan(false);
+          if (onDeactivate) onDeactivate();
+        }}
         style={{ marginTop: '0.75rem' }}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}

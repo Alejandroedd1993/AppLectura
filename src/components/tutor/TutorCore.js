@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { auth } from '../../firebase/config';
 
 import logger from '../../utils/logger';
 // FASE 2: Integración pedagógica - ZDP Detector + Rewards
@@ -528,6 +529,17 @@ Adapta tu respuesta según señales del estudiante:
 
   const callBackendWith = useCallback(async (messagesArr, retries = 0) => {
     const myRequestId = ++requestIdRef.current;
+
+    let authHeader = {};
+    try {
+      const idToken = await auth?.currentUser?.getIdToken?.();
+      if (idToken) {
+        authHeader = { Authorization: `Bearer ${idToken}` };
+      }
+    } catch (err) {
+      logger.warn('[TutorCore] No se pudo obtener Firebase ID token para chat:', err?.message || err);
+    }
+
     setLoading(true);
     onBusyChange?.(true);
 
@@ -593,7 +605,10 @@ Adapta tu respuesta según señales del estudiante:
 
       const res = await fetch(`${backendUrl}/api/chat/completion`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader
+        },
         body: JSON.stringify({
           messages: messagesArr,
           temperature: temperature,
@@ -1035,6 +1050,15 @@ Adapta tu respuesta según señales del estudiante:
         try {
           logger.log('🌐 [TutorCore] Intentando enriquecimiento web con Tavily...');
           const searchQuery = frag.length > 100 ? frag.substring(0, 100) : frag;
+          let webAuthHeader = {};
+          try {
+            const idToken = await auth?.currentUser?.getIdToken?.();
+            if (idToken) {
+              webAuthHeader = { Authorization: `Bearer ${idToken}` };
+            }
+          } catch (tokenErr) {
+            logger.warn('[TutorCore] No se pudo obtener Firebase ID token para web-search:', tokenErr?.message || tokenErr);
+          }
 
           // Crear timeout manual compatible con todos los navegadores
           const controller = new AbortController();
@@ -1043,7 +1067,7 @@ Adapta tu respuesta según señales del estudiante:
           try {
             const response = await fetch('/api/web-search', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', ...webAuthHeader },
               body: JSON.stringify({
                 query: `${searchQuery} contexto educativo verificado`,
                 maxResults: 3

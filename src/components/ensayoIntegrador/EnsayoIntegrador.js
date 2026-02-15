@@ -241,6 +241,11 @@ const DIMENSION_TO_RUBRIC = {
   argumentacion: 'rubrica4'
 };
 
+const RUBRIC_TO_DIMENSION = Object.entries(DIMENSION_TO_RUBRIC).reduce((acc, [dimensionId, rubricId]) => {
+  acc[rubricId] = dimensionId;
+  return acc;
+}, {});
+
 export default function EnsayoIntegrador({ theme }) {
   const {
     texto,
@@ -419,6 +424,44 @@ export default function EnsayoIntegrador({ theme }) {
     return rubricProgress?.[rubricId]?.summative || null;
   }, [rubricProgress, rubricId]);
 
+  const globalSubmittedEssay = useMemo(() => {
+    const rubricEntries = Object.values(DIMENSION_TO_RUBRIC);
+
+    for (const candidateRubricId of rubricEntries) {
+      const summative = rubricProgress?.[candidateRubricId]?.summative;
+      if (!summative) continue;
+
+      const status = String(summative.status || '').toLowerCase();
+      const attemptsUsed = Number(summative.attemptsUsed || 0);
+      const hasSubmission =
+        status === 'submitted' ||
+        status === 'graded' ||
+        attemptsUsed > 0 ||
+        Number(summative.submittedAt || 0) > 0 ||
+        Number(summative.gradedAt || 0) > 0 ||
+        Number.isFinite(Number(summative.score));
+
+      if (!hasSubmission) continue;
+
+      return {
+        rubricId: candidateRubricId,
+        dimension: RUBRIC_TO_DIMENSION[candidateRubricId],
+        status
+      };
+    }
+
+    return null;
+  }, [rubricProgress]);
+
+  const isGlobalEssayLocked = Boolean(globalSubmittedEssay);
+  const globallyLockedDimension = globalSubmittedEssay?.dimension || null;
+
+  useEffect(() => {
+    if (!isGlobalEssayLocked || !globallyLockedDimension) return;
+    if (dimension === globallyLockedDimension) return;
+    setDimension(globallyLockedDimension);
+  }, [isGlobalEssayLocked, globallyLockedDimension, dimension]);
+
   const savedEssayContent = useMemo(() => {
     // Priorizar borrador de nube sobre versión calificada
     // Solo usar draft si la dimensión coincide con la actual
@@ -577,6 +620,12 @@ export default function EnsayoIntegrador({ theme }) {
       return;
     }
 
+    if (isGlobalEssayLocked) {
+      setSubmitError('Ya enviaste tu ensayo integrador. Solo se permite un envío total por lectura.');
+      setEvaluationPhase(null);
+      return;
+    }
+
     if (isLockedByAttempts) {
       setSubmitError('Ya utilizaste tus intentos de ensayo para esta dimensión.');
       setEvaluationPhase(null);
@@ -658,7 +707,7 @@ export default function EnsayoIntegrador({ theme }) {
       setLoading(false);
       setEvaluationPhase(null);
     }
-  }, [canAccess, dimension, rubricId, isLockedByAttempts, essayText, texto, submitSummativeEssay, currentTextoId, attemptsUsed, maxAttempts, draftTextKey, draftDimKey]);
+  }, [canAccess, dimension, rubricId, isGlobalEssayLocked, isLockedByAttempts, essayText, texto, submitSummativeEssay, currentTextoId, attemptsUsed, maxAttempts, draftTextKey, draftDimKey]);
 
   const handleReset = useCallback(() => {
     setEssayText('');
@@ -696,13 +745,14 @@ export default function EnsayoIntegrador({ theme }) {
           theme={theme}
           value={dimension}
           onChange={(d) => {
+            if (isGlobalEssayLocked) return;
             setDimension(d);
             setSubmitError(null);
             setFormatErrors([]);
             setEvaluation(null);
             setPrefillHint(null);
           }}
-          disabled={!canAccess || loading}
+          disabled={!canAccess || loading || isGlobalEssayLocked}
         />
 
         <EnsayoGuidelines theme={theme} />
@@ -714,10 +764,16 @@ export default function EnsayoIntegrador({ theme }) {
             setEssayText(t);
             if (formatErrors.length) setFormatErrors([]);
           }}
-          disabled={!canAccess || loading || isLockedByAttempts}
+          disabled={!canAccess || loading || isLockedByAttempts || isGlobalEssayLocked}
           citations={citations}
           onInsertCitation={handleInsertCitation}
         />
+
+        {isGlobalEssayLocked && (
+          <InfoBox theme={theme}>
+            🔒 Ya registraste tu ensayo integrador en la dimensión <strong>{globallyLockedDimension}</strong>. El envío quedó cerrado para todas las dimensiones.
+          </InfoBox>
+        )}
 
         {isLockedByAttempts && (
           <ErrorBox theme={theme}>
@@ -771,7 +827,7 @@ export default function EnsayoIntegrador({ theme }) {
               theme={theme}
               type="button"
               onClick={handleSaveDraftToCloud}
-              disabled={loading || cloudSaving || !dimension || !essayText.trim() || isLockedByAttempts}
+              disabled={loading || cloudSaving || !dimension || !essayText.trim() || isLockedByAttempts || isGlobalEssayLocked}
               title="Guardar borrador en la nube"
             >
               ☁️ Guardar
@@ -783,7 +839,7 @@ export default function EnsayoIntegrador({ theme }) {
               theme={theme}
               type="button"
               onClick={handleSubmit}
-              disabled={loading || !canAccess || !dimension || isLockedByAttempts || !essayText.trim()}
+              disabled={loading || !canAccess || !dimension || isLockedByAttempts || isGlobalEssayLocked || !essayText.trim()}
             >
               {submitLabel}
             </Primary>

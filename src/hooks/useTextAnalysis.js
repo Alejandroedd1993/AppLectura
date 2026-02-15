@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { generateTextHash, getAnalysisFromCache, saveAnalysisToCache, runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
 import { fetchWithTimeout } from '../utils/netUtils';
 import { obtenerConfiguracionAPI } from '../utils/crypto';
+import { auth } from '../firebase/config';
 
 import logger from '../utils/logger';
 /**
@@ -105,15 +106,26 @@ export const useTextAnalysis = () => {
     }
   };
 
+  const getAuthHeader = useCallback(async () => {
+    try {
+      const idToken = await auth?.currentUser?.getIdToken?.();
+      return idToken ? { Authorization: `Bearer ${idToken}` } : {};
+    } catch (err) {
+      logger.warn('[useTextAnalysis] No se pudo obtener Firebase ID token:', err?.message || err);
+      return {};
+    }
+  }, []);
+
   // Llamada al backend con timeout/abort y reintento simple (para deepseek)
   const analizarEnBackend = useCallback(async (texto, apiSeleccionada = 'deepseek') => {
     const controller = new AbortController();
     abortRef.current = controller;
+    const authHeader = await getAuthHeader();
 
     try {
       const res = await fetchWithTimeout('/api/analysis/text', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({ texto, api: apiSeleccionada || 'deepseek' }),
         signal: controller.signal
       }, 90000); // 90 segundos para análisis largo
@@ -129,7 +141,7 @@ export const useTextAnalysis = () => {
         await new Promise(r => setTimeout(r, 750));
         const res2 = await fetchWithTimeout('/api/analysis/text', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader },
           body: JSON.stringify({ texto, api: apiSeleccionada || 'deepseek' })
         }, 20000);
         if (!res2.ok) {
@@ -142,7 +154,7 @@ export const useTextAnalysis = () => {
     } finally {
       abortRef.current = null;
     }
-  }, []);
+  }, [getAuthHeader]);
 
   // Función principal de análisis
   const analizarTexto = useCallback(async (texto, providerOrOptions = 'smart', configOverride) => {

@@ -24,6 +24,16 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
   const { currentUser } = useAuth();
   const userId = currentUser?.uid || 'guest';
 
+  const getAuthHeader = useCallback(async () => {
+    try {
+      const idToken = await currentUser?.getIdToken?.();
+      return idToken ? { Authorization: `Bearer ${idToken}` } : {};
+    } catch (err) {
+      logger.warn('[useNotasEstudio] No se pudo obtener Firebase ID token:', err?.message || err);
+      return {};
+    }
+  }, [currentUser]);
+
   // Estados principales
   const [notas, setNotas] = useState(null);
   const [cronograma, setCronograma] = useState([]);
@@ -312,6 +322,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
 
     // 1) Backend validado (con contexto enriquecido)
     try {
+      const authHeader = await getAuthHeader();
       const payload = {
         texto: textoParam,
         api: 'openai',
@@ -325,7 +336,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
 
       const res = await fetchWithTimeout(`${BACKEND_URL}/api/notes/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify(payload),
         signal
       }, 45000);
@@ -376,7 +387,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
     };
     setOrigenNotas('fallback');
     return ajustarTarjetas(notasFallback, textoParam, contextoEnriquecido, numeroTarjetas);
-  }, [ajustarTarjetas, extraerContextoDelAnalisis, nivelAcademico, normalizarNumeroTarjetas, numeroTarjetas]);
+  }, [ajustarTarjetas, extraerContextoDelAnalisis, getAuthHeader, nivelAcademico, normalizarNumeroTarjetas, numeroTarjetas]);
 
   /**
    * Inicializa o regenera las notas de estudio

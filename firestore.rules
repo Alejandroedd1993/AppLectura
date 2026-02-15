@@ -136,7 +136,9 @@ service cloud.firestore {
       // ⚡ L3 optimización: isDocente() short-circuits → isDocenteOf y isCourseTeacher nunca se evalúan
       allow read: if isAuthenticated() && (
                     request.auth.uid == studentId || 
-                    isDocente()
+                    isDocenteOf(studentId) ||
+                    (resource.data.sourceCourseId != null &&
+                     isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
                   );
       
       // 🔓 SIMPLIFICADO: Permitir a cualquier usuario autenticado escribir su propio progreso

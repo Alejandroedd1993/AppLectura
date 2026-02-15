@@ -551,99 +551,99 @@ export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimensi
 
   const feedbackBullets = useMemo(() => normalizeBullets(feedbackText), [feedbackText]);
 
-    const feedbackQuickComment = useMemo(() => {
-      if (!feedback || typeof feedback !== 'object') return '';
+  const feedbackQuickComment = useMemo(() => {
+    if (!feedback || typeof feedback !== 'object') return '';
 
-      const comentario = String(feedback?.comentarioCritico || '').trim();
-      if (comentario) return comentario;
+    const comentario = String(feedback?.comentarioCritico || '').trim();
+    if (comentario) return comentario;
 
-      const mejora = Array.isArray(feedback?.mejoras)
-        ? feedback.mejoras.find((m) => typeof m === 'string' && m.trim().length > 0)
-        : '';
-      if (mejora) return `Sugerencia rápida: ${mejora}`;
+    const mejora = Array.isArray(feedback?.mejoras)
+      ? feedback.mejoras.find((m) => typeof m === 'string' && m.trim().length > 0)
+      : '';
+    if (mejora) return `Sugerencia rápida: ${mejora}`;
 
-      const score = Number(feedback?.score ?? 0);
-      if (score >= 8) return 'Vas muy bien. Para subir al máximo nivel, profundiza con una evidencia textual más precisa.';
-      if (score >= 6) return 'Buen avance. Intenta fortalecer tu respuesta conectando una evidencia concreta con tu conclusión.';
-      return 'Sugerencia rápida: responde de forma más directa a la pregunta y apóyate en al menos una evidencia del texto.';
-    }, [feedback]);
+    const score = Number(feedback?.score ?? 0);
+    if (score >= 8) return 'Vas muy bien. Para subir al máximo nivel, profundiza con una evidencia textual más precisa.';
+    if (score >= 6) return 'Buen avance. Intenta fortalecer tu respuesta conectando una evidencia concreta con tu conclusión.';
+    return 'Sugerencia rápida: responde de forma más directa a la pregunta y apóyate en al menos una evidencia del texto.';
+  }, [feedback]);
 
-    const feedbackStrength = useMemo(() => {
-      const f = Array.isArray(feedback?.fortalezas) ? feedback.fortalezas : [];
-      const first = f.find((item) => typeof item === 'string' && item.trim().length > 0);
-      return first ? first.trim() : 'Respondiste la pregunta y mantuviste una idea central clara.';
-    }, [feedback]);
+  const feedbackStrength = useMemo(() => {
+    const f = Array.isArray(feedback?.fortalezas) ? feedback.fortalezas : [];
+    const first = f.find((item) => typeof item === 'string' && item.trim().length > 0);
+    return first ? first.trim() : 'Respondiste la pregunta y mantuviste una idea central clara.';
+  }, [feedback]);
 
-    const feedbackAction = useMemo(() => {
-      const m = Array.isArray(feedback?.mejoras) ? feedback.mejoras : [];
-      const first = m.find((item) => typeof item === 'string' && item.trim().length > 0);
-      return first ? first.trim() : 'Incluye una evidencia textual breve y explica por qué sostiene tu conclusión.';
-    }, [feedback]);
+  const feedbackAction = useMemo(() => {
+    const m = Array.isArray(feedback?.mejoras) ? feedback.mejoras : [];
+    const first = m.find((item) => typeof item === 'string' && item.trim().length > 0);
+    return first ? first.trim() : 'Incluye una evidencia textual breve y explica por qué sostiene tu conclusión.';
+  }, [feedback]);
 
-    const feedbackCriteria = useMemo(() => {
-      if (!feedback || typeof feedback !== 'object') return [];
-      const d = feedback?.detalles || {};
-      return [
-        { key: 'claridad', label: 'Claridad', value: normalizeScore4(d.claridad) },
-        { key: 'anclaje', label: 'Anclaje textual', value: normalizeScore4(d.anclaje) },
-        { key: 'completitud', label: 'Completitud', value: normalizeScore4(d.completitud) },
-        { key: 'profundidad', label: 'Profundidad crítica', value: normalizeScore4(d.profundidad) }
-      ].filter((c) => c.value > 0);
-    }, [feedback]);
+  const feedbackCriteria = useMemo(() => {
+    if (!feedback || typeof feedback !== 'object') return [];
+    const d = feedback?.detalles || {};
+    return [
+      { key: 'claridad', label: 'Claridad', value: normalizeScore4(d.claridad) },
+      { key: 'anclaje', label: 'Anclaje textual', value: normalizeScore4(d.anclaje) },
+      { key: 'completitud', label: 'Completitud', value: normalizeScore4(d.completitud) },
+      { key: 'profundidad', label: 'Profundidad crítica', value: normalizeScore4(d.profundidad) }
+    ].filter((c) => c.value > 0);
+  }, [feedback]);
 
-    const rewriteGuide = useMemo(() => {
-      return [
-        'Reescritura guiada (breve):',
-        '1) Responde la pregunta en una frase directa.',
-        '2) Añade una evidencia puntual del texto (idea o cita corta).',
-        '3) Cierra explicando la relación entre evidencia y conclusión.',
-        `\nPista específica: ${feedbackAction}`
-      ].join('\n');
-    }, [feedbackAction]);
+  const rewriteGuide = useMemo(() => {
+    return [
+      'Reescritura guiada (breve):',
+      '1) Responde la pregunta en una frase directa.',
+      '2) Añade una evidencia puntual del texto (idea o cita corta).',
+      '3) Cierra explicando la relación entre evidencia y conclusión.',
+      `\nPista específica: ${feedbackAction}`
+    ].join('\n');
+  }, [feedbackAction]);
 
-    const handleApplyImprovementGuide = useCallback(() => {
-      setAnswer((prev) => {
-        const current = String(prev || '').trim();
-        const marker = '--- Mejora guiada ---';
-        if (current.includes(marker)) return prev;
-        return `${current}${current ? '\n\n' : ''}${marker}\n${rewriteGuide}`;
+  const handleApplyImprovementGuide = useCallback(() => {
+    setAnswer((prev) => {
+      const current = String(prev || '').trim();
+      const marker = '--- Mejora guiada ---';
+      if (current.includes(marker)) return prev;
+      return `${current}${current ? '\n\n' : ''}${marker}\n${rewriteGuide}`;
+    });
+  }, [rewriteGuide]);
+
+  // ─── Reflexión metacognitiva ────────────────────────────────────
+  const reflectionPrompts = useMemo(() => {
+    if (!feedback) return null;
+    const score = Number(feedback?.score ?? 0);
+    const weakCrit = practiceStats?.criteria?.weakest?.[0];
+
+    if (score >= 8) {
+      return '¿Qué estrategia usaste que te funcionó bien? ¿Cómo podrías aplicarla en otra dimensión?';
+    }
+    if (weakCrit) {
+      const label = CRITERIA_LABELS[weakCrit.key] || weakCrit.key;
+      return `Tu criterio más débil fue "${label}". ¿Qué podrías hacer diferente la próxima vez para mejorarlo?`;
+    }
+    return '¿Qué fue lo más difícil de responder esta pregunta? ¿Qué harías diferente si volvieras a intentarlo?';
+  }, [feedback, practiceStats]);
+
+  const handleSaveReflection = useCallback(() => {
+    if (!lastAttemptId || !reflectionText.trim()) return;
+    addReflection(lastAttemptId, reflectionText.trim());
+    setReflectionSaved(true);
+
+    // Registrar evento metacognitivo para rewards
+    try {
+      recordEvent?.('METACOGNITIVE_REFLECTION', {
+        resourceId: `${lectureId || 'no-lectura'}:${selectedDimension}:reflection:${lastAttemptId}`,
+        reflectionLength: reflectionText.trim().length
       });
-    }, [rewriteGuide]);
+    } catch (_e) { /* no bloquear */ }
+  }, [lastAttemptId, reflectionText, addReflection, recordEvent, lectureId, selectedDimension]);
 
-    // ─── Reflexión metacognitiva ────────────────────────────────────
-    const reflectionPrompts = useMemo(() => {
-      if (!feedback) return null;
-      const score = Number(feedback?.score ?? 0);
-      const weakCrit = practiceStats?.criteria?.weakest?.[0];
-
-      if (score >= 8) {
-        return '¿Qué estrategia usaste que te funcionó bien? ¿Cómo podrías aplicarla en otra dimensión?';
-      }
-      if (weakCrit) {
-        const label = CRITERIA_LABELS[weakCrit.key] || weakCrit.key;
-        return `Tu criterio más débil fue "${label}". ¿Qué podrías hacer diferente la próxima vez para mejorarlo?`;
-      }
-      return '¿Qué fue lo más difícil de responder esta pregunta? ¿Qué harías diferente si volvieras a intentarlo?';
-    }, [feedback, practiceStats]);
-
-    const handleSaveReflection = useCallback(() => {
-      if (!lastAttemptId || !reflectionText.trim()) return;
-      addReflection(lastAttemptId, reflectionText.trim());
-      setReflectionSaved(true);
-
-      // Registrar evento metacognitivo para rewards
-      try {
-        recordEvent?.('METACOGNITIVE_REFLECTION', {
-          resourceId: `${lectureId || 'no-lectura'}:${selectedDimension}:reflection:${lastAttemptId}`,
-          reflectionLength: reflectionText.trim().length
-        });
-      } catch (_e) { /* no bloquear */ }
-    }, [lastAttemptId, reflectionText, addReflection, recordEvent, lectureId, selectedDimension]);
-
-    // Callback para rastrear hints revelados (pasado a HintsSystem)
-    const handleHintRevealed = useCallback((idx) => {
-      setHintsRevealed((prev) => Math.max(prev, idx + 1));
-    }, []);
+  // Callback para rastrear hints revelados (pasado a HintsSystem)
+  const handleHintRevealed = useCallback((idx) => {
+    setHintsRevealed((prev) => Math.max(prev, idx + 1));
+  }, []);
 
   const handleGeneratePracticeQuestion = useCallback(async () => {
     if (!texto || !selectedDimension) return;
@@ -969,23 +969,23 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
       {/* Solo mostrar grid de dimensiones si no hay fixedDimension */}
       {!fixedDimension && (
         <DimGrid>
-        {dims.map((d) => (
-          <DimBtn
-            key={d.id}
-            theme={theme}
-            type="button"
-            $selected={selectedDimension === d.id}
-            onClick={() => {
-              setSelectedDimension(d.id);
-              setPracticeConfig(null);
-            }}
-          >
-            <div style={{ fontSize: '1.4rem' }}>{d.icon}</div>
-            <div>{d.name}</div>
-            <Small>Seleccionar</Small>
-          </DimBtn>
-        ))}
-      </DimGrid>
+          {dims.map((d) => (
+            <DimBtn
+              key={d.id}
+              theme={theme}
+              type="button"
+              $selected={selectedDimension === d.id}
+              onClick={() => {
+                setSelectedDimension(d.id);
+                setPracticeConfig(null);
+              }}
+            >
+              <div style={{ fontSize: '1.4rem' }}>{d.icon}</div>
+              <div>{d.name}</div>
+              <Small>Seleccionar</Small>
+            </DimBtn>
+          ))}
+        </DimGrid>
       )}
 
       <GuidedPracticeMode
@@ -994,6 +994,14 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
         onStartPractice={(cfg) => {
           setIsCrossChallenge(false);
           setPracticeConfig(cfg);
+        }}
+        onDeactivate={() => {
+          setPracticeConfig(null);
+          setQuestion(null);
+          setFeedback(null);
+          setAnswer('');
+          setError(null);
+          setQuestionHints(null);
         }}
         theme={theme}
       />

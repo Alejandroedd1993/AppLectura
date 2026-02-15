@@ -2,10 +2,10 @@ import React, { useState, useEffect, useCallback, useContext, useMemo } from 're
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
-import { 
+import {
   getAllSessions,
   getAllSessionsMerged,
-  deleteSession, 
+  deleteSession,
   deleteAllSessions,
   getCurrentSessionId,
   syncPendingSessions,
@@ -24,8 +24,8 @@ import logger from '../../utils/logger';
  * 🔥 Ahora con sincronización Firebase automática
  */
 const SessionsHistory = ({ theme }) => {
-  const { 
-    texto, 
+  const {
+    texto,
     modoOscuro: _modoOscuro,
     restoreSession,
     createSession,
@@ -35,7 +35,7 @@ const SessionsHistory = ({ theme }) => {
     rubricProgress,
     activitiesProgress // 🆕 FASE 4: Para verificar artefactos ya entregados
   } = useContext(AppContext);
-  
+
   const [sessions, setSessions] = useState([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [_deletingId, setDeletingId] = useState(null);
@@ -43,7 +43,7 @@ const SessionsHistory = ({ theme }) => {
   const [loading, setLoading] = useState(false);
   const [sessionLimit, setSessionLimit] = useState(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
-  
+
   // 🆕 FASE 2: Estado de filtros
   const [filters, setFilters] = useState({
     searchQuery: '',
@@ -57,11 +57,11 @@ const SessionsHistory = ({ theme }) => {
   // Cargar sesiones al montar y cuando cambie el estado
   useEffect(() => {
     loadSessions();
-    
+
     // Escuchar eventos de actualización de sesiones
     const handleSessionUpdate = () => loadSessions();
     window.addEventListener('session-updated', handleSessionUpdate);
-    
+
     return () => {
       window.removeEventListener('session-updated', handleSessionUpdate);
     };
@@ -73,20 +73,20 @@ const SessionsHistory = ({ theme }) => {
 
       // Actualizar pendientes aunque falle el fetch de cloud
       setPendingSyncCount(getPendingSyncs().length);
-      
+
       // 🔥 Usar sesiones merged si hay usuario autenticado
       if (currentUser) {
         const mergedSessions = await getAllSessionsMerged();
         setSessions(mergedSessions);
-        
+
         // Obtener estado de sincronización
         const status = await getSyncStatus();
         setSyncStatus(status);
-        
+
         // 🆕 Obtener límite de sesiones
         const limit = getSessionsLimit();
         setSessionLimit(limit);
-        
+
         logger.log('📊 [SessionsHistory] Sesiones cargadas:', {
           total: mergedSessions.length,
           limit: limit.max,
@@ -97,11 +97,11 @@ const SessionsHistory = ({ theme }) => {
       } else {
         // Solo sesiones locales
         const localSessions = getAllSessions();
-        setSessions(localSessions.map(s => ({ 
-          ...s, 
-          source: 'local', 
-          inCloud: false, 
-          inLocal: true 
+        setSessions(localSessions.map(s => ({
+          ...s,
+          source: 'local',
+          inCloud: false,
+          inLocal: true
         })));
         setSyncStatus(null);
       }
@@ -148,35 +148,35 @@ const SessionsHistory = ({ theme }) => {
       hasText: !!session.text,
       restoreSessionAvailable: !!restoreSession
     });
-    
+
     if (!restoreSession) {
       logger.error('❌ restoreSession no disponible en contexto');
       return;
     }
-    
+
     // 🆕 Verificar si hay borradores sin evaluar (FASE 4: también considera activitiesProgress)
     const { hasDrafts } = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress);
     if (hasDrafts) {
       const warningMessage = getWarningMessage(currentTextoId, rubricProgress, activitiesProgress);
       const confirmed = window.confirm(warningMessage);
-      
+
       if (!confirmed) {
         logger.log('❌ [SessionsHistory] Cambio de sesión cancelado por el usuario');
         return;
       }
     }
-    
+
     logger.log('📂 [SessionsHistory] Restaurando sesión:', session.id);
     const success = await restoreSession(session);
     logger.log('🔄 [SessionsHistory] Resultado restauración:', success ? '✅ Éxito' : '❌ Error');
-    
+
     if (success) {
       setIsExpanded(false);
       // Cambiar a lectura guiada
       setTimeout(() => {
         logger.log('🔀 [SessionsHistory] Cambiando a tab "lectura-guiada"');
-        window.dispatchEvent(new CustomEvent('app-change-tab', { 
-          detail: { tabId: 'lectura-guiada' } 
+        window.dispatchEvent(new CustomEvent('app-change-tab', {
+          detail: { tabId: 'lectura-guiada' }
         }));
       }, 300);
     } else {
@@ -186,14 +186,14 @@ const SessionsHistory = ({ theme }) => {
 
   const handleDeleteSession = useCallback(async (sessionId, e) => {
     e.stopPropagation();
-    
+
     if (!window.confirm('¿Estás seguro de que quieres eliminar esta sesión? Esta acción no se puede deshacer.')) {
       return;
     }
-    
+
     setDeletingId(sessionId);
-    
-    const success = deleteSession(sessionId);
+
+    const success = await deleteSession(sessionId);
     if (success) {
       loadSessions();
       setTimeout(() => setDeletingId(null), 300);
@@ -222,7 +222,7 @@ const SessionsHistory = ({ theme }) => {
       logger.warn('⚠️ No hay texto cargado para crear sesión');
       return;
     }
-    
+
     const session = await createSession();
     if (session) {
       loadSessions();
@@ -247,7 +247,7 @@ const SessionsHistory = ({ theme }) => {
       setLoading(true);
       const result = await updateCurrentSessionFromState();
       setLoading(false);
-      
+
       if (result) {
         loadSessions();
         alert('✅ Sesión guardada exitosamente');
@@ -272,9 +272,9 @@ const SessionsHistory = ({ theme }) => {
     try {
       setLoading(true);
       const result = await syncAllSessionsToCloud();
-      
+
       alert(`✅ Sincronización completada:\n${result.synced} sesiones sincronizadas\n${result.errors} errores`);
-      
+
       loadSessions();
     } catch (error) {
       logger.error('❌ Error sincronizando:', error);
@@ -335,7 +335,7 @@ const SessionsHistory = ({ theme }) => {
     if (filters.hasProgress !== 'all') {
       result = result.filter(session => {
         const progress = session.rubricProgress || {};
-        const hasProgress = Object.keys(progress).some(k => 
+        const hasProgress = Object.keys(progress).some(k =>
           k.startsWith('rubrica') && progress[k]?.scores?.length > 0
         );
         return filters.hasProgress === 'yes' ? hasProgress : !hasProgress;
@@ -363,10 +363,10 @@ const SessionsHistory = ({ theme }) => {
       switch (filters.sortBy) {
         case 'recent':
           return (b.lastModified || b.createdAt) - (a.lastModified || a.createdAt);
-        
+
         case 'oldest':
           return (a.lastModified || a.createdAt) - (b.lastModified || b.createdAt);
-        
+
         case 'progress': {
           const getAvgProgress = (session) => {
             const progress = session.rubricProgress || {};
@@ -377,12 +377,12 @@ const SessionsHistory = ({ theme }) => {
           };
           return getAvgProgress(b) - getAvgProgress(a);
         }
-        
+
         case 'words': {
           const getWords = (session) => session.textMetadata?.words || session.text?.metadata?.words || 0;
           return getWords(b) - getWords(a);
         }
-        
+
         default:
           return 0;
       }
@@ -399,16 +399,20 @@ const SessionsHistory = ({ theme }) => {
     try {
       const { exportGenericPDF } = await import('../../utils/exportUtils');
       const sections = [];
-      sections.push({ heading: 'Información de la sesión', keyValues: {
-        ID: session.id,
-        Fecha: session.timestamp ? new Date(session.timestamp).toLocaleString('es-ES') : 'N/A',
-        'Última actividad': session.lastActivity ? new Date(session.lastActivity).toLocaleString('es-ES') : 'N/A',
-      }});
+      sections.push({
+        heading: 'Información de la sesión', keyValues: {
+          ID: session.id,
+          Fecha: session.timestamp ? new Date(session.timestamp).toLocaleString('es-ES') : 'N/A',
+          'Última actividad': session.lastActivity ? new Date(session.lastActivity).toLocaleString('es-ES') : 'N/A',
+        }
+      });
       if (session.text) {
-        sections.push({ heading: 'Texto', keyValues: {
-          Título: session.text.title || session.text.fileName || 'Sin título',
-          Tamaño: session.text.content ? `${session.text.content.length} caracteres` : 'N/A',
-        }});
+        sections.push({
+          heading: 'Texto', keyValues: {
+            Título: session.text.title || session.text.fileName || 'Sin título',
+            Tamaño: session.text.content ? `${session.text.content.length} caracteres` : 'N/A',
+          }
+        });
         if (session.text.content) {
           sections.push({ text: session.text.content.slice(0, 2000) + (session.text.content.length > 2000 ? '\n[...texto truncado...]' : '') });
         }
@@ -422,7 +426,7 @@ const SessionsHistory = ({ theme }) => {
       await exportGenericPDF({
         title: `Sesión de Lectura - ${session.text?.title || session.id}`,
         sections,
-        fileName: `sesion-${session.id}-${new Date().toISOString().slice(0,10)}.pdf`,
+        fileName: `sesion-${session.id}-${new Date().toISOString().slice(0, 10)}.pdf`,
       });
       logger.log('✅ Sesión exportada como PDF:', session.id);
     } catch (error) {
@@ -603,7 +607,7 @@ const SessionsHistory = ({ theme }) => {
                     session={session}
                     theme={theme}
                     onRestore={handleSessionClick}
-                    onDelete={(sess) => handleDeleteSession(sess.id, { stopPropagation: () => {} })}
+                    onDelete={(sess) => handleDeleteSession(sess.id, { stopPropagation: () => { } })}
                     onExport={handleExportSession}
                   />
                 ))}
@@ -862,13 +866,13 @@ const SyncLabel = styled.span`
 
 const LimitBanner = styled.div`
   padding: 0.875rem;
-  background: ${props => props.$warning 
+  background: ${props => props.$warning
     ? (props.theme.warningLight || '#FEF3C7')
     : (props.theme.surfaceVariant || '#F6F8FA')
   };
   border-radius: 8px;
   margin-bottom: 1rem;
-  border: 1px solid ${props => props.$warning 
+  border: 1px solid ${props => props.$warning
     ? (props.theme.warning || '#F59E0B')
     : (props.theme.border || '#E4EAF1')
   };
@@ -912,7 +916,7 @@ const ProgressBar = styled.div`
 const ProgressFill = styled.div`
   height: 100%;
   width: ${props => props.$percent}%;
-  background: ${props => props.$warning 
+  background: ${props => props.$warning
     ? (props.theme.warning || '#F59E0B')
     : (props.theme.primary || '#4A90E2')
   };

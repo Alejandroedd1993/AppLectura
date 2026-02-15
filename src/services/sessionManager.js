@@ -520,7 +520,7 @@ export function loadSession(sessionId) {
 /**
  * Eliminar una sesión (localStorage + Firestore)
  */
-export function deleteSession(sessionId) {
+export async function deleteSession(sessionId) {
   try {
     const sessions = getAllSessions();
     const filtered = sessions.filter(s => s.id !== sessionId);
@@ -546,24 +546,23 @@ export function deleteSession(sessionId) {
       localStorage.removeItem(currentKey);
     }
 
-    // 🔥 Eliminar de Firestore (async, non-blocking)
+    // 🔥 Eliminar de Firestore (async, blocking para asegurar consistencia)
     // 🆕 P11 FIX: Notificar al usuario si falla la eliminación en cloud
     if (currentUserId) {
-      deleteSessionFromFirestore(currentUserId, sessionId)
-        .then(() => {
-          logger.log('☁️ [SessionManager] Sesión eliminada de Firestore:', sessionId);
-        })
-        .catch(error => {
-          logger.warn('⚠️ [SessionManager] Error eliminando de Firestore:', error.message);
-          // Notificar al usuario que la sesión puede seguir en la nube
-          window.dispatchEvent(new CustomEvent('sync-error', {
-            detail: {
-              message: 'No se pudo eliminar la sesión de la nube. Se eliminará en el próximo intento.',
-              sessionId,
-              operation: 'delete'
-            }
-          }));
-        });
+      try {
+        await deleteSessionFromFirestore(currentUserId, sessionId);
+        logger.log('☁️ [SessionManager] Sesión eliminada de Firestore:', sessionId);
+      } catch (error) {
+        logger.warn('⚠️ [SessionManager] Error eliminando de Firestore:', error.message);
+        // Notificar al usuario que la sesión puede seguir en la nube
+        window.dispatchEvent(new CustomEvent('sync-error', {
+          detail: {
+            message: 'No se pudo eliminar la sesión de la nube. Se eliminará en el próximo intento.',
+            sessionId,
+            operation: 'delete'
+          }
+        }));
+      }
     }
 
     return true;

@@ -1,4 +1,5 @@
 import logger from '../utils/logger';
+import { auth } from '../firebase/config';
 
 
 /**
@@ -88,11 +89,20 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
     // Crear AbortController para timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    let authHeader = {};
+    try {
+      const idToken = await auth?.currentUser?.getIdToken?.();
+      if (idToken) {
+        authHeader = { Authorization: `Bearer ${idToken}` };
+      }
+    } catch {}
     
     const response = await fetch(`${BACKEND_URL}/api/chat/completion`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...authHeader
       },
       signal: controller.signal,
       body: JSON.stringify({

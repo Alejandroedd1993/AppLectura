@@ -145,11 +145,24 @@ function detectarUbicaciones(texto) {
  */
 import { fetchWithTimeout } from '../utils/netUtils';
 import logger from '../utils/logger';
+import { auth } from '../firebase/config';
+
+async function getAuthHeader() {
+  try {
+    const idToken = await auth?.currentUser?.getIdToken?.();
+    return idToken ? { Authorization: `Bearer ${idToken}` } : {};
+  } catch (err) {
+    logger.warn('[webContextService] No se pudo obtener Firebase ID token:', err?.message || err);
+    return {};
+  }
+}
+
 async function realizarBusquedaWeb(terminoBusqueda) {
   try {
+      const authHeader = await getAuthHeader();
       const response = await fetchWithTimeout('/api/web-search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeader },
       body: JSON.stringify({
         query: terminoBusqueda.query,
         type: terminoBusqueda.tipo,

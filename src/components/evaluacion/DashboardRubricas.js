@@ -179,7 +179,23 @@ const RUBRICAS_INFO = {
 export default function DashboardRubricas({ theme, onSelectRubric }) {
   const { rubricProgress } = useContext(AppContext);
 
+  const hasSummativeAttempt = (summative) => {
+    if (!summative || typeof summative !== 'object') return false;
+    const status = String(summative.status || '').toLowerCase();
+    const attemptsUsed = Number(summative.attemptsUsed || 0);
+    return (
+      attemptsUsed > 0 ||
+      status === 'submitted' ||
+      status === 'graded' ||
+      Number(summative.submittedAt || 0) > 0 ||
+      Number(summative.gradedAt || 0) > 0
+    );
+  };
+
   const getSummativeScore = (summative) => {
+    const overrideScore = Number(summative?.teacherOverrideScore);
+    if (summative?.status !== 'graded') return 0;
+    if (Number.isFinite(overrideScore) && overrideScore > 0) return overrideScore;
     const n = Number(summative?.score);
     if (summative?.status !== 'graded') return 0;
     if (!Number.isFinite(n)) return 0;
@@ -188,13 +204,14 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
 
   // 🏆 Helper: obtener nota efectiva con prioridad a teacherOverrideScore
   const getEffectiveScore = (data) => {
-    // Prioridad 1: Override del docente
-    if (data?.teacherOverrideScore > 0) return data.teacherOverrideScore;
-    // Prioridad 2: Promedio formativo
-    if (data?.average > 0) return data.average;
-    // Prioridad 3: Nota sumativa
+    // Prioridad 1: Override del docente (sumativa)
+    if (Number(data?.summative?.teacherOverrideScore) > 0) return Number(data.summative.teacherOverrideScore);
+    // Prioridad 2: Nota sumativa del ensayo
     const summative = getSummativeScore(data?.summative);
-    return summative > 0 ? summative : 0;
+    if (summative > 0) return summative;
+    // Prioridad 3: Promedio formativo
+    if (data?.average > 0) return data.average;
+    return 0;
   };
 
   // Calcular promedio global y dimensiones evaluadas
@@ -219,8 +236,8 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
   const hayDatos = useMemo(() => {
     return Object.values(rubricProgress || {}).some(r => {
       const formativeCount = r?.scores?.length || 0;
-      const hasSummative = getSummativeScore(r?.summative) > 0;
-      const hasOverride = r?.teacherOverrideScore > 0;
+      const hasSummative = hasSummativeAttempt(r?.summative);
+      const hasOverride = Number(r?.summative?.teacherOverrideScore) > 0;
       return formativeCount > 0 || hasSummative || hasOverride;
     });
   }, [rubricProgress]);
@@ -251,8 +268,9 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
         {Object.entries(RUBRICAS_INFO).map(([rubricId, info]) => {
           const data = rubricProgress[rubricId] || { scores: [], average: 0 };
           const summativeScore = getSummativeScore(data?.summative);
-          const hasSummative = summativeScore > 0;
-          const intentos = (data?.scores?.length || 0) + (hasSummative ? 1 : 0);
+          const hasSummative = hasSummativeAttempt(data?.summative);
+          const summativeAttempts = hasSummative ? Math.max(1, Number(data?.summative?.attemptsUsed || 1)) : 0;
+          const intentos = (data?.scores?.length || 0) + summativeAttempts;
           const displayAvg = getEffectiveScore(data);
           
           return (

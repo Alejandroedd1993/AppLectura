@@ -4,6 +4,7 @@
 import express from 'express';
 import webSearchController from '../controllers/webSearch.controller.js';
 import { webSearchLimiter } from '../middleware/rateLimiters.js';
+import requireFirebaseAuth from '../middleware/firebaseAuth.js';
 
 const router = express.Router();
 
@@ -16,9 +17,9 @@ const router = express.Router();
  * - type: string - Tipo de búsqueda (estadisticas_locales, noticias_recientes, etc.)
  * - maxResults: number - Máximo número de resultados (default: 5)
  */
-router.post('/', webSearchLimiter, webSearchController.buscarWeb);
+router.post('/', requireFirebaseAuth, webSearchLimiter, webSearchController.buscarWeb);
 // Nueva ruta: respuesta con IA a partir de resultados de búsqueda
-router.post('/answer', webSearchLimiter, webSearchController.responderBusquedaIA);
+router.post('/answer', requireFirebaseAuth, webSearchLimiter, webSearchController.responderBusquedaIA);
 
 /**
  * GET /api/web-search/test

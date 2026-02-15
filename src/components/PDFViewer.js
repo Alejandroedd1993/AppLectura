@@ -21,8 +21,8 @@ const ViewerContainer = styled.div`
   .react-pdf__Page__textContent {
     user-select: text;
     
-    /* Reducir opacidad de la capa de texto para minimizar el efecto "fantasma" */
-    opacity: 0.4;
+    /* Capa de texto semi-transparente: suficiente para selección y búsqueda */
+    opacity: 0.2;
     
     /* Color de selección más oscuro y visible */
     ::selection {
@@ -35,16 +35,18 @@ const ViewerContainer = styled.div`
 
     /* Resaltado de búsqueda en PDF */
     .pdf-search-highlight {
-      background: rgba(255, 245, 157, 0.8) !important;
+      background: rgba(255, 245, 157, 0.95) !important;
       border-radius: 2px;
-      box-shadow: 0 0 0 1px rgba(255, 193, 7, 0.3);
+      box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.5);
       opacity: 1 !important;
+      mix-blend-mode: multiply;
     }
 
     /* Resultado actual resaltado con color más intenso */
     .pdf-search-current {
-      background: rgba(255, 193, 7, 0.9) !important;
-      box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.6) !important;
+      background: rgba(255, 152, 0, 0.95) !important;
+      box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.7) !important;
+      mix-blend-mode: multiply;
     }
   }
   
@@ -208,7 +210,7 @@ function PDFViewer({
     }
   }, [scale, file]);
 
-  // Búsqueda en PDF: resaltar palabras completas (maneja palabras fragmentadas en múltiples spans)
+  // Búsqueda en PDF: resaltar coincidencias (soporta frases y subcadenas)
   useEffect(() => {
     if (!searchQuery.trim() || !containerRef.current) {
       // Limpiar resaltado previo
@@ -222,15 +224,18 @@ function PDFViewer({
       return;
     }
 
-    // Dar tiempo a que se renderice el PDF
+    // Delay adaptativo: más largo en primera carga, más corto al re-buscar
+    const delay = searchApplied ? 200 : 600;
     const timer = setTimeout(() => {
       if (!containerRef.current) return;
 
       const textLayers = containerRef.current.querySelectorAll('.react-pdf__Page__textContent');
       const matchedSpanGroups = [];
+      const matchKeys = new Set();
       const query = searchQuery.trim();
 
       textLayers.forEach(layer => {
+        const pageNumber = Number(layer.closest('[data-page-number]')?.getAttribute('data-page-number') || 0);
         const spans = Array.from(layer.querySelectorAll('span'));
 
         // Limpiar clases previas
@@ -250,37 +255,41 @@ function PDFViewer({
           spanMap.push({ start, end, span, text });
         });
 
-        // Buscar en el texto completo (con espacios)
+        // Buscar TODAS las ocurrencias con indexOf (soporta frases y subcadenas)
+        const fullTextLower = fullText.toLowerCase();
         const queryLower = query.toLowerCase();
+        let searchPos = 0;
 
-        // Buscar todas las ocurrencias usando split para palabras completas
-        const words = fullText.split(/\b/);
-        let currentPos = 0;
+        while (searchPos < fullTextLower.length) {
+          const matchStart = fullTextLower.indexOf(queryLower, searchPos);
+          if (matchStart === -1) break;
 
-        words.forEach(word => {
-          const wordLower = word.toLowerCase();
+          const matchEnd = matchStart + queryLower.length;
+          const matchKey = `${pageNumber}:${matchStart}:${matchEnd}`;
 
-          // Verificar coincidencia exacta (ignorando mayúsculas)
-          if (wordLower === queryLower) {
-            const matchStart = currentPos;
-            const matchEnd = currentPos + word.length;
-            const affectedSpans = [];
+          if (matchKeys.has(matchKey)) {
+            searchPos = matchStart + 1;
+            continue;
+          }
 
-            for (const spanInfo of spanMap) {
-              // Si el span intersecta con el rango de la coincidencia
-              if (spanInfo.end > matchStart && spanInfo.start < matchEnd) {
-                affectedSpans.push(spanInfo.span);
-              }
-            }
+          const affectedSpans = [];
 
-            if (affectedSpans.length > 0) {
-              affectedSpans.forEach(span => span.classList.add('pdf-search-highlight'));
-              matchedSpanGroups.push(affectedSpans[0]); // Primer span para scroll
+          for (const spanInfo of spanMap) {
+            // Si el span intersecta con el rango de la coincidencia
+            if (spanInfo.end > matchStart && spanInfo.start < matchEnd) {
+              affectedSpans.push(spanInfo.span);
             }
           }
 
-          currentPos += word.length;
-        });
+          if (affectedSpans.length > 0) {
+            matchKeys.add(matchKey);
+            affectedSpans.forEach(span => span.classList.add('pdf-search-highlight'));
+            matchedSpanGroups.push(affectedSpans[0]); // Primer span para scroll
+          }
+
+          // Avanzar posición para evitar matches solapados
+          searchPos = matchStart + 1;
+        }
       });
 
       searchMatchesRef.current = matchedSpanGroups;
@@ -299,10 +308,10 @@ function PDFViewer({
       }
 
       setSearchApplied(true);
-    }, 500);
+    }, delay);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, numPages]);
+  }, [searchQuery, numPages, searchApplied]);
 
   // Exponer funciones de navegación al componente padre
   useEffect(() => {

@@ -21,6 +21,7 @@ import {
   writeBatch,
   arrayUnion,
   arrayRemove,
+  deleteField,
   collectionGroup,
   runTransaction
 } from 'firebase/firestore';
@@ -158,6 +159,56 @@ export async function uploadTexto(file, metadata) {
   }
 }
 
+/**
+ * Subir PDF local de estudiante para restauración de sesiones.
+ * Devuelve una URL persistente de Firebase Storage (downloadURL).
+ */
+export async function uploadSessionPdfFile({ file, userId, textoId = null } = {}) {
+  try {
+    if (!file) {
+      throw new Error('No se recibió archivo para subir');
+    }
+
+    if (!userId) {
+      throw new Error('No se recibió userId para subir PDF de sesión');
+    }
+
+    const fileName = String(file.name || 'documento.pdf');
+    const isPdf = String(file.type || '').toLowerCase() === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      throw new Error('El archivo no es PDF');
+    }
+
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    if (Number(file.size || 0) > MAX_FILE_SIZE) {
+      throw new Error(`El PDF excede el límite de 50MB (tamaño: ${(Number(file.size || 0) / 1024 / 1024).toFixed(2)}MB)`);
+    }
+
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileId = `${Date.now()}_${safeName}`;
+    const pathTextoId = (textoId || 'sin_texto').replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    const storageRef = ref(storage, `users/${userId}/session-pdfs/${pathTextoId}/${fileId}`);
+    const snapshot = await uploadBytes(storageRef, file, {
+      contentType: 'application/pdf',
+      cacheControl: 'public,max-age=31536000'
+    });
+    const downloadURL = await getDownloadURL(snapshot.ref);
+
+    logger.log('✅ [uploadSessionPdfFile] PDF subido para sesión:', {
+      userId,
+      textoId: pathTextoId,
+      name: fileName,
+      size: file.size
+    });
+
+    return downloadURL;
+  } catch (error) {
+    logger.error('❌ [uploadSessionPdfFile] Error subiendo PDF de sesión:', error);
+    throw error;
+  }
+}
+
 // [L1 cleanup] getTextosDocente, getTextosEstudiante, assignTextoToStudents, saveAnalisisTexto
 // removed — replaced by subscription-based and course-based patterns (see git history)
 
@@ -169,6 +220,147 @@ export async function uploadTexto(file, metadata) {
 // Esto evita ráfagas de writes cuando el estado local rebota con snapshots de Firestore.
 const __progressWriteDedupe = new Map();
 const __DEDUPE_WINDOW_MS = 2500;
+
+/**
+ * 🔧 FIX Firestore undefined rejection: Recursively remove all `undefined` values from an object.
+ * Firestore rejects any field set to `undefined`. This sanitizes the payload right before write.
+ */
+function __removeUndefinedDeep(obj) {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(item => __removeUndefinedDeep(item)).filter(item => item !== undefined);
+  }
+  if (typeof obj === 'object' && !(obj instanceof Date) && typeof obj.toDate !== 'function') {
+    // Preserve Firestore sentinel values (serverTimestamp, deleteField, etc.)
+    if (obj._methodName) return obj;
+    const cleaned = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = __removeUndefinedDeep(value);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+/**
+ * 🔧 FIX Firestore 1MiB limit: Strip verbose evaluation text from rubricProgress scores.
+ * Keeps only essential numeric/ID fields; drops criterios, evidencia, mejoras, fortalezas, etc.
+ * This prevents the global_progress document from exceeding Firestore's 1 MiB doc size limit.
+ */
+function __stripVerboseFromRubricProgress(rubricProgress) {
+  if (!rubricProgress || typeof rubricProgress !== 'object') return rubricProgress;
+
+  // Fields to keep per score entry (everything else is stripped)
+  const SCORE_KEEP_FIELDS = new Set([
+    'score', 'nivel', 'artefacto', 'timestamp', 'fuente', 'source',
+    'scoreGlobal', 'dimensionId', 'rubricId', 'textoId', 'type'
+  ]);
+
+  const stripScores = (scores) => {
+    if (!Array.isArray(scores)) return scores;
+    return scores.map(s => {
+      if (!s || typeof s !== 'object') return s;
+      const slim = {};
+      for (const key of Object.keys(s)) {
+        if (SCORE_KEEP_FIELDS.has(key)) {
+          slim[key] = s[key];
+        }
+      }
+      return slim;
+    });
+  };
+
+  const stripped = {};
+  for (const [rubricId, rubric] of Object.entries(rubricProgress)) {
+    if (!rubric || typeof rubric !== 'object') {
+      stripped[rubricId] = rubric;
+      continue;
+    }
+    const slim = { ...rubric };
+    // Strip top-level scores
+    if (slim.scores) slim.scores = stripScores(slim.scores);
+    // Strip formative scores
+    if (slim.formative && slim.formative.scores) {
+      slim.formative = { ...slim.formative, scores: stripScores(slim.formative.scores) };
+    }
+    // Strip summative verbose fields (keep only numeric/status)
+    if (slim.summative && typeof slim.summative === 'object') {
+      const sum = slim.summative;
+      slim.summative = {
+        score: sum.score ?? null,
+        nivel: sum.nivel ?? null,
+        status: sum.status || 'pending',
+        attemptsUsed: sum.attemptsUsed || 0,
+        submittedAt: sum.submittedAt || null,
+        gradedAt: sum.gradedAt || null,
+        timestamp: sum.timestamp || null,
+        teacherOverrideScore: sum.teacherOverrideScore ?? null,
+        blocked: sum.blocked || false
+      };
+    }
+    stripped[rubricId] = slim;
+  }
+  return stripped;
+}
+
+/**
+ * 🔧 FIX Firestore global_progress hardening:
+ * keep only compact/essential fields for the global progress doc.
+ */
+function __compactGlobalProgressPayload(progressData) {
+  if (!progressData || typeof progressData !== 'object') return progressData;
+
+  const compacted = { ...progressData };
+
+  if (compacted.rubricProgress && typeof compacted.rubricProgress === 'object') {
+    const stripped = __stripVerboseFromRubricProgress(compacted.rubricProgress);
+    const summarized = {};
+
+    Object.entries(stripped).forEach(([rubricId, rubric]) => {
+      if (!rubric || typeof rubric !== 'object') {
+        summarized[rubricId] = rubric;
+        return;
+      }
+
+      summarized[rubricId] = {
+        average: Number.isFinite(Number(rubric.average)) ? Number(rubric.average) : 0,
+        lastUpdate: rubric.lastUpdate || null,
+        artefactos: Array.isArray(rubric.artefactos) ? rubric.artefactos.slice(0, 10) : [],
+        formative: rubric.formative ? {
+          average: Number.isFinite(Number(rubric.formative.average)) ? Number(rubric.formative.average) : 0,
+          attempts: Number.isFinite(Number(rubric.formative.attempts)) ? Number(rubric.formative.attempts) : 0,
+          lastUpdate: rubric.formative.lastUpdate || null,
+          artefactos: Array.isArray(rubric.formative.artefactos) ? rubric.formative.artefactos.slice(0, 10) : []
+        } : null,
+        summative: rubric.summative ? {
+          score: rubric.summative.score ?? null,
+          nivel: rubric.summative.nivel ?? null,
+          status: rubric.summative.status || 'pending',
+          attemptsUsed: rubric.summative.attemptsUsed || 0,
+          submittedAt: rubric.summative.submittedAt || null,
+          gradedAt: rubric.summative.gradedAt || null,
+          timestamp: rubric.summative.timestamp || null,
+          teacherOverrideScore: rubric.summative.teacherOverrideScore ?? null,
+          blocked: Boolean(rubric.summative.blocked)
+        } : null
+      };
+    });
+
+    compacted.rubricProgress = summarized;
+  }
+
+  if (compacted.activitiesProgress) {
+    delete compacted.activitiesProgress;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(compacted, 'savedCitations')) {
+    delete compacted.savedCitations;
+  }
+
+  return compacted;
+}
 
 // 📈 Métricas opcionales de dedupe (desactivadas por defecto)
 // Activar: localStorage.setItem('__firestore_dedupe_debug__','1')
@@ -317,10 +509,10 @@ if (typeof window !== 'undefined') {
     console.log('🧪 [Firestore] Test de escritura:', { uid, textoId, testData });
     try {
       const progressRef = doc(db, 'students', uid, 'progress', textoId);
-      await setDoc(progressRef, { 
-        testWrite: true, 
+      await setDoc(progressRef, {
+        testWrite: true,
         timestamp: new Date().toISOString(),
-        ...testData 
+        ...testData
       }, { merge: true });
       console.log('✅ [Firestore] Test de escritura exitoso');
       return true;
@@ -372,6 +564,11 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
       }
     }
 
+    // 🔧 HARDEN: compactar payload si es global_progress (evita doc gigante)
+    if (textoId === 'global_progress') {
+      progressData = __compactGlobalProgressPayload(progressData);
+    }
+
     // 🔁 DEDUPE: si el payload útil es idéntico y reciente, saltar write
     const dedupeKey = `${estudianteUid}::${textoId}`;
     const now = Date.now();
@@ -419,268 +616,371 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
     let _savedFinalData;
     await __retryWithBackoff(() => runTransaction(db, async (transaction) => {
 
-    // Obtener datos existentes para hacer merge inteligente
-    const existingDoc = await transaction.get(progressRef);
-    const existingData = existingDoc.exists() ? existingDoc.data() : {};
+      // Obtener datos existentes para hacer merge inteligente
+      const existingDoc = await transaction.get(progressRef);
+      const existingData = existingDoc.exists() ? existingDoc.data() : {};
 
-    // 🔄 MERGE INTELIGENTE: Combinar datos nuevos con existentes
-    const mergedData = { ...existingData };
+      if (textoId === 'global_progress') {
+        const compactExisting = __compactGlobalProgressPayload(existingData);
+        Object.keys(existingData).forEach((key) => delete existingData[key]);
+        Object.assign(existingData, compactExisting);
+      }
 
-    // Mergear rubricProgress (CONCATENAR scores, no reemplazar)
-    if (progressData.rubricProgress) {
-      mergedData.rubricProgress = mergedData.rubricProgress || {};
+      // � FIX: Strip verbose fields from existing data too (clean up legacy bloated docs)
+      if (existingData.rubricProgress) {
+        existingData.rubricProgress = __stripVerboseFromRubricProgress(existingData.rubricProgress);
+      }
 
-      Object.keys(progressData.rubricProgress).forEach(rubricId => {
-        const newRubric = progressData.rubricProgress[rubricId];
-        const existingRubric = mergedData.rubricProgress[rubricId];
+      // �🔄 MERGE INTELIGENTE: Combinar datos nuevos con existentes
+      const mergedData = { ...existingData };
 
-        if (!existingRubric) {
-          // Si no existe, crear nueva
-          mergedData.rubricProgress[rubricId] = newRubric;
-        } else {
-          // 🔧 FIX: Concatenar scores únicos por timestamp en lugar de reemplazar
-          const existingScores = existingRubric.scores || [];
-          const newScores = newRubric.scores || [];
+      // Mergear rubricProgress (CONCATENAR scores, no reemplazar)
+      // 🔧 CRITICAL FIX: Detectar si el documento fue reseteado por el docente
+      // Si existingData tiene lastResetAt, verificar que los scores entrantes sean POST-reset
+      const docResetTime = (() => {
+        const lr = existingData.lastResetAt;
+        if (!lr) return 0;
+        if (lr?.seconds) return lr.seconds * 1000;
+        if (typeof lr === 'number') return lr;
+        if (typeof lr?.toMillis === 'function') return lr.toMillis();
+        return 0;
+      })();
 
-          // Crear mapa de scores existentes por timestamp para evitar duplicados
-          const existingTimestamps = new Set(existingScores.map(s => s.timestamp));
+      if (progressData.rubricProgress) {
+        // 🔧 FIX: Strip verbose fields from incoming data before merge
+        const cleanedIncoming = __stripVerboseFromRubricProgress(progressData.rubricProgress);
+        mergedData.rubricProgress = mergedData.rubricProgress || {};
 
-          // Agregar solo scores nuevos (que no existan por timestamp)
-          const uniqueNewScores = newScores.filter(s => !existingTimestamps.has(s.timestamp));
+        Object.keys(cleanedIncoming).forEach(rubricId => {
+          const newRubric = cleanedIncoming[rubricId];
+          const existingRubric = mergedData.rubricProgress[rubricId];
 
-          // Combinar y ordenar por timestamp
-          const combinedScores = [...existingScores, ...uniqueNewScores]
-            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+          if (!existingRubric) {
+            // Si no existe, crear nueva
+            mergedData.rubricProgress[rubricId] = newRubric;
+          } else {
+            // 🔧 CRITICAL FIX: Si la rúbrica existente en Firestore fue reseteada por el docente,
+            // NO concatenar los scores viejos del estado local del estudiante.
+            // Los scores del estudiante pre-reset deben descartarse.
+            const existingResetAt = existingRubric.resetAt
+              ? new Date(existingRubric.resetAt).getTime()
+              : 0;
+            const effectiveResetTime = Math.max(docResetTime, existingResetAt);
 
-          // Recalcular promedio con últimos 3 intentos
-          const recentScores = combinedScores.slice(-3);
-          const newAverage = recentScores.length > 0
-            ? Math.round((recentScores.reduce((sum, s) => sum + (s.score || 0), 0) / recentScores.length) * 10) / 10
-            : 0;
+            if (effectiveResetTime > 0 && existingRubric.resetBy === 'docente') {
+              // La rúbrica fue reseteada por el docente — filtrar scores PRE-reset
+              const newScores = (newRubric.scores || []).filter(s => {
+                const scoreTime = s.timestamp || 0;
+                return scoreTime > effectiveResetTime;
+              });
 
-          // Combinar artefactos únicos
-          const combinedArtefactos = [...new Set([
-            ...(existingRubric.artefactos || []),
-            ...(newRubric.artefactos || [])
-          ])];
+              if (newScores.length === 0) {
+                // Todos los scores son anteriores al reset — mantener el estado reseteado
+                logger.log(`🛡️ [Firestore] ${rubricId}: Rúbrica reseteada por docente, descartando ${(newRubric.scores || []).length} scores pre-reset`);
+                // Preservar el estado reseteado del docente
+                mergedData.rubricProgress[rubricId] = existingRubric;
+                return;
+              }
 
-          mergedData.rubricProgress[rubricId] = {
-            scores: combinedScores,
-            average: newAverage,
-            lastUpdate: Math.max(existingRubric.lastUpdate || 0, newRubric.lastUpdate || 0),
-            artefactos: combinedArtefactos
-          };
+              // Solo hay scores POST-reset — usarlos como nuevos scores
+              const recentScores = newScores.slice(-3);
+              const newAverage = recentScores.length > 0
+                ? Math.round((recentScores.reduce((sum, s) => sum + (s.score || 0), 0) / recentScores.length) * 10) / 10
+                : 0;
 
-          logger.log(`🔄 [Firestore] Merge de ${rubricId}: ${existingScores.length} existentes + ${uniqueNewScores.length} nuevos = ${combinedScores.length} total`);
-        }
-      });
-    }
+              mergedData.rubricProgress[rubricId] = {
+                scores: newScores,
+                average: newAverage,
+                lastUpdate: Math.max(existingRubric.lastUpdate || 0, newRubric.lastUpdate || 0),
+                artefactos: newRubric.artefactos || []
+              };
 
-    // Mergear activitiesProgress (priorizar entregas de artefactos y recencia)
-    if (progressData.activitiesProgress) {
-      mergedData.activitiesProgress = mergedData.activitiesProgress || {};
+              logger.log(`🔄 [Firestore] ${rubricId}: Post-reset merge, ${newScores.length} scores válidos (post-reset)`);
+              return;
+            }
 
-      const getActivityMergeStats = (activity) => {
-        const preparationUpdatedAt = activity?.preparation?.updatedAt || 0;
-        const artifacts = activity?.artifacts || {};
-        let submittedCount = 0;
-        let latestSubmittedAt = 0;
+            // Flujo normal (sin reset) — concatenar scores únicos
+            const existingScores = existingRubric.scores || [];
+            const newScores = newRubric.scores || [];
 
-        Object.values(artifacts).forEach((a) => {
-          if (a?.submitted) {
-            submittedCount += 1;
-            latestSubmittedAt = Math.max(latestSubmittedAt, a.submittedAt || 0);
+            // Crear mapa de scores existentes por timestamp para evitar duplicados
+            const existingTimestamps = new Set(existingScores.map(s => s.timestamp));
+
+            // Agregar solo scores nuevos (que no existan por timestamp)
+            const uniqueNewScores = newScores.filter(s => !existingTimestamps.has(s.timestamp));
+
+            // Combinar y ordenar por timestamp
+            const combinedScores = [...existingScores, ...uniqueNewScores]
+              .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+            // Recalcular promedio con últimos 3 intentos
+            const recentScores = combinedScores.slice(-3);
+            const newAverage = recentScores.length > 0
+              ? Math.round((recentScores.reduce((sum, s) => sum + (s.score || 0), 0) / recentScores.length) * 10) / 10
+              : 0;
+
+            // Combinar artefactos únicos
+            const combinedArtefactos = [...new Set([
+              ...(existingRubric.artefactos || []),
+              ...(newRubric.artefactos || [])
+            ])];
+
+            mergedData.rubricProgress[rubricId] = {
+              scores: combinedScores,
+              average: newAverage,
+              lastUpdate: Math.max(existingRubric.lastUpdate || 0, newRubric.lastUpdate || 0),
+              artefactos: combinedArtefactos
+            };
+
+            logger.log(`🔄 [Firestore] Merge de ${rubricId}: ${existingScores.length} existentes + ${uniqueNewScores.length} nuevos = ${combinedScores.length} total`);
           }
         });
+      }
 
-        return {
-          submittedCount,
-          preparationUpdatedAt,
-          latestSubmittedAt,
-          effectiveUpdatedAt: Math.max(preparationUpdatedAt, latestSubmittedAt)
+      // Mergear activitiesProgress (priorizar entregas de artefactos y recencia)
+      if (progressData.activitiesProgress) {
+        mergedData.activitiesProgress = mergedData.activitiesProgress || {};
+
+        const getActivityMergeStats = (activity) => {
+          const preparationUpdatedAt = activity?.preparation?.updatedAt || 0;
+          const artifacts = activity?.artifacts || {};
+          let submittedCount = 0;
+          let latestSubmittedAt = 0;
+
+          Object.values(artifacts).forEach((a) => {
+            if (a?.submitted) {
+              submittedCount += 1;
+              latestSubmittedAt = Math.max(latestSubmittedAt, a.submittedAt || 0);
+            }
+          });
+
+          return {
+            submittedCount,
+            preparationUpdatedAt,
+            latestSubmittedAt,
+            effectiveUpdatedAt: Math.max(preparationUpdatedAt, latestSubmittedAt)
+          };
         };
+
+        Object.keys(progressData.activitiesProgress).forEach(docId => {
+          const newActivity = progressData.activitiesProgress[docId];
+          const existingActivity = mergedData.activitiesProgress[docId];
+
+          // Si no existe, agregar
+          if (!existingActivity) {
+            mergedData.activitiesProgress[docId] = newActivity;
+            return;
+          }
+
+          // 🔧 CRITICAL FIX: Si hay reset de docente activo, verificar que los datos entrantes
+          // NO sean pre-reset. Si algún artefacto existente tiene resetBy='docente',
+          // y el entrante tiene submitted=true sin resetBy, descartar el entrante (es pre-reset).
+          if (docResetTime > 0) {
+            const existingArtifacts = existingActivity?.artifacts || {};
+            const anyExistingReset = Object.values(existingArtifacts).some(a => a?.resetBy === 'docente');
+
+            if (anyExistingReset) {
+              // Verificar cada artefacto del newActivity
+              const newArtifacts = newActivity?.artifacts || {};
+              const anyNewIsPreReset = Object.entries(newArtifacts).some(([name, a]) => {
+                // Si está submitted pero no tiene resetBy, probablemente es data pre-reset
+                const existingArt = existingArtifacts[name];
+                return a?.submitted && existingArt?.resetBy === 'docente' && !existingArt?.submitted;
+              });
+
+              if (anyNewIsPreReset) {
+                logger.log(`🛡️ [Firestore] activitiesProgress[${docId}]: Datos pre-reset descartados (docente reseteó)`);
+                // Mantener los datos existentes (reseteados)
+                return;
+              }
+            }
+          }
+
+          const newStats = getActivityMergeStats(newActivity);
+          const existingStats = getActivityMergeStats(existingActivity);
+
+          // 1) Más artefactos entregados gana
+          if (newStats.submittedCount > existingStats.submittedCount) {
+            mergedData.activitiesProgress[docId] = newActivity;
+            return;
+          }
+
+          // 2) Si están iguales, más reciente (considerando submittedAt o updatedAt)
+          if (newStats.submittedCount === existingStats.submittedCount &&
+            newStats.effectiveUpdatedAt > existingStats.effectiveUpdatedAt) {
+            mergedData.activitiesProgress[docId] = newActivity;
+          }
+        });
+      }
+
+      // 🆕 MERGEAR rewardsState (Gamificación) - MERGE INTELIGENTE
+      // 🧩 FASE 4: solo se permite en global_progress
+      if (textoId === 'global_progress' && progressData.rewardsState) {
+        const existingRewards = mergedData.rewardsState || {};
+        const newRewards = progressData.rewardsState;
+
+        // 🆕 FIX: Detectar reset intencional
+        const newResetAt = newRewards.resetAt || 0;
+        const existingResetAt = existingRewards.resetAt || 0;
+        const isIntentionalReset = newResetAt > existingResetAt && newRewards.totalPoints === 0;
+
+        logger.log('🔵 [Firestore] Merge de rewardsState:', {
+          newResetAt,
+          existingResetAt,
+          newTotalPoints: newRewards.totalPoints,
+          existingTotalPoints: existingRewards.totalPoints,
+          isIntentionalReset
+        });
+
+        if (isIntentionalReset) {
+          // 🗑️ RESET: Reemplazar completamente con el estado vacío, NO hacer merge
+          logger.log('🗑️ [Firestore] Reset intencional detectado, reemplazando estado de rewards');
+          mergedData.rewardsState = {
+            ...newRewards,
+            lastInteraction: newRewards.lastInteraction || Date.now(),
+            lastUpdate: newRewards.lastUpdate || Date.now(),
+            resetAt: newResetAt
+          };
+        } else {
+          // Merge normal: mantener máximos y concatenar historial
+          const existingTs = existingRewards.lastInteraction || existingRewards.lastUpdate || 0;
+          const newTs = newRewards.lastInteraction || newRewards.lastUpdate || Date.now();
+          const mergedTs = Math.max(existingTs, newTs);
+
+          mergedData.rewardsState = {
+            totalPoints: Math.max(existingRewards.totalPoints || 0, newRewards.totalPoints || 0),
+            availablePoints: Math.max(existingRewards.availablePoints || 0, newRewards.availablePoints || 0),
+            currentStreak: Math.max(existingRewards.currentStreak || 0, newRewards.currentStreak || 0),
+            maxStreak: Math.max(existingRewards.maxStreak || 0, newRewards.maxStreak || 0),
+            streak: Math.max(existingRewards.streak || 0, newRewards.streak || 0),
+            // Combinar achievements únicos
+            achievements: [...new Set([
+              ...(existingRewards.achievements || []),
+              ...(newRewards.achievements || [])
+            ])],
+            // Mantener el historial más reciente o largo
+            history: (newRewards.history?.length || 0) >= (existingRewards.history?.length || 0)
+              ? newRewards.history
+              : existingRewards.history,
+            // Preservar stats del más reciente
+            stats: newTs >= existingTs ? (newRewards.stats || existingRewards.stats) : (existingRewards.stats || newRewards.stats),
+            // Preservar recordedMilestones (anti-farming)
+            recordedMilestones: {
+              ...(existingRewards.recordedMilestones || {}),
+              ...(newRewards.recordedMilestones || {})
+            },
+            // Mantener ambos campos por compatibilidad; lastInteraction es el preferido.
+            lastInteraction: mergedTs,
+            lastUpdate: mergedTs,
+            resetAt: Math.max(existingResetAt, newResetAt) // Preservar el más reciente
+          };
+        }
+      }
+
+      // Calcular métricas agregadas
+      const rubricas = Object.keys(mergedData.rubricProgress || {}).filter(k => k.startsWith('rubrica'));
+      const scores = rubricas.map(k => mergedData.rubricProgress[k]?.average || 0).filter(s => s > 0);
+      const promedio_global = scores.length > 0
+        ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+        : 0;
+
+      // 🆕 CRÍTICO: Calcular porcentaje de progreso (para dashboard del docente)
+      // Basado en número de rúbricas con scores > 0
+      const rubricasCompletadas = rubricas.filter(k => {
+        const rubrica = mergedData.rubricProgress?.[k];
+        return rubrica && rubrica.scores && rubrica.scores.length > 0;
+      }).length;
+      const porcentaje = rubricas.length > 0
+        ? Math.round((rubricasCompletadas / 5) * 100) // 5 rúbricas totales
+        : 0;
+
+      // 🆕 CRÍTICO: Determinar estado (para dashboard del docente)
+      const estado = porcentaje >= 100 ? 'completed' : (porcentaje > 0 ? 'in-progress' : 'pending');
+
+      // 🆕 ENTREGA FINAL: Calcular estado de entregas de artefactos
+      const ARTIFACT_NAMES = ['resumenAcademico', 'tablaACD', 'mapaActores', 'respuestaArgumentativa', 'bitacoraEticaIA'];
+      const artifactsData = mergedData.activitiesProgress || {};
+
+      // Buscar artifacts en cualquier documentId dentro de activitiesProgress
+      let artifactsSubmitted = {};
+      Object.values(artifactsData).forEach(docProgress => {
+        if (docProgress?.artifacts) {
+          Object.entries(docProgress.artifacts).forEach(([artName, artData]) => {
+            if (artData?.submitted && !artifactsSubmitted[artName]) {
+              artifactsSubmitted[artName] = {
+                submitted: true,
+                submittedAt: artData.submittedAt || Date.now(),
+                score: artData.score || 0
+              };
+            }
+          });
+        }
+      });
+
+      const entregados = ARTIFACT_NAMES.filter(name => artifactsSubmitted[name]?.submitted).length;
+      const entregaCompleta = entregados === 5;
+      const fechaEntregaFinal = entregaCompleta
+        ? Math.max(...ARTIFACT_NAMES.map(n => artifactsSubmitted[n]?.submittedAt || 0))
+        : null;
+
+      // Preparar datos finales a guardar
+      const finalData = {
+        ...mergedData,
+        textoId,
+        estudianteUid,
+        promedio_global,
+        // 🆕 CRÍTICO: Campos que espera getCourseMetrics
+        score: promedio_global, // Alias para compatibilidad
+        ultimaPuntuacion: promedio_global, // Alias legacy
+        porcentaje, // Porcentaje de rúbricas completadas
+        progress: porcentaje, // Alias
+        avancePorcentaje: porcentaje, // Alias legacy
+        estado, // Estado calculado
+        // 🆕 ENTREGA FINAL: Nuevo campo para dashboard del docente
+        entregaFinal: {
+          completa: entregaCompleta,
+          entregados,
+          total: 5,
+          artifacts: artifactsSubmitted,
+          fechaEntrega: fechaEntregaFinal ? new Date(fechaEntregaFinal).toISOString() : null
+        },
+        // 🆕 CRÍTICO: Preservar sourceCourseId con fallback desde enrolledCourses (Bug 4)
+        sourceCourseId: progressData.sourceCourseId || existingData.sourceCourseId || resolvedSourceCourseId || null,
+        ultima_actividad: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastSync: progressData.lastSync || new Date().toISOString(),
+        syncType: progressData.syncType || 'full'
       };
 
-      Object.keys(progressData.activitiesProgress).forEach(docId => {
-        const newActivity = progressData.activitiesProgress[docId];
-        const existingActivity = mergedData.activitiesProgress[docId];
-
-        // Si no existe, agregar
-        if (!existingActivity) {
-          mergedData.activitiesProgress[docId] = newActivity;
-          return;
-        }
-
-        const newStats = getActivityMergeStats(newActivity);
-        const existingStats = getActivityMergeStats(existingActivity);
-
-        // 1) Más artefactos entregados gana
-        if (newStats.submittedCount > existingStats.submittedCount) {
-          mergedData.activitiesProgress[docId] = newActivity;
-          return;
-        }
-
-        // 2) Si están iguales, más reciente (considerando submittedAt o updatedAt)
-        if (newStats.submittedCount === existingStats.submittedCount &&
-          newStats.effectiveUpdatedAt > existingStats.effectiveUpdatedAt) {
-          mergedData.activitiesProgress[docId] = newActivity;
-        }
-      });
-    }
-
-     // 🆕 MERGEAR rewardsState (Gamificación) - MERGE INTELIGENTE
-     // 🧩 FASE 4: solo se permite en global_progress
-     if (textoId === 'global_progress' && progressData.rewardsState) {
-      const existingRewards = mergedData.rewardsState || {};
-      const newRewards = progressData.rewardsState;
-
-      // 🆕 FIX: Detectar reset intencional
-      const newResetAt = newRewards.resetAt || 0;
-      const existingResetAt = existingRewards.resetAt || 0;
-      const isIntentionalReset = newResetAt > existingResetAt && newRewards.totalPoints === 0;
-
-      logger.log('🔵 [Firestore] Merge de rewardsState:', {
-        newResetAt,
-        existingResetAt,
-        newTotalPoints: newRewards.totalPoints,
-        existingTotalPoints: existingRewards.totalPoints,
-        isIntentionalReset
-      });
-
-      if (isIntentionalReset) {
-        // 🗑️ RESET: Reemplazar completamente con el estado vacío, NO hacer merge
-        logger.log('🗑️ [Firestore] Reset intencional detectado, reemplazando estado de rewards');
-        mergedData.rewardsState = {
-          ...newRewards,
-          lastInteraction: newRewards.lastInteraction || Date.now(),
-          lastUpdate: newRewards.lastUpdate || Date.now(),
-          resetAt: newResetAt
-        };
-      } else {
-        // Merge normal: mantener máximos y concatenar historial
-        const existingTs = existingRewards.lastInteraction || existingRewards.lastUpdate || 0;
-        const newTs = newRewards.lastInteraction || newRewards.lastUpdate || Date.now();
-        const mergedTs = Math.max(existingTs, newTs);
-
-        mergedData.rewardsState = {
-          totalPoints: Math.max(existingRewards.totalPoints || 0, newRewards.totalPoints || 0),
-          availablePoints: Math.max(existingRewards.availablePoints || 0, newRewards.availablePoints || 0),
-          currentStreak: Math.max(existingRewards.currentStreak || 0, newRewards.currentStreak || 0),
-          maxStreak: Math.max(existingRewards.maxStreak || 0, newRewards.maxStreak || 0),
-          streak: Math.max(existingRewards.streak || 0, newRewards.streak || 0),
-          // Combinar achievements únicos
-          achievements: [...new Set([
-            ...(existingRewards.achievements || []),
-            ...(newRewards.achievements || [])
-          ])],
-          // Mantener el historial más reciente o largo
-          history: (newRewards.history?.length || 0) >= (existingRewards.history?.length || 0)
-            ? newRewards.history
-            : existingRewards.history,
-          // Preservar stats del más reciente
-          stats: newTs >= existingTs ? (newRewards.stats || existingRewards.stats) : (existingRewards.stats || newRewards.stats),
-          // Preservar recordedMilestones (anti-farming)
-          recordedMilestones: {
-            ...(existingRewards.recordedMilestones || {}),
-            ...(newRewards.recordedMilestones || {})
-          },
-          // Mantener ambos campos por compatibilidad; lastInteraction es el preferido.
-          lastInteraction: mergedTs,
-          lastUpdate: mergedTs,
-          resetAt: Math.max(existingResetAt, newResetAt) // Preservar el más reciente
-        };
+      // 🔧 HARDEN: asegurar compacción final en global_progress + limpieza explícita legacy
+      if (textoId === 'global_progress') {
+        const compactFinal = __compactGlobalProgressPayload(finalData);
+        Object.keys(finalData).forEach((key) => delete finalData[key]);
+        Object.assign(finalData, compactFinal);
+        finalData.activitiesProgress = deleteField();
+        finalData.savedCitations = deleteField();
       }
-    }
 
-    // Calcular métricas agregadas
-    const rubricas = Object.keys(mergedData.rubricProgress || {}).filter(k => k.startsWith('rubrica'));
-    const scores = rubricas.map(k => mergedData.rubricProgress[k]?.average || 0).filter(s => s > 0);
-    const promedio_global = scores.length > 0
-      ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
-      : 0;
-
-    // 🆕 CRÍTICO: Calcular porcentaje de progreso (para dashboard del docente)
-    // Basado en número de rúbricas con scores > 0
-    const rubricasCompletadas = rubricas.filter(k => {
-      const rubrica = mergedData.rubricProgress?.[k];
-      return rubrica && rubrica.scores && rubrica.scores.length > 0;
-    }).length;
-    const porcentaje = rubricas.length > 0
-      ? Math.round((rubricasCompletadas / 5) * 100) // 5 rúbricas totales
-      : 0;
-
-    // 🆕 CRÍTICO: Determinar estado (para dashboard del docente)
-    const estado = porcentaje >= 100 ? 'completed' : (porcentaje > 0 ? 'in-progress' : 'pending');
-
-    // 🆕 ENTREGA FINAL: Calcular estado de entregas de artefactos
-    const ARTIFACT_NAMES = ['resumenAcademico', 'tablaACD', 'mapaActores', 'respuestaArgumentativa', 'bitacoraEticaIA'];
-    const artifactsData = mergedData.activitiesProgress || {};
-
-    // Buscar artifacts en cualquier documentId dentro de activitiesProgress
-    let artifactsSubmitted = {};
-    Object.values(artifactsData).forEach(docProgress => {
-      if (docProgress?.artifacts) {
-        Object.entries(docProgress.artifacts).forEach(([artName, artData]) => {
-          if (artData?.submitted && !artifactsSubmitted[artName]) {
-            artifactsSubmitted[artName] = {
-              submitted: true,
-              submittedAt: artData.submittedAt || Date.now(),
-              score: artData.score || 0
-            };
-          }
-        });
+      // Si es primera vez, agregar timestamps de creación
+      if (!existingDoc.exists()) {
+        finalData.primera_actividad = serverTimestamp();
+        finalData.total_intentos = 0;
+        finalData.tiempo_total_min = 0;
+        finalData.tiempoLecturaTotal = 0; // Para compatibilidad con dashboard
+        finalData.tiempoTotal = 0; // Alias legacy
+        finalData.completado = false;
+        finalData.bloqueado = false;
       }
-    });
 
-    const entregados = ARTIFACT_NAMES.filter(name => artifactsSubmitted[name]?.submitted).length;
-    const entregaCompleta = entregados === 5;
-    const fechaEntregaFinal = entregaCompleta
-      ? Math.max(...ARTIFACT_NAMES.map(n => artifactsSubmitted[n]?.submittedAt || 0))
-      : null;
+      // 🔧 FIX: Strip verbose evaluation text from rubricProgress to stay within Firestore 1 MiB limit
+      if (finalData.rubricProgress) {
+        finalData.rubricProgress = __stripVerboseFromRubricProgress(finalData.rubricProgress);
+      }
 
-    // Preparar datos finales a guardar
-    const finalData = {
-      ...mergedData,
-      textoId,
-      estudianteUid,
-      promedio_global,
-      // 🆕 CRÍTICO: Campos que espera getCourseMetrics
-      score: promedio_global, // Alias para compatibilidad
-      ultimaPuntuacion: promedio_global, // Alias legacy
-      porcentaje, // Porcentaje de rúbricas completadas
-      progress: porcentaje, // Alias
-      avancePorcentaje: porcentaje, // Alias legacy
-      estado, // Estado calculado
-      // 🆕 ENTREGA FINAL: Nuevo campo para dashboard del docente
-      entregaFinal: {
-        completa: entregaCompleta,
-        entregados,
-        total: 5,
-        artifacts: artifactsSubmitted,
-        fechaEntrega: fechaEntregaFinal ? new Date(fechaEntregaFinal).toISOString() : null
-      },
-      // 🆕 CRÍTICO: Preservar sourceCourseId con fallback desde enrolledCourses (Bug 4)
-      sourceCourseId: progressData.sourceCourseId || existingData.sourceCourseId || resolvedSourceCourseId || null,
-      ultima_actividad: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      lastSync: progressData.lastSync || new Date().toISOString(),
-      syncType: progressData.syncType || 'full'
-    };
-
-    // Si es primera vez, agregar timestamps de creación
-    if (!existingDoc.exists()) {
-      finalData.primera_actividad = serverTimestamp();
-      finalData.total_intentos = 0;
-      finalData.tiempo_total_min = 0;
-      finalData.tiempoLecturaTotal = 0; // Para compatibilidad con dashboard
-      finalData.tiempoTotal = 0; // Alias legacy
-      finalData.completado = false;
-      finalData.bloqueado = false;
-    }
-
-    // Guardar con merge (dentro de transacción atómica)
-    _savedFinalData = finalData;
-    transaction.set(progressRef, finalData, { merge: true });
+      // 🔧 FIX: Sanitizar undefined antes de escribir (Firestore rechaza undefined)
+      const sanitizedData = __removeUndefinedDeep(finalData);
+      _savedFinalData = sanitizedData;
+      transaction.set(progressRef, sanitizedData, { merge: true });
 
     })); // fin de runTransaction + __retryWithBackoff
 
@@ -725,7 +1025,7 @@ export async function saveStudentProgress(estudianteUid, textoId, progressData) 
  */
 export async function getStudentProgress(estudianteUid, textoId) {
   logger.log('🔵 [Firestore] getStudentProgress llamado:', { uid: estudianteUid, textoId });
-  
+
   try {
     const progressRef = doc(db, 'students', estudianteUid, 'progress', textoId);
     const progressDoc = await getDoc(progressRef);
@@ -736,10 +1036,10 @@ export async function getStudentProgress(estudianteUid, textoId) {
     }
 
     const data = progressDoc.data();
-    const rubricKeys = Object.keys(data.rubricProgress || {}).filter(k => 
+    const rubricKeys = Object.keys(data.rubricProgress || {}).filter(k =>
       data.rubricProgress?.[k]?.scores?.length > 0
     );
-    
+
     logger.log('✅ [Firestore] Progreso encontrado:', {
       uid: estudianteUid,
       textoId,
@@ -1688,12 +1988,28 @@ export async function removeLecturaFromCourse(courseId, textoId) {
       updatedAt: serverTimestamp()
     });
 
-    // Mantener sincronía con estudiantes activos (para que se refleje inmediatamente)
+    // Mantener sincronía con estudiantes activos
     const studentsSnap = await getDocs(collection(db, 'courses', courseId, 'students'));
     for (const studentDoc of studentsSnap.docs) {
       const data = studentDoc.data();
       if (data.estado === 'active') {
         await syncCourseAssignments(courseId, studentDoc.id, updatedLecturas);
+      }
+
+      // 🔧 FIX Bug #2: Limpiar progreso huérfano de la lectura removida
+      // Solo eliminar si el doc de progreso pertenece a ESTE curso
+      try {
+        const progressRef = doc(db, 'students', studentDoc.id, 'progress', textoId);
+        const progressSnap = await getDoc(progressRef);
+        if (progressSnap.exists()) {
+          const scid = progressSnap.data()?.sourceCourseId;
+          if (scid === courseId || scid === undefined || scid === null || scid === '') {
+            await deleteDoc(progressRef);
+            logger.log(`🧹 [removeLectura] Progreso huérfano eliminado: ${textoId} para estudiante ${studentDoc.id}`);
+          }
+        }
+      } catch (cleanupError) {
+        logger.warn(`⚠️ [removeLectura] Error limpiando progreso huérfano:`, cleanupError.message);
       }
     }
 
@@ -2055,8 +2371,36 @@ export async function getCourseMetrics(courseId, options = {}) {
       }
 
       if (relevantes.length) {
-        const totalAvance = relevantes.reduce((acc, docSnap) => acc + (docSnap.data().porcentaje || docSnap.data().progress || docSnap.data().avancePorcentaje || 0), 0);
-        const completadas = relevantes.filter(docSnap => (docSnap.data().estado === 'completed') || (docSnap.data().porcentaje || docSnap.data().progress || 0) >= 100).length;
+        // 🔧 FIX Bug #3: Calcular avance REAL desde rubricProgress (no desde porcentaje que nunca se actualiza)
+        const totalAvance = relevantes.reduce((acc, docSnap) => {
+          const data = docSnap.data();
+          // Prioridad: porcentaje explícito > cálculo desde rubricProgress > 0
+          if (data.porcentaje > 0 || data.progress > 0 || data.avancePorcentaje > 0) {
+            return acc + (data.porcentaje || data.progress || data.avancePorcentaje || 0);
+          }
+          // Calcular desde rubricProgress: contar rúbricas con scores reales
+          const rp = data.rubricProgress || {};
+          let completedRubrics = 0;
+          for (let i = 1; i <= 5; i++) {
+            const rubric = rp[`rubrica${i}`];
+            if (rubric && (rubric.scores?.length > 0 || rubric.average > 0)) {
+              completedRubrics++;
+            }
+          }
+          return acc + (completedRubrics / 5) * 100;
+        }, 0);
+        const completadas = relevantes.filter(docSnap => {
+          const data = docSnap.data();
+          if (data.estado === 'completed' || (data.porcentaje || data.progress || 0) >= 100) return true;
+          // Fallback: todas las rúbricas tienen scores
+          const rp = data.rubricProgress || {};
+          let count = 0;
+          for (let i = 1; i <= 5; i++) {
+            const rubric = rp[`rubrica${i}`];
+            if (rubric && (rubric.scores?.length > 0 || rubric.average > 0)) count++;
+          }
+          return count >= 5;
+        }).length;
         const totalScore = relevantes.reduce((acc, docSnap) => acc + (docSnap.data().score || docSnap.data().ultimaPuntuacion || 0), 0);
         const scoreEntries = relevantes.filter(docSnap => (docSnap.data().score || docSnap.data().ultimaPuntuacion)).length;
         const totalTiempo = relevantes.reduce((acc, docSnap) => acc + (docSnap.data().tiempoLecturaTotal || docSnap.data().tiempoTotal || 0), 0);
@@ -2069,11 +2413,11 @@ export async function getCourseMetrics(courseId, options = {}) {
 
         // 🆕 Contar entregas sin revisar por el docente (sin límite de tiempo)
         let entregasRecientes = 0;
-        
+
         relevantes.forEach(docSnap => {
           const data = docSnap.data();
           const activitiesProgress = data.activitiesProgress || {};
-          
+
           // Buscar artifacts en estructura anidada
           Object.values(activitiesProgress).forEach(lecProgress => {
             const artifacts = lecProgress?.artifacts || {};
@@ -2096,7 +2440,7 @@ export async function getCourseMetrics(courseId, options = {}) {
         stats.artefactosEntregados = totalArtefactosEntregados;
         stats.totalArtefactosPosibles = relevantes.length * 5; // 5 artefactos por lectura
         stats.entregasRecientes = entregasRecientes; // 🆕 Nuevas entregas sin revisar
-        
+
         // 🆕 DETALLE POR LECTURA: Construir objeto con progreso específico por lectura
         const lecturaDetails = {};
         relevantes.forEach(docSnap => {
@@ -2104,7 +2448,7 @@ export async function getCourseMetrics(courseId, options = {}) {
           const data = docSnap.data();
           const activitiesProgress = data.activitiesProgress || {};
           const rubricProgress = data.rubricProgress || {};
-          
+
           // Buscar artifacts en estructura anidada (activitiesProgress[textoId].artifacts)
           let artifacts = {};
           if (activitiesProgress[textoId]?.artifacts) {
@@ -2119,7 +2463,7 @@ export async function getCourseMetrics(courseId, options = {}) {
               }
             });
           }
-          
+
           // Mapear rúbricas a artefactos para obtener scores
           const rubricMapping = {
             resumenAcademico: 'rubrica1',
@@ -2128,14 +2472,14 @@ export async function getCourseMetrics(courseId, options = {}) {
             respuestaArgumentativa: 'rubrica4',
             bitacoraEticaIA: 'rubrica5'
           };
-          
+
           // Enriquecer artifacts con rubricScore
           const enrichedArtifacts = {};
           ['resumenAcademico', 'tablaACD', 'mapaActores', 'respuestaArgumentativa', 'bitacoraEticaIA'].forEach(artKey => {
             const art = artifacts[artKey] || {};
             const rubricKey = rubricMapping[artKey];
             const rubric = rubricProgress[rubricKey] || {};
-            
+
             // 🔧 FIX: Obtener score con prioridad correcta
             // art.score puede ser 0 por bug legacy → no usar si es 0
             // Prioridad: submitted score > lastScore > rubric.average > rubric.scores último > summative
@@ -2152,12 +2496,12 @@ export async function getCourseMetrics(courseId, options = {}) {
             if (rubricScore <= 0 && rubric.summative?.status === 'graded' && rubric.summative?.score > 0) {
               rubricScore = Number(rubric.summative.score) || 0;
             }
-            
+
             // 🆕 Si el docente hizo override, usar ese como score definitivo
             if (art.teacherOverrideScore > 0) {
               rubricScore = art.teacherOverrideScore;
             }
-            
+
             enrichedArtifacts[artKey] = {
               ...art,
               rubricScore: rubricScore || 0,
@@ -2166,7 +2510,7 @@ export async function getCourseMetrics(courseId, options = {}) {
               teacherOverrideScore: art.teacherOverrideScore || null
             };
           });
-          
+
           // 🆕 Incluir ensayo sumativo en lecturaDetails para la vista overview
           const summativeEssays = [];
           ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach(rubricKey => {
@@ -2194,14 +2538,14 @@ export async function getCourseMetrics(courseId, options = {}) {
             lastUpdated: data.lastUpdated || data.lastSync
           };
         });
-        
+
         stats.lecturaDetails = lecturaDetails;
       }
     }
 
-    return { 
-      ...estudiante, 
-      estudianteNombre: estudianteNombre || estudiante.estudianteUid, 
+    return {
+      ...estudiante,
+      estudianteNombre: estudianteNombre || estudiante.estudianteUid,
       stats,
       lecturaDetails: stats.lecturaDetails || {} // 🆕 Acceso directo a detalle por lectura
     };
@@ -2444,13 +2788,8 @@ export async function deleteStudentFromCourse(courseId, studentUid) {
 
 export async function withdrawFromCourse(courseId, studentUid) {
   try {
-    // 1. Quitar del array del perfil
-    const userRef = doc(db, 'users', studentUid);
-    await updateDoc(userRef, {
-      enrolledCourses: arrayRemove(courseId)
-    });
-
-    // 2. Eliminar de la subcolección del curso
+    // 🔧 FIX: deleteStudentFromCourse ya hace arrayRemove de enrolledCourses,
+    // no es necesario hacerlo aquí también (evita escritura duplicada)
     return deleteStudentFromCourse(courseId, studentUid);
   } catch (error) {
     logger.error('❌ Error saliendo del curso:', error);
@@ -2677,7 +3016,7 @@ export async function resetAllStudentArtifacts(studentUid, textoId) {
 
     const artifactNames = [
       'resumenAcademico',
-      'tablaACD', 
+      'tablaACD',
       'mapaActores',
       'respuestaArgumentativa',
       'bitacoraEticaIA'
@@ -2749,7 +3088,7 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
     }
 
     logger.log('🔍 [getStudentArtifactDetails] Buscando:', { studentUid, textoId });
-    
+
     const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
     const progressSnap = await getDoc(progressRef);
 
@@ -2778,17 +3117,17 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
     } catch (e) {
       // Silencioso: el log es solo diagnóstico.
     }
-    
+
     // 🔧 ESTRUCTURA CORRECTA: activitiesProgress puede tener los datos anidados bajo textoId
     // Estructura 1: data.activitiesProgress[textoId].artifacts
     // Estructura 2: data.activitiesProgress.artifacts (directa)
     let artifacts = {};
-    
+
     // Intentar estructura anidada primero (como se guarda desde AppContext)
     if (data.activitiesProgress?.[textoId]?.artifacts) {
       artifacts = data.activitiesProgress[textoId].artifacts;
       logger.log('🎯 [getStudentArtifactDetails] Usando estructura anidada [textoId].artifacts');
-    } 
+    }
     // Fallback: estructura directa
     else if (data.activitiesProgress?.artifacts) {
       artifacts = data.activitiesProgress.artifacts;
@@ -2805,9 +3144,9 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
         }
       }
     }
-    
+
     const rubricProgress = data.rubricProgress || {};
-    
+
     logger.log('🎯 [getStudentArtifactDetails] Artifacts encontrados:', Object.keys(artifacts));
     logger.log('📈 [getStudentArtifactDetails] RubricProgress:', Object.keys(rubricProgress));
 
@@ -2821,22 +3160,22 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
       if (artifactData?.teacherOverrideScore > 0) {
         return artifactData.teacherOverrideScore;
       }
-      
+
       // Prioridad 1: Si el artefacto está entregado y tiene score válido (>0)
       if (artifactData?.submitted && artifactData?.score > 0) {
         return artifactData.score;
       }
-      
+
       // Prioridad 2: lastScore del artefacto (más reciente, debe ser >0)
       if (artifactData?.lastScore > 0) {
         return artifactData.lastScore;
       }
-      
+
       // Prioridad 2.5: score del artefacto si es >0 (puede venir de evaluación)
       if (artifactData?.score > 0) {
         return artifactData.score;
       }
-      
+
       // Prioridad 3: Promedio de la rúbrica
       if (rubric?.average > 0) {
         return rubric.average;
@@ -2846,13 +3185,13 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
       if (rubric?.summative && rubric.summative.status === 'graded' && rubric.summative.score != null) {
         return Number(rubric.summative.score) || 0;
       }
-      
+
       // Prioridad 4: Último score del array
       if (rubric?.scores?.length > 0) {
         const lastScoreEntry = rubric.scores[rubric.scores.length - 1];
         return typeof lastScoreEntry === 'object' ? lastScoreEntry.score : lastScoreEntry;
       }
-      
+
       return 0;
     };
 
@@ -2946,7 +3285,7 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
     };
 
     // Determinar si realmente hay progreso (al menos un artifact con datos)
-    const hasRealProgress = Object.values(artifacts).some(a => 
+    const hasRealProgress = Object.values(artifacts).some(a =>
       (a?.attempts > 0) || (a?.submitted) || (a?.history?.length > 0)
     ) || Object.keys(rubricProgress).length > 0 || (summativeEssays?.length || 0) > 0;
 

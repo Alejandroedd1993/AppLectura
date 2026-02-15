@@ -212,6 +212,16 @@ export function AuthProvider({ children }) {
     try {
       logger.debug('🔐 [AuthContext] Cerrando sesión...');
 
+      // 🔧 FIX: Cerrar sesión activa en Firestore ANTES de invalidar el token de auth
+      if (currentUser?.uid) {
+        try {
+          const { closeActiveSession } = await import('../firebase/sessionManager');
+          await closeActiveSession(currentUser.uid);
+        } catch (sessionErr) {
+          logger.warn('⚠️ [AuthContext] Error cerrando sesión activa (pre-signOut):', sessionErr.message);
+        }
+      }
+
       // Logout: preservar progreso local; limpiar solo datos sensibles
       clearLocalUserData({ mode: 'logout', uid: currentUser?.uid });
 
@@ -221,7 +231,7 @@ export function AuthProvider({ children }) {
       logger.error('❌ [AuthContext] Error cerrando sesión:', err);
       throw err;
     }
-  }, [clearLocalUserData]);
+  }, [clearLocalUserData, currentUser]);
 
   // Helpers de verificación de rol
   const isEstudiante = userData?.role === 'estudiante';

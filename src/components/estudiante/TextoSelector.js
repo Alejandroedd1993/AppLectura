@@ -16,6 +16,7 @@ import { useContext } from 'react'; // Added useContext
 import {
   joinCourseWithCode,
   getAllStudentProgress,
+  getStudentProgress,
   getStudentCourses,
   withdrawFromCourse
 } from '../../firebase/firestore';
@@ -23,7 +24,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { procesarArchivo } from '../../utils/fileProcessor';
 import { AppContext } from '../../context/AppContext';
-import { getAllSessionsMerged } from '../../services/sessionManager';
+import { getAllSessionsMerged, deleteSession } from '../../services/sessionManager';
 
 import logger from '../../utils/logger';
 const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
@@ -124,6 +125,193 @@ const UserActions = styled.div`
     flex-direction: column;
     align-items: stretch;
   }
+`;
+
+const FreeAnalysisQuotaInfo = styled.div`
+  font-size: 12px;
+  color: ${props => props.theme.textMuted};
+  margin-top: 6px;
+  text-align: right;
+
+  strong {
+    color: ${props => props.theme.primary};
+  }
+
+  &.limit-reached strong {
+    color: ${props => props.theme.error};
+  }
+
+  @media (max-width: 720px) {
+    text-align: left;
+  }
+`;
+
+const FreeAnalysisSection = styled.div`
+  max-width: 1200px;
+  margin: 0 auto 30px auto;
+  background: ${props => props.theme.surface};
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: ${props => props.theme.shadow.sm};
+`;
+
+const FreeAnalysisSectionHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  cursor: pointer;
+  border-bottom: 1px solid ${props => props.$expanded ? props.theme.border : 'transparent'};
+  transition: background 0.2s;
+
+  &:hover {
+    background: ${props => props.theme.surfaceHover || props.theme.background};
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: ${props => props.theme.text};
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toggle-icon {
+    font-size: 12px;
+    color: ${props => props.theme.textMuted};
+    transform: ${props => props.$expanded ? 'rotate(180deg)' : 'rotate(0deg)'};
+    transition: transform 0.3s ease;
+  }
+
+  @media (max-width: 640px) {
+    padding: 12px 16px;
+  }
+`;
+
+const FreeAnalysisList = styled.div`
+  padding: 12px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: ${props => props.theme.background};
+    border-radius: 3px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: ${props => props.theme.border};
+    border-radius: 3px;
+    &:hover { background: ${props => props.theme.textMuted}; }
+  }
+
+  @media (max-width: 640px) {
+    padding: 8px 16px 12px;
+  }
+`;
+
+const FreeSessionItem = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: ${props => props.theme.background};
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 10px;
+  gap: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+
+  &:hover {
+    border-color: ${props => props.theme.primary}50;
+    box-shadow: 0 2px 8px ${props => props.theme.primary}15;
+  }
+
+  .session-info {
+    flex: 1;
+    min-width: 0;
+
+    .session-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: ${props => props.theme.text};
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-meta {
+      font-size: 12px;
+      color: ${props => props.theme.textMuted};
+      margin-top: 2px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+  }
+
+  .session-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+
+    button {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s, opacity 0.2s;
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+    }
+
+    .continue-btn {
+      background: ${props => props.theme.primary};
+      color: white;
+      &:hover:not(:disabled) { background: ${props => props.theme.primaryDark}; }
+    }
+
+    .delete-btn {
+      background: transparent;
+      color: ${props => props.theme.textMuted};
+      border: 1px solid ${props => props.theme.border};
+      padding: 6px 10px;
+      &:hover {
+        background: ${props => props.theme.error}10;
+        color: ${props => props.theme.error};
+        border-color: ${props => props.theme.error}50;
+      }
+    }
+  }
+
+  @media (max-width: 720px) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+
+    .session-actions {
+      width: 100%;
+      button { flex: 1; }
+    }
+  }
+`;
+
+const FreeHistoryEmpty = styled.div`
+  text-align: center;
+  padding: 20px;
+  color: ${props => props.theme.textMuted};
+  font-size: 13px;
 `;
 
 const CourseGrid = styled.div`
@@ -336,10 +524,53 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
   const [loading, setLoading] = useState(true);
   const [joinCode, setJoinCode] = useState('');
   const [openingText, setOpeningText] = useState(null);
+  const [freeAnalysisQuota, setFreeAnalysisQuota] = useState({ used: 0, limit: 4, monthKey: '' });
+  const [freeAnalysisSessions, setFreeAnalysisSessions] = useState([]);
+  const [freeHistoryExpanded, setFreeHistoryExpanded] = useState(false);
+  const [restoringFreeSession, setRestoringFreeSession] = useState(null);
+
+  const getCurrentMonthKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  const loadFreeAnalysisQuota = async () => {
+    if (!currentUser?.uid) return;
+
+    const uid = currentUser.uid;
+    const monthKey = getCurrentMonthKey();
+    const localKey = `free_analysis_quota_${uid}_${monthKey}`;
+
+    let localCount = 0;
+    try {
+      const raw = localStorage.getItem(localKey);
+      const usage = raw ? JSON.parse(raw) : null;
+      localCount = Number.isFinite(Number(usage?.count)) ? Number(usage.count) : 0;
+    } catch {
+      localCount = 0;
+    }
+
+    let cloudCount = 0;
+    try {
+      const cloudProgress = await getStudentProgress(uid, 'global_progress');
+      const cloudMonthCount = cloudProgress?.freeAnalysisQuota?.[monthKey]?.count;
+      cloudCount = Number.isFinite(Number(cloudMonthCount)) ? Number(cloudMonthCount) : 0;
+    } catch {
+      cloudCount = 0;
+    }
+
+    const used = Math.max(localCount, cloudCount);
+    setFreeAnalysisQuota({ used, limit: 4, monthKey });
+  };
 
   useEffect(() => {
     if (currentUser) loadDashboard();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    loadFreeAnalysisQuota();
+  }, [currentUser?.uid]);
 
   useEffect(() => {
     localSessionsMapRef.current = localSessionsMap;
@@ -402,6 +633,16 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
           for (const sc of scores) {
             maxTs = Math.max(maxTs, toMillisSafe(sc?.timestamp));
           }
+
+          const summative = rp?.summative;
+          if (summative && typeof summative === 'object') {
+            maxTs = Math.max(
+              maxTs,
+              toMillisSafe(summative?.submittedAt),
+              toMillisSafe(summative?.gradedAt),
+              toMillisSafe(summative?.timestamp)
+            );
+          }
         }
 
         // 2) Actividades: updatedAt
@@ -451,7 +692,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
         // 🆕 CRÍTICO: Usar clave compuesta courseId_textoId para aislar por curso
         const sessionCourseId = s.sourceCourseId || s.text?.sourceCourseId;
         const sessionTextoId = s.textMetadata?.id || s.text?.metadata?.id || s.text?.textoId || s.currentTextoId;
-        
+
         if (sessionCourseId && sessionTextoId) {
           // Clave compuesta: solo se encontrará si coincide curso + texto
           const compositeKey = `${sessionCourseId}_${sessionTextoId}`;
@@ -507,11 +748,111 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
 
       setLocalSessionsMap(sMap);
 
+      // 🆕 Filtrar sesiones de análisis libre (sin courseId)
+      const freeSessions = mergedSessions.filter(s => {
+        const sessionCourseId = s.sourceCourseId || s.text?.sourceCourseId;
+        // Es análisis libre si NO tiene courseId
+        // Incluir sesiones con texto o análisis previo
+        const hasAnyContent = s.text?.content || s.textPreview || s.completeAnalysis || s.hasCompleteAnalysis;
+        return !sessionCourseId && hasAnyContent;
+      });
+      // Ordenar por más reciente
+      freeSessions.sort((a, b) => {
+        const tsA = a.lastModified || a.createdAt || 0;
+        const tsB = b.lastModified || b.createdAt || 0;
+        return tsB - tsA;
+      });
+      setFreeAnalysisSessions(freeSessions);
+      logger.log('📝 [TextoSelector] Sesiones de análisis libre encontradas:', freeSessions.length, freeSessions.map(s => ({ id: s.id, title: s.title, sourceCourseId: s.sourceCourseId })));
+
     } catch (error) {
       logger.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFreeAnalysisClick = async () => {
+    if (freeAnalysisQuota.used >= freeAnalysisQuota.limit) {
+      alert(`Has alcanzado tu cuota de análisis libre (${freeAnalysisQuota.limit} por mes).`);
+      return;
+    }
+
+    onFreeAnalysis?.();
+
+    // Refrescar quota al volver al selector (si el usuario navega de regreso)
+    setTimeout(() => {
+      loadFreeAnalysisQuota();
+    }, 300);
+  };
+
+  // 🆕 Restaurar sesión de análisis libre
+  const handleRestoreFreeSession = async (session) => {
+    if (restoringFreeSession) return;
+    setRestoringFreeSession(session.id);
+
+    try {
+      logger.log('🔄 [TextoSelector] Restaurando sesión de análisis libre:', session.id);
+      const success = await restoreSession(session);
+
+      if (success) {
+        logger.log('✅ [TextoSelector] Sesión libre restaurada exitosamente');
+        // Ocultar dashboard para mostrar el análisis
+        onFreeAnalysis?.();
+        // Cambiar a lectura guiada
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('app-change-tab', {
+            detail: { tabId: 'lectura-guiada' }
+          }));
+        }, 300);
+      } else {
+        alert('No se pudo restaurar la sesión. Inténtalo de nuevo.');
+      }
+    } catch (err) {
+      logger.error('❌ [TextoSelector] Error restaurando sesión libre:', err);
+      alert('Error al restaurar la sesión: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setRestoringFreeSession(null);
+    }
+  };
+
+  // 🆕 Eliminar sesión de análisis libre
+  const handleDeleteFreeSession = async (sessionId, e) => {
+    e.stopPropagation();
+    if (!window.confirm('¿Eliminar esta sesión de análisis libre? Esta acción no se puede deshacer.')) {
+      return;
+    }
+    const success = await deleteSession(sessionId);
+    if (success) {
+      setFreeAnalysisSessions(prev => prev.filter(s => s.id !== sessionId));
+      logger.log('✅ [TextoSelector] Sesión libre eliminada:', sessionId);
+    }
+  };
+
+  // Helpers para mostrar datos de sesiones libres
+  const getFreeSessionTitle = (session) => {
+    return session.text?.fileName
+      || session.title
+      || session.text?.metadata?.fileName
+      || 'Análisis sin título';
+  };
+
+  const getFreeSessionDate = (session) => {
+    const ts = session.lastModified || session.createdAt;
+    if (!ts) return 'Fecha desconocida';
+    try {
+      return new Date(ts).toLocaleDateString('es-ES', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    } catch {
+      return 'Fecha inválida';
+    }
+  };
+
+  const getFreeSessionWordCount = (session) => {
+    const words = session.textMetadata?.words || session.text?.metadata?.words;
+    return words ? `${words} palabras` : null;
   };
 
   const handleJoinCourse = async (e) => {
@@ -521,14 +862,14 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       const result = await joinCourseWithCode(joinCode, currentUser.uid);
       alert('¡Unido al curso exitosamente!');
       setJoinCode('');
-      
+
       // 🆕 CRÍTICO: Actualizar sesión activa con sourceCourseId
       if (result?.courseId) {
         const { updateCurrentSession } = await import('../../services/sessionManager');
         updateCurrentSession({ sourceCourseId: result.courseId });
         logger.log('✅ [JoinCourse] sourceCourseId actualizado en sesión:', result.courseId);
       }
-      
+
       loadDashboard();
     } catch (err) {
       alert(err.message);
@@ -553,7 +894,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
     try {
       // 🆕 SMART RESUME: Búsqueda CON CLAVE COMPUESTA courseId_textoId
       let existingSession = null;
-      
+
       // Estrategia ÚNICA: Usar clave compuesta para aislar por curso
       if (sourceCourseId && textoLite.textoId) {
         const compositeKey = `${sourceCourseId}_${textoLite.textoId}`;
@@ -579,7 +920,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
         } catch {
           // noop
         }
-        
+
         const success = await restoreSession(existingSession);
         if (success) {
           logger.log('✅ [Smart Resume] Sesión restaurada - saltando análisis');
@@ -611,39 +952,70 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       // POR AHORA: Pasamos docData + archivoInfo placeholder si es necesario.
 
       // NOTA: Para no duplicar 200 líneas de código de descarga de proxy, asumimos que
-      // onSelectText maneja el objeto. SI falla, podemos copiar la lógica de descarga.
-      // Reusando la lógica de descarga del archivo anterior...
-
-      // ... (Lógica de descarga de proxy omitida para brevedad, pero esencial si son PDFs)
-      // RESTAURANDO LOGICA CRITICA DE DISK/PROXY:
+      // Lógica de descarga robusta con fallback directo + proxy
 
       let contenido = docData.contenido;
       let archivoInfo = null;
 
       if (docData.fileURL && !contenido) {
-        // Proxy fetch quick implementation
-        const proxyUrl = `${BACKEND_BASE_URL}/api/storage/proxy?url=${encodeURIComponent(docData.fileURL)}`;
-        const res = await fetch(proxyUrl);
-        const blob = await res.blob();
-        const file = new File([blob], docData.fileName || 'texto.pdf', { type: docData.fileType || blob.type });
-        const extracted = await procesarArchivo(file, { analyzeStructure: false });
-        contenido = extracted || 'PDF Viewing';
-        archivoInfo = {
-          file,
-          objectUrl: URL.createObjectURL(blob),
-          fileURL: docData.fileURL,
-          type: file.type,
-          name: file.name
-        };
+        let blob = null;
+
+        // INTENTO 1: Fetch directo desde Firebase Storage (sin proxy)
+        try {
+          const directRes = await fetch(docData.fileURL, { mode: 'cors' });
+          if (directRes.ok) {
+            blob = await directRes.blob();
+            if (blob.size < 500) blob = null; // Sanity check
+          }
+        } catch (directErr) {
+          logger.warn('⚠️ [TextoSelector] Fetch directo falló:', directErr.message);
+        }
+
+        // INTENTO 2: Proxy backend
+        if (!blob) {
+          try {
+            const proxyUrl = `${BACKEND_BASE_URL}/api/storage/proxy?url=${encodeURIComponent(docData.fileURL)}`;
+            const proxyRes = await fetch(proxyUrl);
+            if (proxyRes.ok) {
+              blob = await proxyRes.blob();
+              if (blob.size < 500) blob = null;
+            }
+          } catch (proxyErr) {
+            logger.warn('⚠️ [TextoSelector] Proxy falló:', proxyErr.message);
+          }
+        }
+
+        if (blob) {
+          const file = new File([blob], docData.fileName || 'texto.pdf', { type: docData.fileType || blob.type });
+          const extracted = await procesarArchivo(file, { analyzeStructure: false });
+          contenido = extracted || 'PDF Viewing';
+          archivoInfo = {
+            file,
+            objectUrl: URL.createObjectURL(blob),
+            fileURL: docData.fileURL,
+            type: file.type,
+            name: file.name
+          };
+        } else {
+          // No se pudo descargar, pero pasar la URL para que VisorTexto la use directamente
+          logger.warn('⚠️ [TextoSelector] No se pudo descargar PDF, pasando fileURL directa');
+          contenido = 'PDF Viewing';
+          archivoInfo = {
+            fileURL: docData.fileURL,
+            objectUrl: docData.fileURL,
+            type: docData.fileType || 'application/pdf',
+            name: docData.fileName || 'texto.pdf'
+          };
+        }
       }
 
       // 🆕 CRÍTICO: Propagar textoId Y sourceCourseId
-      onSelectText(contenido, { 
-        id: docSnap.id, 
+      onSelectText(contenido, {
+        id: docSnap.id,
         textoId: textoLite.textoId,
         sourceCourseId, // 🆕 Propagar ID del curso
-        ...docData, 
-        archivoInfo 
+        ...docData,
+        archivoInfo
       });
 
     } catch (err) {
@@ -658,8 +1030,28 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
     if (!prog) return 0;
     // Simple promedio de rubricas o porcentaje guardado
     if (prog.porcentaje) return prog.porcentaje;
+    // 🔧 FIX: Buscar en rubricProgress (donde realmente se guardan los datos)
+    // y verificar que haya scores reales (no solo objetos truthy de reset)
+    const rp = prog.rubricProgress || prog;
     let completed = 0;
-    for (let i = 1; i <= 5; i++) if (prog[`rubrica${i}`]) completed++;
+    for (let i = 1; i <= 5; i++) {
+      const rubric = rp[`rubrica${i}`];
+      const summative = rubric?.summative;
+      const summativeStatus = String(summative?.status || '').toLowerCase();
+      const summativeAttempts = Number(summative?.attemptsUsed || 0);
+      const hasSummative =
+        summative && (
+          summativeStatus === 'submitted' ||
+          summativeStatus === 'graded' ||
+          summativeAttempts > 0 ||
+          Number(summative?.submittedAt || 0) > 0 ||
+          Number(summative?.gradedAt || 0) > 0
+        );
+      // Solo contar como completada si tiene scores con datos reales
+      if (rubric && (rubric.scores?.length > 0 || rubric.average > 0 || hasSummative)) {
+        completed++;
+      }
+    }
     return (completed / 5) * 100;
   };
 
@@ -751,9 +1143,9 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
 
             const percentage = (typeof prep.percentage === 'number') ? prep.percentage
               : (typeof prep.porcentaje === 'number') ? prep.porcentaje
-              : (mcq && typeof mcq.total === 'number' && mcq.total > 0 && typeof mcq.correct === 'number')
-                ? Math.round((mcq.correct / mcq.total) * 100)
-                : null;
+                : (mcq && typeof mcq.total === 'number' && mcq.total > 0 && typeof mcq.correct === 'number')
+                  ? Math.round((mcq.correct / mcq.total) * 100)
+                  : null;
 
             rows.push([
               `Actividad ${idx + 1}`,
@@ -784,7 +1176,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       await exportGenericPDF({
         title: `Progreso de Lectura - ${reading.titulo || 'Sin título'}`,
         sections,
-        fileName: `progreso-${(reading.titulo || 'lectura').replace(/[^a-z0-9]/gi, '_')}-${new Date().toISOString().slice(0,10)}.pdf`,
+        fileName: `progreso-${(reading.titulo || 'lectura').replace(/[^a-z0-9]/gi, '_')}-${new Date().toISOString().slice(0, 10)}.pdf`,
       });
     } catch (error) {
       logger.error('Error exportando progreso como PDF:', error);
@@ -793,6 +1185,8 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
   };
 
   if (loading) return <Container><h2 style={{ textAlign: 'center' }}>Cargando cursos...</h2></Container>;
+
+  const remainingFreeAnalyses = Math.max(0, freeAnalysisQuota.limit - freeAnalysisQuota.used);
 
   return (
     <Container>
@@ -811,13 +1205,87 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
           <button
             className="logout-btn"
             style={{ background: '#3190FC20', color: '#3190FC', borderColor: '#3190FC' }}
-            onClick={onFreeAnalysis}
+            onClick={handleFreeAnalysisClick}
+            disabled={freeAnalysisQuota.used >= freeAnalysisQuota.limit}
+            title={freeAnalysisQuota.used >= freeAnalysisQuota.limit
+              ? `Límite mensual alcanzado (${freeAnalysisQuota.limit}/${freeAnalysisQuota.limit})`
+              : `Disponible: ${remainingFreeAnalyses} análisis este mes`
+            }
           >
             Análisis Libre
           </button>
+          <FreeAnalysisQuotaInfo className={freeAnalysisQuota.used >= freeAnalysisQuota.limit ? 'limit-reached' : ''}>
+            Análisis libre este mes: <strong>{freeAnalysisQuota.used}/{freeAnalysisQuota.limit}</strong>
+            {' · '}
+            {freeAnalysisQuota.used >= freeAnalysisQuota.limit
+              ? 'Te quedan 0 análisis este mes'
+              : `Te quedan ${remainingFreeAnalyses} análisis este mes`}
+          </FreeAnalysisQuotaInfo>
           <button className="logout-btn" onClick={signOut}>Cerrar Sesión</button>
         </UserActions>
       </UserInfo>
+
+      {/* 🆕 Historial de Análisis Libres */}
+      {freeAnalysisSessions.length > 0 && (
+        <FreeAnalysisSection>
+          <FreeAnalysisSectionHeader
+            onClick={() => setFreeHistoryExpanded(!freeHistoryExpanded)}
+            $expanded={freeHistoryExpanded}
+          >
+            <h3>
+              <span>📝</span>
+              Historial de Análisis Libres
+              <span style={{ fontSize: '13px', fontWeight: 400, color: 'inherit', opacity: 0.7 }}>
+                ({freeAnalysisSessions.length})
+              </span>
+            </h3>
+            <span className="toggle-icon">▼</span>
+          </FreeAnalysisSectionHeader>
+
+          {freeHistoryExpanded && (
+            <FreeAnalysisList>
+              {freeAnalysisSessions.length === 0 ? (
+                <FreeHistoryEmpty>No hay análisis libres guardados.</FreeHistoryEmpty>
+              ) : (
+                freeAnalysisSessions.map(session => (
+                  <FreeSessionItem key={session.id}>
+                    <div className="session-info">
+                      <div className="session-title">
+                        {getFreeSessionTitle(session)}
+                      </div>
+                      <div className="session-meta">
+                        <span>📅 {getFreeSessionDate(session)}</span>
+                        {getFreeSessionWordCount(session) && (
+                          <span>📄 {getFreeSessionWordCount(session)}</span>
+                        )}
+                        {(session.hasCompleteAnalysis || session.completeAnalysis) && (
+                          <span>✅ Analizado</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="session-actions">
+                      <button
+                        className="continue-btn"
+                        onClick={() => handleRestoreFreeSession(session)}
+                        disabled={restoringFreeSession === session.id}
+                      >
+                        {restoringFreeSession === session.id ? 'Cargando...' : '▶ Continuar'}
+                      </button>
+                      <button
+                        className="delete-btn"
+                        onClick={(e) => handleDeleteFreeSession(session.id, e)}
+                        title="Eliminar sesión"
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  </FreeSessionItem>
+                ))
+              )}
+            </FreeAnalysisList>
+          )}
+        </FreeAnalysisSection>
+      )}
 
       <JoinCourseSection>
         <h3>Unirse a un nuevo curso</h3>

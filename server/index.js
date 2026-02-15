@@ -126,8 +126,14 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Permitir requests sin origin (como apps móviles o curl)
-    if (!origin) return callback(null, true);
+    // En producción exigir Origin salvo que se habilite explícitamente por env.
+    const allowNoOrigin =
+      (process.env.NODE_ENV || 'development') !== 'production' ||
+      String(process.env.ALLOW_NO_ORIGIN || '').trim().toLowerCase() === 'true';
+    if (!origin) {
+      if (allowNoOrigin) return callback(null, true);
+      return callback(new Error('Origin requerido'));
+    }
     
     if (allowedOrigins.includes(origin)) {
       callback(null, true);

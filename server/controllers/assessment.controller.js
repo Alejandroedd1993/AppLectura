@@ -150,7 +150,7 @@ export async function evaluateAnswer(req, res) {
     const parsed = safeJsonParse(response);
     if (!parsed.ok) {
       console.error('[assessment.evaluateAnswer] Error parseando JSON:', parsed.error);
-      return res.status(200).json({
+      return res.status(502).json({
         valid: false,
         degraded: true,
         error: 'Respuesta de IA no es JSON válido',
@@ -166,7 +166,7 @@ export async function evaluateAnswer(req, res) {
     const hasCore = !!data.dimension && data.scoreGlobal != null && Array.isArray(data.criteriosEvaluados);
     if (!hasCore) {
       console.warn('[assessment.evaluateAnswer] Respuesta de IA incompleta (degraded):', data);
-      return res.status(200).json({
+      return res.status(502).json({
         valid: false,
         degraded: true,
         message: 'Evaluación parcial: la IA no generó todos los campos requeridos',
@@ -194,7 +194,8 @@ export async function evaluateAnswer(req, res) {
 
   } catch (err) {
     console.error('[assessment.evaluateAnswer] Error:', err);
-    return res.status(200).json({
+    const statusCode = Number.isFinite(err?.status) ? err.status : 502;
+    return res.status(statusCode).json({
       valid: false,
       degraded: true,
       error: 'Error al evaluar la respuesta',
@@ -273,7 +274,7 @@ export async function evaluateComprehensive(req, res) {
     const parsed = safeJsonParse(response);
     if (!parsed.ok) {
       console.error('[assessment.evaluateComprehensive] Error parseando JSON:', parsed.error);
-      return res.status(200).json({
+      return res.status(502).json({
         valid: false,
         degraded: true,
         error: 'Respuesta de IA no es JSON válido',
@@ -287,7 +288,7 @@ export async function evaluateComprehensive(req, res) {
     // Validar estructura de respuesta
     if (!Array.isArray(data.evaluaciones) || data.evaluaciones.length < 4) {
       console.warn('[assessment.evaluateComprehensive] Respuesta incompleta (degraded):', data);
-      return res.status(200).json({
+      return res.status(502).json({
         valid: false,
         degraded: true,
         message: 'Evaluación parcial: se requieren al menos 4 dimensiones evaluadas',
@@ -306,7 +307,8 @@ export async function evaluateComprehensive(req, res) {
 
   } catch (err) {
     console.error('[assessment.evaluateComprehensive] Error:', err);
-    return res.status(200).json({
+    const statusCode = Number.isFinite(err?.status) ? err.status : 502;
+    return res.status(statusCode).json({
       valid: false,
       degraded: true,
       error: 'Error en evaluación comprehensiva',

@@ -10,6 +10,7 @@ let certsCache = {
   certs: null,
   expiresAt: 0
 };
+let authBypassWarningLogged = false;
 
 const toBase64 = (base64Url) => {
   const padded = base64Url.padEnd(base64Url.length + ((4 - (base64Url.length % 4)) % 4), '=');
@@ -92,16 +93,26 @@ function validateTokenClaims(payload, projectId) {
 
 export async function requireFirebaseAuth(req, res, next) {
   try {
-    const enforce = String(process.env.ENFORCE_FIREBASE_AUTH || 'false').toLowerCase() === 'true';
+    const envName = String(process.env.NODE_ENV || '').trim().toLowerCase();
+    const isLocalLikeEnv = envName === 'development' || envName === 'test';
+    const rawEnforce = String(
+      process.env.ENFORCE_FIREBASE_AUTH ?? (isLocalLikeEnv ? 'false' : 'true')
+    ).trim().toLowerCase();
+    const enforce = rawEnforce === 'true' || rawEnforce === '1' || rawEnforce === 'yes' || rawEnforce === 'on';
 
     if (!enforce) {
+      if (!authBypassWarningLogged) {
+        authBypassWarningLogged = true;
+        console.warn('[auth] Firebase auth deshabilitada por configuración. Verifica ENFORCE_FIREBASE_AUTH en producción.');
+      }
       return next();
     }
 
     const projectId = getProjectId();
     if (!projectId) {
-      console.warn('⚠️ [firebaseAuth] ENFORCE_FIREBASE_AUTH=true pero FIREBASE_PROJECT_ID no está configurado. Se omite validación para evitar caída del servicio.');
-      return next();
+      return res.status(500).json({
+        error: 'FIREBASE_PROJECT_ID no está configurado en el backend'
+      });
     }
 
     const token = parseBearerToken(req);
