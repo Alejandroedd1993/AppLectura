@@ -156,3 +156,5 @@ export async function requireFirebaseAuth(req, res, next) {
     return res.status(401).json({ error: 'Token no válido', details: error.message });
   }
 }
+
+export default requireFirebaseAuth;
