@@ -262,7 +262,7 @@ export async function analyzePreLecture(req, res) {
   }, safetyTimeoutMs);
 
   try {
-    const { text, metadata = {} } = req.body;
+    const { text, metadata = {} } = req.body || {};
 
     if (!text || typeof text !== 'string' || text.trim().length < 100) {
       return res.status(400).json({

@@ -7,7 +7,9 @@ param(
 
     [int]$TimeoutSec = 120,
 
-    [string]$ReportPath = ""
+    [string]$ReportPath = "",
+
+    [switch]$AuthGateOnly
 )
 
 Set-StrictMode -Version Latest
@@ -132,7 +134,15 @@ function Invoke-SmokeTest {
         $sw.Stop()
     }
 
-    $statusOk = $Test.expectedStatus -contains $status
+    $hasExpected = $Test.ContainsKey('expectedStatus') -and $null -ne $Test.expectedStatus -and @($Test.expectedStatus).Count -gt 0
+    $hasForbidden = $Test.ContainsKey('forbiddenStatus') -and $null -ne $Test.forbiddenStatus -and @($Test.forbiddenStatus).Count -gt 0
+
+    $statusOk = $true
+    if ($hasExpected) {
+        $statusOk = $Test.expectedStatus -contains $status
+    } elseif ($hasForbidden) {
+        $statusOk = -not ($Test.forbiddenStatus -contains $status)
+    }
 
     $missingKeys = @()
     if ($statusOk -and $null -ne $Test.requiredKeys -and $Test.requiredKeys.Count -gt 0) {
@@ -168,12 +178,19 @@ function Invoke-SmokeTest {
         $content
     }
 
+    $expectedLabel = 'any'
+    if ($hasExpected) {
+        $expectedLabel = ($Test.expectedStatus -join '/')
+    } elseif ($hasForbidden) {
+        $expectedLabel = 'not ' + ($Test.forbiddenStatus -join '/')
+    }
+
     return [pscustomobject]@{
         id          = $Test.id
         method      = $Test.method
         path        = $Test.path
         auth        = $Test.auth
-        expected    = ($Test.expectedStatus -join '/')
+        expected    = $expectedLabel
         status      = $status
         passed      = $passed
         durationMs  = [int]$sw.ElapsedMilliseconds
@@ -195,60 +212,118 @@ if ([string]::IsNullOrWhiteSpace($Token)) {
 $prelectureText = ("La lectura critica permite analizar argumentos, sesgos y evidencias en contextos sociales complejos. " * 8).Trim()
 $glossaryText = ("Este texto academico discute epistemologia, hermeneutica, argumentacion y practicas de literacidad critica en educacion superior. " * 8).Trim()
 
-$tests = @(
-    @{
-        id = 'A1'; method = 'POST'; path = '/api/analysis/text'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/text sin token'
-        body = @{ texto = 'Texto de prueba para analisis'; api = 'deepseek' }
-    },
-    @{
-        id = 'A2'; method = 'POST'; path = '/api/analysis/text'; auth = $true; expectedStatus = @(200); requiredKeys = @('resumen'); note = 'analysis/text con token'
-        body = @{ texto = 'Texto de prueba para analisis'; api = 'deepseek' }
-    },
-    @{
-        id = 'B1'; method = 'POST'; path = '/api/analysis/prelecture'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/prelecture sin token'
-        body = @{ text = $prelectureText; metadata = @{} }
-    },
-    @{
-        id = 'B2'; method = 'POST'; path = '/api/analysis/prelecture'; auth = $true; expectedStatus = @(200, 502); requiredKeys = @(); note = 'analysis/prelecture con token'
-        body = @{ text = $prelectureText; metadata = @{} }
-    },
-    @{
-        id = 'C1'; method = 'POST'; path = '/api/analysis/glossary'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/glossary sin token'
-        body = @{ text = $glossaryText; maxTerms = 6 }
-    },
-    @{
-        id = 'C2'; method = 'POST'; path = '/api/analysis/glossary'; auth = $true; expectedStatus = @(200); requiredKeys = @('terms'); note = 'analysis/glossary con token'
-        body = @{ text = $glossaryText; maxTerms = 6 }
-    },
-    @{
-        id = 'D1'; method = 'POST'; path = '/api/notes/generate'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'notes/generate sin token'
-        body = @{ texto = 'Texto corto para generar notas de prueba'; api = 'openai'; tipoTexto = 'auto'; numeroTarjetas = 5 }
-    },
-    @{
-        id = 'D2'; method = 'POST'; path = '/api/notes/generate'; auth = $true; expectedStatus = @(200); requiredKeys = @('resumen', 'notas', 'preguntas', 'tarjetas'); note = 'notes/generate con token'
-        body = @{ texto = 'Texto corto para generar notas de prueba'; api = 'openai'; tipoTexto = 'auto'; numeroTarjetas = 5 }
-    },
-    @{
-        id = 'E1'; method = 'POST'; path = '/api/web-search'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'web-search sin token'
-        body = @{ query = 'pobreza ecuador estadisticas 2025'; type = 'estadisticas_locales'; maxResults = 5 }
-    },
-    @{
-        id = 'E2'; method = 'POST'; path = '/api/web-search'; auth = $true; expectedStatus = @(200); requiredKeys = @('resultados'); note = 'web-search con token'
-        body = @{ query = 'pobreza ecuador estadisticas 2025'; type = 'estadisticas_locales'; maxResults = 5 }
-    },
-    @{
-        id = 'F1'; method = 'POST'; path = '/api/web-search/answer'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'web-search/answer sin token'
-        body = @{ query = 'impacto social de la lectura critica'; maxResults = 4; provider = 'smart' }
-    },
-    @{
-        id = 'F2'; method = 'POST'; path = '/api/web-search/answer'; auth = $true; expectedStatus = @(200); requiredKeys = @('respuesta', 'citas'); note = 'web-search/answer con token'
-        body = @{ query = 'impacto social de la lectura critica'; maxResults = 4; provider = 'smart' }
-    },
-    @{
-        id = 'G1'; method = 'GET'; path = '/api/web-search/test'; auth = $false; expectedStatus = @(200); requiredKeys = @('configuracion'); note = 'web-search/test publico'
-        body = $null
-    }
-)
+$tests = @()
+if ($AuthGateOnly) {
+    $tests = @(
+        @{
+            id = 'A1'; method = 'POST'; path = '/api/analysis/text'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/text sin token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'A2'; method = 'POST'; path = '/api/analysis/text'; auth = $true; forbiddenStatus = @(401, 403, -1); requiredKeys = @(); note = 'analysis/text con token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'B1'; method = 'POST'; path = '/api/analysis/prelecture'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/prelecture sin token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'B2'; method = 'POST'; path = '/api/analysis/prelecture'; auth = $true; forbiddenStatus = @(401, 403, -1); requiredKeys = @(); note = 'analysis/prelecture con token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'C1'; method = 'POST'; path = '/api/analysis/glossary'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/glossary sin token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'C2'; method = 'POST'; path = '/api/analysis/glossary'; auth = $true; forbiddenStatus = @(401, 403, -1); requiredKeys = @(); note = 'analysis/glossary con token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'D1'; method = 'POST'; path = '/api/notes/generate'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'notes/generate sin token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'D2'; method = 'POST'; path = '/api/notes/generate'; auth = $true; forbiddenStatus = @(401, 403, -1); requiredKeys = @(); note = 'notes/generate con token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'E1'; method = 'POST'; path = '/api/web-search'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'web-search sin token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'E2'; method = 'POST'; path = '/api/web-search'; auth = $true; forbiddenStatus = @(401, 403, -1); requiredKeys = @(); note = 'web-search con token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'F1'; method = 'POST'; path = '/api/web-search/answer'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'web-search/answer sin token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'F2'; method = 'POST'; path = '/api/web-search/answer'; auth = $true; forbiddenStatus = @(401, 403, -1); requiredKeys = @(); note = 'web-search/answer con token (gate)'
+            body = @{}
+        },
+        @{
+            id = 'G1'; method = 'GET'; path = '/api/web-search/test'; auth = $false; expectedStatus = @(200); requiredKeys = @('configuracion'); note = 'web-search/test publico'
+            body = $null
+        }
+    )
+} else {
+    $tests = @(
+        @{
+            id = 'A1'; method = 'POST'; path = '/api/analysis/text'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/text sin token'
+            body = @{ texto = 'Texto de prueba para analisis'; api = 'deepseek' }
+        },
+        @{
+            id = 'A2'; method = 'POST'; path = '/api/analysis/text'; auth = $true; expectedStatus = @(200); requiredKeys = @('resumen'); note = 'analysis/text con token'
+            body = @{ texto = 'Texto de prueba para analisis'; api = 'deepseek' }
+        },
+        @{
+            id = 'B1'; method = 'POST'; path = '/api/analysis/prelecture'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/prelecture sin token'
+            body = @{ text = $prelectureText; metadata = @{} }
+        },
+        @{
+            id = 'B2'; method = 'POST'; path = '/api/analysis/prelecture'; auth = $true; expectedStatus = @(200, 502); requiredKeys = @(); note = 'analysis/prelecture con token'
+            body = @{ text = $prelectureText; metadata = @{} }
+        },
+        @{
+            id = 'C1'; method = 'POST'; path = '/api/analysis/glossary'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'analysis/glossary sin token'
+            body = @{ text = $glossaryText; maxTerms = 6 }
+        },
+        @{
+            id = 'C2'; method = 'POST'; path = '/api/analysis/glossary'; auth = $true; expectedStatus = @(200); requiredKeys = @('terms'); note = 'analysis/glossary con token'
+            body = @{ text = $glossaryText; maxTerms = 6 }
+        },
+        @{
+            id = 'D1'; method = 'POST'; path = '/api/notes/generate'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'notes/generate sin token'
+            body = @{ texto = 'Texto corto para generar notas de prueba'; api = 'openai'; tipoTexto = 'auto'; numeroTarjetas = 5 }
+        },
+        @{
+            id = 'D2'; method = 'POST'; path = '/api/notes/generate'; auth = $true; expectedStatus = @(200); requiredKeys = @('resumen', 'notas', 'preguntas', 'tarjetas'); note = 'notes/generate con token'
+            body = @{ texto = 'Texto corto para generar notas de prueba'; api = 'openai'; tipoTexto = 'auto'; numeroTarjetas = 5 }
+        },
+        @{
+            id = 'E1'; method = 'POST'; path = '/api/web-search'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'web-search sin token'
+            body = @{ query = 'pobreza ecuador estadisticas 2025'; type = 'estadisticas_locales'; maxResults = 5 }
+        },
+        @{
+            id = 'E2'; method = 'POST'; path = '/api/web-search'; auth = $true; expectedStatus = @(200); requiredKeys = @('resultados'); note = 'web-search con token'
+            body = @{ query = 'pobreza ecuador estadisticas 2025'; type = 'estadisticas_locales'; maxResults = 5 }
+        },
+        @{
+            id = 'F1'; method = 'POST'; path = '/api/web-search/answer'; auth = $false; expectedStatus = @(401, 403); requiredKeys = @(); note = 'web-search/answer sin token'
+            body = @{ query = 'impacto social de la lectura critica'; maxResults = 4; provider = 'smart' }
+        },
+        @{
+            id = 'F2'; method = 'POST'; path = '/api/web-search/answer'; auth = $true; expectedStatus = @(200); requiredKeys = @('respuesta', 'citas'); note = 'web-search/answer con token'
+            body = @{ query = 'impacto social de la lectura critica'; maxResults = 4; provider = 'smart' }
+        },
+        @{
+            id = 'G1'; method = 'GET'; path = '/api/web-search/test'; auth = $false; expectedStatus = @(200); requiredKeys = @('configuracion'); note = 'web-search/test publico'
+            body = $null
+        }
+    )
+}
 
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host " Smoke test de endpoints de costo (staging)       " -ForegroundColor Cyan

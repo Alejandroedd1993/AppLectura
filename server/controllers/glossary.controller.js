@@ -18,7 +18,7 @@ export async function generateGlossary(req, res) {
   res.setTimeout(90000);
   
   try {
-    const { text, maxTerms = 6 } = req.body;
+    const { text, maxTerms = 6 } = req.body || {};
     
     if (!text || typeof text !== 'string' || text.trim().length < 200) {
       return res.status(400).json({

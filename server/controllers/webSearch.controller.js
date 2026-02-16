@@ -103,7 +103,7 @@ export async function searchWebSources(query, maxResults = 5) {
 const buscarWeb = async (req, res) => {
   try {
     const enabled = isWebSearchEnabled();
-    const { query, type, maxResults = 5 } = req.body;
+    const { query, type, maxResults = 5 } = req.body || {};
     const q = sanitizeQuery(query);
     const max = clampInt(maxResults, { min: 1, max: 10, fallback: 5 });
 
@@ -162,7 +162,7 @@ const buscarWeb = async (req, res) => {
     res.status(500).json({
       error: 'Error en búsqueda web',
       detalle: error.message,
-      query: req.body.query,
+      query: req.body?.query,
       fallback_disponible: true
     });
   }

@@ -15,7 +15,7 @@ import { analysisSchema } from '../validators/schemas.js';
  */
 export async function analizarTexto(req, res) {
   // Ahora el backend soporta estrategias: 'deepseek', 'openai', 'smart', 'alternate', 'debate'
-  const { texto, api = 'smart' } = req.body;
+  const { texto, api = 'smart' } = req.body || {};
 
   if (!texto || texto.trim().length === 0) {
     return res.status(400).json({
