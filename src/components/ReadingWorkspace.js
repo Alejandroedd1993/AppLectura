@@ -18,6 +18,8 @@ import { PedagogyContext } from '../context/PedagogyContext';
 import BloomLevelIndicator from './bloom/BloomLevelIndicator';
 import CriticalProgressionPanel from './pedagogy/CriticalProgressionPanel';
 import ACDAnalysisPanel from './acd/ACDAnalysisPanel';
+import { fetchWithTimeout } from '../utils/netUtils';
+import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 
 /**
  * ReadingWorkspace (Esqueleto Inicial)
@@ -301,20 +303,53 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
 
   // Verificar disponibilidad de búsqueda web en el backend
   useEffect(() => {
-    fetch('/api/web-search/test')
-      .then(res => res.json())
-      .then(data => {
+    let cancelled = false;
+    const verifyWebSearchAvailability = async () => {
+      try {
+        const authHeader = await getFirebaseAuthHeader();
+        const endpoint = buildBackendEndpoint('/api/web-search/test');
+
+        const res = await fetchWithTimeout(endpoint, {
+          method: 'GET',
+          headers: authHeader
+        }, 10000);
+
+        if (res.status === 401 || res.status === 403) {
+          devWarn('[ReadingWorkspace] /api/web-search/test requiere sesion autenticada');
+          if (!cancelled) setWebSearchAvailable(false);
+          return;
+        }
+
+        if (res.status === 429) {
+          devWarn('[ReadingWorkspace] /api/web-search/test rate limited');
+          if (!cancelled) setWebSearchAvailable(false);
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
         const available = data.configuracion?.serper_disponible ||
           data.configuracion?.bing_disponible ||
           data.configuracion?.tavily_disponible ||
           data.api_utilizada !== 'simulada';
-        setWebSearchAvailable(available);
+
+        if (!cancelled) {
+          setWebSearchAvailable(available);
+        }
         devLog('🌐 Búsqueda web disponible:', available, '- API:', data.configuracion?.modo_funcionamiento);
-      })
-      .catch(err => {
+      } catch (err) {
         devWarn('⚠️ No se pudo verificar búsqueda web:', err);
-        setWebSearchAvailable(false);
-      });
+        if (!cancelled) {
+          setWebSearchAvailable(false);
+        }
+      }
+    };
+
+    verifyWebSearchAvailability();
+    return () => { cancelled = true; };
   }, []);
 
   // 🚀 PERF: Estabilizado con refs para evitar recreación en cada keystroke

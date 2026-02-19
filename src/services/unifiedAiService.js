@@ -2,8 +2,7 @@
 // Centraliza provider/model, timeouts, y manejo de errores
 
 import { fetchWithTimeout } from '../utils/netUtils';
-import { getBackendUrl } from '../utils/backendUtils';
-import { auth } from '../firebase/config';
+import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 import { CHAT_TIMEOUT_MS, NETWORK_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 const defaultModels = {
@@ -24,18 +23,6 @@ const defaultModels = {
  * @param {Number} [opts.timeoutMs=30000]
  * @returns {Promise<Object>} JSON de respuesta del backend (estilo OpenAI)
  */
-async function getAuthHeader() {
-  try {
-    const user = auth?.currentUser;
-    if (!user) return {};
-    const idToken = await user.getIdToken();
-    if (!idToken) return {};
-    return { Authorization: `Bearer ${idToken}` };
-  } catch {
-    return {};
-  }
-}
-
 export async function chatCompletion({
   messages,
   provider = 'deepseek',
@@ -46,7 +33,7 @@ export async function chatCompletion({
   signal,
   timeoutMs = CHAT_TIMEOUT_MS  // 🆕 A5 FIX: Usar constante unificada
 }) {
-  const url = `${getBackendUrl()}/api/chat/completion`;
+  const url = buildBackendEndpoint('/api/chat/completion');
   const payload = {
     provider,
     model: model || defaultModels[provider] || defaultModels.openai,
@@ -57,7 +44,7 @@ export async function chatCompletion({
   };
 
   const doRequest = async (bodyPayload) => {
-    const authHeader = await getAuthHeader();
+    const authHeader = await getFirebaseAuthHeader();
     return fetchWithTimeout(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader },
@@ -86,8 +73,8 @@ export async function chatCompletion({
  * @returns {Promise<Object>} JSON de análisis
  */
 export async function analyzeText({ texto, api = 'deepseek', extra = {}, signal, timeoutMs = NETWORK_TIMEOUT_MS }) {  // 🆕 A5 FIX
-  const url = `${getBackendUrl()}/api/analysis/text`;
-  const authHeader = await getAuthHeader();
+  const url = buildBackendEndpoint('/api/analysis/text');
+  const authHeader = await getFirebaseAuthHeader();
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader },

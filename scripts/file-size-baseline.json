@@ -1,0 +1,20 @@
+{
+  "defaultMaxLines": 1200,
+  "maxLinesByFile": {
+    "src/VisorTexto_responsive.js": 1550,
+    "src/components/PreLectura.js": 1720,
+    "src/components/actividades/ModoPracticaGuiada.js": 1280,
+    "src/components/artefactos/BitacoraEticaIA.js": 2000,
+    "src/components/artefactos/MapaActores.js": 1450,
+    "src/components/artefactos/RespuestaArgumentativa.js": 1450,
+    "src/components/artefactos/ResumenAcademico.js": 1600,
+    "src/components/artefactos/TablaACD.js": 1520,
+    "src/components/estudiante/TextoSelector.js": 1460,
+    "src/components/teacher/TeacherDashboard.js": 4500,
+    "src/components/tutor/TutorCore.js": 1600,
+    "src/context/AppContext.js": 5400,
+    "src/firebase/firestore.js": 3500,
+    "src/services/sessionManager.js": 1520
+  }
+}
+

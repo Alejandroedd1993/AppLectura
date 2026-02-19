@@ -1,19 +1,9 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
-import { auth } from '../firebase/config';
+import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 
 const isDev = process.env.NODE_ENV === 'development';
 const devLog = (...args) => isDev && console.log(...args);
 const devWarn = (...args) => isDev && console.warn(...args);
-
-async function getAuthHeader() {
-  try {
-    const idToken = await auth?.currentUser?.getIdToken?.();
-    return idToken ? { Authorization: `Bearer ${idToken}` } : {};
-  } catch (err) {
-    devWarn('⚠️ No se pudo obtener Firebase ID token para glosario:', err?.message || err);
-    return {};
-  }
-}
 
 // Stopwords a nivel de módulo (evita recrear ~150 strings en cada llamada)
 const _STOPWORDS = [
@@ -128,10 +118,10 @@ export async function generateGlossary(fullText, _minComplexity = 5) {
   try {
     devLog('📚 [GlossaryService] Generando glosario desde backend...');
     
-    const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
-    const authHeader = await getAuthHeader();
+    const authHeader = await getFirebaseAuthHeader();
+    const endpoint = buildBackendEndpoint('/api/analysis/glossary');
     // Llamar al backend en vez de hacer la llamada directamente
-    const response = await fetch(`${BACKEND_URL}/api/analysis/glossary`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -4,18 +4,23 @@
  */
 
 import { fetchWithTimeout } from '../utils/netUtils';
-import { auth } from '../firebase/config';
+import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 
 import logger from '../utils/logger';
-async function getAuthHeader() {
-  try {
-    const idToken = await auth?.currentUser?.getIdToken?.();
-    return idToken ? { Authorization: `Bearer ${idToken}` } : {};
-  } catch (err) {
-    logger.warn('[webSearchService] No se pudo obtener Firebase ID token:', err?.message || err);
-    return {};
+
+const buildSearchErrorMessage = (status, detail = '') => {
+  if (status === 401 || status === 403) {
+    return 'Sesion no autorizada para busqueda web. Inicia sesion nuevamente.';
   }
-}
+  if (status === 429) {
+    return 'Limite de solicitudes alcanzado en busqueda web. Intenta en unos segundos.';
+  }
+  if (status === 408 || status === 504) {
+    return 'Timeout del backend de busqueda web.';
+  }
+  const suffix = detail ? ` ${detail}` : '';
+  return `Error del backend de busqueda web (${status}).${suffix}`.trim();
+};
 
 class WebSearchService {
   constructor() {
@@ -61,12 +66,13 @@ class WebSearchService {
         type: options.analysisType || 'general',
         maxResults: searchOptions.maxResults
       };
-      const authHeader = await getAuthHeader();
+      const authHeader = await getFirebaseAuthHeader();
+      const endpoint = buildBackendEndpoint('/api/web-search');
 
-      logger.log('📤 [webSearchService] Enviando petición a /api/web-search:', requestBody);
+      logger.log('[webSearchService] Enviando peticion a backend web-search:', endpoint, requestBody);
 
       // ✅ USAR BACKEND en lugar de llamar APIs externas directamente
-      const response = await fetchWithTimeout('/api/web-search', {
+      const response = await fetchWithTimeout(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify(requestBody)
@@ -75,9 +81,9 @@ class WebSearchService {
       logger.log('📥 [webSearchService] Respuesta recibida:', response.status, response.statusText);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        logger.error('❌ [webSearchService] Error del backend:', errorData);
-        throw new Error(`Backend search error: ${response.status} - ${errorData.error || response.statusText}`);
+        const errorData = await response.json().catch(() => null);
+        logger.error('[webSearchService] Error del backend:', response.status, errorData);
+        throw new Error(buildSearchErrorMessage(response.status, errorData?.error || errorData?.message || response.statusText));
       }
 
       const data = await response.json();
@@ -98,7 +104,14 @@ class WebSearchService {
       
     } catch (error) {
       logger.error('❌ Error en búsqueda web:', error);
-      throw new Error(`Error en búsqueda web: ${error.message}`);
+      if (error?.name === 'AbortError') {
+        throw new Error('Timeout al consultar busqueda web. Reintenta.');
+      }
+      const message = String(error?.message || error || '');
+      if (/failed to fetch|networkerror|load failed/i.test(message)) {
+        throw new Error('No se pudo conectar con el backend de busqueda web.');
+      }
+      throw new Error(`Error en busqueda web: ${message || 'error desconocido'}`);
     }
   }
 
@@ -284,10 +297,13 @@ class WebSearchService {
    */
   async checkBackendAvailability() {
     try {
-      const response = await fetchWithTimeout('/api/web-search/test', {
-        method: 'GET'
+      const authHeader = await getFirebaseAuthHeader();
+      const response = await fetchWithTimeout(buildBackendEndpoint('/api/web-search/test'), {
+        method: 'GET',
+        headers: authHeader
       }, 5000);
       
+      if ([401, 403, 429].includes(response.status)) return true;
       if (!response.ok) return false;
       
       const data = await response.json();
