@@ -362,3 +362,23 @@ Hay un commit masivo en staging listo para push:
 | Script de aprovisionamiento sin credenciales en HEAD | ✅ Cumplido |
 | Secretos purgados del historial Git | ⏳ Pendiente (filter-repo/BFG) |
 | Credenciales rotadas en servicios externos | ⏳ Pendiente (acción manual) |
+
+## 9) Trazabilidad de cierres publicados (19/02/2026)
+
+### Commits de cierre en `main`
+
+| Hash | Tipo | Alcance | Estado |
+|------|------|---------|--------|
+| `c62bf71b` | `test(p2-a)` | Retiro de suites huérfanas + estabilización de mocks activos (`App.test`, `ConfirmModal.test`, `VisorTexto.test`) | ✅ Publicado |
+| `65f78daf` | `chore(p2-b)` | Consolidación de limpieza backend/docs + artefactos de auditoría | ✅ Publicado |
+
+### Verificación post-publicación
+
+| Control | Resultado |
+|--------|-----------|
+| `git push origin main` | ✅ Exitoso |
+| Sincronización de rama | ✅ `HEAD`, `origin/main`, `origin/HEAD` en `65f78daf` |
+| Suite de pruebas completa | ✅ `35/35` suites, `206/206` tests, `0` snapshots |
+
+### Pendiente global fuera de código
+- Rotación externa de credenciales (OpenAI, Firebase, Render y cuentas de expertos).
