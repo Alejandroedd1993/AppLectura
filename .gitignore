@@ -41,3 +41,18 @@ node_modules
 node_modules/.cache
 node_modules/.cache/
 node_modules/.cache
+
+# ========== OUTPUTS / EVIDENCE ==========
+# Ignore all generated test artifacts by default.
+test-results/*
+# Optional placeholder file.
+!test-results/.gitkeep
+
+# Auditoria forense (artefactos temporales)
+all_files.txt
+components_list.txt
+tools/tmp-*.js
+
+# Backups/binarios documentales (P2-B)
+*_backup.md
+*.docx

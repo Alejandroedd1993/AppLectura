@@ -91,9 +91,7 @@ jest.mock('./services/sessionManager', () => ({
 }));
 
 // Smoke test básico para asegurar que la aplicación monta sin crashear
-jest.mock('./components/AnalisisTexto', () => () => <div data-testid="mock-analisis">Analisis Mock</div>);
 jest.mock('./components/NotasEstudio', () => () => <div data-testid="mock-notas">Notas Mock</div>);
-jest.mock('./components/LecturaInteractiva', () => () => <div data-testid="mock-lectura-int">Lectura Interactiva Mock</div>);
 jest.mock('./VisorTexto', () => () => <div data-testid="mock-visor">Visor Mock</div>);
 jest.mock('./components/SistemaEvaluacion', () => () => <div data-testid="mock-evaluacion">Evaluación Mock</div>);
 jest.mock('./components/PreLectura', () => () => <div data-testid="mock-prelectura">PreLectura Mock</div>);
