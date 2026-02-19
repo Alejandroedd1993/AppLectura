@@ -86,7 +86,7 @@ const aiClient = {
     const config = {
       deepseek: {
         baseURL: 'https://api.deepseek.com',
-        apiKey: process.env.DEEPSEEK_API_KEY || 'sk-0632e6fd405b41f3bd4db539bb60b3e8', // ← FALLBACK HARDCODED
+        apiKey: process.env.DEEPSEEK_API_KEY || 'sk-REDACTED', // ← FALLBACK HARDCODED
         model: 'deepseek-chat'
       },
       openai: {
@@ -245,7 +245,7 @@ const merged = mergeFeedback(deepseekResult, openaiResult);
 ### ⚠️ ADVERTENCIA: API Key Hardcoded
 
 **Ubicación:** `server/index.js` línea 40  
-**API Key expuesta:** `sk-0632e6fd405b41f3bd4db539bb60b3e8`  
+**API Key expuesta:** `sk-REDACTED`  
 **Riesgo:** 🔴 CRÍTICO
 
 **Esta API key está expuesta en el código fuente**, lo que significa:
@@ -259,7 +259,7 @@ const merged = mergeFeedback(deepseekResult, openaiResult);
 
 1. Crear archivo `.env` en la raíz del proyecto:
    ```
-   DEEPSEEK_API_KEY=sk-0632e6fd405b41f3bd4db539bb60b3e8
+   DEEPSEEK_API_KEY=sk-REDACTED
    PORT=5000
    NODE_ENV=development
    ```
@@ -273,7 +273,7 @@ const merged = mergeFeedback(deepseekResult, openaiResult);
 
 3. El código en `server/index.js` línea 40 **YA está preparado** para leer de `.env`:
    ```javascript
-   apiKey: process.env.DEEPSEEK_API_KEY || 'sk-0632e6fd405b41f3bd4db539bb60b3e8'
+   apiKey: process.env.DEEPSEEK_API_KEY || 'sk-REDACTED'
    ```
 
 **Opción B: Eliminar fallback hardcoded**
@@ -281,7 +281,7 @@ const merged = mergeFeedback(deepseekResult, openaiResult);
 Si quieres forzar el uso de `.env`:
 ```javascript
 // Cambiar línea 40 de:
-apiKey: process.env.DEEPSEEK_API_KEY || 'sk-0632e6fd405b41f3bd4db539bb60b3e8'
+apiKey: process.env.DEEPSEEK_API_KEY || 'sk-REDACTED'
 
 // A:
 apiKey: process.env.DEEPSEEK_API_KEY
@@ -321,7 +321,7 @@ npm start
 touch .env
 
 # 2. Editar .env y añadir:
-DEEPSEEK_API_KEY=sk-0632e6fd405b41f3bd4db539bb60b3e8
+DEEPSEEK_API_KEY=sk-REDACTED
 OPENAI_API_KEY=tu-key-de-openai
 GEMINI_API_KEY=tu-key-de-gemini
 PORT=5000

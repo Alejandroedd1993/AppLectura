@@ -141,7 +141,7 @@ Acciones sugeridas:
 const config = {
   deepseek: {
     baseURL: 'https://api.deepseek.com',
-    apiKey: process.env.DEEPSEEK_API_KEY || 'sk-0632e6fd405b41f3bd4db539bb60b3e8',
+    apiKey: process.env.DEEPSEEK_API_KEY || 'sk-REDACTED',
     model: 'deepseek-chat'
   },
 ```
@@ -1772,7 +1772,7 @@ Para completar la arquitectura multi-tenancy:
 
 ### Advertencias Importantes
 
-1. **API Key hardcodeada:** Remover sk-0632e6fd405b41f3bd4db539bb60b3e8 de server/index.js (línea 40) antes de subir a producción.
+1. **API Key hardcodeada:** Remover sk-REDACTED de server/index.js (línea 40) antes de subir a producción.
 
 2. **CORS:** Actualizar CORS en el backend para solo permitir dominio de Firebase Hosting.
 

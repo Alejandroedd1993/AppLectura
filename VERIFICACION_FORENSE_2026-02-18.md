@@ -304,16 +304,16 @@ El proxy de storage tiene validación de URL (`isAllowedStorageUrl`) que solo pe
 **`scripts/provision-expert-users.ps1`** — ✅ **Trackeado en Git** (`git ls-files` confirmado)
 
 Este script contiene en texto plano:
-- **Firebase API Key** hardcodeada en línea 2: `AIzaSyAzh5Qqiend6CSZzzCu6aUm4V9r17X42Ic`
+- **Firebase API Key** hardcodeada en línea 2: `AIzaSy[REDACTED]`
 - **8 pares de credenciales** (email + contraseña) de cuentas de expertos evaluadores (líneas 82-87)
 - **UIDs de Firebase Auth** de cada cuenta
 
 ```powershell
 # Línea 2:
-param([string]$ApiKey = 'AIzaSyAzh5Qqiend6CSZzzCu6aUm4V9r17X42Ic', ...)
+param([string]$ApiKey = 'AIzaSy[REDACTED]', ...)
 
 # Líneas 82-87 — ejemplo:
-@{ docenteEmail = 'experto1.docente@applectura.dev'; docentePass = 'AppLectura!Exp1D'; ... }
+@{ docenteEmail = 'experto1.docente@applectura.dev'; docentePass = '[REDACTED_PASSWORD]'; ... }
 ```
 
 **`test-results/`** — Contiene dumps generados por el script:
