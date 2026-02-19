@@ -21,10 +21,6 @@ jest.mock('../../../src/utils/textAnalysisMetrics', () => ({
   estimarTiempoLectura: jest.fn((texto) => Math.ceil(texto.split(' ').length / 200))
 }));
 
-jest.mock('../../../src/utils/visorTextoUtils', () => ({
-  normalizarTexto: jest.fn((texto) => texto.trim().toLowerCase())
-}));
-
 // Mock de framer-motion para simplificar animaciones
 jest.mock('framer-motion', () => ({
   motion: {

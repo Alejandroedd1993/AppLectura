@@ -84,8 +84,26 @@ jest.mock('./services/sessionManager', () => ({
   setCurrentUser: () => {},
   replaceAllLocalSessions: () => {},
   setupBeforeUnloadSync: () => {},
+  deleteSession: () => Promise.resolve(true),
+  deleteAllSessions: () => Promise.resolve(true),
   syncPendingSessions: () => Promise.resolve({ synced: 0, failed: 0 }),
   syncAllSessionsToCloud: () => Promise.resolve({ synced: 0, errors: 0 }),
+  getPendingSyncs: () => [],
+  getSyncStatus: () => Promise.resolve({
+    hasPending: false,
+    pendingCount: 0,
+    pendingIds: []
+  }),
+  getSessionsLimit: () => ({
+    max: 10,
+    total: 0,
+    active: 0,
+    archived: 0,
+    remaining: 10,
+    percentUsed: 0,
+    isNearLimit: false,
+    isAtLimit: false
+  }),
   getAllSessionsMerged: () => Promise.resolve([]),
   getAllSessions: () => []
 }));

@@ -1,25 +1,19 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ThemeProvider } from 'styled-components';
-import ConfirmModal from '../../../src/components/ConfirmModal';
+import ConfirmModal from '../../../src/components/common/ConfirmModal';
 import { lightTheme } from '../../../src/styles/theme';
-
-const renderWithTheme = (ui) => render(
-  <ThemeProvider theme={lightTheme}>
-    {ui}
-  </ThemeProvider>
-);
 
 test('renderiza título y botones y cierra con Escape y clic fuera', () => {
   const onCancel = jest.fn();
   const onConfirm = jest.fn();
-  const { rerender } = renderWithTheme(
+  const { rerender } = render(
     <ConfirmModal
       open={true}
       title="Confirmar acción"
-      description={<>¿Seguro?</>}
+      message="¿Seguro?"
       onCancel={onCancel}
       onConfirm={onConfirm}
+      theme={lightTheme}
     />
   );
 
@@ -31,24 +25,36 @@ test('renderiza título y botones y cierra con Escape y clic fuera', () => {
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(onCancel).toHaveBeenCalled();
 
-  // Re-renderear (mismo árbol) para mantener una sola instancia
+  // Re-render para test de clic fuera
   onCancel.mockReset();
   rerender(
-    <ThemeProvider theme={lightTheme}>
-      <ConfirmModal
-        open={true}
-        title="Confirmar acción"
-        description={<>¿Seguro?</>}
-        onCancel={onCancel}
-        onConfirm={onConfirm}
-      />
-    </ThemeProvider>
+    <ConfirmModal
+      open={true}
+      title="Confirmar acción"
+      message="¿Seguro?"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+      theme={lightTheme}
+    />
   );
 
-  // click fuera (overlay) - usar parent del dialog para evitar ambigüedad
+  // Click en overlay (fuera del dialog) cierra
   const dialog = screen.getByRole('dialog', { name: /confirmar acción/i });
-  const overlay = dialog.parentElement;
-  fireEvent.mouseDown(overlay);
+  fireEvent.click(dialog);
   expect(onCancel).toHaveBeenCalled();
 });
 
+test('no renderiza nada cuando open es false', () => {
+  render(
+    <ConfirmModal
+      open={false}
+      title="Oculto"
+      message="No debería verse"
+      onCancel={() => { }}
+      onConfirm={() => { }}
+      theme={lightTheme}
+    />
+  );
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
