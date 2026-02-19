@@ -15,7 +15,7 @@ import logger from './logger';
  * - Expiración: 7 días por defecto
  */
 
-// Nota: este módulo se usa para caché "simple" de análisis (p.ej. useTextAnalysis).
+// Nota: este módulo se usa para caché "simple" de análisis.
 // AppContext también usa claves que empiezan por "analysis_cache_" (por ejemplo
 // "analysis_cache_tid_*"), así que necesitamos aislar nuestras entradas para no
 // podarlas/borrarlas accidentalmente.
@@ -35,21 +35,21 @@ export function getCachedAnalysis(textHash) {
   try {
     const cacheKey = `${CACHE_PREFIX}${textHash}`;
     const cached = localStorage.getItem(cacheKey);
-    
+
     if (!cached) {
       logger.log('📭 No hay análisis en caché para este texto');
       return null;
     }
 
     const { data, timestamp, version } = JSON.parse(cached);
-    
+
     // Verificar versión del caché
     if (version !== CACHE_VERSION) {
       logger.log('🔄 Caché de versión antigua, invalidando...');
       localStorage.removeItem(cacheKey);
       return null;
     }
-    
+
     // Verificar expiración
     const age = Date.now() - timestamp;
     if (age > CACHE_DURATION_MS) {
@@ -57,7 +57,7 @@ export function getCachedAnalysis(textHash) {
       localStorage.removeItem(cacheKey);
       return null;
     }
-    
+
     // Validar estructura de datos (modo tolerante):
     // - Soportar análisis "completo" { analysis, questions: [] }
     // - Soportar análisis "simple" (objeto arbitrario)
@@ -72,12 +72,12 @@ export function getCachedAnalysis(textHash) {
       localStorage.removeItem(cacheKey);
       return null;
     }
-    
+
     const daysOld = Math.round(age / (24 * 60 * 60 * 1000));
     logger.log(`✅ Análisis encontrado en caché (${daysOld} días de antigüedad)`);
-    
+
     return data;
-    
+
   } catch (error) {
     logger.error('❌ Error leyendo caché:', error);
     return null;
@@ -112,12 +112,12 @@ export function setCachedAnalysis(textHash, data) {
 
     localStorage.setItem(cacheKey, JSON.stringify(cacheEntry));
     logger.log('💾 Análisis guardado en caché exitosamente');
-    
+
     // Actualizar stats
     updateCacheStats('save');
-    
+
     return true;
-    
+
   } catch (error) {
     // QuotaExceededError: localStorage lleno
     if (error.name === 'QuotaExceededError') {
@@ -141,7 +141,7 @@ export function setCachedAnalysis(textHash, data) {
         }
       }
     }
-    
+
     logger.error('❌ Error guardando en caché:', error);
     return false;
   }
@@ -154,13 +154,13 @@ export function setCachedAnalysis(textHash, data) {
 function cleanupOldCache() {
   try {
     const keys = Object.keys(localStorage).filter(key => key.startsWith(CACHE_PREFIX));
-    
+
     if (keys.length <= MAX_CACHE_ENTRIES) {
       return 0; // No es necesario limpiar
     }
 
     logger.log(`🧹 Limpiando caché (${keys.length} entradas, límite ${MAX_CACHE_ENTRIES})`);
-    
+
     // Obtener timestamps de todas las entradas
     const entries = keys.map(key => {
       try {
@@ -185,7 +185,7 @@ function cleanupOldCache() {
 
     logger.log(`✅ ${deleted} entradas antiguas eliminadas`);
     return deleted;
-    
+
   } catch (error) {
     logger.error('❌ Error limpiando caché:', error);
     return 0;
@@ -200,7 +200,7 @@ function cleanupOldCache() {
 function forceClearOldCache(count = 10) {
   try {
     const keys = Object.keys(localStorage).filter(key => key.startsWith(CACHE_PREFIX));
-    
+
     if (keys.length === 0) return false;
 
     const entries = keys.map(key => {
@@ -221,7 +221,7 @@ function forceClearOldCache(count = 10) {
 
     logger.log(`🗑️ ${toDelete.length} entradas forzadas a eliminar`);
     return true;
-    
+
   } catch (error) {
     logger.error('❌ Error en eliminación forzada:', error);
     return false;
@@ -263,10 +263,10 @@ export function clearAllAnalysisCache() {
     });
 
     logger.log(`🗑️ Todo el caché de análisis eliminado (${deleted} entradas)`);
-    
+
     // Resetear stats
     localStorage.removeItem('analysis_cache_stats');
-    
+
     return deleted;
   } catch (error) {
     logger.error('❌ Error eliminando todo el caché:', error);
@@ -281,7 +281,7 @@ export function clearAllAnalysisCache() {
 export function getCacheStats() {
   try {
     const keys = Object.keys(localStorage).filter(key => key.startsWith(CACHE_PREFIX));
-    
+
     let totalSize = 0;
     let validEntries = 0;
     let expiredEntries = 0;
@@ -291,10 +291,10 @@ export function getCacheStats() {
       try {
         const item = localStorage.getItem(key);
         totalSize += item.length * 2; // Aproximado (UTF-16)
-        
+
         const { timestamp } = JSON.parse(item);
         const age = now - timestamp;
-        
+
         if (age > CACHE_DURATION_MS) {
           expiredEntries++;
         } else {
@@ -361,8 +361,8 @@ function getCustomStats() {
     const stats = JSON.parse(localStorage.getItem(statsKey) || '{}');
 
     const totalRequests = (stats.totalHits || 0) + (stats.totalMisses || 0);
-    const hitRate = totalRequests > 0 
-      ? ((stats.totalHits / totalRequests) * 100).toFixed(1) 
+    const hitRate = totalRequests > 0
+      ? ((stats.totalHits / totalRequests) * 100).toFixed(1)
       : 0;
 
     return {
@@ -459,7 +459,7 @@ export function getPerformanceMetrics() {
       ? apiMetrics.reduce((sum, m) => sum + m.timeMs, 0) / apiMetrics.length
       : 0;
 
-    const speedup = avgApiTime > 0 
+    const speedup = avgApiTime > 0
       ? (avgApiTime / Math.max(avgCacheTime, 1)).toFixed(1)
       : 0;
 

@@ -475,6 +475,93 @@ function __stableStringify(value) {
   return JSON.stringify(normalize(value));
 }
 
+export async function saveStudentProgress(estudianteUid, textoId, progressData) {
+  const queueKey = `${estudianteUid}::${textoId}`;
+  const queue = __progressWriteQueueByDoc.get(queueKey) || {
+    inFlight: false,
+    pendingPayload: null,
+    waiters: []
+  };
+
+  queue.pendingPayload = __mergeProgressPayload(queue.pendingPayload, progressData || {});
+
+  const promise = new Promise((resolve, reject) => {
+    queue.waiters.push({ resolve, reject });
+  });
+
+  __progressWriteQueueByDoc.set(queueKey, queue);
+
+  if (queue.inFlight) {
+    return promise;
+  }
+
+  queue.inFlight = true;
+
+  (async () => {
+    let writeError = null;
+
+    try {
+      while (queue.pendingPayload) {
+        const payloadToWrite = queue.pendingPayload;
+        queue.pendingPayload = null;
+        await __saveStudentProgressDirect(estudianteUid, textoId, payloadToWrite);
+      }
+    } catch (error) {
+      writeError = error;
+    } finally {
+      queue.inFlight = false;
+
+      const waiters = queue.waiters.splice(0);
+      if (writeError) {
+        waiters.forEach(({ reject }) => reject(writeError));
+      } else {
+        waiters.forEach(({ resolve }) => resolve());
+      }
+
+      __progressWriteQueueByDoc.delete(queueKey);
+    }
+  })();
+
+  return promise;
+}
+
+// Serializa escrituras por documento de progreso para evitar ráfagas concurrentes
+const __progressWriteQueueByDoc = new Map();
+
+function __mergeProgressPayload(base, incoming) {
+  const a = (base && typeof base === 'object') ? base : {};
+  const b = (incoming && typeof incoming === 'object') ? incoming : {};
+
+  const merged = { ...a, ...b };
+
+  if (a.rubricProgress || b.rubricProgress) {
+    merged.rubricProgress = {
+      ...(a.rubricProgress || {}),
+      ...(b.rubricProgress || {})
+    };
+  }
+
+  if (a.activitiesProgress || b.activitiesProgress) {
+    merged.activitiesProgress = {
+      ...(a.activitiesProgress || {}),
+      ...(b.activitiesProgress || {})
+    };
+  }
+
+  if (a.rewardsState || b.rewardsState) {
+    merged.rewardsState = {
+      ...(a.rewardsState || {}),
+      ...(b.rewardsState || {})
+    };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(b, 'savedCitations')) {
+    merged.savedCitations = b.savedCitations;
+  }
+
+  return merged;
+}
+
 /**
  * 🔍 DIAGNÓSTICO: Exponer estado interno para debugging
  * Útil en consola: window.__getFirestoreDebugInfo?.()
@@ -529,7 +616,7 @@ if (typeof window !== 'undefined') {
  * @param {string} textoId 
  * @param {object} progressData - { rubrica1: {...}, rubrica2: {...}, ... }
  */
-export async function saveStudentProgress(estudianteUid, textoId, progressData) {
+async function __saveStudentProgressDirect(estudianteUid, textoId, progressData) {
   logger.log('🔵 [Firestore] saveStudentProgress llamado:', {
     uid: estudianteUid,
     textoId,
@@ -1402,6 +1489,12 @@ async function mapSessionDoc(doc) {
     // 🆕 Compat: restauración de PDF/archivo original (si aplica)
     fileURL: textMetadata.fileURL || data.text?.fileURL || null,
     metadata: {
+      // 🔧 FIX: Reconstruir metadata COMPLETA para que rutas como
+      // session.text?.metadata?.id y session.text?.metadata?.fileURL funcionen
+      id: textMetadata.id || data.currentTextoId || null,
+      fileName: textMetadata.fileName || data.text?.fileName || 'texto_manual',
+      fileType: textMetadata.fileType || data.text?.fileType || 'text/plain',
+      fileURL: textMetadata.fileURL || data.text?.fileURL || null,
       length: textMetadata.length || textContent.length,
       words: textMetadata.words || (textContent ? textContent.split(/\s+/).length : 0)
     }
@@ -1756,12 +1849,46 @@ export async function deleteAllUserSessions(userId) {
  * @param {Array} firestoreSessions - Sesiones desde Firestore
  * @returns {Array} - Sesiones combinadas sin duplicados
  */
-export function mergeSessions(localSessions, firestoreSessions) {
+export function mergeSessions(localSessions, firestoreSessions, options = {}) {
   const merged = new Map();
 
-  // Agregar sesiones de Firestore primero
+  // 🪦 FIX CRÍTICO: Obtener tombstones de sesiones eliminadas recientemente
+  // Esto evita que sesiones borradas localmente sean resucitadas por Firestore
+  let deletedTombstones = options.deletedTombstones || new Set();
+  if (deletedTombstones.size === 0) {
+    try {
+      // Importación dinámica evitada: los tombstones se pasan por options o se leen directamente
+      const tombstoneKey = Object.keys(localStorage).find(k => k.startsWith('appLectura_deleted_sessions_'));
+      if (tombstoneKey) {
+        const raw = localStorage.getItem(tombstoneKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const now = Date.now();
+          for (const [id, timestamp] of Object.entries(parsed)) {
+            if (now - timestamp < 60000) { // 60s TTL
+              deletedTombstones.add(id);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Silencioso - si falla, no filtramos nada extra
+    }
+  }
+
+  if (deletedTombstones.size > 0) {
+    logger.log(`🪦 [mergeSessions] Filtrando ${deletedTombstones.size} sesiones con tombstone activo`);
+  }
+
+  // Agregar sesiones de Firestore primero (excepto las con tombstone)
   firestoreSessions.forEach(session => {
-    merged.set(session.localSessionId || session.id, {
+    const sessionId = session.localSessionId || session.id;
+    // 🪦 FIX: No agregar sesiones que tienen tombstone
+    if (deletedTombstones.has(sessionId)) {
+      logger.log(`🪦 [mergeSessions] Sesión ${sessionId} filtrada por tombstone (Firestore)`);
+      return;
+    }
+    merged.set(sessionId, {
       ...session,
       source: 'firestore',
       inCloud: true,

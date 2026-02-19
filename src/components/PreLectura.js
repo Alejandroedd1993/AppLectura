@@ -6,7 +6,7 @@
  * ACTUALIZADO: Ahora incluye glosario dinámico, términos clickeables y exportación
  */
 
-import React, { useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import styled from 'styled-components';
 import { AppContext } from '../context/AppContext';
 
@@ -36,6 +36,7 @@ const PreLectura = () => {
   const [selectedTerm, setSelectedTerm] = useState(null);
   const [termDefinition, setTermDefinition] = useState(null);
   const [loadingTermDefinition, setLoadingTermDefinition] = useState(false);
+  const inFlightGlossaryKeysRef = useRef(new Set());
 
   // Estado para secciones colapsables (todas abiertas por defecto)
   const [collapsedSections, setCollapsedSections] = useState({});
@@ -62,6 +63,12 @@ const PreLectura = () => {
     const textHash = btoa(encodeURIComponent(texto.substring(0, 500))).substring(0, 32);
     const cacheKey = `glossary_cache_${textHash}`;
 
+    // Evitar solicitudes concurrentes duplicadas para el mismo texto
+    if (inFlightGlossaryKeysRef.current.has(cacheKey)) {
+      devLog('Glosario ya en curso para este texto, omitiendo duplicado');
+      return;
+    }
+
     // Intentar recuperar del caché primero
     try {
       const cached = localStorage.getItem(cacheKey);
@@ -81,6 +88,7 @@ const PreLectura = () => {
     }
 
     // Si no hay caché válido, generar nuevo glosario
+    inFlightGlossaryKeysRef.current.add(cacheKey);
     setLoadingGlossary(true);
     try {
       const glossaryData = await generateGlossary(texto);
@@ -99,6 +107,7 @@ const PreLectura = () => {
     } catch (error) {
       devWarn('Error generando glosario:', error);
     } finally {
+      inFlightGlossaryKeysRef.current.delete(cacheKey);
       setLoadingGlossary(false);
     }
   }, [texto]);

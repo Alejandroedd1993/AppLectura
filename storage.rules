@@ -80,6 +80,25 @@ service firebase.storage {
     }
     
     // ========================================
+    // PDFs DE SESIÓN (Restauración desde historial)
+    // ========================================
+    
+    match /users/{userId}/session-pdfs/{allPaths=**} {
+      // Leer: Solo el dueño
+      allow read: if isOwner(userId);
+      
+      // Escribir: Solo el dueño
+      // Límite: 50MB por PDF
+      // Solo archivos PDF
+      allow write: if isOwner(userId) && 
+                      isValidFileSize(50) &&
+                      request.resource.contentType == 'application/pdf';
+      
+      // Eliminar: Solo el dueño
+      allow delete: if isOwner(userId);
+    }
+    
+    // ========================================
     // AVATARES DE USUARIO (opcional, futuro)
     // ========================================
     

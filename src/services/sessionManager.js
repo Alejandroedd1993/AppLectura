@@ -53,12 +53,120 @@ const PENDING_SYNCS_KEY_PREFIX = 'appLectura_pending_syncs_'; // 🆕 Para race 
 const LEGACY_PENDING_SYNCS_KEY = 'appLectura_pending_syncs'; // Compat legacy (sin scope)
 
 const MAX_SESSIONS = 20; // 🎯 Límite aumentado a 20 para evitar pérdida de progreso en cursos
+const DELETED_SESSIONS_KEY_PREFIX = 'appLectura_deleted_sessions_'; // 🆕 Tombstones para evitar resurrección
+const TOMBSTONE_TTL = 60000; // 60 segundos de vida para tombstones
 
 // Variable global para mantener referencia al usuario actual
 let currentUserId = null;
 
 // 🆕 Set para rastrear sesiones pendientes de sincronización
 const pendingSyncIds = new Set();
+
+// ============================================
+// 🪦 SISTEMA DE TOMBSTONES ANTI-RESURRECCIÓN
+// ============================================
+
+/**
+ * Obtiene la clave de tombstones scoped por usuario
+ */
+function getDeletedSessionsKey() {
+  if (!currentUserId) return `${DELETED_SESSIONS_KEY_PREFIX}anonymous`;
+  return `${DELETED_SESSIONS_KEY_PREFIX}${currentUserId}`;
+}
+
+/**
+ * Registra un sessionId como eliminado (tombstone temporal)
+ * Evita que mergeSessions re-introduzca la sesión desde Firestore
+ * @param {string} sessionId
+ */
+export function addDeletedSessionTombstone(sessionId) {
+  try {
+    const key = getDeletedSessionsKey();
+    const raw = localStorage.getItem(key);
+    const tombstones = raw ? JSON.parse(raw) : {};
+    tombstones[sessionId] = Date.now();
+    localStorage.setItem(key, JSON.stringify(tombstones));
+    logger.log(`🪦 [SessionManager] Tombstone creado para sesión: ${sessionId}`);
+  } catch (e) {
+    logger.warn('⚠️ [SessionManager] Error creando tombstone:', e);
+  }
+}
+
+/**
+ * Obtiene el Set de sessionIds con tombstones activos (no expirados)
+ * @returns {Set<string>}
+ */
+export function getDeletedSessionTombstones() {
+  try {
+    const key = getDeletedSessionsKey();
+    const raw = localStorage.getItem(key);
+    if (!raw) return new Set();
+
+    const tombstones = JSON.parse(raw);
+    const now = Date.now();
+    const activeIds = new Set();
+    let hasExpired = false;
+
+    for (const [id, timestamp] of Object.entries(tombstones)) {
+      if (now - timestamp < TOMBSTONE_TTL) {
+        activeIds.add(id);
+      } else {
+        hasExpired = true;
+      }
+    }
+
+    // Limpiar tombstones expirados
+    if (hasExpired) {
+      const cleaned = {};
+      for (const [id, timestamp] of Object.entries(tombstones)) {
+        if (now - timestamp < TOMBSTONE_TTL) {
+          cleaned[id] = timestamp;
+        }
+      }
+      localStorage.setItem(key, JSON.stringify(cleaned));
+    }
+
+    return activeIds;
+  } catch (e) {
+    logger.warn('⚠️ [SessionManager] Error leyendo tombstones:', e);
+    return new Set();
+  }
+}
+
+/**
+ * Limpia un tombstone específico (cuando la eliminación de Firestore se confirmó)
+ * @param {string} sessionId
+ */
+export function clearDeletedSessionTombstone(sessionId) {
+  try {
+    const key = getDeletedSessionsKey();
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const tombstones = JSON.parse(raw);
+    delete tombstones[sessionId];
+    localStorage.setItem(key, JSON.stringify(tombstones));
+  } catch (e) {
+    // Silencioso
+  }
+}
+
+/**
+ * Registra múltiples tombstones (para deleteAll)
+ * @param {string[]} sessionIds
+ */
+export function addBulkDeletedTombstones(sessionIds) {
+  try {
+    const key = getDeletedSessionsKey();
+    const raw = localStorage.getItem(key);
+    const tombstones = raw ? JSON.parse(raw) : {};
+    const now = Date.now();
+    sessionIds.forEach(id => { tombstones[id] = now; });
+    localStorage.setItem(key, JSON.stringify(tombstones));
+    logger.log(`🪦 [SessionManager] ${sessionIds.length} tombstones creados (bulk)`);
+  } catch (e) {
+    logger.warn('⚠️ [SessionManager] Error creando tombstones bulk:', e);
+  }
+}
 
 function isDraftsEffectivelyEmpty(artifactsDrafts) {
   if (!artifactsDrafts || typeof artifactsDrafts !== 'object') return true;
@@ -522,6 +630,10 @@ export function loadSession(sessionId) {
  */
 export async function deleteSession(sessionId) {
   try {
+    // 🪦 FIX CRÍTICO: Crear tombstone ANTES de eliminar
+    // Esto evita que el listener de Firestore resucite la sesión
+    addDeletedSessionTombstone(sessionId);
+
     const sessions = getAllSessions();
     const filtered = sessions.filter(s => s.id !== sessionId);
 
@@ -530,7 +642,6 @@ export async function deleteSession(sessionId) {
       localStorage.setItem(getStorageKey(), JSON.stringify(filtered));
     } catch (storageError) {
       logger.error('❌ [SessionManager] Error escribiendo en localStorage:', storageError);
-      // Intentar eliminar items individuales si el setItem falla
       window.dispatchEvent(new CustomEvent('storage-error', {
         detail: { message: 'Error al eliminar sesión del almacenamiento local', error: storageError.message }
       }));
@@ -547,14 +658,16 @@ export async function deleteSession(sessionId) {
     }
 
     // 🔥 Eliminar de Firestore (async, blocking para asegurar consistencia)
-    // 🆕 P11 FIX: Notificar al usuario si falla la eliminación en cloud
     if (currentUserId) {
       try {
         await deleteSessionFromFirestore(currentUserId, sessionId);
         logger.log('☁️ [SessionManager] Sesión eliminada de Firestore:', sessionId);
+        // 🪦 Limpiar tombstone tras confirmación exitosa de Firestore
+        clearDeletedSessionTombstone(sessionId);
       } catch (error) {
         logger.warn('⚠️ [SessionManager] Error eliminando de Firestore:', error.message);
-        // Notificar al usuario que la sesión puede seguir en la nube
+        // El tombstone sigue activo para proteger contra resurrección
+        // Se limpiará automáticamente tras TOMBSTONE_TTL
         window.dispatchEvent(new CustomEvent('sync-error', {
           detail: {
             message: 'No se pudo eliminar la sesión de la nube. Se eliminará en el próximo intento.',
@@ -575,8 +688,15 @@ export async function deleteSession(sessionId) {
 /**
  * Eliminar todas las sesiones guardadas (localStorage + Firestore)
  */
-export function deleteAllSessions() {
+export async function deleteAllSessions() {
   try {
+    // 🪦 FIX: Crear tombstones para TODAS las sesiones antes de eliminar
+    const existingSessions = getAllSessions();
+    const allIds = existingSessions.map(s => s.id).filter(Boolean);
+    if (allIds.length > 0) {
+      addBulkDeletedTombstones(allIds);
+    }
+
     // 🆕 P10 FIX: try-catch defensivo para localStorage
     try {
       localStorage.removeItem(getStorageKey());
@@ -591,23 +711,21 @@ export function deleteAllSessions() {
 
     logger.log('✅ [SessionManager] Todas las sesiones eliminadas localmente');
 
-    // 🔥 Eliminar de Firestore (async, non-blocking)
-    // 🆕 P11 FIX: Notificar al usuario si falla la eliminación en cloud
+    // 🔥 FIX: Eliminar de Firestore de forma BLOCKING (await) para evitar resurrección
     if (currentUserId) {
-      deleteAllUserSessions(currentUserId)
-        .then(() => {
-          logger.log('☁️ [SessionManager] Todas las sesiones eliminadas de Firestore');
-        })
-        .catch(error => {
-          logger.warn('⚠️ [SessionManager] Error eliminando sesiones de Firestore:', error.message);
-          // Notificar al usuario que las sesiones pueden seguir en la nube
-          window.dispatchEvent(new CustomEvent('sync-error', {
-            detail: {
-              message: 'No se pudieron eliminar todas las sesiones de la nube.',
-              operation: 'deleteAll'
-            }
-          }));
-        });
+      try {
+        await deleteAllUserSessions(currentUserId);
+        logger.log('☁️ [SessionManager] Todas las sesiones eliminadas de Firestore');
+      } catch (error) {
+        logger.warn('⚠️ [SessionManager] Error eliminando sesiones de Firestore:', error.message);
+        // Los tombstones protegen contra resurrección durante TOMBSTONE_TTL
+        window.dispatchEvent(new CustomEvent('sync-error', {
+          detail: {
+            message: 'No se pudieron eliminar todas las sesiones de la nube.',
+            operation: 'deleteAll'
+          }
+        }));
+      }
     }
 
     return true;
@@ -696,6 +814,19 @@ export function updateCurrentSession(updates, { syncToCloud = true } = {}) {
   const session = loadSession(currentId);
   if (!session) return false;
 
+  // 🛡️ FIX CRÍTICO: Validar que el update pertenece al mismo textoId de la sesión
+  // Esto previene contaminación cruzada entre lecturas durante el auto-save
+  const sessionTextoId = session.currentTextoId || session.text?.metadata?.id || session.text?.textoId || null;
+  const updateTextoId = updates.currentTextoId || updates.text?.metadata?.id || null;
+
+  if (sessionTextoId && updateTextoId && sessionTextoId !== updateTextoId) {
+    logger.warn('🚫 [SessionManager.updateCurrentSession] ¡CONTAMINACIÓN BLOQUEADA!');
+    logger.warn(`   Sesión pertenece a textoId: ${sessionTextoId}`);
+    logger.warn(`   Update viene con textoId: ${updateTextoId}`);
+    logger.warn('   NO se actualizará para proteger datos de la sesión.');
+    return false;
+  }
+
   // 🆕 CRÍTICO: Siempre capturar artifactsDrafts actuales cuando se actualiza
   const textoIdForDrafts = updates.currentTextoId ?? session.currentTextoId ?? session.text?.metadata?.id ?? session.text?.textoId ?? null;
   const freshArtifacts = captureArtifactsDrafts(textoIdForDrafts);
@@ -715,7 +846,7 @@ export function updateCurrentSession(updates, { syncToCloud = true } = {}) {
     sessionId: currentId,
     hasText: !!updated.text,
     hasArtifacts: !!updated.artifactsDrafts,
-    // 🆕 FASE 4: rewardsState es global (no por sesión)
+    textoId: updated.currentTextoId,
   });
 
   return saveSession(updated, syncToCloud);
@@ -1034,10 +1165,11 @@ export function clearArtifactsDrafts(textoId = null) {
 
 /**
  * Capturar estado completo desde el contexto
+ * 🛡️ FIX: Ya NO llama a updateCurrentSession internamente.
+ * El llamador (auto-save en AppContext) es responsable de llamar a updateCurrentSession.
+ * Esto evita la doble llamada que causó guardados duplicados y posible contaminación.
  */
 export function captureCurrentState(contextState) {
-  const currentId = getCurrentSessionId();
-
   // Capturar borradores de artefactos
   const artifactsDrafts = captureArtifactsDrafts(contextState.currentTextoId || null);
 
@@ -1046,10 +1178,9 @@ export function captureCurrentState(contextState) {
       content: contextState.texto,
       fileName: contextState.archivoActual?.name || 'texto_manual',
       fileType: contextState.archivoActual?.type || 'text/plain',
-      fileURL: contextState.archivoActual?.fileURL || null, // 🆕 Para restaurar PDFs
+      fileURL: contextState.archivoActual?.fileURL || null,
       metadata: {
-        id: contextState.currentTextoId, // 🆕
-        // 🆕 Compat: algunos flows legacy leen fileName/fileType/fileURL desde metadata
+        id: contextState.currentTextoId,
         fileName: contextState.archivoActual?.name || 'texto_manual',
         fileType: contextState.archivoActual?.type || 'text/plain',
         fileURL: contextState.archivoActual?.fileURL || null,
@@ -1063,19 +1194,15 @@ export function captureCurrentState(contextState) {
       contextState.completeAnalysis : null,
     rubricProgress: contextState.rubricProgress || {},
     savedCitations: contextState.savedCitations || {},
-    activitiesProgress: contextState.activitiesProgress || {}, // 🆕 Progreso de actividades
-    artifactsDrafts: artifactsDrafts, // 🆕 Incluir borradores
-    // 🆕 CRÍTICO: Incluir IDs para vinculación con curso
+    activitiesProgress: contextState.activitiesProgress || {},
+    artifactsDrafts: artifactsDrafts,
+    // CRÍTICO: Incluir IDs para vinculación con curso
     sourceCourseId: contextState.sourceCourseId || null,
     currentTextoId: contextState.currentTextoId || null,
     settings: {
       modoOscuro: contextState.modoOscuro || false
     }
   };
-
-  if (currentId) {
-    updateCurrentSession(sessionData);
-  }
 
   return sessionData;
 }

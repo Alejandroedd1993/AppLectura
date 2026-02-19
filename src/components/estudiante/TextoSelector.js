@@ -824,7 +824,15 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
     }
     const success = await deleteSession(sessionId);
     if (success) {
+      // 🛡️ FIX: Actualizar estado local inmediatamente (optimista)
       setFreeAnalysisSessions(prev => prev.filter(s => s.id !== sessionId));
+      // 🛡️ FIX: Recargar dashboard completo para sincronizar todos los estados
+      // Esto asegura que localSessionsMap también se actualice
+      try {
+        await loadDashboard();
+      } catch (err) {
+        logger.warn('⚠️ [TextoSelector] Error recargando dashboard tras eliminar:', err);
+      }
       logger.log('✅ [TextoSelector] Sesión libre eliminada:', sessionId);
     }
   };
@@ -960,15 +968,38 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       if (docData.fileURL && !contenido) {
         let blob = null;
 
-        // INTENTO 1: Fetch directo desde Firebase Storage (sin proxy)
+        // INTENTO 0: Firebase SDK getBlob (evita CORS completamente)
         try {
-          const directRes = await fetch(docData.fileURL, { mode: 'cors' });
-          if (directRes.ok) {
-            blob = await directRes.blob();
-            if (blob.size < 500) blob = null; // Sanity check
+          const { ref: storageRef, getBlob: firebaseGetBlob } = await import('firebase/storage');
+          const { storage: storageInstance } = await import('../../firebase/config');
+          let storagePath = null;
+          try {
+            const urlObj = new URL(docData.fileURL);
+            const pathSegment = urlObj.pathname.split('/o/')[1];
+            if (pathSegment) storagePath = decodeURIComponent(pathSegment);
+          } catch (_) { /* ignorar errores de parseo */ }
+
+          if (storagePath) {
+            const fileRef = storageRef(storageInstance, storagePath);
+            blob = await firebaseGetBlob(fileRef);
+            if (blob && blob.size < 500) blob = null;
+            if (blob) logger.log('✅ [TextoSelector] PDF descargado via Firebase SDK getBlob:', blob.size, 'bytes');
           }
-        } catch (directErr) {
-          logger.warn('⚠️ [TextoSelector] Fetch directo falló:', directErr.message);
+        } catch (sdkErr) {
+          logger.warn('⚠️ [TextoSelector] Firebase SDK getBlob falló:', sdkErr.message);
+        }
+
+        // INTENTO 1: Fetch directo desde Firebase Storage (sin proxy)
+        if (!blob) {
+          try {
+            const directRes = await fetch(docData.fileURL, { mode: 'cors' });
+            if (directRes.ok) {
+              blob = await directRes.blob();
+              if (blob.size < 500) blob = null; // Sanity check
+            }
+          } catch (directErr) {
+            logger.warn('⚠️ [TextoSelector] Fetch directo falló:', directErr.message);
+          }
         }
 
         // INTENTO 2: Proxy backend

@@ -25,7 +25,7 @@ router.post('/answer', requireFirebaseAuth, webSearchLimiter, webSearchControlle
  * GET /api/web-search/test
  * Endpoint de prueba para verificar configuración
  */
-router.get('/test', (req, res) => {
+const webSearchTestHandler = (req, res) => {
   const tavilyDisponible = !!process.env.TAVILY_API_KEY;
   const serperDisponible = !!process.env.SERPER_API_KEY;
   const bingDisponible = !!process.env.BING_SEARCH_API_KEY;
@@ -61,6 +61,13 @@ router.get('/test', (req, res) => {
       }
     }
   });
-});
+};
+
+const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+if (isProduction) {
+  router.get('/test', requireFirebaseAuth, webSearchLimiter, webSearchTestHandler);
+} else {
+  router.get('/test', webSearchTestHandler);
+}
 
 export default router;

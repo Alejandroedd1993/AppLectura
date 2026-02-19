@@ -134,3 +134,47 @@ export const assessmentLimiter = rateLimit({
     });
   }
 });
+
+/**
+ * Rate limiter para uploads costosos (PDF/OCR).
+ */
+export const uploadLimiter = rateLimit({
+  windowMs: toPositiveInt(process.env.UPLOAD_RATE_LIMIT_WINDOW_MS, 60 * 1000),
+  max: toPositiveInt(process.env.UPLOAD_RATE_LIMIT_MAX, 30),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const token = getBearerToken(req);
+    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
+    return getClientIp(req);
+  },
+  handler: (req, res, next, options) => {
+    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
+    res.status(options.statusCode).json({
+      error: 'Demasiadas cargas de archivo. Espera un momento y reintenta.',
+      retryAfter
+    });
+  }
+});
+
+/**
+ * Rate limiter para proxy de storage (I/O intensivo).
+ */
+export const storageProxyLimiter = rateLimit({
+  windowMs: toPositiveInt(process.env.STORAGE_PROXY_RATE_LIMIT_WINDOW_MS, 60 * 1000),
+  max: toPositiveInt(process.env.STORAGE_PROXY_RATE_LIMIT_MAX, 120),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const token = getBearerToken(req);
+    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
+    return getClientIp(req);
+  },
+  handler: (req, res, next, options) => {
+    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
+    res.status(options.statusCode).json({
+      error: 'Demasiadas solicitudes al proxy de storage. Espera e intenta de nuevo.',
+      retryAfter
+    });
+  }
+});

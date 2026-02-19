@@ -15,7 +15,9 @@ import {
   getAllSessionsMerged,
   getAllSessions,
   syncPendingSessions,
-  setupBeforeUnloadSync
+  setupBeforeUnloadSync,
+  getDeletedSessionTombstones,
+  deleteAllSessions as deleteAllSessionsFromManager
 } from '../services/sessionManager';
 import { simpleHash as simpleObjectHash } from '../utils/sessionHash';
 import { rubricProgressKey, activitiesProgressKey, activitiesProgressMigratedKey } from '../utils/storageKeys.js';
@@ -361,7 +363,7 @@ export const AppContextProvider = ({ children }) => {
   }, [cleanupExpiredFirestoreBackups]);
 
   // Drenado legacy de análisis (muy limitado, una vez por sesión):
-  // asegura que `text_analysis_cache` se migre aunque no se use useTextAnalysis.
+  // asegura que `text_analysis_cache` se migre.
   useEffect(() => {
     try {
       runLegacyTextAnalysisCacheMigrationOnce({ limit: 5, dropExpired: true });
@@ -3006,6 +3008,42 @@ export const AppContextProvider = ({ children }) => {
           logger.log('📄 [AppContext] Restaurando PDF. fileURL:', fileURL?.substring(0, 80));
           let pdfRestored = false;
 
+          // ── INTENTO 0: Firebase SDK getBlob (evita CORS completamente) ──
+          if (!pdfRestored) {
+            try {
+              logger.log('📄 [AppContext] Intento 0: Firebase SDK getBlob...');
+              const { ref: storageRef, getBlob: firebaseGetBlob } = await import('firebase/storage');
+              const { storage: storageInstance } = await import('../firebase/config');
+
+              // Extraer el storage path de la download URL
+              // Formato: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encodedPath}?alt=media&token=...
+              let storagePath = null;
+              try {
+                const urlObj = new URL(fileURL);
+                const pathSegment = urlObj.pathname.split('/o/')[1];
+                if (pathSegment) {
+                  storagePath = decodeURIComponent(pathSegment);
+                }
+              } catch (_urlErr) {
+                logger.warn('⚠️ [AppContext] No se pudo parsear la URL de Storage:', _urlErr.message);
+              }
+
+              if (storagePath) {
+                const fileRef = storageRef(storageInstance, storagePath);
+                const blob = await firebaseGetBlob(fileRef);
+                if (blob && blob.size > 500) {
+                  const objectUrl = URL.createObjectURL(blob);
+                  const file = new File([blob], session.text.fileName || 'documento.pdf', { type: 'application/pdf' });
+                  setArchivoActualStable({ name: session.text.fileName, type: 'application/pdf', fileURL, file, objectUrl });
+                  logger.log('✅ [AppContext] PDF restaurado via Firebase SDK getBlob:', blob.size, 'bytes');
+                  pdfRestored = true;
+                }
+              }
+            } catch (sdkErr) {
+              logger.warn('⚠️ [AppContext] Firebase SDK getBlob falló:', sdkErr.message);
+            }
+          }
+
           // ── INTENTO 1: Fetch DIRECTO desde Firebase Storage (sin proxy) ──
           if (!pdfRestored) {
             try {
@@ -3238,12 +3276,31 @@ export const AppContextProvider = ({ children }) => {
       }
     }
 
+    // 🛡️ FIX: No auto-guardar si no hay textoId (evita contaminación durante cambio de lectura)
+    if (!currentTextoId) {
+      logger.log('⏸️ [AppContext] Auto-guardado omitido: sin currentTextoId activo');
+      return;
+    }
+
     // Solo guardar si hay una sesión actual activa y hay texto cargado
     const currentId = getCurrentSessionId();
     if (currentId && texto) {
-      logger.log('🔄 [AppContext] Auto-guardado programado para sesión:', currentId);
+      // 🛡️ FIX: Capturar textoId al momento de programar el guardado
+      // para verificar que no cambió cuando se ejecute el timer
+      const capturedTextoId = currentTextoId;
+      const capturedCourseId = sourceCourseId;
+
+      logger.log('🔄 [AppContext] Auto-guardado programado para sesión:', currentId, 'textoId:', capturedTextoId);
       // Usar un debounce para no guardar en cada cambio
       const timeoutId = setTimeout(() => {
+        // 🛡️ FIX CRÍTICO: Verificar que el textoId no cambió durante el debounce
+        // Si cambió, el guardado podría contaminar la sesión equivocada
+        if (currentTextoIdRef.current !== capturedTextoId) {
+          logger.warn('🚫 [AppContext] Auto-guardado CANCELADO: textoId cambió durante debounce',
+            { esperado: capturedTextoId, actual: currentTextoIdRef.current });
+          return;
+        }
+
         logger.log('💾 [AppContext] Ejecutando auto-guardado de sesión:', currentId);
         const sessionData = captureCurrentState({
           texto,
@@ -3252,7 +3309,10 @@ export const AppContextProvider = ({ children }) => {
           rubricProgress,
           savedCitations,
           activitiesProgress,
-          modoOscuro
+          modoOscuro,
+          // 🛡️ FIX: Pasar currentTextoId y sourceCourseId para namespace correcto
+          currentTextoId: capturedTextoId,
+          sourceCourseId: capturedCourseId
         });
 
         // Actualizar sesión actual
@@ -3262,10 +3322,10 @@ export const AppContextProvider = ({ children }) => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [texto, archivoActual, completeAnalysis, rubricProgress, savedCitations, activitiesProgress, modoOscuro]);
+  }, [texto, archivoActual, completeAnalysis, rubricProgress, savedCitations, activitiesProgress, modoOscuro, currentTextoId, sourceCourseId]);
 
   // 🗑️ FUNCIÓN PARA ELIMINAR TODO EL HISTORIAL DE LA APLICACIÓN
-  const clearAllHistory = useCallback(() => {
+  const clearAllHistory = useCallback(async () => {
     logger.log('🧹 [clearAllHistory] Iniciando LIMPIEZA NUCLEAR completa...');
 
     try {
@@ -3401,6 +3461,17 @@ export const AppContextProvider = ({ children }) => {
       setCompleteAnalysis(null);
       setTextStructure(null);
 
+      // 🛡️ FIX: También eliminar sesiones de Firestore
+      // Sin esto, las sesiones regresan desde la nube al recargar
+      if (currentUser?.uid) {
+        try {
+          await deleteAllSessionsFromManager();
+          logger.log('☁️ [clearAllHistory] Sesiones eliminadas de Firestore');
+        } catch (err) {
+          logger.warn('⚠️ [clearAllHistory] Error eliminando sesiones de Firestore:', err);
+        }
+      }
+
       logger.log(`✅ [clearAllHistory] Limpieza completada. ${removedCount} elementos eliminados.`);
 
       // Emitir evento para que otros componentes se actualicen
@@ -3419,7 +3490,7 @@ export const AppContextProvider = ({ children }) => {
         message: 'Error al limpiar el historial'
       };
     }
-  }, []);
+  }, [currentUser]);
 
   // NUEVO: Función para analizar documento con orquestador unificado
   // param textId: ID explícito del texto para evitar race conditions con el estado
@@ -5049,9 +5120,11 @@ export const AppContextProvider = ({ children }) => {
 
         if (!mounted) return;
 
-        // Merge con sesiones locales
+        // Merge con sesiones locales (🪦 respetando tombstones)
         const localSessions = getAllSessions();
-        const merged = mergeSessions(localSessions, firestoreSessions);
+        const merged = mergeSessions(localSessions, firestoreSessions, {
+          deletedTombstones: getDeletedSessionTombstones()
+        });
 
         // Guardar merged en localStorage (scoped por usuario)
         replaceAllLocalSessions(merged);
@@ -5102,7 +5175,9 @@ export const AppContextProvider = ({ children }) => {
       // Nota: getAllSessions() retorna sesiones crudas sin flags (source/inCloud/inLocal),
       // por lo que no se puede filtrar por `s.source === 'local'` aquí.
       const localSessions = getAllSessions();
-      const merged = mergeSessions(localSessions, sessions);
+      const merged = mergeSessions(localSessions, sessions, {
+        deletedTombstones: getDeletedSessionTombstones()
+      });
 
       replaceAllLocalSessions(merged);
 

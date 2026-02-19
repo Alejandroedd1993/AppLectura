@@ -624,18 +624,46 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       return;
     }
 
-    // 🆕 FALLBACK ASÍNCRONO: intentar recuperar fileURL desde Firestore usando textoId
+    // 🆕 FALLBACK ASÍNCRONO: intentar recuperar PDF via Firebase SDK o Firestore
     const textoId = currentTextoId || activeLecture?.id || null;
     if (textoId) {
-      logger.log('📄 [VisorTexto] Intentando recuperar fileURL desde Firestore para:', textoId);
+      logger.log('📄 [VisorTexto] Intentando recuperar PDF via Firebase SDK para:', textoId);
       (async () => {
         try {
+          // Primero: intentar obtener fileURL desde Firestore (colección textos)
           const { doc, getDoc } = await import('firebase/firestore');
           const { db } = await import('./firebase/config');
           const snap = await getDoc(doc(db, 'textos', textoId));
-          if (snap.exists() && snap.data().fileURL) {
+          const foundURL = snap.exists() && snap.data().fileURL ? snap.data().fileURL : null;
+
+          if (foundURL) {
+            // Intentar descargar via Firebase SDK para evitar CORS
+            try {
+              const { ref: storageRef, getBlob: firebaseGetBlob } = await import('firebase/storage');
+              const { storage: storageInstance } = await import('./firebase/config');
+              let storagePath = null;
+              try {
+                const urlObj = new URL(foundURL);
+                const pathSegment = urlObj.pathname.split('/o/')[1];
+                if (pathSegment) storagePath = decodeURIComponent(pathSegment);
+              } catch (_) { /* ignorar */ }
+
+              if (storagePath) {
+                const fileRef = storageRef(storageInstance, storagePath);
+                const blob = await firebaseGetBlob(fileRef);
+                if (blob && blob.size > 500) {
+                  logger.log('✅ [VisorTexto] PDF descargado via Firebase SDK:', blob.size, 'bytes');
+                  setPdfSource(blob);
+                  return;
+                }
+              }
+            } catch (sdkErr) {
+              logger.warn('⚠️ [VisorTexto] Firebase SDK getBlob falló, usando URL directa:', sdkErr.message);
+            }
+
+            // Fallback: pasar URL directa a react-pdf
             logger.log('✅ [VisorTexto] fileURL recuperada de Firestore');
-            setPdfSource(snap.data().fileURL);
+            setPdfSource(foundURL);
             return;
           }
         } catch (fbErr) {

@@ -1,0 +1,5 @@
+.env
+.env.production
+scripts/provision-expert-users.ps1
+test-results/credenciales-expertos-validacion-2026-02-16.csv
+test-results/expert-users-20260216-090336.json

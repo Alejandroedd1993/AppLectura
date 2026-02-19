@@ -135,6 +135,7 @@ const VALID_INTENTS = [
   /(profundiza|m[aá]s\s+sobre|detalla|amplia)/i,
 ];
 export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantMessage, initialMessages = [], children, maxMessages = 40, backendUrl = 'http://localhost:3001' }) {
+  const backendBaseUrl = (backendUrl || '').replace(/\/+$/, '');
   // ✨ FASE 2: Integrar hooks pedagógicos
   const pedagogyIntegration = React.useZDPIntegration ? React.useZDPIntegration() : { zdp: null, rew: null };
   zdpDetector = pedagogyIntegration.zdp;
@@ -603,7 +604,7 @@ Adapta tu respuesta según señales del estudiante:
       const lm = (ctx.lengthMode || 'auto').toLowerCase();
       const maxTokens = lm === 'breve' ? 400 : lm === 'detallada' ? 1200 : 800;
 
-      const res = await fetch(`${backendUrl}/api/chat/completion`, {
+      const res = await fetch(`${backendBaseUrl}/api/chat/completion`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1065,7 +1066,7 @@ Adapta tu respuesta según señales del estudiante:
           const timeoutId = setTimeout(() => controller.abort(), 5000);
 
           try {
-            const response = await fetch('/api/web-search', {
+            const response = await fetch(`${backendBaseUrl}/api/web-search`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', ...webAuthHeader },
               body: JSON.stringify({

@@ -1,4 +1,6 @@
 import express from 'express';
+import requireFirebaseAuth from '../middleware/firebaseAuth.js';
+import { storageProxyLimiter } from '../middleware/rateLimiters.js';
 
 const router = express.Router();
 
@@ -12,7 +14,7 @@ const isAllowedStorageUrl = (value = '') => {
   }
 };
 
-router.get('/storage/proxy', async (req, res) => {
+router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (req, res) => {
   const targetUrl = req.query.url;
 
   console.log('📥 [StorageProxy] Solicitud recibida para:', targetUrl?.substring(0, 80));

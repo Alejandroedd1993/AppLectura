@@ -1,0 +1,18 @@
+[
+  {
+    "origin": [
+      "https://applectura-cb058.web.app",
+      "https://applectura-cb058.firebaseapp.com",
+      "http://localhost:3000"
+    ],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Disposition",
+      "Accept-Ranges",
+      "Content-Range"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

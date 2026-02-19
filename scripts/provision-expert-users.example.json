@@ -1,0 +1,11 @@
+[
+  {
+    "n": 1,
+    "docenteEmail": "docente1@example.com",
+    "docentePass": "SET_STRONG_PASSWORD",
+    "docenteNombre": "Docente 1",
+    "estudianteEmail": "estudiante1@example.com",
+    "estudiantePass": "SET_STRONG_PASSWORD",
+    "estudianteNombre": "Estudiante 1"
+  }
+]
