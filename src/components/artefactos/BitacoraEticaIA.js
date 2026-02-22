@@ -16,6 +16,7 @@ import { usePedagogy, useRewards } from '../../context/PedagogyContext';
 import { evaluateBitacoraEticaIA } from '../../services/bitacoraEticaIA.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
+import useTeacherArtifactReset from '../../hooks/useTeacherArtifactReset';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
@@ -64,9 +65,6 @@ export default function BitacoraEticaIA({ theme }) {
   const { modoOscuro, completeAnalysis, setError, updateRubricScore, updateActivitiesProgress, sourceCourseId, currentTextoId, globalTutorInteractions, clearGlobalTutorLog, activitiesProgress } = useContext(AppContext);
   const { progression: _progression } = usePedagogy();
   const rewards = useRewards(); // 🎮 Hook de recompensas
-
-  // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
-  const resetProcessedRef = useRef(null);
 
   // 🆕 Ref para rastrear todos los setTimeout y evitar memory leaks
   const timersRef = useRef([]);
@@ -254,6 +252,38 @@ export default function BitacoraEticaIA({ theme }) {
     setViewingVersion(null);
   }, [viewingVersion, isSubmitted]);
 
+  const applyTeacherReset = useCallback(() => {
+    setIsSubmitted(false);
+    setIsLocked(false);
+    setHistory([]);
+    setEvaluationAttempts(0);
+    setFeedbackCriterial(null);
+    setVerificacionFuentes('');
+    setProcesoUsoIA('');
+    setReflexionEtica('');
+    setDeclaraciones({
+      respuestasPropias: false,
+      verificacionRealizada: false,
+      usoTransparente: false,
+      contrasteMultifuente: false
+    });
+    setViewingVersion(null);
+    setTeacherScoreOverride(null);
+  }, []);
+
+  const maybeApplyTeacherReset = useTeacherArtifactReset({
+    artifactLabel: 'BitacoraEticaIA',
+    lectureId,
+    sourceCourseId,
+    persistence,
+    draftKeyBases: [
+      'bitacoraEticaIA_verificacionFuentes',
+      'bitacoraEticaIA_procesoUsoIA',
+      'bitacoraEticaIA_reflexionEtica'
+    ],
+    onApplyReset: applyTeacherReset
+  });
+
   // Cargar reflexiones guardadas (interacciones del tutor ahora se manejan en AppContext)
 
   useEffect(() => {
@@ -378,62 +408,7 @@ export default function BitacoraEticaIA({ theme }) {
 
     const cloudData = findCloudArtifact('bitacoraEticaIA');
     
-    // 🔄 DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
-    // Convertir resetAt a timestamp en milisegundos (puede ser string ISO, Firestore Timestamp, o número)
-    const rawResetAt = cloudData?.resetAt;
-    let resetTimestamp = 0;
-    if (rawResetAt) {
-      if (rawResetAt.seconds) {
-        // Firestore Timestamp
-        resetTimestamp = rawResetAt.seconds * 1000;
-      } else if (typeof rawResetAt === 'string') {
-        // ISO string
-        resetTimestamp = new Date(rawResetAt).getTime();
-      } else if (typeof rawResetAt === 'number') {
-        // Ya es timestamp (verificar si es segundos o milisegundos)
-        resetTimestamp = rawResetAt > 1e12 ? rawResetAt : rawResetAt * 1000;
-      }
-    }
-    
-    // 🆕 CLAVE: Si submitted === false explícitamente por el reset, debemos aplicarlo
-    // El reset escribe submitted: false, así que si cloudData.submitted es false
-    // y hay resetBy='docente', es un reset válido
-    const wasResetByDocente = cloudData?.resetBy === 'docente' && resetTimestamp > 0;
-    const isCurrentlySubmitted = cloudData?.submitted === true;
-    
-    // Solo aplicar reset si:
-    // 1. Hay resetBy='docente' y resetTimestamp válido
-    // 2. El artefacto NO está actualmente submitted (el docente lo reseteó a submitted: false)
-    const shouldApplyReset = wasResetByDocente && !isCurrentlySubmitted;
-    
-    if (shouldApplyReset) {
-      // Verificar si ya procesamos este reset específico
-      const resetKey = `${lectureId}_${resetTimestamp}`;
-      if (resetProcessedRef.current === resetKey) {
-        // Ya procesamos este reset, no hacer nada
-        return;
-      }
-      
-      logger.log('🔄 [BitacoraEticaIA] Detectado RESET por docente, limpiando estado local...');
-      logger.log('🔄 [BitacoraEticaIA] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
-      resetProcessedRef.current = resetKey; // Marcar como procesado
-      
-      // Limpiar estados
-      setIsSubmitted(false);
-      setIsLocked(false);
-      setHistory([]);
-      setEvaluationAttempts(0);
-      setFeedbackCriterial(null);
-      setVerificacionFuentes('');
-      setProcesoUsoIA('');
-      setReflexionEtica('');
-      setDeclaraciones({ respuestasPropias: false, verificacionRealizada: false, usoTransparente: false, contrasteMultifuente: false });
-      setViewingVersion(null);
-      setTeacherScoreOverride(null); // Limpiar override docente tras reset
-      
-      if (persistence?.clearResults) persistence.clearResults();
-      
-      logger.log('🧹 [BitacoraEticaIA] Estado local limpiado tras reset');
+    if (maybeApplyTeacherReset(cloudData)) {
       return;
     }
     
@@ -469,7 +444,7 @@ export default function BitacoraEticaIA({ theme }) {
       }
       logger.log('☁️ [BitacoraEticaIA] Borradores restaurados desde Firestore');
     }
-  }, [lectureId, activitiesProgress, verificacionFuentes, procesoUsoIA, reflexionEtica, persistence]);
+  }, [lectureId, activitiesProgress, verificacionFuentes, procesoUsoIA, reflexionEtica, maybeApplyTeacherReset]);
 
   // 🆕 Handle submission confirmada
   const handleConfirmedSubmit = useCallback(() => {

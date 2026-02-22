@@ -6,6 +6,7 @@ import { useRewards } from '../../context/PedagogyContext';
 import { evaluateTablaACD } from '../../services/tablaACD.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
+import useTeacherArtifactReset from '../../hooks/useTeacherArtifactReset';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import HistoryRibbon from '../ui/HistoryRibbon';
@@ -83,9 +84,6 @@ import {
 export default function TablaACD({ theme }) {
   const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation, updateActivitiesProgress, sourceCourseId, currentTextoId, activitiesProgress } = useContext(AppContext);
   const rewards = useRewards(); // 🎮 Hook de recompensas
-
-  // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
-  const resetProcessedRef = useRef(null);
 
   // 🆕 Ref para rastrear todos los timers activos y limpiarlos al desmontar
   const timersRef = useRef([]);
@@ -374,6 +372,34 @@ export default function TablaACD({ theme }) {
     }
   });
 
+  const applyTeacherReset = useCallback(() => {
+    setIsSubmitted(false);
+    setIsLocked(false);
+    setHistory([]);
+    setEvaluationAttempts(0);
+    setFeedback(null);
+    setMarcoIdeologico('');
+    setEstrategiasRetoricas('');
+    setVocesPresentes('');
+    setVocesSilenciadas('');
+    setViewingVersion(null);
+    setTeacherScoreOverride(null);
+  }, []);
+
+  const maybeApplyTeacherReset = useTeacherArtifactReset({
+    artifactLabel: 'TablaACD',
+    lectureId,
+    sourceCourseId,
+    persistence,
+    draftKeyBases: [
+      'tablaACD_marcoIdeologico',
+      'tablaACD_estrategiasRetoricas',
+      'tablaACD_vocesPresentes',
+      'tablaACD_vocesSilenciadas'
+    ],
+    onApplyReset: applyTeacherReset
+  });
+
   // 🆕 CLOUD SYNC: Cargar history/drafts desde Firestore (activitiesProgress) - tiene prioridad sobre localStorage
   // También detecta resets del docente y limpia el estado local
   useEffect(() => {
@@ -401,75 +427,8 @@ export default function TablaACD({ theme }) {
 
     const cloudData = findCloudArtifact('tablaACD');
     
-    // 🔄 DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
-    // Convertir resetAt a timestamp en milisegundos (puede ser string ISO, Firestore Timestamp, o número)
-    const rawResetAt = cloudData?.resetAt;
-    let resetTimestamp = 0;
-    if (rawResetAt) {
-      if (rawResetAt.seconds) {
-        // Firestore Timestamp
-        resetTimestamp = rawResetAt.seconds * 1000;
-      } else if (typeof rawResetAt === 'string') {
-        // ISO string
-        resetTimestamp = new Date(rawResetAt).getTime();
-      } else if (typeof rawResetAt === 'number') {
-        // Ya es timestamp (verificar si es segundos o milisegundos)
-        resetTimestamp = rawResetAt > 1e12 ? rawResetAt : rawResetAt * 1000;
-      }
-    }
-    
-    // 🆕 CLAVE: Si submitted === false explícitamente por el reset, debemos aplicarlo
-    // El reset escribe submitted: false, así que si cloudData.submitted es false
-    // y hay resetBy='docente', es un reset válido
-    const wasResetByDocente = cloudData?.resetBy === 'docente' && resetTimestamp > 0;
-    const isCurrentlySubmitted = cloudData?.submitted === true;
-    
-    // Solo aplicar reset si:
-    // 1. Hay resetBy='docente' y resetTimestamp válido
-    // 2. El artefacto NO está actualmente submitted (el docente lo reseteó a submitted: false)
-    const shouldApplyReset = wasResetByDocente && !isCurrentlySubmitted;
-    
-    if (shouldApplyReset) {
-      // Verificar si ya procesamos este reset específico
-      const resetKey = `${currentTextoId}_${resetTimestamp}`;
-      if (resetProcessedRef.current === resetKey) {
-        // Ya procesamos este reset, no hacer nada
-        return;
-      }
-      
-      logger.log('🔄 [TablaACD] Detectado RESET por docente, limpiando estado local...');
-      logger.log('🔄 [TablaACD] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
-      resetProcessedRef.current = resetKey; // Marcar como procesado
-      
-      // Limpiar estados
-      setIsSubmitted(false);
-      setIsLocked(false);
-      setHistory([]);
-      setEvaluationAttempts(0);
-      setFeedback(null);
-      setMarcoIdeologico('');
-      setEstrategiasRetoricas('');
-      setVocesPresentes('');
-      setVocesSilenciadas('');
-      setViewingVersion(null);
-      setTeacherScoreOverride(null); // Limpiar override docente tras reset
-      
-      // Limpiar sessionStorage
-      import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, lectureId, sourceCourseId);
-        sessionStorage.removeItem(getKey('tablaACD_marcoIdeologico'));
-        sessionStorage.removeItem(getKey('tablaACD_estrategiasRetoricas'));
-        sessionStorage.removeItem(getKey('tablaACD_vocesPresentes'));
-        sessionStorage.removeItem(getKey('tablaACD_vocesSilenciadas'));
-        logger.log('🧹 [TablaACD] Borradores locales limpiados tras reset');
-      }).catch(() => {});
-      
-      // Limpiar localStorage (persistence)
-      if (persistence?.clearResults) {
-        persistence.clearResults();
-      }
-      
-      return; // No procesar más, ya reseteamos
+    if (maybeApplyTeacherReset(cloudData)) {
+      return;
     }
     
     if (!cloudData) return;
@@ -526,7 +485,7 @@ export default function TablaACD({ theme }) {
         logger.log('☁️ [TablaACD] Borradores restaurados desde Firestore');
       }).catch(() => {});
     }
-  }, [lectureId, activitiesProgress, persistence]);
+  }, [lectureId, activitiesProgress, persistence, maybeApplyTeacherReset]);
 
   // 🆕 Handle submission confirmada
   const handleConfirmedSubmit = useCallback(() => {

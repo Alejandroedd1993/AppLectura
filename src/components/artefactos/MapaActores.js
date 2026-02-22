@@ -6,6 +6,7 @@ import { useRewards } from '../../context/PedagogyContext';
 import { evaluateMapaActores } from '../../services/mapaActores.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
+import useTeacherArtifactReset from '../../hooks/useTeacherArtifactReset';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
@@ -88,8 +89,6 @@ export default function MapaActores({ theme }) {
   const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation, updateActivitiesProgress, sourceCourseId, currentTextoId, activitiesProgress } = useContext(AppContext);
   const rewards = useRewards(); // 🎮 Hook de recompensas
 
-  // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
-  const resetProcessedRef = useRef(null);
   const timersRef = useRef([]); // 🧹 Track all setTimeout IDs for cleanup
 
   // 🧹 Cleanup all tracked timers on unmount
@@ -278,6 +277,34 @@ export default function MapaActores({ theme }) {
     }
   });
 
+  const applyTeacherReset = useCallback(() => {
+    setIsSubmitted(false);
+    setIsLocked(false);
+    setHistory([]);
+    setEvaluationAttempts(0);
+    setFeedback(null);
+    setActores('');
+    setContextoHistorico('');
+    setConexiones('');
+    setConsecuencias('');
+    setViewingVersion(null);
+    setTeacherScoreOverride(null);
+  }, []);
+
+  const maybeApplyTeacherReset = useTeacherArtifactReset({
+    artifactLabel: 'MapaActores',
+    lectureId,
+    sourceCourseId,
+    persistence,
+    draftKeyBases: [
+      'mapaActores_actores',
+      'mapaActores_contextoHistorico',
+      'mapaActores_conexiones',
+      'mapaActores_consecuencias'
+    ],
+    onApplyReset: applyTeacherReset
+  });
+
   // 🆕 CLOUD SYNC: Cargar history/drafts desde Firestore (activitiesProgress)
   // También detecta resets del docente y limpia el estado local
   useEffect(() => {
@@ -300,71 +327,7 @@ export default function MapaActores({ theme }) {
 
     const cloudData = findCloudArtifact('mapaActores');
     
-    // 🔄 DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
-    // Convertir resetAt a timestamp en milisegundos (puede ser string ISO, Firestore Timestamp, o número)
-    const rawResetAt = cloudData?.resetAt;
-    let resetTimestamp = 0;
-    if (rawResetAt) {
-      if (rawResetAt.seconds) {
-        // Firestore Timestamp
-        resetTimestamp = rawResetAt.seconds * 1000;
-      } else if (typeof rawResetAt === 'string') {
-        // ISO string
-        resetTimestamp = new Date(rawResetAt).getTime();
-      } else if (typeof rawResetAt === 'number') {
-        // Ya es timestamp (verificar si es segundos o milisegundos)
-        resetTimestamp = rawResetAt > 1e12 ? rawResetAt : rawResetAt * 1000;
-      }
-    }
-    
-    // 🆕 CLAVE: Si submitted === false explícitamente por el reset, debemos aplicarlo
-    // El reset escribe submitted: false, así que si cloudData.submitted es false
-    // y hay resetBy='docente', es un reset válido
-    const wasResetByDocente = cloudData?.resetBy === 'docente' && resetTimestamp > 0;
-    const isCurrentlySubmitted = cloudData?.submitted === true;
-    
-    // Solo aplicar reset si:
-    // 1. Hay resetBy='docente' y resetTimestamp válido
-    // 2. El artefacto NO está actualmente submitted (el docente lo reseteó a submitted: false)
-    const shouldApplyReset = wasResetByDocente && !isCurrentlySubmitted;
-    
-    if (shouldApplyReset) {
-      // Verificar si ya procesamos este reset específico
-      const resetKey = `${lectureId}_${resetTimestamp}`;
-      if (resetProcessedRef.current === resetKey) {
-        // Ya procesamos este reset, no hacer nada
-        return;
-      }
-      
-      logger.log('🔄 [MapaActores] Detectado RESET por docente, limpiando estado local...');
-      logger.log('🔄 [MapaActores] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
-      resetProcessedRef.current = resetKey; // Marcar como procesado
-      
-      // Limpiar estados
-      setIsSubmitted(false);
-      setIsLocked(false);
-      setHistory([]);
-      setEvaluationAttempts(0);
-      setFeedback(null);
-      setActores('');
-      setContextoHistorico('');
-      setConexiones('');
-      setConsecuencias('');
-      setViewingVersion(null);
-      setTeacherScoreOverride(null); // Limpiar override docente tras reset
-      
-      // Limpiar sessionStorage
-      import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, lectureId, sourceCourseId);
-        sessionStorage.removeItem(getKey('mapaActores_actores'));
-        sessionStorage.removeItem(getKey('mapaActores_contextoHistorico'));
-        sessionStorage.removeItem(getKey('mapaActores_conexiones'));
-        sessionStorage.removeItem(getKey('mapaActores_consecuencias'));
-        logger.log('🧹 [MapaActores] Borradores locales limpiados tras reset');
-      }).catch(() => {});
-      
-      if (persistence?.clearResults) persistence.clearResults();
-      
+    if (maybeApplyTeacherReset(cloudData)) {
       return;
     }
     
@@ -414,7 +377,7 @@ export default function MapaActores({ theme }) {
         logger.log('☁️ [MapaActores] Borradores restaurados desde Firestore');
       }).catch(() => {});
     }
-  }, [lectureId, activitiesProgress, persistence]);
+  }, [lectureId, activitiesProgress, persistence, maybeApplyTeacherReset]);
 
   // 🆕 Handle submission confirmada
   const handleConfirmedSubmit = useCallback(() => {

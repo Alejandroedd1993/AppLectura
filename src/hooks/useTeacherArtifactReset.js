@@ -26,6 +26,7 @@ export default function useTeacherArtifactReset({
   sourceCourseId,
   persistence,
   draftKeyBase,
+  draftKeyBases,
   onApplyReset
 } = {}) {
   const resetProcessedRef = useRef(null);
@@ -54,9 +55,18 @@ export default function useTeacherArtifactReset({
     }
 
     import('../services/sessionManager').then(({ getDraftKey }) => {
-      const key = getDraftKey(draftKeyBase, lectureId, sourceCourseId);
-      sessionStorage.removeItem(key);
-      logger.log(`🧹 [${artifactLabel}] Borrador sessionStorage limpiado tras reset`);
+      const resolvedDraftBases = Array.isArray(draftKeyBases) && draftKeyBases.length > 0
+        ? draftKeyBases
+        : (draftKeyBase ? [draftKeyBase] : []);
+
+      resolvedDraftBases.forEach((baseKey) => {
+        const key = getDraftKey(baseKey, lectureId, sourceCourseId);
+        sessionStorage.removeItem(key);
+      });
+
+      if (resolvedDraftBases.length > 0) {
+        logger.log(`🧹 [${artifactLabel}] Borrador(es) sessionStorage limpiado(s) tras reset`);
+      }
     }).catch(() => {});
 
     if (persistence?.clearResults) {
@@ -79,5 +89,5 @@ export default function useTeacherArtifactReset({
     }
 
     return true;
-  }, [artifactLabel, draftKeyBase, lectureId, onApplyReset, persistence, sourceCourseId]);
+  }, [artifactLabel, draftKeyBase, draftKeyBases, lectureId, onApplyReset, persistence, sourceCourseId]);
 }
