@@ -20,7 +20,7 @@ import {
   deleteAllSessions as deleteAllSessionsFromManager
 } from '../services/sessionManager';
 import { simpleHash as simpleObjectHash } from '../utils/sessionHash';
-import { rubricProgressKey, activitiesProgressKey, activitiesProgressMigratedKey } from '../utils/storageKeys.js';
+import { scopeKey, rubricProgressKey, activitiesProgressKey, activitiesProgressMigratedKey } from '../utils/storageKeys.js';
 import { useAuth } from './AuthContext';
 import {
   saveEvaluacion,
@@ -48,6 +48,49 @@ import {
 // Backend URL configuration
 export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 logger.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
+
+const normalizeTutorInteraction = (entry) => {
+  if (entry == null) return null;
+
+  // Compatibilidad legacy: entradas guardadas como string.
+  if (typeof entry === 'string') {
+    const question = entry.trim();
+    if (!question) return null;
+    return {
+      timestamp: new Date().toISOString(),
+      lectureId: 'global',
+      question,
+      context: '',
+      bloomLevel: null,
+      tutorMode: 'general'
+    };
+  }
+
+  if (typeof entry !== 'object') return null;
+
+  const question = String(
+    entry.question ??
+    entry.content ??
+    entry.prompt ??
+    ''
+  ).trim();
+
+  if (!question) return null;
+
+  const parsedTs = Date.parse(entry.timestamp);
+  const timestamp = Number.isNaN(parsedTs) ? new Date().toISOString() : String(entry.timestamp);
+  const context = typeof entry.context === 'string' ? entry.context : '';
+  const tutorMode = String(entry.tutorMode ?? entry.mode ?? 'general').trim() || 'general';
+
+  return {
+    ...entry,
+    timestamp,
+    question,
+    context,
+    bloomLevel: entry.bloomLevel ?? null,
+    tutorMode
+  };
+};
 
 // 1. Crear el Contexto
 export const
@@ -457,6 +500,7 @@ export const AppContextProvider = ({ children }) => {
   const lastSavedCitationsFromCloudAtRef = useRef(0);
   const activitiesProgressLocalDirtyRef = useRef(false);
   const lastActivitiesTouchedTextoIdRef = useRef(null);
+  const legacyProgressMigratedRef = useRef(new Set());
   const savedCitationsLocalDirtyRef = useRef(false);
   const progressHookHasAppliedInitialRef = useRef(false);
   const appUnmountingRef = useRef(false);
@@ -503,6 +547,41 @@ export const AppContextProvider = ({ children }) => {
   useEffect(() => {
     sourceCourseIdRef.current = sourceCourseId;
   }, [sourceCourseId]);
+
+  const resolveProgressCourseScope = useCallback((textoId, courseId = sourceCourseIdRef.current) => {
+    if (!textoId || textoId === 'global_progress') return null;
+    return courseId || `free::${textoId}`;
+  }, []);
+
+  const resolveProgressLocalScopeKey = useCallback((textoId, courseId = sourceCourseIdRef.current) => {
+    if (!textoId || textoId === 'global_progress') return 'global_progress';
+    const scopedCourseId = resolveProgressCourseScope(textoId, courseId);
+    return scopeKey(scopedCourseId, textoId) || textoId;
+  }, [resolveProgressCourseScope]);
+
+  const isActivityStorageKeyForLecture = useCallback((storageKey, lectureId, courseId = sourceCourseIdRef.current) => {
+    if (!storageKey || !lectureId || !storageKey.startsWith('activity_results_')) return false;
+
+    if (courseId) {
+      const coursePrefix = `activity_results_${courseId}_`;
+      if (!storageKey.startsWith(coursePrefix)) return false;
+      const scopedDocId = storageKey.slice(coursePrefix.length);
+      return scopedDocId === lectureId || scopedDocId.endsWith(`_${lectureId}`);
+    }
+
+    const unscopedDocId = storageKey.slice('activity_results_'.length);
+    return unscopedDocId === lectureId ||
+      unscopedDocId === `resumen_academico_${lectureId}` ||
+      unscopedDocId === `tabla_acd_${lectureId}` ||
+      unscopedDocId === `mapa_actores_${lectureId}` ||
+      unscopedDocId === `respuesta_argumentativa_${lectureId}` ||
+      unscopedDocId === `bitacora_etica_ia_${lectureId}`;
+  }, []);
+
+  // Documento de progreso por lectura (fallback a global_progress)
+  const progressDocId = currentTextoId || 'global_progress';
+  // Clave local equivalente al scope real (curso o modo libre).
+  const progressLocalKey = resolveProgressLocalScopeKey(currentTextoId, sourceCourseId);
 
   useEffect(() => {
     completeAnalysisRef.current = completeAnalysis;
@@ -555,18 +634,24 @@ export const AppContextProvider = ({ children }) => {
     logger.log('📎 Nuevo courseId:', lectureData.courseId);
     logger.log('📎 Contenido:', lectureData.content?.length || 0, 'chars');
 
-    // 🆕 FIX CRÍTICO: Cada lectura necesita su PROPIA sesión
-    // Buscar si ya existe una sesión para este textoId
+    // 🆕 FIX CRÍTICO: Cada lectura necesita su PROPIA sesión aislada por curso+texto
+    // Buscar si ya existe una sesión para este textoId EN ESTE CURSO
     if (lectureData.id) {
       const allSessions = getAllSessions();
-      const existingSession = allSessions.find(s =>
-        s.currentTextoId === lectureData.id ||
-        s.text?.metadata?.id === lectureData.id ||
-        s.text?.textoId === lectureData.id
-      );
+      const existingSession = allSessions.find(s => {
+        const sTextoId = s.currentTextoId || s.text?.metadata?.id || s.text?.textoId;
+        const sCourseId = s.sourceCourseId || s.text?.sourceCourseId || null;
+        if (sTextoId !== lectureData.id) return false;
+        // 🛡️ FIX: Si se pide un courseId específico, la sesión DEBE tener el mismo courseId.
+        // Sesiones legacy (sin courseId) NO se reutilizan para peticiones con curso específico.
+        if (lectureData.courseId) {
+          if (!sCourseId || sCourseId !== lectureData.courseId) return false;
+        }
+        return true;
+      });
 
       if (existingSession) {
-        // Reutilizar la sesión existente de esta lectura
+        // Reutilizar la sesión existente de esta lectura+curso
         setCurrentSessionId(existingSession.id);
         logger.log('♻️ [AppContext] Reutilizando sesión existente para esta lectura:', existingSession.id);
       } else {
@@ -579,17 +664,36 @@ export const AppContextProvider = ({ children }) => {
       logger.warn('⚠️ [AppContext] switchLecture sin textoId, no se puede asignar sesión');
     }
 
-    setActiveLecture({
-      id: lectureData.id || null,
-      courseId: lectureData.courseId || null,
-      content: lectureData.content || '',
-      fileName: lectureData.fileName || null,
-      fileType: lectureData.fileType || null,
-      fileURL: lectureData.fileURL || null,
-      analysis: null,  // Siempre empezar sin análisis (se cargará después)
-      isAnalyzing: false,
-      analysisAttempted: false,
-      lastModified: Date.now()
+    setActiveLecture(prev => {
+      // 🛡️ FIX CROSS-COURSE: Detectar si cambia el curso (o el textoId)
+      // para resetear inmediatamente el estado de progreso y evitar que
+      // datos del curso anterior sean visibles ni siquiera durante un frame.
+      const isCourseChanging = prev.courseId !== (lectureData.courseId || null);
+      const isTextoChanging = prev.id !== (lectureData.id || null);
+
+      if (isCourseChanging || isTextoChanging) {
+        logger.log('🛡️ [switchLecture] Curso/texto cambió — reseteando progreso eagerly');
+        // Los setters de useState son estables y accesibles desde la closure
+        // aunque estén declarados más abajo en el cuerpo del componente.
+        queueMicrotask(() => {
+          setActivitiesProgress({});
+          setRubricProgress(createEmptyRubricProgressV2());
+          setSavedCitations({});
+        });
+      }
+
+      return {
+        id: lectureData.id || null,
+        courseId: lectureData.courseId || null,
+        content: lectureData.content || '',
+        fileName: lectureData.fileName || null,
+        fileType: lectureData.fileType || null,
+        fileURL: lectureData.fileURL || null,
+        analysis: null,  // Siempre empezar sin análisis (se cargará después)
+        isAnalyzing: false,
+        analysisAttempted: false,
+        lastModified: Date.now()
+      };
     });
 
     logger.log('✅ [AppContext] Lectura cambiada atómicamente con sesión aislada');
@@ -647,33 +751,51 @@ export const AppContextProvider = ({ children }) => {
 
   useEffect(() => {
     // Usar 'global' como fallback si no hay textoId específico
+    // 🛡️ FIX CROSS-COURSE: Incluir sourceCourseId para aislar log entre cursos con mismo textoId
+    const buildTutorStorageKey = (courseId, lectureIdValue) => {
+      const scopedCourse = courseId ? `${courseId}::` : '';
+      return `tutorInteractionsLog:${scopedCourse}${lectureIdValue}`;
+    };
     const lectureId = currentTextoId || 'global';
-    const storageKey = `tutorInteractionsLog:${lectureId}`;
+    const storageKey = buildTutorStorageKey(sourceCourseId, lectureId);
 
     // Cargar inicial
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
-      setGlobalTutorInteractions(Array.isArray(saved) ? saved : []);
+      const parsed = Array.isArray(saved) ? saved : [];
+      const normalized = parsed.map(normalizeTutorInteraction).filter(Boolean);
+      const trimmed = normalized.slice(-150);
+      setGlobalTutorInteractions(trimmed);
+      // Si encontramos datos legacy/invalidos o por encima del limite, normalizamos storage.
+      if (trimmed.length !== parsed.length || normalized.length !== parsed.length) {
+        localStorage.setItem(storageKey, JSON.stringify(trimmed));
+      }
     } catch {
       setGlobalTutorInteractions([]);
     }
 
     const handleNewInteraction = (event) => {
-      const interaction = event.detail;
-      const targetLectureId = interaction?.lectureId || lectureId;
-      const targetKey = `tutorInteractionsLog:${targetLectureId}`;
+      const normalizedInteraction = normalizeTutorInteraction(event?.detail);
+      if (!normalizedInteraction) return;
 
-      if (targetLectureId !== lectureId) {
+      const targetLectureId = normalizedInteraction.lectureId || lectureId;
+      const targetCourseId = normalizedInteraction.sourceCourseId ?? sourceCourseId;
+      const interaction = normalizedInteraction.lectureId
+        ? normalizedInteraction
+        : { ...normalizedInteraction, lectureId: targetLectureId };
+      const targetKey = buildTutorStorageKey(targetCourseId, targetLectureId);
+
+      if (targetLectureId !== lectureId || targetCourseId !== sourceCourseId) {
         try {
           const existing = JSON.parse(localStorage.getItem(targetKey) || '[]');
-          const updated = [...(Array.isArray(existing) ? existing : []), interaction];
+          const updated = [...(Array.isArray(existing) ? existing : []), interaction].slice(-150);
           localStorage.setItem(targetKey, JSON.stringify(updated));
         } catch { /* noop */ }
         return;
       }
 
       setGlobalTutorInteractions(prev => {
-        const updated = [...prev, interaction];
+        const updated = [...prev, interaction].slice(-150);
         localStorage.setItem(storageKey, JSON.stringify(updated));
         return updated;
       });
@@ -684,16 +806,17 @@ export const AppContextProvider = ({ children }) => {
       logger.log('🔌 [AppContext] Removiendo listener global');
       window.removeEventListener('tutor-interaction-logged', handleNewInteraction);
     };
-  }, [currentTextoId]);
+  }, [currentTextoId, sourceCourseId]);
 
   // Opción para limpiar log globalmente
   const _clearGlobalTutorLog = useCallback(() => {
     const lectureId = currentTextoId || 'global';
-    const storageKey = `tutorInteractionsLog:${lectureId}`;
+    const courseScope = sourceCourseId ? `${sourceCourseId}::` : '';
+    const storageKey = `tutorInteractionsLog:${courseScope}${lectureId}`;
     localStorage.removeItem(storageKey);
     setGlobalTutorInteractions([]);
     logger.log('🗑️ [AppContext] Log del tutor limpiado para:', lectureId);
-  }, [currentTextoId]);
+  }, [currentTextoId, sourceCourseId]);
 
   // Flag para saber si ya se intentó analizar el texto actual
   const [analysisAttempted, setAnalysisAttempted] = useState(false);
@@ -729,7 +852,7 @@ export const AppContextProvider = ({ children }) => {
     // Esto evita contaminación cruzada entre lecturas
     setRubricProgress(emptyRubricProgress);
 
-    const key = rubricProgressKey(currentUser.uid, currentTextoId);
+    const key = rubricProgressKey(currentUser.uid, currentTextoId, sourceCourseId);
     const saved = localStorage.getItem(key);
 
     if (!saved) {
@@ -748,7 +871,7 @@ export const AppContextProvider = ({ children }) => {
     } catch (e) {
       logger.warn('⚠️ Error cargando rubricProgress (local):', e);
     }
-  }, [currentUser?.uid, currentTextoId, disableLocalProgressMirror, useFirestorePersistenceHook, emptyRubricProgress]);
+  }, [currentUser?.uid, currentTextoId, sourceCourseId, disableLocalProgressMirror, useFirestorePersistenceHook, emptyRubricProgress]);
 
   // Persistir rubricProgress en localStorage cuando cambie (namespace por lectura)
   // 🛡️ NO guardar si está vacío - evita sobrescribir datos buenos durante el cambio de lectura
@@ -763,10 +886,11 @@ export const AppContextProvider = ({ children }) => {
       return;
     }
 
-    const key = rubricProgressKey(currentUser.uid, currentTextoId);
+    // 🛡️ FIX CROSS-COURSE: usar sourceCourseId como valor (no ref) para clave consistente con el render
+    const key = rubricProgressKey(currentUser.uid, currentTextoId, sourceCourseId);
     localStorage.setItem(key, JSON.stringify(rubricProgress));
     logger.log(`💾 [AppContext] rubricProgress guardado en localStorage para ${currentTextoId}`);
-  }, [rubricProgress, currentUser, currentTextoId, disableLocalProgressMirror, useFirestorePersistenceHook]);
+  }, [rubricProgress, currentUser, currentTextoId, sourceCourseId, disableLocalProgressMirror, useFirestorePersistenceHook]);
 
   // 🆕 FIX: Cargar rubricProgress desde Firestore cuando cambie el texto (currentTextoId)
   // Esto asegura que cada lectura tenga su propio progreso de evaluación
@@ -786,7 +910,11 @@ export const AppContextProvider = ({ children }) => {
 
       try {
         // Obtener progreso guardado en Firestore para este texto específico
-        const progress = await getStudentProgress(currentUser.uid, currentTextoId);
+        const progress = await getStudentProgress(
+          currentUser.uid,
+          currentTextoId,
+          resolveProgressCourseScope(currentTextoId, sourceCourseIdRef.current)
+        );
 
         if (!isMounted) return; // Evitar updates si el componente se desmontó
 
@@ -800,16 +928,20 @@ export const AppContextProvider = ({ children }) => {
             logger.log('🔄 [AppContext] Reset detectado en Firestore, limpiando localStorage...');
 
             // Limpiar localStorage de rubricProgress
-            const rubricKey = rubricProgressKey(currentUser.uid, currentTextoId);
+            const rubricKey = rubricProgressKey(currentUser.uid, currentTextoId, sourceCourseIdRef.current);
             localStorage.removeItem(rubricKey);
 
             // Limpiar localStorage de activitiesProgress
-            const activitiesKey = activitiesProgressKey(currentUser.uid, currentTextoId);
+            const activitiesKey = activitiesProgressKey(
+              currentUser.uid,
+              currentTextoId,
+              resolveProgressCourseScope(currentTextoId, sourceCourseIdRef.current)
+            );
             localStorage.removeItem(activitiesKey);
 
             // 🔧 CRITICAL FIX: También limpiar el firestore_backup_* para evitar restauración zombie
             try {
-              const backupKey = `firestore_backup_${currentUser.uid}_${currentTextoId}`;
+              const backupKey = `firestore_backup_${currentUser.uid}_${resolveProgressLocalScopeKey(currentTextoId, sourceCourseIdRef.current)}`;
               localStorage.removeItem(backupKey);
               logger.log('🧹 [AppContext] firestore_backup limpiado tras reset inicial');
             } catch (e) {
@@ -818,7 +950,7 @@ export const AppContextProvider = ({ children }) => {
 
             // Limpiar cualquier key de activity_results_ relacionada
             Object.keys(localStorage).forEach(k => {
-              if (k.includes('activity_results_') && k.includes(currentTextoId)) {
+              if (isActivityStorageKeyForLecture(k, currentTextoId, sourceCourseIdRef.current)) {
                 localStorage.removeItem(k);
                 logger.log('🧹 [AppContext] Limpiado localStorage key:', k);
               }
@@ -841,7 +973,7 @@ export const AppContextProvider = ({ children }) => {
 
           if (anyResetAt) {
             logger.log('🔄 [AppContext] Reset de rúbrica detectado, reemplazando datos');
-            const rubricKey = rubricProgressKey(currentUser.uid, currentTextoId);
+            const rubricKey = rubricProgressKey(currentUser.uid, currentTextoId, sourceCourseIdRef.current);
             localStorage.removeItem(rubricKey);
             setRubricProgress(normalizeRubricProgress(progress.rubricProgress));
             return;
@@ -914,9 +1046,9 @@ export const AppContextProvider = ({ children }) => {
             return normalizedLocal;
           });
         } else {
-          // Sin progreso en Firestore para esta lectura
-          // Mantener lo que se cargó del localStorage (si había algo)
-          logger.log('ℹ️ [AppContext] Sin progreso en Firestore para este texto:', currentTextoId);
+          // 🛡️ FIX CROSS-COURSE: Sin progreso en Firestore → limpiar estado para evitar herencia del curso anterior
+          logger.log('ℹ️ [AppContext] Sin progreso en Firestore para este texto/curso, reseteando:', currentTextoId);
+          setRubricProgress(emptyRubricProgress);
         }
       } catch (error) {
         logger.error('❌ [AppContext] Error cargando rubricProgress desde Firestore:', error);
@@ -931,7 +1063,7 @@ export const AppContextProvider = ({ children }) => {
     return () => {
       isMounted = false;
     };
-  }, [currentTextoId, currentUser, emptyRubricProgress]);
+  }, [currentTextoId, currentUser, emptyRubricProgress, sourceCourseId, resolveProgressCourseScope, resolveProgressLocalScopeKey, isActivityStorageKeyForLecture]);
 
   // 🆕 CITAS GUARDADAS: Sistema de citas seleccionadas manualmente por el estudiante
   const [savedCitations, setSavedCitations] = useState({});
@@ -949,25 +1081,64 @@ export const AppContextProvider = ({ children }) => {
       return;
     }
 
-    const key = `savedCitations_${currentUser.uid}`;
+    const key = `savedCitations_${currentUser.uid}_${progressLocalKey}`;
     const saved = localStorage.getItem(key);
 
     if (saved) {
       try {
-        setSavedCitations(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          setSavedCitations(parsed);
+          return;
+        }
       } catch (e) {
-        logger.warn('⚠️ Error cargando savedCitations:', e);
+        logger.warn('⚠️ Error cargando savedCitations (scoped):', e);
       }
     }
-  }, [currentUser, disableLocalProgressMirror]);
+
+    // Compatibilidad: solo en modo libre, intentar key legacy por usuario.
+    if (!sourceCourseId) {
+      try {
+        const legacyKey = `savedCitations_${currentUser.uid}`;
+        const legacyRaw = localStorage.getItem(legacyKey);
+        const legacyParsed = legacyRaw ? JSON.parse(legacyRaw) : null;
+        if (legacyParsed && typeof legacyParsed === 'object') {
+          // Cargar únicamente citas del texto activo para evitar contaminación.
+          if (currentTextoId && Array.isArray(legacyParsed[currentTextoId])) {
+            setSavedCitations({ [currentTextoId]: legacyParsed[currentTextoId] });
+          } else {
+            setSavedCitations({});
+          }
+          return;
+        }
+      } catch (e) {
+        logger.warn('⚠️ Error cargando savedCitations legacy:', e);
+      }
+    }
+
+    setSavedCitations({});
+  }, [currentUser, disableLocalProgressMirror, useFirestorePersistenceHook, progressLocalKey, sourceCourseId, currentTextoId]);
 
   // Persistir citas guardadas cuando cambien (con namespace)
   useEffect(() => {
     if (currentUser?.uid && !disableLocalProgressMirror && !useFirestorePersistenceHook) {
-      const key = `savedCitations_${currentUser.uid}`;
-      localStorage.setItem(key, JSON.stringify(savedCitations));
+      // 🛡️ FIX CROSS-COURSE: No persistir citas vacías (evita copiar datos del curso anterior con clave nueva)
+      const hasCitations = currentTextoId && Array.isArray(savedCitations[currentTextoId]) && savedCitations[currentTextoId].length > 0;
+      if (!hasCitations && currentTextoId && currentTextoId !== 'global_progress') {
+        return;
+      }
+      const key = `savedCitations_${currentUser.uid}_${progressLocalKey}`;
+      const scopedCitations = (() => {
+        if (!currentTextoId || currentTextoId === 'global_progress') return savedCitations;
+        const scoped = {};
+        if (Array.isArray(savedCitations[currentTextoId])) {
+          scoped[currentTextoId] = savedCitations[currentTextoId];
+        }
+        return scoped;
+      })();
+      localStorage.setItem(key, JSON.stringify(scopedCitations));
     }
-  }, [savedCitations, currentUser, disableLocalProgressMirror, useFirestorePersistenceHook]);
+  }, [savedCitations, currentUser, disableLocalProgressMirror, useFirestorePersistenceHook, progressLocalKey, currentTextoId]);
 
   // 🆕 FASE 2 FIX: Migración automática de claves legacy (documentId/substr) -> currentTextoId
   // Objetivo: que citas y actividades queden aisladas por lectura (textoId) sin perder datos existentes.
@@ -1070,9 +1241,6 @@ export const AppContextProvider = ({ children }) => {
   // Etapas 1-2: useFirestorePersistence (leer/suscribir + writer único bajo flag)
   // IMPORTANTE: este bloque debe ir DESPUÉS de rubricProgress/activitiesProgress para evitar TDZ.
   // ============================================================
-
-  // Documento de progreso por lectura (fallback a global_progress)
-  const progressDocId = currentTextoId || 'global_progress';
 
   // Aplicar/mergear progreso remoto en el estado local, reusando las mismas reglas que el listener legacy.
   const applyRemoteStudentProgress = useCallback((progressData, { isInitial } = { isInitial: false }) => {
@@ -1418,7 +1586,7 @@ export const AppContextProvider = ({ children }) => {
 
   useEffect(() => {
     progressHookHasAppliedInitialRef.current = false;
-  }, [currentUser?.uid, progressDocId, hookProgressEnabled]);
+  }, [currentUser?.uid, progressDocId, hookProgressEnabled, sourceCourseId]);
 
   const { save: saveProgressViaHook, loading: progressHookLoading } = useFirestorePersistence(
     progressDocId,
@@ -1426,6 +1594,7 @@ export const AppContextProvider = ({ children }) => {
     {
       enabled: hookProgressEnabled,
       autoSave: false,
+      courseId: sourceCourseId,  // 🔧 FIX CROSS-COURSE: Pasar courseId para doc scoping
       onRehydrate: (remoteData) => {
         const isInitial = !progressHookHasAppliedInitialRef.current;
         progressHookHasAppliedInitialRef.current = true;
@@ -1459,22 +1628,50 @@ export const AppContextProvider = ({ children }) => {
       return;
     }
 
-    const key = activitiesProgressKey(currentUser.uid);
+    const scopedCourseId = resolveProgressCourseScope(progressDocId, sourceCourseId);
+    const key = activitiesProgressKey(currentUser.uid, progressDocId, scopedCourseId);
     const saved = localStorage.getItem(key);
 
     if (saved) {
       try {
-        setActivitiesProgress(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          setActivitiesProgress(parsed);
+          return;
+        }
       } catch (error) {
-        logger.warn('⚠️ Error cargando activitiesProgress:', error);
+        logger.warn('⚠️ Error cargando activitiesProgress (scoped):', error);
       }
     }
-  }, [currentUser, disableLocalProgressMirror, useFirestorePersistenceHook]);
+
+    // Compatibilidad: solo en modo libre, intentar key legacy por usuario.
+    if (!sourceCourseId) {
+      try {
+        const legacyRaw = localStorage.getItem(activitiesProgressKey(currentUser.uid));
+        const legacyParsed = legacyRaw ? JSON.parse(legacyRaw) : null;
+        if (legacyParsed && typeof legacyParsed === 'object') {
+          const subset = {};
+          ['index', 'general', progressDocId].forEach((docKey) => {
+            if (Object.prototype.hasOwnProperty.call(legacyParsed, docKey)) {
+              subset[docKey] = legacyParsed[docKey];
+            }
+          });
+          setActivitiesProgress(Object.keys(subset).length > 0 ? subset : {});
+          return;
+        }
+      } catch (error) {
+        logger.warn('⚠️ Error cargando activitiesProgress legacy:', error);
+      }
+    }
+
+    setActivitiesProgress({});
+  }, [currentUser, disableLocalProgressMirror, useFirestorePersistenceHook, progressDocId, sourceCourseId, resolveProgressCourseScope]);
 
   // 🔄 Migración automática de datos antiguos (una sola vez)
   useEffect(() => {
     if (!currentUser?.uid) return;
     if (disableLocalProgressMirror || useFirestorePersistenceHook) return;
+    if (sourceCourseId) return; // solo aplica para migrar modo libre legacy
 
     const migrationFlagKey = activitiesProgressMigratedKey(currentUser.uid);
     const migrationFlag = localStorage.getItem(migrationFlagKey);
@@ -1493,14 +1690,29 @@ export const AppContextProvider = ({ children }) => {
         logger.warn('⚠️ [Migration] Error importando migración:', err);
       });
     }
-  }, [currentUser, disableLocalProgressMirror, useFirestorePersistenceHook]);
+  }, [currentUser, disableLocalProgressMirror, useFirestorePersistenceHook, sourceCourseId]);
 
   useEffect(() => {
     if (currentUser?.uid && !disableLocalProgressMirror && !useFirestorePersistenceHook) {
-      const key = activitiesProgressKey(currentUser.uid);
-      localStorage.setItem(key, JSON.stringify(activitiesProgress));
+      // 🛡️ FIX CROSS-COURSE: usar sourceCourseId como valor (no ref) para que la clave sea consistente con el ciclo de render
+      const scopedCourseId = resolveProgressCourseScope(progressDocId, sourceCourseId);
+      const key = activitiesProgressKey(currentUser.uid, progressDocId, scopedCourseId);
+      // 🛡️ GUARDIA: No persistir si activitiesProgress está vacío (evita copiar datos del curso anterior con clave nueva)
+      if (!activitiesProgress || typeof activitiesProgress !== 'object' || Object.keys(activitiesProgress).length === 0) {
+        return;
+      }
+      const scopedActivities = (() => {
+        const scoped = {};
+        ['index', 'general', progressDocId].forEach((docKey) => {
+          if (Object.prototype.hasOwnProperty.call(activitiesProgress, docKey)) {
+            scoped[docKey] = activitiesProgress[docKey];
+          }
+        });
+        return scoped;
+      })();
+      localStorage.setItem(key, JSON.stringify(scopedActivities));
     }
-  }, [activitiesProgress, currentUser, disableLocalProgressMirror, useFirestorePersistenceHook]);
+  }, [activitiesProgress, currentUser, disableLocalProgressMirror, useFirestorePersistenceHook, progressDocId, sourceCourseId, resolveProgressCourseScope]);
 
   // Helper centralizado para sincronizar progreso global (solo estudiantes)
   const saveGlobalProgress = useCallback(async (payload, options = {}) => {
@@ -1521,7 +1733,7 @@ export const AppContextProvider = ({ children }) => {
           // Mantener metadata útil para debugging
           lastSync: payload?.lastSync || new Date().toISOString(),
           syncType: payload?.syncType || 'rewards_only',
-          sourceCourseId: payload?.sourceCourseId || sourceCourseId || null,
+          sourceCourseId: null,
           userId: payload?.userId || currentUser.uid
         };
 
@@ -1579,6 +1791,21 @@ export const AppContextProvider = ({ children }) => {
       };
     })();
 
+    const scopedPayload = (() => {
+      if (!compactedPayload || typeof compactedPayload !== 'object') return compactedPayload;
+      if (targetTextoId === 'global_progress') {
+        return {
+          ...compactedPayload,
+          sourceCourseId: null
+        };
+      }
+      return {
+        ...compactedPayload,
+        sourceCourseId: compactedPayload.sourceCourseId
+          ?? resolveProgressCourseScope(targetTextoId, sourceCourseId)
+      };
+    })();
+
     try {
       // Etapa 2: si el hook está activo y el write es para el doc de progreso actual,
       // usar SIEMPRE el writer del hook (evita escrituras residuales por rutas legacy).
@@ -1587,20 +1814,163 @@ export const AppContextProvider = ({ children }) => {
         typeof saveProgressViaHook === 'function' &&
         targetTextoId === progressDocId
       ) {
-        const ok = await saveProgressViaHook(compactedPayload);
+        const ok = await saveProgressViaHook(scopedPayload);
         return Boolean(rewardsSaved && ok !== false);
       }
 
-      await saveStudentProgress(currentUser.uid, targetTextoId, compactedPayload);
+      await saveStudentProgress(currentUser.uid, targetTextoId, scopedPayload);
 
       // Airbag local (merge para soportar writes incrementales, p.ej. una sola rúbrica)
-      writeFirestoreBackupMerged(currentUser.uid, targetTextoId, compactedPayload);
+      // 🔧 FIX CROSS-COURSE: usar la misma clave local efectiva del scope de escritura.
+      const backupScopeKey = resolveProgressLocalScopeKey(
+        targetTextoId,
+        scopedPayload?.sourceCourseId ?? sourceCourseId
+      );
+      writeFirestoreBackupMerged(currentUser.uid, backupScopeKey, scopedPayload);
       return rewardsSaved;
     } catch (error) {
       logger.error('❌ [AppContext] Error guardando progreso por lectura:', error);
       return false;
     }
-  }, [currentUser, isStudent, currentTextoId, sourceCourseId, writeFirestoreBackupMerged, useFirestorePersistenceHook, saveProgressViaHook, progressDocId]);
+  }, [currentUser, isStudent, currentTextoId, sourceCourseId, writeFirestoreBackupMerged, useFirestorePersistenceHook, saveProgressViaHook, progressDocId, resolveProgressCourseScope, resolveProgressLocalScopeKey]);
+
+  // 🆕 MIGRACIÓN FIRESTORE: si en el pasado se guardó progreso bajo document_id (legacy),
+  // mover/mergear automáticamente al textoId canónico para que persista recarga y se vea en docente.
+  useEffect(() => {
+    if (!currentUser?.uid || !isStudent || !currentTextoId) return;
+
+    const legacyDocId = completeAnalysis?.metadata?.document_id || completeAnalysis?.prelecture?.metadata?.document_id;
+    if (!legacyDocId || legacyDocId === currentTextoId) return;
+
+    const migrationKey = `${currentUser.uid}:${legacyDocId}->${currentTextoId}`;
+    if (legacyProgressMigratedRef.current.has(migrationKey)) return;
+
+    let cancelled = false;
+
+    const pickBetterArtifact = (currentArtifact, legacyArtifact) => {
+      if (!currentArtifact) return legacyArtifact;
+      if (!legacyArtifact) return currentArtifact;
+
+      const currentSubmitted = Boolean(currentArtifact.submitted);
+      const legacySubmitted = Boolean(legacyArtifact.submitted);
+      const currentAttempts = Number(currentArtifact.attempts || 0);
+      const legacyAttempts = Number(legacyArtifact.attempts || 0);
+      const currentSubmittedAt = Number(currentArtifact.submittedAt || 0);
+      const legacySubmittedAt = Number(legacyArtifact.submittedAt || 0);
+
+      if (legacySubmitted && !currentSubmitted) return { ...currentArtifact, ...legacyArtifact };
+      if (legacyAttempts > currentAttempts) return { ...currentArtifact, ...legacyArtifact };
+      if (legacySubmittedAt > currentSubmittedAt) return { ...currentArtifact, ...legacyArtifact };
+
+      return currentArtifact;
+    };
+
+    const mergeActivityDoc = (currentDoc = {}, legacyDoc = {}) => {
+      const currentArtifacts = currentDoc?.artifacts || {};
+      const legacyArtifacts = legacyDoc?.artifacts || {};
+      const artifactKeys = new Set([...Object.keys(currentArtifacts), ...Object.keys(legacyArtifacts)]);
+      const mergedArtifacts = {};
+
+      artifactKeys.forEach((artifactKey) => {
+        mergedArtifacts[artifactKey] = pickBetterArtifact(currentArtifacts[artifactKey], legacyArtifacts[artifactKey]);
+      });
+
+      return {
+        ...legacyDoc,
+        ...currentDoc,
+        preparation: {
+          ...(legacyDoc?.preparation || {}),
+          ...(currentDoc?.preparation || {}),
+          updatedAt: Math.max(
+            Number(legacyDoc?.preparation?.updatedAt || 0),
+            Number(currentDoc?.preparation?.updatedAt || 0)
+          )
+        },
+        artifacts: mergedArtifacts
+      };
+    };
+
+    (async () => {
+      try {
+        const legacyScopeCourseId = sourceCourseId || (legacyDocId ? `free::${legacyDocId}` : null);
+        let legacyProgress = await getStudentProgress(currentUser.uid, legacyDocId, legacyScopeCourseId);
+        // Compatibilidad con datos históricos totalmente legacy (sin sourceCourseId).
+        // Solo aplica cuando no hay curso explícito en el contexto actual.
+        if ((!legacyProgress || typeof legacyProgress !== 'object') && !sourceCourseId) {
+          legacyProgress = await getStudentProgress(currentUser.uid, legacyDocId, null);
+        }
+        if (cancelled) return;
+
+        if (!legacyProgress || typeof legacyProgress !== 'object') {
+          legacyProgressMigratedRef.current.add(migrationKey);
+          return;
+        }
+
+        const ap = legacyProgress.activitiesProgress;
+        let legacyActivityDoc = null;
+
+        if (ap?.[legacyDocId]) {
+          legacyActivityDoc = ap[legacyDocId];
+        } else if (ap?.[currentTextoId]) {
+          legacyActivityDoc = ap[currentTextoId];
+        } else if (ap?.artifacts || ap?.preparation) {
+          legacyActivityDoc = ap;
+        } else if (ap && typeof ap === 'object') {
+          for (const key of Object.keys(ap)) {
+            if (ap?.[key]?.artifacts) {
+              legacyActivityDoc = ap[key];
+              break;
+            }
+          }
+        }
+
+        if (!legacyActivityDoc?.artifacts || Object.keys(legacyActivityDoc.artifacts).length === 0) {
+          legacyProgressMigratedRef.current.add(migrationKey);
+          return;
+        }
+
+        // Fallback defensivo: evitar payload null si React difiere la ejecución del updater.
+        let mergedForWrite = mergeActivityDoc({}, legacyActivityDoc);
+
+        lastActivitiesProgressFromCloudAtRef.current = Date.now();
+        setActivitiesProgress((prev) => {
+          const currentDoc = prev?.[currentTextoId] || {};
+          const mergedDoc = mergeActivityDoc(currentDoc, legacyActivityDoc);
+          mergedForWrite = mergedDoc;
+
+          return {
+            ...prev,
+            [currentTextoId]: mergedDoc
+          };
+        });
+
+        // Persistir explícitamente en el doc canónico del texto (visible para docente)
+        await saveGlobalProgress({
+          activitiesProgress: {
+            [currentTextoId]: mergedForWrite
+          },
+          sourceCourseId,
+          syncType: 'legacy_docid_migration'
+        }, { textoId: currentTextoId });
+
+        if (!cancelled) {
+          lastActivitiesTouchedTextoIdRef.current = currentTextoId;
+          legacyProgressMigratedRef.current.add(migrationKey);
+          logger.log('♻️ [AppContext] Migración Firestore legacy completada:', {
+            legacyDocId,
+            currentTextoId,
+            artifacts: Object.keys(mergedForWrite?.artifacts || {})
+          });
+        }
+      } catch (error) {
+        logger.warn('⚠️ [AppContext] Error en migración Firestore legacy:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, isStudent, currentTextoId, completeAnalysis, saveGlobalProgress, sourceCourseId]);
 
   // OPTIMIZADO: Función para guardar la API key, envuelta en useCallback para estabilidad
   const handleApiKeyChange = useCallback((key) => {
@@ -1716,7 +2086,7 @@ export const AppContextProvider = ({ children }) => {
 
       logger.log(`✅ [updateRubricScore] ${rubricId} actualizada. Promedio: ${updatedRubrica.average}/10`);
 
-      // � Disparar eventos de rewards para dimensiones (activar eventos huérfanos)
+      // Disparar eventos de rewards para dimensiones (activar eventos huérfanos)
       try {
         const engine = typeof window !== 'undefined' ? window.__rewardsEngine : null;
         if (engine && newScoreEntry.artefacto !== 'PracticaGuiada') {
@@ -1743,7 +2113,7 @@ export const AppContextProvider = ({ children }) => {
         // no bloquear actualización de rúbrica por rewards
       }
 
-      // �🆕 DISPARAR EVENTO para sincronización optimizada
+      // DISPARAR EVENTO para sincronización optimizada
       window.dispatchEvent(new CustomEvent('artifact-evaluated', {
         detail: {
           rubricId,
@@ -1953,7 +2323,7 @@ export const AppContextProvider = ({ children }) => {
 
     try {
       if (currentUser?.uid && currentTextoId) {
-        localStorage.removeItem(rubricProgressKey(currentUser.uid, currentTextoId));
+        localStorage.removeItem(rubricProgressKey(currentUser.uid, currentTextoId, sourceCourseIdRef.current));
       }
     } catch {
       // ignore
@@ -2674,7 +3044,7 @@ export const AppContextProvider = ({ children }) => {
       try {
         if (draftsBackupInFlightRef.current) return;
 
-        const drafts = captureArtifactsDrafts(currentTextoId);
+        const drafts = captureArtifactsDrafts(currentTextoId, sourceCourseId);
         const hash = simpleObjectHash(drafts);
 
         if (hash && hash === lastDraftsBackupHashRef.current) return;
@@ -2893,7 +3263,7 @@ export const AppContextProvider = ({ children }) => {
         savedCitations,
         activitiesProgress,
         // 🆕 CRÍTICO: Capturar borradores de artefactos desde sessionStorage
-        artifactsDrafts: captureArtifactsDrafts(currentTextoId),
+        artifactsDrafts: captureArtifactsDrafts(currentTextoId, sourceCourseId),
         settings: {
           modoOscuro
         }
@@ -3130,6 +3500,10 @@ export const AppContextProvider = ({ children }) => {
         // 🆕 FIX CRÍTICO: Si la sesión restaurada tiene rubricProgress vacío/débil,
         // intentar cargar desde Firestore como fuente de verdad (evita pérdida tras logout/login)
         const textoIdRestored = session.currentTextoId || session.text?.metadata?.id || session.text?.textoId;
+        const restoredCourseId = resolveProgressCourseScope(
+          textoIdRestored,
+          session.sourceCourseId || session.text?.sourceCourseId || null
+        );
         const sessionRubricKeys = Object.keys(session.rubricProgress || {}).filter(
           k => (session.rubricProgress[k]?.formative?.scores?.length || session.rubricProgress[k]?.scores?.length || 0) > 0
         );
@@ -3137,7 +3511,11 @@ export const AppContextProvider = ({ children }) => {
         if (currentUser?.uid && textoIdRestored && sessionRubricKeys.length === 0) {
           logger.log('🔄 [AppContext] Sesión sin rúbricas, intentando cargar desde Firestore...');
           try {
-            const firestoreProgress = await getStudentProgress(currentUser.uid, textoIdRestored);
+            let firestoreProgress = await getStudentProgress(currentUser.uid, textoIdRestored, restoredCourseId);
+            if (!firestoreProgress && !session.sourceCourseId && !session.text?.sourceCourseId) {
+              // Compatibilidad con datos históricos de modo libre sin sourceCourseId.
+              firestoreProgress = await getStudentProgress(currentUser.uid, textoIdRestored, null);
+            }
             if (firestoreProgress?.rubricProgress && Object.keys(firestoreProgress.rubricProgress).length > 0) {
               logger.log('✅ [AppContext] Rúbricas encontradas en Firestore, aplicando...');
               setRubricProgress(normalizeRubricProgress(firestoreProgress.rubricProgress));
@@ -4268,10 +4646,21 @@ export const AppContextProvider = ({ children }) => {
     const loadInitialProgress = async () => {
       try {
         logger.log('📥 [AppContext] Cargando progreso inicial desde Firestore...');
-        const initialData = await getStudentProgress(currentUser.uid, progressDocId);
+        const initialData = await getStudentProgress(
+          currentUser.uid,
+          progressDocId,
+          resolveProgressCourseScope(progressDocId, sourceCourseIdRef.current)
+        );
 
-        if (!mounted || !initialData) {
-          logger.log('ℹ️ [AppContext] No hay datos iniciales en Firestore');
+        if (!mounted) return;
+        if (!initialData) {
+          // 🛡️ FIX CROSS-COURSE: Sin datos iniciales → limpiar estado para evitar herencia del curso anterior
+          logger.log('ℹ️ [AppContext] No hay datos iniciales en Firestore, reseteando estado');
+          setRubricProgress(emptyRubricProgress);
+          setActivitiesProgress({});
+          if (typeof window !== 'undefined') {
+            window.__firebaseUserLoading = false;
+          }
           return;
         }
 
@@ -4286,16 +4675,27 @@ export const AppContextProvider = ({ children }) => {
           if (resetTime > 0) {
             logger.log('🔄 [AppContext] RESET DETECTADO en carga inicial - limpiando datos locales...');
 
-            // Limpiar localStorage
-            const rubricKey = rubricProgressKey(currentUser.uid, progressDocId);
-            const activitiesKey = activitiesProgressKey(currentUser.uid, progressDocId);
+            // Limpiar localStorage (usar progressLocalKey con scope de curso)
+            const rubricKey = rubricProgressKey(currentUser.uid, progressDocId, sourceCourseIdRef.current);
+            const activitiesKey = activitiesProgressKey(
+              currentUser.uid,
+              progressDocId,
+              resolveProgressCourseScope(progressDocId, sourceCourseIdRef.current)
+            );
+            const legacyRubricKey = rubricProgressKey(currentUser.uid, progressDocId);
+            const legacyActivitiesKey = activitiesProgressKey(currentUser.uid, progressDocId);
             localStorage.removeItem(rubricKey);
             localStorage.removeItem(activitiesKey);
+            localStorage.removeItem(legacyRubricKey);
+            localStorage.removeItem(legacyActivitiesKey);
 
             // Limpiar cualquier key relacionada
             Object.keys(localStorage).forEach(k => {
-              if ((k.includes('activity_results_') || k.includes('rubric') || k.includes('activities'))
-                && k.includes(progressDocId)) {
+              const isProgressKey = k === rubricKey ||
+                k === activitiesKey ||
+                k === legacyRubricKey ||
+                k === legacyActivitiesKey;
+              if (isProgressKey || isActivityStorageKeyForLecture(k, progressDocId, sourceCourseIdRef.current)) {
                 localStorage.removeItem(k);
                 logger.log('🧹 [AppContext] Limpiado localStorage key:', k);
               }
@@ -4353,8 +4753,12 @@ export const AppContextProvider = ({ children }) => {
         if (hasResets) {
           logger.log('🔄 [AppContext] Reset parcial detectado en artefactos:', resetArtifacts);
 
-          // Limpiar localStorage para actividades
-          const activitiesKey = activitiesProgressKey(currentUser.uid, progressDocId);
+          // Limpiar localStorage para actividades (con scope de curso)
+          const activitiesKey = activitiesProgressKey(
+            currentUser.uid,
+            progressDocId,
+            resolveProgressCourseScope(progressDocId, sourceCourseIdRef.current)
+          );
           localStorage.removeItem(activitiesKey);
 
           // Aplicar activitiesProgress de Firestore directamente
@@ -4491,8 +4895,8 @@ export const AppContextProvider = ({ children }) => {
       } catch (error) {
         logger.error('❌ [AppContext] Error cargando progreso inicial:', error);
 
-        // FALLBACK: Intentar rehidratar desde airbag local (firestore_backup_*)
-        const backup = readFirestoreBackup(currentUser.uid, progressDocId);
+        // FALLBACK: Intentar rehidratar desde airbag local (firestore_backup_*) con scope de curso
+        const backup = readFirestoreBackup(currentUser.uid, progressLocalKey);
         if (backup) {
           logger.log('📦 [AppContext] Usando firestore_backup_* como fallback de progreso');
 
@@ -4583,16 +4987,20 @@ export const AppContextProvider = ({ children }) => {
             // Marcar como procesado ANTES de aplicar para evitar re-entradas
             lastProcessedResetTimeRef.current = resetTime;
 
-            // Limpiar localStorage
-            const rubricKey = rubricProgressKey(currentUser.uid, progressDocId);
-            const activitiesKey = activitiesProgressKey(currentUser.uid, progressDocId);
+            // Limpiar localStorage (con scope de curso)
+            const rubricKey = rubricProgressKey(currentUser.uid, progressDocId, sourceCourseIdRef.current);
+            const activitiesKey = activitiesProgressKey(
+              currentUser.uid,
+              progressDocId,
+              resolveProgressCourseScope(progressDocId, sourceCourseIdRef.current)
+            );
             localStorage.removeItem(rubricKey);
             localStorage.removeItem(activitiesKey);
 
             // 🔧 CRITICAL FIX: También limpiar el firestore_backup_* para evitar que
             // restaure datos pre-reset si Firestore falla en la próxima carga
             try {
-              const backupKey = `firestore_backup_${currentUser.uid}_${progressDocId}`;
+              const backupKey = `firestore_backup_${currentUser.uid}_${progressLocalKey}`;
               localStorage.removeItem(backupKey);
               logger.log('🧹 [AppContext] firestore_backup limpiado tras reset de docente');
             } catch (e) {
@@ -4601,7 +5009,7 @@ export const AppContextProvider = ({ children }) => {
 
             // Limpiar cualquier key de activity_results_ relacionada
             Object.keys(localStorage).forEach(k => {
-              if (k.includes('activity_results_') && k.includes(progressDocId)) {
+              if (isActivityStorageKeyForLecture(k, progressDocId, sourceCourseIdRef.current)) {
                 localStorage.removeItem(k);
               }
             });
@@ -4850,7 +5258,8 @@ export const AppContextProvider = ({ children }) => {
         }
 
         // Nota: rewardsState se maneja en un listener dedicado a global_progress.
-      }
+      },
+      resolveProgressCourseScope(progressDocId, sourceCourseIdRef.current)  // 🔧 FIX CROSS-COURSE: Suscribirse al doc con scope efectivo
     );
 
     logger.log('✅ [AppContext] Listener de tiempo real activo');
@@ -4863,7 +5272,7 @@ export const AppContextProvider = ({ children }) => {
         unsubscribe();
       }
     };
-  }, [currentUser, userData, currentTextoId, readFirestoreBackup, useFirestorePersistenceHook]);
+  }, [currentUser, userData, currentTextoId, sourceCourseId, readFirestoreBackup, useFirestorePersistenceHook, resolveProgressCourseScope, isActivityStorageKeyForLecture]);
 
   // 🎮 LISTENER GLOBAL: Puntos/logros SIEMPRE desde global_progress
   useEffect(() => {
@@ -5211,9 +5620,9 @@ export const AppContextProvider = ({ children }) => {
       [currentTextoId]: true
     }));
 
-    // Flag persistente aislado por lectura
-    localStorage.setItem(`notas_disponibles_${currentTextoId}`, 'true');
-  }, [completeAnalysis, texto, currentTextoId, notasAutoGeneradasByTextoId]);
+    // Flag persistente aislado por lectura (con scope de curso)
+    localStorage.setItem(`notas_disponibles_${scopeKey(sourceCourseId, currentTextoId) || currentTextoId}`, 'true');
+  }, [completeAnalysis, texto, currentTextoId, sourceCourseId, notasAutoGeneradasByTextoId]);
 
   // 🆕 ELIMINADO: useEffect que reseteaba análisis al cambiar texto
   // Ya no es necesario porque switchLecture() hace el reset atómicamente
@@ -5263,9 +5672,10 @@ export const AppContextProvider = ({ children }) => {
     syncRubricProgressToFirestore,
     saveEvaluationToFirestore,
     syncCitationsToFirestore,
+    clearGlobalTutorLog: _clearGlobalTutorLog,
     setFocusMode,          // 🆕 Setter directo
     toggleFocusMode        // 🆕 Toggle global
-  }), [setTextoWithDebug, handleApiKeyChange, toggleModoOscuro, setLoadingStable, setErrorStable, setArchivoActualStable, setTextStructureStable, analyzeDocument, updateRubricScore, updateFormativeScore, submitSummativeEssay, checkEssayPrerequisites, clearRubricProgress, resetAllProgress, saveCitation, deleteCitation, getCitations, clearDocumentCitations, updateActivitiesProgress, markPreparationProgress, resetActivitiesProgress, clearAllHistory, createSession, updateCurrentSessionFromState, restoreSession, saveCurrentTextToFirestore, syncRubricProgressToFirestore, saveEvaluationToFirestore, syncCitationsToFirestore, setFocusMode, toggleFocusMode]);
+  }), [setTextoWithDebug, handleApiKeyChange, toggleModoOscuro, setLoadingStable, setErrorStable, setArchivoActualStable, setTextStructureStable, analyzeDocument, updateRubricScore, updateFormativeScore, submitSummativeEssay, checkEssayPrerequisites, clearRubricProgress, resetAllProgress, saveCitation, deleteCitation, getCitations, clearDocumentCitations, updateActivitiesProgress, markPreparationProgress, resetActivitiesProgress, clearAllHistory, createSession, updateCurrentSessionFromState, restoreSession, saveCurrentTextToFirestore, syncRubricProgressToFirestore, saveEvaluationToFirestore, syncCitationsToFirestore, _clearGlobalTutorLog, setFocusMode, toggleFocusMode]);
 
   const dynamicValues = useMemo(() => ({
     texto,
@@ -5297,8 +5707,9 @@ export const AppContextProvider = ({ children }) => {
     conflictingSessionInfo,
     // 🆕 P9 FIX: Estado de sincronización con Firestore
     syncStatus,
+    globalTutorInteractions: _globalTutorInteractions, // Exponer interacciones globales
     focusMode              // 🆕 Única fuente de verdad expuesta
-  }), [texto, openAIApiKey, modoOscuro, loading, error, archivoActual, textStructure, completeAnalysis, analysisAttempted, currentTextoId, sourceCourseId, rubricProgress, savedCitations, notasAutoGeneradasByTextoId, currentUser, userData, activitiesProgress, sessionConflict, conflictingSessionInfo, syncStatus, focusMode]);
+  }), [texto, openAIApiKey, modoOscuro, loading, error, archivoActual, textStructure, completeAnalysis, analysisAttempted, currentTextoId, sourceCourseId, rubricProgress, savedCitations, notasAutoGeneradasByTextoId, currentUser, userData, activitiesProgress, sessionConflict, conflictingSessionInfo, syncStatus, _globalTutorInteractions, focusMode]);
 
   const contextValue = useMemo(() => ({
     ...dynamicValues,

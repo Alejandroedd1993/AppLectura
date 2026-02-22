@@ -817,7 +817,7 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
 
     // 🔧 FIX Bug 4: Resolver sourceCourseId si viene null (fallback desde enrolledCourses)
     let resolvedSourceCourseId = null;
-    if (!progressData.sourceCourseId) {
+    if (textoId !== 'global_progress' && !progressData.sourceCourseId) {
       try {
         const userProfileRef = doc(db, 'users', estudianteUid);
         const userProfileSnap = await getDoc(userProfileRef);
@@ -1168,8 +1168,10 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
           artifacts: artifactsSubmitted,
           fechaEntrega: fechaEntregaFinal ? new Date(fechaEntregaFinal).toISOString() : null
         },
-        // 🆕 CRÍTICO: Preservar sourceCourseId con fallback desde enrolledCourses (Bug 4)
-        sourceCourseId: progressData.sourceCourseId || existingData.sourceCourseId || finalCourseId || resolvedSourceCourseId || null,
+        // 🛡️ HARDEN: global_progress nunca debe persistir sourceCourseId
+        sourceCourseId: textoId === 'global_progress'
+          ? null
+          : (progressData.sourceCourseId || existingData.sourceCourseId || finalCourseId || resolvedSourceCourseId || null),
         ultima_actividad: serverTimestamp(),
         updatedAt: serverTimestamp(),
         lastSync: progressData.lastSync || new Date().toISOString(),

@@ -256,4 +256,80 @@ describe('firestore.rules - progress security', () => {
     await assertFails(outsiderStudent.doc(`students/${studentUid}/progress/${progressDocId}`).delete());
     await assertSucceeds(studentOwner.doc(`students/${studentUid}/progress/${progressDocId}`).delete());
   });
+
+  test('permite create de global_progress con sourceCourseId nulo', async () => {
+    const studentUid = 'student-1';
+    const db = testEnv.authenticatedContext(studentUid).firestore();
+
+    await assertSucceeds(
+      db.doc(`students/${studentUid}/progress/global_progress`).set({
+        textoId: 'global_progress',
+        sourceCourseId: null,
+        rewardsState: { points: 3 },
+        updatedAt: Date.now()
+      })
+    );
+  });
+
+  test('bloquea create de global_progress cuando sourceCourseId tiene valor', async () => {
+    const studentUid = 'student-1';
+    const db = testEnv.authenticatedContext(studentUid).firestore();
+
+    await assertFails(
+      db.doc(`students/${studentUid}/progress/global_progress`).set({
+        textoId: 'global_progress',
+        sourceCourseId: 'course-should-not-be-here',
+        rewardsState: { points: 3 },
+        updatedAt: Date.now()
+      })
+    );
+  });
+
+  test('permite update de global_progress manteniendo sourceCourseId nulo', async () => {
+    const studentUid = 'student-1';
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await db.doc(`students/${studentUid}/progress/global_progress`).set({
+        textoId: 'global_progress',
+        sourceCourseId: null,
+        rewardsState: { points: 1 },
+        updatedAt: Date.now()
+      });
+    });
+
+    const db = testEnv.authenticatedContext(studentUid).firestore();
+    await assertSucceeds(
+      db.doc(`students/${studentUid}/progress/global_progress`).set({
+        textoId: 'global_progress',
+        sourceCourseId: null,
+        rewardsState: { points: 5 },
+        updatedAt: Date.now()
+      }, { merge: true })
+    );
+  });
+
+  test('bloquea update de global_progress cuando sourceCourseId tiene valor', async () => {
+    const studentUid = 'student-1';
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await db.doc(`students/${studentUid}/progress/global_progress`).set({
+        textoId: 'global_progress',
+        sourceCourseId: null,
+        rewardsState: { points: 2 },
+        updatedAt: Date.now()
+      });
+    });
+
+    const db = testEnv.authenticatedContext(studentUid).firestore();
+    await assertFails(
+      db.doc(`students/${studentUid}/progress/global_progress`).set({
+        textoId: 'global_progress',
+        sourceCourseId: 'course-should-not-be-here',
+        rewardsState: { points: 9 },
+        updatedAt: Date.now()
+      }, { merge: true })
+    );
+  });
 });
