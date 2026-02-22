@@ -1380,7 +1380,8 @@ export async function updateReadingTime(estudianteUid, textoId, deltaMinutes, co
     if (error?.code === 'not-found') {
       try {
         await setDoc(progressRef, {
-          sourceCourseId: scopedCourseId,
+          sourceCourseId: textoId === 'global_progress' ? null : scopedCourseId,
+          textoId,
           tiempoLecturaTotal: deltaMinutes,
           tiempoTotal: deltaMinutes,
           tiempo_total_min: deltaMinutes,
