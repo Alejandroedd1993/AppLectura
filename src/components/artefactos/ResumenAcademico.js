@@ -14,6 +14,7 @@ import { useRewards } from '../../context/PedagogyContext';
 import { evaluarResumenAcademico, validarResumenAcademico } from '../../services/resumenAcademico.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
+import useTeacherArtifactReset from '../../hooks/useTeacherArtifactReset';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
@@ -70,9 +71,6 @@ const ResumenAcademico = ({ theme }) => {
   const documentId = completeAnalysis?.metadata?.document_id || null;
   const lectureId = currentTextoId || documentId || null;
   const rewardsResourceId = lectureId ? `${lectureId}:ResumenAcademico` : null;
-
-  // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
-  const resetProcessedRef = useRef(null);
   const timersRef = useRef([]);
 
   // 🧹 Cleanup de todos los timers al desmontar
@@ -230,6 +228,26 @@ const ResumenAcademico = ({ theme }) => {
     }
   });
 
+  const applyTeacherReset = useCallback(() => {
+    setIsSubmitted(false);
+    setIsLocked(false);
+    setHistory([]);
+    setEvaluationAttempts(0);
+    setEvaluacion(null);
+    setResumen('');
+    setViewingVersion(null);
+    setTeacherScoreOverride(null);
+  }, []);
+
+  const maybeApplyTeacherReset = useTeacherArtifactReset({
+    artifactLabel: 'ResumenAcademico',
+    lectureId,
+    sourceCourseId,
+    persistence,
+    draftKeyBase: 'resumenAcademico_draft',
+    onApplyReset: applyTeacherReset
+  });
+
   // 🆕 CLOUD SYNC: Cargar history/drafts desde Firestore (activitiesProgress) - tiene prioridad sobre localStorage
   // También detecta resets del docente y limpia el estado local
   useEffect(() => {
@@ -261,84 +279,8 @@ const ResumenAcademico = ({ theme }) => {
       hasHistory: !!(cloudData?.history?.length)
     });
     
-    // DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
-    // Convertir resetAt a timestamp en milisegundos (puede ser string ISO, Firestore Timestamp, o número)
-    const rawResetAt = cloudData?.resetAt;
-    let resetTimestamp = 0;
-    if (rawResetAt) {
-      if (rawResetAt.seconds) {
-        // Firestore Timestamp
-        resetTimestamp = rawResetAt.seconds * 1000;
-      } else if (typeof rawResetAt === 'string') {
-        // ISO string
-        resetTimestamp = new Date(rawResetAt).getTime();
-      } else if (typeof rawResetAt === 'number') {
-        // Ya es timestamp (verificar si es segundos o milisegundos)
-        resetTimestamp = rawResetAt > 1e12 ? rawResetAt : rawResetAt * 1000;
-      }
-    }
-    
-    // 🆕 CLAVE: Si submitted === false explícitamente por el reset, debemos aplicarlo
-    // El reset escribe submitted: false, así que si cloudData.submitted es false
-    // y hay resetBy='docente', es un reset válido
-    const wasResetByDocente = cloudData?.resetBy === 'docente' && resetTimestamp > 0;
-    const isCurrentlySubmitted = cloudData?.submitted === true;
-    
-    // Solo aplicar reset si:
-    // 1. Hay resetBy='docente' y resetTimestamp válido
-    // 2. El artefacto NO está actualmente submitted (el docente lo reseteó a submitted: false)
-    const shouldApplyReset = wasResetByDocente && !isCurrentlySubmitted;
-    
-    if (shouldApplyReset) {
-      // Verificar si ya procesamos este reset específico
-      const resetKey = `${lectureId}_${resetTimestamp}`;
-      if (resetProcessedRef.current === resetKey) {
-        // Ya procesamos este reset, no hacer nada
-        return;
-      }
-      
-      logger.log('🔄 [ResumenAcademico] Detectado RESET por docente, limpiando estado local...');
-      logger.log('🔄 [ResumenAcademico] resetTimestamp:', resetTimestamp, 'isCurrentlySubmitted:', isCurrentlySubmitted);
-      resetProcessedRef.current = resetKey; // Marcar como procesado
-      
-      // Limpiar estados
-      setIsSubmitted(false);
-      setIsLocked(false);
-      setHistory([]);
-      setEvaluationAttempts(0);
-      setEvaluacion(null);
-      setResumen('');
-      setViewingVersion(null);
-      setTeacherScoreOverride(null); // Limpiar override docente tras reset
-      
-      // Limpiar sessionStorage
-      import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const key = getDraftKey('resumenAcademico_draft', lectureId, sourceCourseId);
-        sessionStorage.removeItem(key);
-        logger.log('🧹 [ResumenAcademico] Borrador sessionStorage limpiado tras reset');
-      }).catch(() => {});
-      
-      // Limpiar localStorage (persistence storage key)
-      if (persistence?.clearResults) {
-        persistence.clearResults();
-      }
-      // También limpiar directamente localStorage con la key del artefacto
-      try {
-        const scopedPrefix = sourceCourseId
-          ? `activity_results_${sourceCourseId}_`
-          : 'activity_results_';
-        const storageKeys = Object.keys(localStorage).filter(k => 
-          k.startsWith(scopedPrefix) && k.includes(lectureId)
-        );
-        storageKeys.forEach(k => {
-          localStorage.removeItem(k);
-          logger.log('🧹 [ResumenAcademico] localStorage key limpiada:', k);
-        });
-      } catch (e) {
-        logger.warn('Error limpiando localStorage:', e);
-      }
-      
-      return; // No procesar más, ya reseteamos
+    if (maybeApplyTeacherReset(cloudData)) {
+      return;
     }
     
     if (!cloudData) return;
@@ -384,7 +326,7 @@ const ResumenAcademico = ({ theme }) => {
         }
       }).catch(() => {});
     }
-  }, [lectureId, activitiesProgress, persistence]);
+  }, [lectureId, activitiesProgress, persistence, maybeApplyTeacherReset]);
 
   // 🆕 FASE 1 FIX: Guardar respaldo en sessionStorage con clave namespaced
   useEffect(() => {
