@@ -140,7 +140,8 @@ export default function ExportProgressButton({
   documentId = 'documento',
   tutorInteractions = [],
   savedCitations = [],
-  lectureId = null
+  lectureId = null,
+  sourceCourseId = null
 }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [format, setFormat] = useState('csv');
@@ -151,11 +152,15 @@ export default function ExportProgressButton({
   const loadArtefactosContent = () => {
     const content = {};
     const key = lectureId || 'global';
+    const scopedKey = sourceCourseId ? `${sourceCourseId}_${key}` : key;
+    const courseScope = sourceCourseId ? `${sourceCourseId}::` : '';
 
     // Resumen Académico
     try {
-      const resumenKey = `activity_resumen_academico_${key}`;
-      const resumenData = localStorage.getItem(resumenKey);
+      const resumenKey = `activity_resumen_academico_${scopedKey}`;
+      const resumenLegacyKey = `activity_resumen_academico_${key}`;
+      const resumenData = localStorage.getItem(resumenKey) ||
+        (!sourceCourseId ? localStorage.getItem(resumenLegacyKey) : null);
       if (resumenData) {
         const parsed = JSON.parse(resumenData);
         content.resumenAcademico = parsed.student_answers?.resumen || '';
@@ -164,8 +169,10 @@ export default function ExportProgressButton({
 
     // Tabla ACD
     try {
-      const acdKey = `activity_tabla_acd_${key}`;
-      const acdData = localStorage.getItem(acdKey);
+      const acdKey = `activity_tabla_acd_${scopedKey}`;
+      const acdLegacyKey = `activity_tabla_acd_${key}`;
+      const acdData = localStorage.getItem(acdKey) ||
+        (!sourceCourseId ? localStorage.getItem(acdLegacyKey) : null);
       if (acdData) {
         const parsed = JSON.parse(acdData);
         content.tablaACD = {
@@ -179,8 +186,10 @@ export default function ExportProgressButton({
 
     // Mapa de Actores
     try {
-      const mapaKey = `activity_mapa_actores_${key}`;
-      const mapaData = localStorage.getItem(mapaKey);
+      const mapaKey = `activity_mapa_actores_${scopedKey}`;
+      const mapaLegacyKey = `activity_mapa_actores_${key}`;
+      const mapaData = localStorage.getItem(mapaKey) ||
+        (!sourceCourseId ? localStorage.getItem(mapaLegacyKey) : null);
       if (mapaData) {
         const parsed = JSON.parse(mapaData);
         content.mapaActores = {
@@ -194,8 +203,10 @@ export default function ExportProgressButton({
 
     // Respuesta Argumentativa
     try {
-      const respKey = `activity_respuesta_argumentativa_${key}`;
-      const respData = localStorage.getItem(respKey);
+      const respKey = `activity_respuesta_argumentativa_${scopedKey}`;
+      const respLegacyKey = `activity_respuesta_argumentativa_${key}`;
+      const respData = localStorage.getItem(respKey) ||
+        (!sourceCourseId ? localStorage.getItem(respLegacyKey) : null);
       if (respData) {
         const parsed = JSON.parse(respData);
         content.respuestaArgumentativa = {
@@ -209,19 +220,24 @@ export default function ExportProgressButton({
 
     // Bitácora Ética IA
     try {
-      const bitacoraKey = `activity_bitacora_etica_ia_${key}`;
-      const bitacoraData = localStorage.getItem(bitacoraKey);
-      const reflexionesKey = `ethicalReflections:${key}`;
-      const reflexionesData = localStorage.getItem(reflexionesKey);
+      const bitacoraKey = `activity_bitacora_etica_ia_${scopedKey}`;
+      const bitacoraLegacyKey = `activity_bitacora_etica_ia_${key}`;
+      const bitacoraData = localStorage.getItem(bitacoraKey) ||
+        (!sourceCourseId ? localStorage.getItem(bitacoraLegacyKey) : null);
+      const reflexionesKey = `ethicalReflections:${courseScope}${key}`;
+      const reflexionesLegacyKey = `ethicalReflections:${key}`;
+      const reflexionesData = localStorage.getItem(reflexionesKey) ||
+        (!sourceCourseId ? localStorage.getItem(reflexionesLegacyKey) : null);
 
       content.bitacoraEticaIA = {};
       if (bitacoraData) {
         const parsed = JSON.parse(bitacoraData);
+        const answers = parsed.student_answers || {};
         content.bitacoraEticaIA = {
-          verificacionFuentes: parsed.student_answers?.verificacion_fuentes || '',
-          procesoUsoIA: parsed.student_answers?.proceso_uso_ia || '',
-          reflexionEtica: parsed.student_answers?.reflexion_etica || '',
-          declaraciones: parsed.student_answers?.declaraciones || []
+          verificacionFuentes: answers.verificacionFuentes || answers.verificacion_fuentes || '',
+          procesoUsoIA: answers.procesoUsoIA || answers.proceso_uso_ia || '',
+          reflexionEtica: answers.reflexionEtica || answers.reflexion_etica || '',
+          declaraciones: answers.declaraciones || []
         };
       }
       if (reflexionesData) {

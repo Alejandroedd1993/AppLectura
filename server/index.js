@@ -13,6 +13,7 @@ import webSearchRoutes from './routes/webSearch.routes.js';
 import pdfRoutes from './routes/pdf.routes.js';
 import ocrRoutes from './routes/ocr.routes.js';
 import storageRoutes from './routes/storage.routes.js';
+import adminCleanupRoutes from './routes/adminCleanup.routes.js';
 
 // CORRECCIÓN: Agregar ruta de assessment
 import assessmentRoutes from './routes/assessment.route.js';
@@ -197,6 +198,7 @@ app.use('/api/web-search', webSearchRoutes);
 // OCR de imagen (para regiones/miniaturas)
 app.use('/api', ocrRoutes);
 app.use('/api', storageRoutes);
+app.use('/api/admin-cleanup', adminCleanupRoutes);
 
 // CORRECCIÓN: Montar ruta de assessment criterial
 app.use('/api/assessment', assessmentRoutes);
@@ -228,6 +230,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`   - POST /api/ocr-image`);
   console.log(`   - POST /api/assessment/evaluate`);
   console.log(`   - POST /api/assessment/bulk-evaluate`);
+  console.log(`   - POST /api/admin-cleanup/enqueue`);
   console.log('='.repeat(60) + '\n');
 });
 

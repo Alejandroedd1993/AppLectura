@@ -117,8 +117,8 @@ const QualityBtn = styled.button`
  * PanelStudyItems - interfaz mínima para practicar items generados automáticamente.
  * Permite marcar calidad (0-5) para reprogramar el siguiente intervalo.
  */
-export default function PanelStudyItems({ texto, theme, textoId = null }) {
-  const { dueItems, items, reviewItem } = useStudyItems(texto, textoId);
+export default function PanelStudyItems({ texto, theme, textoId = null, courseId = null }) {
+  const { dueItems, items, reviewItem } = useStudyItems(texto, textoId, courseId);
   const [dimensionFilter, setDimensionFilter] = useState('all');
   const [showReviewed, setShowReviewed] = useState(false);
 

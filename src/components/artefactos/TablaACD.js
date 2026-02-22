@@ -118,7 +118,7 @@ export default function TablaACD({ theme }) {
 
     import('../../services/sessionManager').then(({ getDraftKey }) => {
       if (cancelled) return;
-      const getKey = (base) => getDraftKey(base, currentTextoId);
+      const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
       const readAndMigrateLegacy = (base) => {
         const scopedKey = getKey(base);
@@ -181,7 +181,7 @@ export default function TablaACD({ theme }) {
 
       // Guardar manualmente en sessionStorage (namespaced por textoId)
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, currentTextoId);
+        const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
         if (marcoIdeologico) sessionStorage.setItem(getKey('tablaACD_marcoIdeologico'), marcoIdeologico);
         if (estrategiasRetoricas) sessionStorage.setItem(getKey('tablaACD_estrategiasRetoricas'), estrategiasRetoricas);
         if (vocesPresentes) sessionStorage.setItem(getKey('tablaACD_vocesPresentes'), vocesPresentes);
@@ -245,7 +245,7 @@ export default function TablaACD({ theme }) {
     if (!currentTextoId) return;
 
     import('../../services/sessionManager').then(({ getDraftKey }) => {
-      const getKey = (base) => getDraftKey(base, currentTextoId);
+      const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
       if (marcoIdeologico) sessionStorage.setItem(getKey('tablaACD_marcoIdeologico'), marcoIdeologico);
       if (estrategiasRetoricas) sessionStorage.setItem(getKey('tablaACD_estrategiasRetoricas'), estrategiasRetoricas);
@@ -263,7 +263,7 @@ export default function TablaACD({ theme }) {
     if (marcoIdeologico || estrategiasRetoricas || vocesPresentes || vocesSilenciadas) {
       const timer = setTimeout(() => {
         import('../../services/sessionManager').then(({ updateCurrentSession, captureArtifactsDrafts }) => {
-          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId, sourceCourseId) });
         }).catch(() => {});
       }, 4000);
       return () => clearTimeout(timer);
@@ -276,7 +276,7 @@ export default function TablaACD({ theme }) {
 
     const handleSessionRestored = () => {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, currentTextoId);
+        const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
         const readAndMigrateLegacy = (base) => {
           const scopedKey = getKey(base);
@@ -333,7 +333,21 @@ export default function TablaACD({ theme }) {
     attempts: evaluationAttempts,
     history: history,
     submitted: isSubmitted,
-    onRehydrate: (data) => {
+    onRehydrate: (data, meta) => {
+      if (meta?.isEmpty) {
+        setMarcoIdeologico('');
+        setEstrategiasRetoricas('');
+        setVocesPresentes('');
+        setVocesSilenciadas('');
+        setFeedback(null);
+        setEvaluationAttempts(0);
+        setHistory([]);
+        setIsSubmitted(false);
+        setIsLocked(false);
+        setTeacherScoreOverride(null);
+        return;
+      }
+
       if (data.student_answers?.marco_ideologico) setMarcoIdeologico(data.student_answers.marco_ideologico);
       if (data.student_answers?.estrategias_retoricas) setEstrategiasRetoricas(data.student_answers.estrategias_retoricas);
       if (data.student_answers?.voces_presentes) setVocesPresentes(data.student_answers.voces_presentes);
@@ -353,6 +367,7 @@ export default function TablaACD({ theme }) {
       // 🆕 Rehidratar estado de entrega
       if (data.submitted) {
         setIsSubmitted(true);
+        setIsLocked(true);
       }
     }
   });
@@ -439,7 +454,7 @@ export default function TablaACD({ theme }) {
       
       // Limpiar sessionStorage
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, lectureId);
+        const getKey = (base) => getDraftKey(base, lectureId, sourceCourseId);
         sessionStorage.removeItem(getKey('tablaACD_marcoIdeologico'));
         sessionStorage.removeItem(getKey('tablaACD_estrategiasRetoricas'));
         sessionStorage.removeItem(getKey('tablaACD_vocesPresentes'));
@@ -472,6 +487,7 @@ export default function TablaACD({ theme }) {
 
     if (cloudData.submitted) {
       setIsSubmitted(true);
+      setIsLocked(true);
     }
 
     // 🆕 Override de nota docente
@@ -487,7 +503,7 @@ export default function TablaACD({ theme }) {
     // 🆕 Restaurar borradores desde cloud si sessionStorage está vacío
     if (cloudData.drafts) {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, lectureId);
+        const getKey = (base) => getDraftKey(base, lectureId, sourceCourseId);
 
         if (cloudData.drafts.marcoIdeologico && !sessionStorage.getItem(getKey('tablaACD_marcoIdeologico'))) {
           sessionStorage.setItem(getKey('tablaACD_marcoIdeologico'), cloudData.drafts.marcoIdeologico);
@@ -514,9 +530,9 @@ export default function TablaACD({ theme }) {
   const handleConfirmedSubmit = useCallback(() => {
     setShowSubmitConfirm(false);
     setIsSubmitted(true);
+    setIsLocked(true);
 
-    // ✅ Forzar guardado inmediato con saveManual
-    timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
+    // Evitar save inmediato con estado stale; se guarda al confirmar isSubmitted
 
     // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
     if (lectureId && updateActivitiesProgress) {
@@ -524,6 +540,11 @@ export default function TablaACD({ theme }) {
         // Obtener el score previo guardado (lastScore) o calcular desde feedback
         const previousArtifact = prev?.artifacts?.tablaACD || {};
         const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
+        const attemptsToUse = Math.max(
+          Number(previousArtifact.attempts || 0),
+          Number(evaluationAttempts || 0),
+          Array.isArray(history) ? history.length : 0
+        );
         
         logger.log('📤 [TablaACD] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
         
@@ -538,7 +559,7 @@ export default function TablaACD({ theme }) {
               score: scoreToUse,
               nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
               history: history,
-              attempts: evaluationAttempts,
+              attempts: attemptsToUse,
               finalContent: { marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas }
             }
           }
@@ -556,6 +577,12 @@ export default function TablaACD({ theme }) {
 
     logger.log('✅ [TablaACD] Tarea entregada y sincronizada con Dashboard');
   }, [feedback, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas]);
+
+  // Garantizar persistencia con estado actualizado tras entregar
+  useEffect(() => {
+    if (!isSubmitted) return;
+    persistence.saveManual();
+  }, [isSubmitted, persistence]);
 
   const handleSubmit = useCallback(() => {
     if (!feedback) return;
@@ -814,7 +841,7 @@ export default function TablaACD({ theme }) {
       // 🧹 Limpiar borradores tras evaluación exitosa (scoped + legacy)
       if (currentTextoId) {
         import('../../services/sessionManager').then(({ getDraftKey, updateCurrentSession, captureArtifactsDrafts }) => {
-          const getKey = (base) => getDraftKey(base, currentTextoId);
+          const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
           // scoped
           sessionStorage.removeItem(getKey('tablaACD_marcoIdeologico'));
@@ -828,7 +855,7 @@ export default function TablaACD({ theme }) {
           sessionStorage.removeItem('tablaACD_vocesPresentes');
           sessionStorage.removeItem('tablaACD_vocesSilenciadas');
 
-          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId, sourceCourseId) });
         }).catch(() => {});
       }
 
@@ -934,7 +961,7 @@ export default function TablaACD({ theme }) {
         >
           <span className="icon">✅</span>
           <span className="text">
-            <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
+            <strong>Tarea Entregada:</strong> Tu nota fue enviada al docente y no se pueden realizar más cambios.
           </span>
         </SubmissionBanner>
       )}
@@ -954,7 +981,7 @@ export default function TablaACD({ theme }) {
             theme={theme}
           >
             <CitasPanelHeader theme={theme}>
-              <h3 style={{ margin: 0 }}>� Cuaderno de Lectura</h3>
+              <h3 style={{ margin: 0 }}>Cuaderno de Lectura</h3>
               <p style={{ fontSize: '0.85rem', margin: '0.5rem 0 0 0', opacity: 0.8 }}>
                 {citasGuardadas.length === 0
                   ? 'Guarda citas y anotaciones desde "Lectura Guiada"'

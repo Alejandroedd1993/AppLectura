@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import ReadingWorkspace from '../../src/components/ReadingWorkspace';
 import { AppContext } from '../../src/context/AppContext';
@@ -13,6 +13,10 @@ jest.mock('../../src/hooks/useWebSearchTutor', () => {
     loading: false,
     error: null
   });
+});
+
+jest.mock('../../src/hooks/useWebSearchAvailability', () => {
+  return () => true;
 });
 
 function Wrapper({ children }) {
@@ -32,7 +36,7 @@ describe('ReadingWorkspace smoke', () => {
     render(<ReadingWorkspace />, { wrapper: Wrapper });
 
     // Abrir panel de notas y crear una
-    fireEvent.click(screen.getByText(/📝 Notas/i));
+    fireEvent.click(screen.getByLabelText(/abrir-notas/i));
     const textarea = await screen.findByPlaceholderText(/Escribe una nota/i);
     fireEvent.change(textarea, { target: { value: 'Primera nota pedagógica' } });
     const saveButtons = screen.getAllByText(/Guardar/i);
@@ -45,18 +49,19 @@ describe('ReadingWorkspace smoke', () => {
     // Escribir prompt base y enviarlo
     const input = screen.getByPlaceholderText(/Pregunta algo sobre el texto/i);
     fireEvent.change(input, { target: { value: 'Resume el texto' } });
-  const enviarButtons = screen.getAllByText(/^Enviar$/);
-  // Primer botón pertenece al TutorDock interno; segundo al PromptBar del Workspace
-  fireEvent.click(enviarButtons[1]);
-
-    // Enriquecer (usar botón web) - debe quedar deshabilitado si prompt vacío luego, así que reescribimos
+    const enviarButtons = screen.getAllByText(/^Enviar$/);
+    // Primer botón pertenece al TutorDock interno; segundo al PromptBar del Workspace
+    fireEvent.click(enviarButtons[1]);
+    // Enriquecer (usar boton web) con prompt no vacio
     fireEvent.change(input, { target: { value: 'Impacto IA' } });
     const btnWeb = screen.getByTestId('btn-con-web');
+    expect(btnWeb).toBeEnabled();
     fireEvent.click(btnWeb);
 
     await waitFor(() => {
-      // Se espera que el tutor reciba al menos un mensaje de usuario (no hay UI de mensajes aquí, validamos que botón se deshabilitó por clearing?)
+      // El boton permanece disponible mientras haya prompt y disponibilidad web.
       expect(btnWeb).toBeEnabled();
     });
   });
 });
+

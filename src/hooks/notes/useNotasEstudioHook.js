@@ -20,7 +20,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001'
  * @param {Object} completeAnalysis - Análisis académico completo del texto (opcional)
  * @returns {Object} Estado y funciones para gestión de notas
  */
-const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
+const useNotasEstudio = (texto, completeAnalysis = null, textoId = null, courseId = null) => {
   const { currentUser } = useAuth();
   const userId = currentUser?.uid || 'guest';
 
@@ -142,7 +142,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
     if (!textoParam) return;
 
     try {
-      const progreso = NotesServices.Storage.cargarProgresoNotas(textoParam, textoId, userId);
+      const progreso = NotesServices.Storage.cargarProgresoNotas(textoParam, textoId, userId, courseId);
       
       if (progreso) {
         logger.log('[useNotasEstudio] Datos guardados encontrados');
@@ -173,7 +173,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
     } catch (error) {
       logger.error('[useNotasEstudio] Error al cargar datos guardados:', error);
     }
-  }, [textoId, userId]);
+  }, [textoId, userId, courseId]);
 
   /**
    * Guarda el progreso actual en localStorage
@@ -193,7 +193,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null) => {
         ultimaActualizacion: Date.now()
       };
 
-      const guardado = NotesServices.Storage.guardarProgresoNotas(texto, progreso, textoId, userId);
+      const guardado = NotesServices.Storage.guardarProgresoNotas(texto, progreso, textoId, userId, courseId);
       
       if (guardado) {
         logger.log('[useNotasEstudio] Progreso guardado exitosamente');

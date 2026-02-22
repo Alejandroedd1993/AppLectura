@@ -33,7 +33,8 @@ function generateFollowUp(responseText) {
       return `¿Cómo se relacionan ${a} y ${b} en el contexto del fragmento?`;
     }
   }
-  return '¿Qué implicaciones prácticas tiene lo explicado para tu comprensión del texto?';
+  // H12 FIX: Fallback contextualizado en lugar de pregunta genérica
+  return '¿Qué parte de esta explicación te resulta más relevante para entender el texto?';
 }
 
 /**

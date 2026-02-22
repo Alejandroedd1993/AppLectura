@@ -1,30 +1,11 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { auth } from '../../firebase/config';
-
 import logger from '../../utils/logger';
-// FASE 2: Integración pedagógica - ZDP Detector + Rewards
-let zdpDetector = null;
-let rewards = null;
-try {
-  // Importación dinámica para evitar errores en tests sin PedagogyContext
-  const PedagogyContext = require('../../context/PedagogyContext');
-  if (PedagogyContext.useZDPDetector && PedagogyContext.useRewards) {
-    // Hook wrapper para uso dentro de componentes
-    const useZDPIntegration = () => {
-      try {
-        const zdp = PedagogyContext.useZDPDetector();
-        const rew = PedagogyContext.useRewards();
-        return { zdp, rew };
-      } catch {
-        return { zdp: null, rew: null };
-      }
-    };
-    // Exportar para uso en el componente
-    React.useZDPIntegration = useZDPIntegration;
-  }
-} catch (e) {
-  logger.log('[TutorCore] PedagogyContext no disponible (entorno de test)');
-}
+import { VALID_INTENTS, SYSTEM_TOPIC_GUARD, SYSTEM_EQUITY_GUARD, SYSTEM_ANTI_REDUNDANCY } from '../../pedagogy/prompts/tutorSystemPrompts';
+import { detectHateOrSlur, redactHateOrSlur, slurAppearsInContext, validateResponse } from '../../pedagogy/safety/tutorGuard';
+import { fetchWebSearch } from '../../utils/fetchWebSearch';
+import { detectStudentNeeds } from '../../pedagogy/tutor/studentNeedsAnalyzer';
+import usePedagogyIntegration from '../../hooks/usePedagogyIntegration';
 
 /**
  * Núcleo simple de tutor no evaluativo.
@@ -43,103 +24,10 @@ try {
  *  - backendUrl: URL del backend (default: http://localhost:3001)
  */
 
-// ═══ CONSTANTES PRE-COMPILADAS (fuera del componente para rendimiento) ═══
-
-// Patrones de detección de slurs — se evalúan en cada sendPrompt/sendAction
-const HATE_SLUR_PATTERNS = [
-  /\b(maric[ao]s?)\b/i,
-  /\b(negr[oa]s?)\b\s+\b(maric[ao]s?)\b/i,
-  /\b(indio(?:s)?\s+de\s+mierda)\b/i,
-  /\b(moro(?:s)?\s+de\s+mierda)\b/i,
-  /\b(judi[io]s?\s+de\s+mierda)\b/i,
-  /\b(gitano(?:s|a|as)?\s+de\s+mierda)\b/i,
-  /\b(sudaca(?:s)?)\b/i,
-  /\b(mund[oa]s?\s+de\s+mierda)\b/i,
-  /\b(retrasa(?:do|da|dos|das))\b/i,
-  /\b(mongol(?:o|a|os|as|ito|ita))\b/i,
-  /\b(inval|minus)\s*v[aá]lid[oa]s?\b/i,
-  /\b(pu(?:t[ao]s?|nhet[ao]?))\b\s+\b(negr[oa]s?|indi[oa]s?|moro|judi[oa]s?)\b/i,
-];
-
-// Patrones de detección de necesidades del estudiante (confusión, frustración, curiosidad, insight)
-const CONFUSION_PATTERNS = [
-  /no entiendo/i, /no comprendo/i, /no comprend/i,
-  /qu[eé] significa/i, /qu[eé] quiere decir/i, /qu[eé] quieres decir/i,
-  /me pierdo/i, /no capto/i, /no cacho/i, /no pillo/i,
-  /no s[eé] qu[eé]/i, /no s[eé] que/i,
-  /confuso/i, /confundid[oa]/i, /me confund/i,
-  /complicado/i, /muy complicad/i,
-  /dif[ií]cil/i, /muy dif[ií]cil/i, /es dif[ií]cil/i,
-  /\?\?\?+/,
-  /no me queda claro/i, /no me queda/i, /no tengo claro/i,
-  /no lo veo claro/i, /no lo pillo/i,
-  /estoy perdid[oa]/i, /me perd[ií]/i,
-  /no le veo sentido/i, /no tiene sentido/i, /no me cuadra/i,
-  /estoy bloquead[oa]/i, /no me sale/i,
-];
-const FRUSTRATION_PATTERNS = [
-  /esto es dif[ií]cil/i, /no le encuentro sentido/i,
-  /muy complicado/i, /súper complicad/i,
-  /imposible/i, /es imposible/i,
-  /no puedo/i, /no puedo más/i, /ya no puedo/i,
-  /ya intent[ée]/i, /ya lo intent[ée]/i,
-  /no veo c[oó]mo/i, /frustrante/i, /frustrad[oa]/i,
-  /me frustra/i, /esto me frustra/i,
-  /no me sale/i, /no me da/i,
-  /estoy hart[oa]/i, /ya me cans[ée]/i,
-  /tirar la toalla/i, /me rindo/i, /rendirme/i,
-  /no puedo con esto/i, /no doy m[aá]s/i,
-];
-const CURIOSITY_PATTERNS = [
-  /me pregunto/i, /me estoy preguntando/i,
-  /ser[aá] que/i, /será que/i,
-  /por qu[eé]/i, /porque/i, /por qué razón/i,
-  /c[oó]mo/i, /de qué manera/i, /de qué forma/i,
-  /qu[eé] pasa si/i, /y si/i, /cu[aá]l ser[ií]a/i,
-  /interesante/i, /es interesante/i, /muy interesante/i,
-  /curioso/i, /qué curioso/i,
-  /quisiera saber/i, /me gustaría saber/i,
-  /tengo curiosidad/i, /me da curiosidad/i,
-  /me llama la atención/i, /qué pasaría si/i,
-  /cómo funcionaría/i, /cuál sería el resultado/i,
-  /investigar/i, /explorar/i, /profundizar/i,
-  /saber más/i, /conocer más/i,
-];
-const INSIGHT_PATTERNS = [
-  /creo que/i, /pienso que/i, /me parece que/i,
-  /opino que/i, /considero que/i,
-  /tal vez/i, /quizá/i, /quizás/i,
-  /podr[ií]a ser/i, /podría ser/i,
-  /esto se relaciona con/i, /esto me recuerda/i, /me recuerda a/i,
-  /similar a/i, /parecido a/i, /se parece a/i,
-  /conecta con/i, /está conectado con/i,
-  /entiendo que/i, /ahora entiendo/i,
-  /ah[aá],?\s/i, /¡ah!/i, /ya veo/i, /ahora veo/i,
-  /tiene sentido/i, /ahora tiene sentido/i, /¡claro!/i,
-  /exacto/i, /eso es/i, /tiene lógica/i, /es lógico/i,
-  /como si/i, /analogía/i, /comparar/i, /comparando/i,
-  /igual que/i, /lo mismo que/i, /es como/i, /equivalente a/i,
-];
-
-// Whitelist de intenciones pedagógicas válidas (off-topic guard)
-const VALID_INTENTS = [
-  /(qu[eé]\s+significa|qu[eé]\s+quiere\s+decir|explica|explicar|aclarar)/i,
-  /(c[oó]mo\s+se\s+relaciona|por\s+qu[eé]|qu[eé]\s+implica)/i,
-  /(cu[aá]l\s+es\s+el\s+(tema|sentido|significado|mensaje))/i,
-  /(de\s+qu[eé]\s+trata|resumen|resume|idea\s+principal)/i,
-  /(entiendo\s+que|creo\s+que|parece\s+que|tal\s+vez)/i,
-  /(en\s+el\s+(texto|fragmento|p[aá]rrafo)|este\s+(texto|fragmento))/i,
-  /(el\s+autor|dice|menciona|plantea|sugiere)/i,
-  /(lenguaje|estilo|recurso|met[aá]fora|imagen|s[ií]mbolo)/i,
-  /(no\s+entiendo|no\s+comprendo|duda|confus)/i,
-  /(profundiza|m[aá]s\s+sobre|detalla|amplia)/i,
-];
 export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantMessage, initialMessages = [], children, maxMessages = 40, backendUrl = 'http://localhost:3001' }) {
   const backendBaseUrl = (backendUrl || '').replace(/\/+$/, '');
   // ✨ FASE 2: Integrar hooks pedagógicos
-  const pedagogyIntegration = React.useZDPIntegration ? React.useZDPIntegration() : { zdp: null, rew: null };
-  zdpDetector = pedagogyIntegration.zdp;
-  rewards = pedagogyIntegration.rew;
+  const { zdp: zdpDetector, rew: rewards } = usePedagogyIntegration();
   const [messages, setMessages] = useState(() => {
     if (!Array.isArray(initialMessages)) return [];
     return initialMessages.map((m, i) => ({
@@ -150,6 +38,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   }); // {id, role, content}
   const [loading, setLoading] = useState(false);
   const abortRef = useRef(null);
+  const webSearchAbortRef = useRef(null);
   const requestIdRef = useRef(0);
   const lastUserHashRef = useRef(null);
   const lastUserTsRef = useRef(0);
@@ -164,243 +53,18 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
 
+  // H2 FIX: Cancelar peticiones en vuelo al desmontar para evitar setState sobre componente desmontado
+  useEffect(() => {
+    return () => {
+      try { abortRef.current?.abort(); } catch { /* noop */ }
+      // F2 FIX: Also abort any in-flight web search fetch
+      try { webSearchAbortRef.current?.abort(); } catch { /* noop */ }
+      requestIdRef.current += 1; // Invalida cualquier callback pendiente
+    };
+  }, []);
+
   // MEJORA PEDAGÓGICA: Sistema de tutor inteligente, empático y adaptable
   // Enfoque: APOYO (no evaluación), CLARIFICACIÓN de dudas, PREGUNTAS ORGÁNICAS para profundizar
-
-  const SYSTEM_TOPIC_GUARD = `Eres un tutor experto en literacidad crítica y pedagogía empática. Idioma: español.
-
-🎯 **TU MISIÓN PRINCIPAL**: Apoyar al estudiante en su comprensión lectora mediante:
-1. **Clarificar dudas** con explicaciones pedagógicas claras
-2. **Validar esfuerzos** reconociendo insights y preguntas del estudiante
-3. **Generar curiosidad** con preguntas orgánicas que emergen naturalmente del diálogo
-4. **Construir conocimiento** sobre lo que el estudiante ya comprende
-
-⚠️ **REGLA CRÍTICA - FORMATO NATURAL**:
-- **NO USES ETIQUETAS EXPLÍCITAS** como "Valida:", "Explica:", "Conecta:", "Profundiza:".
-- Tu respuesta debe ser un flujo conversacional natural.
-- Integra los pasos pedagógicos (validar, explicar, conectar) invisiblemente en tu narrativa.
-- Enfócate en el TEXTO EN SÍ: lenguaje, estructura, significado, recursos literarios
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📚 **MODO 1: EXPLICATIVO** (acciones 'explain', 'summarize', 'deep')
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Cuando el estudiante solicita ayuda directa, SÉ GENEROSO con la información PRIMERO:
-
-**Estructura de respuesta (NATURAL y FLUIDA)**:
-Integra estos elementos en una narrativa cohesiva (SIN usar etiquetas como "Valida:" o "Explica:"):
-1. **Valida**: Reconoce el interés o punto del estudiante al inicio.
-2. **Explica**: Desarrolla la explicación, análisis o respuesta principal.
-3. **Conecta**: Vincula con lo que ya se ha discutido.
-4. **Profundiza**: Cierra con una pregunta que invite a seguir explorando naturalmente.
-
-**Ejemplo CORRECTO (acción 'explain')**:
-Estudiante: [Selecciona "islas dispersa procesión del basalto"]
-Tutor: "Es un fragmento con una carga poética muy fuerte. Fíjate cómo al combinar imágenes fragmentadas como 'islas dispersas' con 'procesión del basalto', se crea una atmósfera de solemnidad fría. El basalto, siendo roca volcánica, aporta esa dureza que contrasta con la idea de movimiento. Me recuerda a lo que decíamos antes sobre el aislamiento. Si tuvieras que describir la emoción que te transmiten estas imágenes con una palabra, ¿cuál sería?"
-
-**Ejemplo de VALIDACIÓN de insight del estudiante**:
-Estudiante: "Creo que el autor usa el basalto para mostrar dureza emocional"
-Tutor: "¡Exacto! Es una lectura muy aguda. El basalto funciona perfectamente como metáfora de esa dureza emocional rígida. ¿Ves alguna otra palabra en el fragmento que refuerce esa misma sensación?"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🤔 **MODO 2: SOCRÁTICO ADAPTATIVO** (preguntas del estudiante)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Cuando el estudiante hace preguntas, EQUILIBRA explicación + preguntas guía:
-
-**Si detectas CONFUSIÓN** ("no entiendo", "qué significa", "me pierdo"):
-→ EXPLICA PRIMERO brevemente, LUEGO guía con preguntas simples
-
-**Si detectas CURIOSIDAD** ("por qué", "cómo se relaciona", "qué implica"):
-→ Valida la pregunta, da pistas, invita a descubrir mediante preguntas
-
-**Si detectas ANÁLISIS PROFUNDO** (estudiante ya conecta ideas):
-→ Reconoce su insight, expande con preguntas de nivel superior (síntesis, evaluación)
-
-**Técnicas socráticas (usar con TACTO)**:
-• Clarificación: "¿A qué te refieres con...?" (solo si realmente hay ambigüedad)
-• Evidencia textual: "¿Qué frase del texto te hace pensar eso?"
-• Perspectiva múltiple: "¿Cómo podría interpretarse de otra manera?"
-• Implicaciones: "Si eso es cierto, ¿qué sugiere sobre...?"
-• Voces ausentes: "¿Qué perspectivas no están representadas?"
-
-**Ejemplo (pregunta con confusión)**:
-Estudiante: "No entiendo qué quiere decir 'procesión del basalto'"
-Tutor: "Te explico: 'procesión' usualmente significa un desfile ceremonial (religioso, fúnebre), algo solemne. 'Basalto' es roca volcánica, muy dura y oscura. Al combinarlas, se crea una imagen de algo pesado, rígido y ceremonioso. 
-
-¿Te ayuda pensar en el basalto como algo que se mueve lentamente, con peso?"
-
-**Ejemplo (pregunta analítica)**:
-Estudiante: "¿El texto critica la modernización o la defiende?"
-Tutor: "Excelente pregunta crítica. Busquemos pistas juntos:
-• ¿Qué adjetivos usa para describir la modernización? ¿Son positivos, negativos, neutrales?
-• Cuando dice 'debe ser cautelosa', ¿eso sugiere apoyo total o reservas?
-• ¿Hay momentos donde contraste modernización con algo más?"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 **GENERACIÓN DE PREGUNTAS ORGÁNICAS**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Tus preguntas deben sentirse como **continuación natural** del diálogo, NO como cuestionario.
-
-⚠️ **REGLA CRÍTICA - CONTEXTO DE PREGUNTAS**:
-- NUNCA hagas preguntas sobre palabras de TUS propios mensajes anteriores
-- SOLO pregunta sobre el TEXTO ORIGINAL que el estudiante está leyendo
-- Si mencionas "Parece que..." en tu respuesta, NO preguntes "¿cómo se relaciona Parece?"
-- Enfócate en conceptos, ideas, temas del fragmento ORIGINAL, no de tu explicación
-
-✅ **HACER**:
-- Preguntas que emergen del punto que acabas de explicar
-- Preguntas sobre CONCEPTOS del texto original
-- Preguntas abiertas que invitan a explorar (no tienen respuesta "correcta" única)
-- Preguntas que dan opciones: "¿Ves esto como X o más bien como Y?"
-- Preguntas de SÍNTESIS: "¿Cómo conectarías esto con...?"
-
-❌ **EVITAR**:
-- Listas de 3-4 preguntas seguidas sin contexto
-- Preguntas que parecen examen ("¿Cuál es el tema principal?")
-- Preguntas sobre palabras que TÚ usaste en tu respuesta
-- Preguntas redundantes que ya se respondieron
-- Preguntas sin relación con lo que el estudiante dijo
-- Preguntas sobre transiciones o conectores genéricos ("¿cómo se relacionan X y Y?" cuando X e Y son palabras tuyas)
-
-**Ejemplo NATURAL**:
-[Después de explicar metáfora sobre "basalto frío"]
-"Si tuvieras que elegir un adjetivo para el tono emocional de este fragmento, ¿cuál sería?"
-
-**Ejemplo CORRECTO (sobre el texto)**:
-[Fragmento menciona "hijo" y "nombre"]
-"¿Por qué crees que el acto de nombrar tiene tanta importancia en este fragmento?"
-
-**Ejemplo INCORRECTO (evitar)**:
-[Tu mensaje dice "Parece que tu mensaje... ¿Quieres volver..."]
-❌ "¿Cómo se relacionan Parece y Quieres dentro de este fragmento?" (estas palabras son TUYAS, no del fragmento)
-
-**Si no tienes pregunta natural que hacer**: Termina con una invitación abierta simple:
-"¿Hay algo más del fragmento que te llame la atención?"
-"¿Qué parte del texto te genera más preguntas?"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🧠 **DETECCIÓN INTELIGENTE DE NECESIDADES**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Adapta tu respuesta según señales del estudiante:
-
-**Señales de confusión**: "no entiendo", "me pierdo", "qué significa", "???"
-→ RESPUESTA: Explicación más simple, ejemplos concretos, sin jerga
-
-**Señales de frustración**: "esto es difícil", "no le encuentro sentido", "complicado"
-→ RESPUESTA: Validación emocional + desglose en pasos pequeños + ánimo
-
-**Señales de curiosidad**: "me pregunto", "será que", "por qué", "cómo"
-→ RESPUESTA: Reconoce curiosidad + pistas + invita a explorar
-
-**Señales de insight**: "creo que", "tal vez", "podría ser", conexiones propias
-→ RESPUESTA: CELEBRA el descubrimiento + expande la idea + pregunta más profunda
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📏 **PRINCIPIOS DE EXTENSIÓN**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-- **Explicaciones**: 4-6 frases + 1 pregunta de seguimiento
-- **Aclaraciones**: 2-3 frases directas + pregunta de verificación
-- **Validaciones**: 2 frases reconocimiento + expansión + pregunta profundización
-- **Respuestas socráticas**: Breve contexto (1-2 frases) + 2-3 preguntas guía
-
-**NUNCA**:
-- Respuestas de 1 sola frase sin contexto (parece desinterés)
-- Bloques de texto > 10 frases (abruma al estudiante)
-- Repetir explicaciones ya dadas (frustra)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-**TU TONO**: Empático, paciente, entusiasta por las preguntas del estudiante. NUNCA evaluativo ni correctivo. Siempre constructivo.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 **ANCLAJE AL TEXTO (OBLIGATORIO)**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-- **SIEMPRE** fundamenta tus respuestas en el texto que el estudiante está leyendo.
-- **CITA frases específicas** del texto entre comillas ("…") para respaldar cada explicación o análisis.
-- Si el estudiante pregunta algo y el texto contiene evidencia, responde con: "En el texto dice '…', lo cual sugiere que…"
-- Si el texto NO contiene información relevante para la pregunta, dilo con honestidad: "El texto no aborda directamente ese punto, pero podemos inferir que…"
-- **NO inventes** datos que no estén en el texto (autor, fecha, título, hechos) a menos que sean conocimiento general verificable.
-- Cuando el estudiante haga una interpretación, pídele que señale la evidencia textual: "¿Qué parte del texto te hace pensar eso?"
-- Distingue entre lo que el texto DICE explícitamente y lo que se puede INFERIR.
-- Si no tienes suficiente contexto del texto para responder bien, pide al estudiante que seleccione el fragmento relevante.`;
-
-  const SYSTEM_EQUITY_GUARD = `
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🧭 **EQUIDAD, ANTI-SESGO Y PERSPECTIVAS (OBLIGATORIO)**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-**A. Lenguaje inclusivo y respetuoso:**
-- Mantén un lenguaje respetuoso e inclusivo. No uses estereotipos ni generalizaciones sobre grupos.
-- NO hagas suposiciones sobre atributos sensibles (raza/etnia, nacionalidad, religión, género, orientación sexual, discapacidad, clase social) del estudiante, del autor o de personajes.
-- No penalices ni corrijas de forma despectiva variedades del español o registros culturales; prioriza comprensión y análisis.
-
-**B. Anti-estereotipos y anti-discriminación:**
-- Evita sesgos eurocéntricos: no trates perspectivas europeas/occidentales como "norma"; reconoce pluralidad cultural y contextual.
-- Nunca generalices sobre grupos sociales ("los [grupo] siempre...", "los [grupo] suelen..."). Si el texto contiene tales generalizaciones, señálalas críticamente.
-- Si el texto contiene racismo, sexismo, colonialismo o discriminación, analízalo de forma crítica y contextualizada SIN reproducirlo como válido ni amplificarlo.
-
-**C. Manejo de lenguaje ofensivo:**
-- Si aparece lenguaje ofensivo o insultos contra grupos, NO los repitas textualmente. Refiérete de forma indirecta (p. ej., "insulto racista" / "insulto homofóbico") o usa una redacción suavizada con asteriscos.
-- No asumas que un término ofensivo proviene del texto: si no está en el fragmento/texto cargado, dilo explícitamente (p. ej., "este término no ha sido localizado en el texto analizado") y redirige la conversación.
-
-**D. Perspectivas múltiples:**
-- Cuando el tema lo permita, presenta al menos dos perspectivas o enfoques interpretativos. Ejemplo: "Una lectura desde la teoría X plantea [A], pero desde la perspectiva Y se interpreta como [B]. ¿Con cuál te identificas más y por qué?"
-- No presentes una sola interpretación como la única válida salvo que el texto sea explícitamente unívoco.
-
-**E. Limitaciones epistémicas (honestidad intelectual):**
-- Si no tienes certeza, dilo abiertamente: "Esto puede interpretarse de varias formas...", "No tengo información suficiente para afirmar esto con seguridad...".
-- Si el tema requiere datos actualizados que podrían estar fuera de tu conocimiento, indícalo: "Mi información puede no estar actualizada sobre este punto específico...".
-- Si hay debate académico sobre un tema, reconócelo: "Hay diferentes posturas sobre esto..." en vez de dar una respuesta cerrada.
-- Prefiere preguntas abiertas que inviten al estudiante a formar su propio criterio.
-`;
-
-  function detectHateOrSlur(text) {
-    const t = String(text || '').toLowerCase();
-    return HATE_SLUR_PATTERNS.some((r) => r.test(t));
-  }
-
-  function redactHateOrSlur(text) {
-    let s = String(text || '');
-    // Redacción conservadora: oculta términos muy problemáticos sin destruir el sentido.
-    s = s.replace(/\b(maric)(a|o)(s?)\b/gi, 'm***$2$3');
-    // Combinaciones explícitas (para evitar que el tutor las repita)
-    s = s.replace(/\b(negr)(a|o)(s?)\s+(m\*\*\*|maric(a|o)(s?))\b/gi, 'n***$2$3 m***$5$6');
-    s = s.replace(/\b(indio)(s)?\s+de\s+mierda\b/gi, 'i***$2 de m***');
-    s = s.replace(/\b(moro)(s)?\s+de\s+mierda\b/gi, 'm***$2 de m***');
-    s = s.replace(/\b(judi)(o|a)(s)?\s+de\s+mierda\b/gi, 'j***$2$3 de m***');
-    // Nuevos patrones ampliados (género, discapacidad, xenofobia)
-    s = s.replace(/\b(gitano)(s|a|as)?\s+de\s+mierda\b/gi, 'g***$2 de m***');
-    s = s.replace(/\b(sudaca)(s?)\b/gi, 's***$2');
-    s = s.replace(/\b(retrasa)(do|da|dos|das)\b/gi, 'r***$2');
-    s = s.replace(/\b(mongol)(o|a|os|as|ito|ita)\b/gi, 'm***$2');
-    return s;
-  }
-
-  function slurAppearsInContext(contextText) {
-    if (!contextText) return false;
-    return detectHateOrSlur(contextText);
-  }
-
-  const SYSTEM_ANTI_REDUNDANCY = `Ten en cuenta el historial para evitar repetir preguntas ya hechas. Si el estudiante pide algo ya discutido, reconócelo y profundiza:
-  
-"Antes mencionaste [X]. Ahora que también observas [Y], ¿cómo crees que se conectan?"
-"Interesante que vuelvas a este punto. ¿Ves algo nuevo ahora que no notaste antes?"
-
-**MEMORIA DE CONVERSACIÓN**: 
-- Si el estudiante menciona una idea previa, refiérela explícitamente
-- Si ya explicaste un concepto, construye SOBRE eso (no lo repitas)
-- Si el estudiante mostró confusión antes y ahora entiende, reconoce su progreso: "Veo que ahora lo captas mejor..."
-
-**PROGRESIÓN NATURAL**:
-- Primeras interacciones: Preguntas básicas de comprensión
-- Interacciones medias: Preguntas de análisis y conexión
-- Interacciones avanzadas: Preguntas de síntesis y evaluación crítica`;
 
   // Notificar una sola vez cuando haya mensajes iniciales rehidratados.
   const didNotifyInitialRef = useRef(false);
@@ -457,7 +121,7 @@ Adapta tu respuesta según señales del estudiante:
 
     // Extraer temas clave: palabras sustantivas frecuentes en ambos roles
     const allText = norm(messageHistory.map(m => m.content || '').join(' '));
-    const stopWords = new Set(['para','como','este','esta','esto','esos','esas','todo','toda','tiene','puede','hacer','sido','sobre','entre','cuando','donde','desde','hasta','tambien','pero','porque','aunque','sino','cada','otros','otras','otro','otra','mismo','misma','dice','decir','texto','fragmento','pregunta','respuesta','creo','parece','podria','seria','algo','solo','bien','mucho','manera','forma','parte']);
+    const stopWords = new Set(['para', 'como', 'este', 'esta', 'esto', 'esos', 'esas', 'todo', 'toda', 'tiene', 'puede', 'hacer', 'sido', 'sobre', 'entre', 'cuando', 'donde', 'desde', 'hasta', 'tambien', 'pero', 'porque', 'aunque', 'sino', 'cada', 'otros', 'otras', 'otro', 'otra', 'mismo', 'misma', 'dice', 'decir', 'texto', 'fragmento', 'pregunta', 'respuesta', 'creo', 'parece', 'podria', 'seria', 'algo', 'solo', 'bien', 'mucho', 'manera', 'forma', 'parte']);
     const wordFreq = {};
     allText.split(/\s+/).filter(w => w.length > 4 && !stopWords.has(w)).forEach(w => {
       wordFreq[w] = (wordFreq[w] || 0) + 1;
@@ -528,7 +192,7 @@ Adapta tu respuesta según señales del estudiante:
   const TIMEOUT_MS = 45000; // 45 segundos para dar margen a respuestas largas o lentas
   const MAX_RETRIES = 2;
 
-  const callBackendWith = useCallback(async (messagesArr, retries = 0) => {
+  const callBackendWith = useCallback(async (messagesArr, retries = 0, isRegen = false) => {
     const myRequestId = ++requestIdRef.current;
 
     let authHeader = {};
@@ -570,17 +234,26 @@ Adapta tu respuesta según señales del estudiante:
 
           // 🔍 Validación post-respuesta
           const ctx = lastActionInfoRef.current || {};
-          const previousMessages = messages.filter(m => m.role === 'assistant').slice(-3);
+          const previousMessages = messagesRef.current.filter(m => m.role === 'assistant').slice(-3);
           const validation = validateResponse(content, {
             fragment: ctx.fragment || '',
             fullText: ctx.fullText || '',
             previousAssistantMessages: previousMessages.map(m => m.content)
           });
 
-          // 🔇 REGENERACIÓN AUTOMÁTICA DESHABILITADA (causaba respuestas duplicadas)
-          // Si la validación falla, solo loguear pero no regenerar
+          // 🔄 Regeneración automática reactivada
           if (!validation.isValid && validation.errors?.length > 0) {
-            logger.log('ℹ️ [TutorCore] Validación con observaciones (no regenerando):', validation.errors);
+            if (!isRegen) {
+              logger.warn('⚠️ [TutorCore] Alucinación detectada, regenerando respuesta...', validation.errors);
+              if (myRequestId !== requestIdRef.current) return;
+              return callBackendWith([
+                ...messagesArr,
+                { role: 'assistant', content },
+                { role: 'user', content: validation.correctedResponse?.correctionPrompt || 'Por favor, corrige tu respuesta.' }
+              ], retries, true);
+            } else {
+              logger.warn('⚠️ [TutorCore] Alucinación persistente tras regenerar. Mostrando respuesta original.');
+            }
           }
 
           // Filtro anti-eco: evitar repetir lo mismo que el último assistant
@@ -608,6 +281,7 @@ Adapta tu respuesta según señales del estudiante:
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
           ...authHeader
         },
         body: JSON.stringify({
@@ -673,18 +347,29 @@ Adapta tu respuesta según señales del estudiante:
 
       content = content.trim() || 'Sin respuesta.';
 
-      // 🔍 VALIDACIÓN POST-RESPUESTA (reutilizando ctx declarado arriba)
-      const previousMessages = messages.filter(m => m.role === 'assistant').slice(-3);
+      // 🔍 VALIDACIÓN POST-RESPUESTA (H7 FIX: usar messagesRef en lugar de messages para evitar dep)
+      const previousMessages = messagesRef.current.filter(m => m.role === 'assistant').slice(-3);
       const validation = validateResponse(content, {
         fragment: ctx.fragment || '',
         fullText: ctx.fullText || '',
         previousAssistantMessages: previousMessages.map(m => m.content)
       });
 
-      // 🔇 REGENERACIÓN AUTOMÁTICA DESHABILITADA (causaba respuestas duplicadas y lentitud)
-      // Si la validación falla, solo loguear pero no regenerar
+      // 🔄 Regeneración automática autorreparadora
       if (!validation.isValid && validation.errors?.length > 0) {
-        logger.log('ℹ️ [TutorCore] Validación con observaciones (no regenerando):', validation.errors);
+        if (!isRegen) {
+          logger.warn('⚠️ [TutorCore] Alucinación detectada en stream, regenerando de forma invisible...', validation.errors);
+          // Ocultar mensaje con fallas borrándolo de la UI
+          setMessages(prev => prev.filter(m => m.id !== streamingMsgId));
+          if (myRequestId !== requestIdRef.current) return;
+          return callBackendWith([
+            ...messagesArr,
+            { role: 'assistant', content },
+            { role: 'user', content: validation.correctedResponse?.correctionPrompt || 'Por favor, corrige tu respuesta.' }
+          ], retries, true);
+        } else {
+          logger.warn('⚠️ [TutorCore] Alucinación persistente en stream tras regenerar.');
+        }
       }
 
       // Filtro anti-eco y actualización final
@@ -746,7 +431,8 @@ Adapta tu respuesta según señales del estudiante:
         onBusyChange?.(false);
       }
     }
-  }, [addMessage, onBusyChange, messages]);
+  // H7 FIX: Eliminado 'messages' de deps — usamos messagesRef.current dentro del callback
+  }, [addMessage, onBusyChange]);
 
   const callBackend = useCallback(async (prompt, contextualGuidance = '', ctxOverride = null) => {
     const historyData = getCondensedHistory();
@@ -759,36 +445,15 @@ Adapta tu respuesta según señales del estudiante:
     const lengthInstruction = buildLengthInstruction(ctx.lengthMode, prompt);
     const creativityInstruction = buildCreativityInstruction(ctx.temperature);
 
-    // Construir contenido del system prompt con resumen si está disponible
-    let systemContent = SYSTEM_TOPIC_GUARD + ' ' + SYSTEM_EQUITY_GUARD + ' ' + SYSTEM_ANTI_REDUNDANCY;
-    if (summary) {
-      systemContent += '\n\n' + summary;
-    }
-    if (lengthInstruction) {
-      systemContent += ' ' + lengthInstruction;
-    }
-    if (creativityInstruction) {
-      systemContent += '\n\n' + creativityInstruction;
-    }
-    if (contextualGuidance) {
-      systemContent += contextualGuidance;
-    }
-
-    // 🌐 Agregar contexto de búsqueda web si está disponible
-    if (ctx.webEnrichment) {
-      systemContent += '\n\n' + ctx.webEnrichment;
-      // Limpiar webEnrichment después de usarlo (solo para esta petición)
-      delete ctx.webEnrichment;
-    }
-
-    // Inyectar fase conversacional cuando aún no hay resumen (< 10 msgs)
-    if (!summary) {
-      const turnCount = messages.filter(m => m.role === 'user').length;
-      if (turnCount > 0) {
-        const phase = turnCount <= 3 ? 'inicial' : turnCount <= 8 ? 'intermedia' : 'avanzada';
-        systemContent += `\n\n[Turno ${turnCount}, fase ${phase}. ${turnCount <= 3 ? 'Prioriza comprensión y vocabulario.' : turnCount <= 8 ? 'Invita a análisis más profundo.' : 'Desafía con síntesis y evaluación crítica.'}]`;
-      }
-    }
+    // H6 FIX: Usar buildSystemContent unificado
+    const systemContent = buildSystemContent({
+      baseGuards: SYSTEM_TOPIC_GUARD + ' ' + SYSTEM_EQUITY_GUARD,
+      summary,
+      lengthInstruction,
+      creativityInstruction,
+      contextualGuidance,
+      ctx
+    });
 
     const messagesArr = [
       { role: 'system', content: systemContent },
@@ -865,12 +530,14 @@ Adapta tu respuesta según señales del estudiante:
       lastUserTsRef.current = now;
 
       const currentLectureId = lastActionInfoRef.current?.lectureId || 'global';
+      const currentSourceCourseId = lastActionInfoRef.current?.sourceCourseId || null;
 
       // 🤖 LOGGING PARA BITÁCORA ÉTICA IA
       try {
         const interactionLog = {
           timestamp: new Date().toISOString(),
           lectureId: currentLectureId,
+          sourceCourseId: currentSourceCourseId,
           question: safePromptForModel,
           context: lastActionInfoRef.current?.fragment || '',
           bloomLevel: null, // Se actualizará después de detección
@@ -939,35 +606,22 @@ Adapta tu respuesta según señales del estudiante:
 
       // En sendPrompt el usuario no necesariamente seleccionó un fragmento.
       contextualGuidance += '\n\nFORMATO: No digas "has seleccionado" ni asumas selección de fragmento; responde como a una pregunta escrita por el estudiante.';
-      // Off-topic guard ESTRICTO: SOLO activar cuando el usuario claramente pregunta sobre algo totalmente diferente
+      // Off-topic guard: En lugar de bloquear rígidamente por léxico, orientamos al LLM
       try {
         const frag = (lastActionInfoRef.current?.fragment || '').toString().trim();
         const fullText = (lastActionInfoRef.current?.fullText || '').toString().trim();
         const p = (prompt || '').toString().toLowerCase();
 
-        // NUEVO: Considerar TANTO fragmento como texto completo para validación
         const contextText = fullText || frag;
 
-        // Si no hay contexto de lectura cargado, permitir cualquier pregunta
-        if (!contextText) {
-          logger.log('ℹ️ [TutorCore] Sin contexto de lectura, permitiendo pregunta libre');
-          // Continuar sin restricción
-        } else {
+        if (contextText) {
           const hasValidIntent = VALID_INTENTS.some(pattern => pattern.test(p));
-
-          // Conversación establecida: deshabilitar guard después de 2 mensajes (antes 3)
           const userMsgCount = messages.filter(m => m.role === 'user').length;
           const conversationEstablished = userMsgCount >= 2;
 
-          // CRITERIO ESTRICTO: Solo bloquear si:
-          // 1. NO tiene intención válida
-          // 2. NO hay conversación establecida
-          // 3. Overlap EXTREMADAMENTE bajo (< 5%, antes 25%)
-          // 4. Pregunta es sobre tema CLARAMENTE diferente (detección mejorada)
-
           if (!hasValidIntent && !conversationEstablished) {
             const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z\sáéíóúñ]/gi, ' ').replace(/\s+/g, ' ').trim();
-            const promptTokens = norm(p).split(' ').filter(w => w.length > 2); // Reducido de 3 a 2 para mayor tolerancia
+            const promptTokens = norm(p).split(' ').filter(w => w.length > 2);
             const contextTokens = norm(contextText).split(' ').filter(w => w.length > 2);
             const contextSet = new Set(contextTokens);
 
@@ -976,27 +630,19 @@ Adapta tu respuesta según señales del estudiante:
               if (contextSet.has(token)) overlap++;
             }
 
-            const ratio = promptTokens.length ? overlap / promptTokens.length : 1; // Default 1 (permitir)
+            const ratio = promptTokens.length ? overlap / promptTokens.length : 1;
 
-            logger.log(`📊 [TutorCore] Análisis off-topic: overlap ${(ratio * 100).toFixed(1)}% (${overlap}/${promptTokens.length} tokens)`);
+            logger.log(`📊 [TutorCore] Análisis off-topic: overlap ${(ratio * 100).toFixed(1)}%`);
 
-            // UMBRAL MUY BAJO: solo bloquear si < 5% de overlap (extremadamente diferente)
-            if (ratio < 0.05 && promptTokens.length >= 5) {
-              logger.warn('⚠️ [TutorCore] Pregunta posiblemente off-topic detectada');
-              const steer = 'Parece que tu pregunta podría estar sobre un tema diferente al texto que estamos analizando. Si quieres discutir este texto, puedo ayudarte. Si prefieres cambiar de tema, podemos hacerlo también. ¿En qué te gustaría que te ayude?';
-              addMessage({ id: Date.now() + '-assistant-steer', role: 'assistant', content: steer });
-              try { onAssistantMessage?.({ role: 'assistant', content: steer }, apiRef.current); } catch { /* noop */ }
-              return Promise.resolve();
-            } else {
-              logger.log('✅ [TutorCore] Pregunta válida, permitiendo');
+            // Si el solapamiento léxico es muy bajo, pasamos la responsabilidad al LLM
+            if (ratio < 0.20 && promptTokens.length >= 4) {
+              logger.warn('⚠️ [TutorCore] Pregunta off-topic detectada. Encomendando redirección al LLM.');
+              contextualGuidance += '\n\n🛑 ALERTA OFF-TOPIC: La pregunta del estudiante parece no tener relación directa con el texto que analizamos. Si efectivamente es off-topic, responde educadamente que tu rol es analizar el texto y redirígelo hacia el contenido de lectura.';
             }
-          } else {
-            logger.log('✅ [TutorCore] Pregunta con intención válida o conversación establecida, permitiendo');
           }
         }
       } catch (e) {
         logger.warn('[TutorCore] Error en validación off-topic:', e);
-        // En caso de error, permitir la pregunta (fail-safe)
       }
       addMessage({ id: Date.now() + '-user', role: 'user', content: prompt });
       // Antes se mostraba un mensaje meta indicando el uso del texto cargado.
@@ -1044,53 +690,28 @@ Adapta tu respuesta según señales del estudiante:
 
       // 🌐 INTEGRACIÓN WEB SEARCH: Enriquecer con Tavily para 'explain' y 'deep'
       // Feature flag: deshabilitar temporalmente si causa problemas
-      const ENABLE_WEB_ENRICHMENT = false; // Cambiar a true cuando funcione correctamente
+      const ENABLE_WEB_ENRICHMENT = lastActionInfoRef.current?.webEnrichmentEnabled === true;
 
       let webEnrichment = '';
       if (ENABLE_WEB_ENRICHMENT && ['explain', 'explain|explicar', 'deep'].includes(action)) {
+        // F2+F3 FIX: Use shared fetchWebSearch utility with abort propagation
+        const searchQuery = frag.length > 100 ? frag.substring(0, 100) : frag;
+        webSearchAbortRef.current = new AbortController();
         try {
-          logger.log('🌐 [TutorCore] Intentando enriquecimiento web con Tavily...');
-          const searchQuery = frag.length > 100 ? frag.substring(0, 100) : frag;
-          let webAuthHeader = {};
-          try {
-            const idToken = await auth?.currentUser?.getIdToken?.();
-            if (idToken) {
-              webAuthHeader = { Authorization: `Bearer ${idToken}` };
-            }
-          } catch (tokenErr) {
-            logger.warn('[TutorCore] No se pudo obtener Firebase ID token para web-search:', tokenErr?.message || tokenErr);
-          }
-
-          // Crear timeout manual compatible con todos los navegadores
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-          try {
-            const response = await fetch(`${backendBaseUrl}/api/web-search`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', ...webAuthHeader },
-              body: JSON.stringify({
-                query: `${searchQuery} contexto educativo verificado`,
-                maxResults: 3
-              }),
-              signal: controller.signal
-            });
-
-            clearTimeout(timeoutId);
-
-            if (response.ok) {
-              const data = await response.json();
-
-              if (data.resultados && data.resultados.length > 0) {
-                logger.log(`✅ [TutorCore] Enriquecido con ${data.resultados.length} fuentes (${data.api_utilizada})`);
-
-                const fuentesTexto = data.resultados.map((r, i) => `
+          logger.log('🌐 [TutorCore] Intentando enriquecimiento web...');
+          const results = await fetchWebSearch(
+            `${searchQuery} contexto educativo verificado`,
+            { maxResults: 3, timeoutMs: 5000, signal: webSearchAbortRef.current.signal, backendUrl: backendBaseUrl }
+          );
+          if (results && results.length > 0) {
+            logger.log(`✅ [TutorCore] Enriquecido con ${results.length} fuentes`);
+            const fuentesTexto = results.map((r, i) => `
 [Fuente ${i + 1}]: ${r.titulo}
 ${r.contenidoCompleto ? r.contenidoCompleto.substring(0, 400) : r.resumen}
 URL: ${r.url}
-                `.trim()).join('\n\n');
+            `.trim()).join('\n\n');
 
-                webEnrichment = `
+            webEnrichment = `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📡 INFORMACIÓN CONTEXTUAL DE FUENTES VERIFICADAS
@@ -1105,30 +726,18 @@ ${fuentesTexto}
 - NO reemplaces el análisis del texto original con esta información
 - Integra naturalmente, no como "según la fuente..."
 `;
-              } else {
-                logger.log('ℹ️ [TutorCore] Sin resultados web relevantes');
-              }
-            } else {
-              logger.warn('⚠️ [TutorCore] Error en búsqueda web:', response.status);
-            }
-          } catch (fetchError) {
-            clearTimeout(timeoutId);
-            // Error específico de fetch (timeout, red, etc.)
-            if (fetchError.name === 'AbortError') {
-              logger.warn('⚠️ [TutorCore] Timeout en búsqueda web (5s)');
-            } else {
-              logger.warn('⚠️ [TutorCore] Error en fetch de búsqueda web:', fetchError.message);
-            }
+          } else {
+            logger.log('ℹ️ [TutorCore] Sin resultados web relevantes');
           }
         } catch (error) {
-          // Fallback silencioso: continuar sin enriquecimiento web
-          logger.warn('⚠️ [TutorCore] Error general enriqueciendo con web:', error.message);
+          logger.warn('⚠️ [TutorCore] Error enriqueciendo con web:', error.message);
+        } finally {
+          webSearchAbortRef.current = null;
         }
       }
 
-      const MAX_ACTION_CONTEXT = 3500;
-      const contextSnippet = fullText ? (fullText.length > MAX_ACTION_CONTEXT ? fullText.slice(0, MAX_ACTION_CONTEXT) + '…' : fullText) : '';
-      const userContent = `📖 FRAGMENTO SELECCIONADO POR EL ESTUDIANTE:\n"${safeFragForModel}"${contextSnippet ? `\n\n📄 TEXTO COMPLETO DE REFERENCIA (cita frases de aquí):\n${contextSnippet}` : ''}${webEnrichment}`;
+      const contextStr = buildContextSnippet({ fragment: safeFragForModel, fullText });
+      const userContent = `${contextStr}${webEnrichment}`;
       const systemContent = `${SYSTEM_TOPIC_GUARD} ${SYSTEM_EQUITY_GUARD} ${actionDirectives}`;
 
       const historyData = getCondensedHistory();
@@ -1137,24 +746,15 @@ ${fuentesTexto}
       const lengthInstruction = buildLengthInstruction((lastActionInfoRef.current || {}).lengthMode, action);
       const creativityInstruction = buildCreativityInstruction((lastActionInfoRef.current || {}).temperature);
 
-      // Construir system content con resumen si está disponible
-      let finalSystemContent = systemContent + ' ' + SYSTEM_ANTI_REDUNDANCY;
-      if (summary) {
-        finalSystemContent += '\n\n' + summary;
-      } else {
-        // Inyectar fase conversacional cuando aún no hay resumen
-        const turnCount = messages.filter(m => m.role === 'user').length;
-        if (turnCount > 0) {
-          const phase = turnCount <= 3 ? 'inicial' : turnCount <= 8 ? 'intermedia' : 'avanzada';
-          finalSystemContent += `\n\n[Turno ${turnCount}, fase ${phase}. ${turnCount <= 3 ? 'Prioriza comprensión.' : turnCount <= 8 ? 'Invita a análisis.' : 'Desafía con síntesis crítica.'}]`;
-        }
-      }
-      if (lengthInstruction) {
-        finalSystemContent += ' ' + lengthInstruction;
-      }
-      if (creativityInstruction) {
-        finalSystemContent += '\n\n' + creativityInstruction;
-      }
+      // H6 FIX: Usar buildSystemContent unificado
+      const finalSystemContent = buildSystemContent({
+        baseGuards: systemContent,
+        summary,
+        lengthInstruction,
+        creativityInstruction,
+        contextualGuidance: '',
+        ctx: null
+      });
 
       const messagesArr = [
         { role: 'system', content: finalSystemContent },
@@ -1259,164 +859,6 @@ Sé conciso pero informativo. Usa el contenido REAL de la conversación, no inve
     clear: stableClear
   };
 
-  // 🧠 Detección inteligente de necesidades del estudiante (OPTIMIZADA — constantes pre-compiladas)
-  function detectStudentNeeds(prompt) {
-    const p = (prompt || '').toLowerCase();
-
-    // Scoring con constantes pre-compiladas (definidas fuera del componente)
-    const getScore = (patterns) => patterns.reduce((s, rx) => s + (rx.test(p) ? 1 : 0), 0);
-
-    const confusionScore = getScore(CONFUSION_PATTERNS);
-    const frustrationScore = getScore(FRUSTRATION_PATTERNS);
-    const curiosityScore = getScore(CURIOSITY_PATTERNS);
-    const insightScore = getScore(INSIGHT_PATTERNS);
-
-    return {
-      confusion: confusionScore > 0,
-      frustration: frustrationScore > 0,
-      curiosity: curiosityScore > 0,
-      insight: insightScore > 0,
-      _scores: {
-        confusion: confusionScore,
-        frustration: frustrationScore,
-        curiosity: curiosityScore,
-        insight: insightScore
-      }
-    };
-  }
-
-  // 🔍 VALIDACIÓN POST-RESPUESTA: Detecta errores comunes del modelo LLM
-  /**
-   * Valida que la respuesta del tutor no contenga errores críticos:
-   * 1. No inventa metadatos (autor, título, fecha) que no están en el texto
-   * 2. No pregunta sobre palabras de sus propios mensajes anteriores
-   * @param {string} response - Respuesta del asistente
-   * @param {Object} context - { fragment, fullText, previousAssistantMessages }
-   * @returns {Object} { isValid, errors, correctedResponse }
-   */
-  function validateResponse(response, context = {}) {
-    const { fragment = '', fullText = '', previousAssistantMessages: _previousAssistantMessages = [] } = context;
-    const errors = [];
-
-    if (!response || typeof response !== 'string') {
-      return { isValid: false, errors: ['Respuesta vacía o inválida'], correctedResponse: null };
-    }
-
-    const _responseLower = response.toLowerCase();
-    const textContext = (fullText || fragment || '').toLowerCase();
-
-    // 1. VALIDAR METADATOS INVENTADOS
-    // Buscar menciones de autor/título/fecha que no están en el texto
-    const metadataPatterns = {
-      autor: [
-        /el autor (?:se llama|es|llamado|de nombre|llamada)\s+["']?([^"']+?)["']?[\s.]/i,
-        /según (?:el )?autor[:\s]+([^.]+?)[.]/i,
-        /autor[:\s]+([^.]+?)[.]/i
-      ],
-      titulo: [
-        /el (?:título|libro|texto|obra) (?:se llama|es|llamado|titulado)\s+["']([^"']+?)["']/i,
-        /titulado\s+["']([^"']+?)["']/i,
-        /(?:libro|obra|texto|poema) (?:titulado|llamado)\s+["']([^"']+?)["']/i
-      ],
-      fecha: [
-        /\b(?:en|de|del año|año)\s+(\d{4})\b/i,
-        /\b(?:escrito|publicado|publicada)\s+(?:en|el año|año)\s+(\d{4})\b/i
-      ]
-    };
-
-    // Extraer todas las menciones potenciales
-    const foundMetadata = {};
-    for (const [type, patterns] of Object.entries(metadataPatterns)) {
-      for (const pattern of patterns) {
-        const match = response.match(pattern);
-        if (match && match[1]) {
-          const mentioned = match[1].trim();
-          // Verificar si está en el texto original
-          if (mentioned.length > 2 && !textContext.includes(mentioned.toLowerCase())) {
-            if (!foundMetadata[type]) foundMetadata[type] = [];
-            foundMetadata[type].push(mentioned);
-          }
-        }
-      }
-    }
-
-    // Si se encontró metadata inventado, agregar error
-    for (const [type, mentions] of Object.entries(foundMetadata)) {
-      if (mentions.length > 0) {
-        errors.push(`Menciona ${type} "${mentions[0]}" que no está en el texto original`);
-      }
-    }
-
-    // 2. VALIDAR PREGUNTAS SOBRE PALABRAS DEL TUTOR
-    // Extraer todas las preguntas de la respuesta
-    const questionMatches = response.match(/[¿?]\s*([^¿?.]+?)[?.]/g) || [];
-
-    for (const questionMatch of questionMatches) {
-      const question = questionMatch.replace(/[¿?]/g, '').trim().toLowerCase();
-
-      // Buscar palabras comunes del tutor en la pregunta
-      const tutorWords = ['parece', 'comentamos', 'quieres', 'mencioné', 'dije', 'explicé', 'antes dije'];
-      const foundTutorWords = tutorWords.filter(word => question.includes(word));
-
-      // Verificar si pregunta sobre palabras del tutor que no están en el texto original
-      if (foundTutorWords.length > 0) {
-        // Extraer palabras clave de la pregunta que podrían ser del tutor
-        const questionWords = question.split(/\s+/).filter(w => w.length > 3);
-        const wordsNotInText = questionWords.filter(w =>
-          !textContext.includes(w) &&
-          foundTutorWords.some(tw => question.includes(tw))
-        );
-
-        if (wordsNotInText.length > 0) {
-          errors.push(`Pregunta sobre palabras del tutor ("${foundTutorWords[0]}") que no están en el texto original`);
-        }
-      }
-
-      // Verificar patrones problemáticos específicos
-      const problematicPatterns = [
-        /cómo se relacionan?\s+(["']?\w+["']?)\s+y\s+(["']?\w+["']?)\s+en\s+(?:este|el)\s+fragmento/i,
-        /qué\s+significa\s+(["']?\w+["']?)\s+en\s+este\s+fragmento/i
-      ];
-
-      for (const pattern of problematicPatterns) {
-        const match = question.match(pattern);
-        if (match) {
-          // Extraer palabras mencionadas en la pregunta
-          const mentionedWords = match.slice(1).filter(Boolean);
-          // Verificar si alguna palabra no está en el texto original
-          const invalidWords = mentionedWords.filter(w => {
-            const cleanWord = w.replace(/["']/g, '').toLowerCase();
-            return cleanWord.length > 2 && !textContext.includes(cleanWord);
-          });
-
-          if (invalidWords.length > 0 && !textContext.includes(invalidWords[0].toLowerCase())) {
-            errors.push(`Pregunta sobre palabra "${invalidWords[0]}" que no está en el fragmento original`);
-          }
-        }
-      }
-    }
-
-    // 3. CONSTRUIR RESPUESTA CORREGIDA SI HAY ERRORES
-    let correctedResponse = null;
-    if (errors.length > 0) {
-      // Crear prompt de corrección para regenerar
-      correctedResponse = {
-        needsRegeneration: true,
-        errors,
-        correctionPrompt: `La respuesta anterior tenía estos problemas:
-${errors.map(e => `- ${e}`).join('\n')}
-
-Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el texto que el estudiante está leyendo, sin mencionar información que no esté explícitamente en el texto.`
-      };
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors,
-      correctedResponse
-    };
-  }
-
   // Utilidades internas
   function tokenizeForSimilarity(text) {
     return (text || '')
@@ -1480,7 +922,27 @@ Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el tex
     const full = (ctx.fullText || '').toString();
     // Contexto amplio (3500 chars) para que el modelo tenga suficiente texto de referencia y pueda citar
     const MAX_CONTEXT = 3500;
-    const contextSnippet = full ? (full.length > MAX_CONTEXT ? full.slice(0, MAX_CONTEXT) + '…' : full) : '';
+    let contextSnippet = full;
+    if (full.length > MAX_CONTEXT) {
+      if (frag && full.includes(frag)) {
+        // Extraer ventana dinámica alrededor del fragmento
+        const fragmentIndex = full.indexOf(frag);
+        const halfWindow = Math.floor(MAX_CONTEXT / 2);
+
+        let start = Math.max(0, fragmentIndex - halfWindow);
+        let end = Math.min(full.length, fragmentIndex + frag.length + halfWindow);
+
+        if (start === 0) {
+          end = Math.min(full.length, start + MAX_CONTEXT);
+        } else if (end === full.length) {
+          start = Math.max(0, end - MAX_CONTEXT);
+        }
+
+        contextSnippet = (start > 0 ? '… ' : '') + full.slice(start, end) + (end < full.length ? ' …' : '');
+      } else {
+        contextSnippet = full.slice(0, MAX_CONTEXT) + '…';
+      }
+    }
     if (!frag && !contextSnippet) return '';
     // Etiquetar claramente para que el modelo distinga texto real vs meta-instrucción
     if (frag && contextSnippet) {
@@ -1517,6 +979,45 @@ Por favor, corrige la respuesta evitando estos errores. Enfócate solo en el tex
       // Default ~0.7
       return 'TONO: Pedagógico, claro y empático. Equilibra el análisis riguroso con una explicación accesible y cálida.';
     } catch { return ''; }
+  }
+
+  /**
+   * H6 FIX: Función unificada para construir el system content.
+   * Consolida la lógica duplicada de callBackend y sendAction.
+   *
+   * @param {Object} opts
+   * @param {string} opts.baseGuards - Guardas principales (SYSTEM_TOPIC_GUARD + EQUITY + extras)
+   * @param {string|null} opts.summary - Resumen de conversación (o null)
+   * @param {string} opts.lengthInstruction
+   * @param {string} opts.creativityInstruction
+   * @param {string} opts.contextualGuidance - Guidance adicional (slur, needs, off-topic)
+   * @param {Object|null} opts.ctx - Contexto de acción (para webEnrichment)
+   * @returns {string}
+   */
+  function buildSystemContent({ baseGuards, summary, lengthInstruction, creativityInstruction, contextualGuidance, ctx }) {
+    let sc = baseGuards + ' ' + SYSTEM_ANTI_REDUNDANCY;
+    if (summary) {
+      sc += '\n\n' + summary;
+    } else {
+      // Inyectar fase conversacional
+      const turnCount = messagesRef.current.filter(m => m.role === 'user').length;
+      if (turnCount > 0) {
+        const phase = turnCount <= 3 ? 'inicial' : turnCount <= 8 ? 'intermedia' : 'avanzada';
+        sc += `\n\n[Turno ${turnCount}, fase ${phase}. ${turnCount <= 3 ? 'Prioriza comprensión y vocabulario.' : turnCount <= 8 ? 'Invita a análisis más profundo.' : 'Desafía con síntesis y evaluación crítica.'}]`;
+      }
+    }
+    if (lengthInstruction) sc += ' ' + lengthInstruction;
+    if (creativityInstruction) sc += '\n\n' + creativityInstruction;
+    if (contextualGuidance) sc += contextualGuidance;
+    if (ctx?.webEnrichment) {
+      sc += '\n\n' + ctx.webEnrichment;
+      delete ctx.webEnrichment;
+      // F1 FIX: Also clean from the canonical ref to prevent sticky context across prompts
+      if (lastActionInfoRef.current?.webEnrichment) {
+        delete lastActionInfoRef.current.webEnrichment;
+      }
+    }
+    return sc;
   }
 
   return children(api);

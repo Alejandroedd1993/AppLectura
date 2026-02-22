@@ -121,4 +121,32 @@ describe('TutorDock persistencia por texto', () => {
     const getCalls = localStorage.getItem.mock.calls.map(args => args[0]);
     expect(getCalls.filter(k => k === keyA).length).toBeGreaterThan(0);
   });
+
+  test('expone toggle de Web verificada y persiste preferencia', async () => {
+    const TEXTO = 'Texto para validar opciones del tutor.';
+
+    render(
+      <Wrapper texto={TEXTO}>
+        <TutorDock followUps={false} />
+      </Wrapper>
+    );
+
+    const optionsBtn = await screen.findByRole('button', { name: /opciones/i });
+    fireEvent.click(optionsBtn);
+
+    const webToggle = await screen.findByLabelText(/web verificada/i);
+    expect(webToggle).toBeInTheDocument();
+    expect(webToggle).not.toBeChecked();
+
+    fireEvent.click(webToggle);
+    expect(webToggle).toBeChecked();
+
+    await waitFor(() => {
+      const write = localStorage.setItem.mock.calls.find(
+        (args) => typeof args?.[0] === 'string' && args[0].startsWith('tutorWebSearch:')
+      );
+      expect(write).toBeTruthy();
+      expect(write[1]).toBe('true');
+    });
+  });
 });

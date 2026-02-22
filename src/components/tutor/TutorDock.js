@@ -7,7 +7,6 @@ import useFollowUpQuestion from '../../hooks/useFollowUpQuestion';
 import useReaderActions from '../../hooks/useReaderActions';
 import { AppContext, BACKEND_URL } from '../../context/AppContext';
 import { generateTextHash } from '../../utils/cache';
-import { updateCurrentSession } from '../../services/sessionManager';
 import { useAuth } from '../../context/AuthContext';
 
 import logger from '../../utils/logger';
@@ -58,15 +57,15 @@ function parseMarkdown(text) {
   // `código`
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 
-  // Listas numeradas (1. Item)
-  html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ol>$&</ol>');
-
-  // Listas con viñetas (- Item o * Item)
-  html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => {
-    // Solo convertir a <ul> si no está ya dentro de <ol>
-    return match.includes('<ol>') ? match : `<ul>${match}</ul>`;
+  // H9 FIX: Procesar listas en una sola pasada para evitar doble-envolvimiento
+  html = html.replace(/((?:^\d+\.\s+.+$\n?)+|(?:^[-*]\s+.+$\n?)+)/gm, (block) => {
+    const isOrdered = /^\d+\./.test(block);
+    const tag = isOrdered ? 'ol' : 'ul';
+    const items = block.replace(
+      isOrdered ? /^\d+\.\s+(.+)$/gm : /^[-*]\s+(.+)$/gm,
+      '<li>$1</li>'
+    );
+    return `<${tag}>${items}</${tag}>`;
   });
 
   // Links [texto](url) - sanitizar protocolo y escapar href
@@ -77,7 +76,29 @@ function parseMarkdown(text) {
   });
 
   // Párrafos (doble salto de línea)
-  html = html.split('\n\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('\n');
+  // F4 FIX: No envolver bloques que ya contienen elementos de bloque (ol, ul, div)
+  html = html.split('\n\n').map(p => {
+    const trimmed = p.trim();
+    if (!trimmed) return '';
+    if (/^<(?:ol|ul|div|blockquote)/i.test(trimmed)) return trimmed;
+    return `<p>${trimmed}</p>`;
+  }).join('\n');
+
+  // 📝 ALTERNATIVA A2 (Socrática): Identificar y resaltar preguntas al final del mensaje
+  // Buscamos si el final del mensaje (o el último párrafo) contiene una pregunta.
+  // Seleccionamos desde el inicio de la oración socrática hasta el cierre ?.
+  // Modificado: Buscamos por final de texto o final de <p>
+  const socraticRegex = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)(<\/p>)?\s*$/;
+
+  if (socraticRegex.test(html)) {
+    html = html.replace(socraticRegex, (match, pregunta, cierreP) => {
+      // Envolver la pregunta en un div con una clase específica para estilizarla
+      const box = `<div class="socratic-question" style="background: rgba(37, 99, 235, 0.1); border-left: 3px solid #2563eb; padding: 0.5rem 0.75rem; margin-top: 0.5rem; border-radius: 4px; font-style: italic;">
+        💡 <strong>Tu turno:</strong><br/>${pregunta}
+      </div>`;
+      return cierreP ? `${box}</p>` : box;
+    });
+  }
 
   return html;
 }
@@ -86,13 +107,14 @@ function TutorDockEffects({
   api,
   texto,
   currentTextoId,
+  sourceCourseId,
   lengthMode,
   temperature,
+  webEnrichmentEnabled,
   userId,
   textHash,
   initialMessages,
   messagesRef,
-  setIsSaving,
   setPendingExternal,
   followUpsEnabled,
 }) {
@@ -103,38 +125,21 @@ function TutorDockEffects({
     apiRef.current = api;
   }, [api]);
 
-  // 🆕 Sincronización automática con SessionManager (Global Session)
-  // Esto asegura que el historial actual se guarde en la sesión global y en Firestore
+  // Establecer contexto base con el texto completo y lectureId cuando cambie
+  // H3 FIX: Usar apiRef.current dentro del effect en lugar de api en deps
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (api.messages && api.messages.length > 0) {
-        setIsSaving(true);
-        // Solo actualizar si hay mensajes (evitar sobrescribir con vacío al inicio)
-        const compact = (Array.isArray(api.messages) ? api.messages : [])
-          .map(m => ({ r: m?.role, c: m?.content }))
-          .filter(m => m?.c)
-          .slice(-40);
-        updateCurrentSession({ tutorHistory: compact });
-
-        // Resetear indicador después de 1s
-        setTimeout(() => setIsSaving(false), 1000);
-      }
-    }, 3000); // Debounce de 3s para no saturar
-    return () => clearTimeout(timer);
-  }, [api.messages, setIsSaving]);
-
-    // Establecer contexto base con el texto completo y lectureId cuando cambie
-    useEffect(() => {
-      const lectureIdToSet = currentTextoId || 'global';
-      try {
-        api.setContext({
-          fullText: texto || '',
-          lengthMode,
-          temperature,
-          lectureId: lectureIdToSet
-        });
-      } catch { /* noop */ }
-    }, [texto, lengthMode, temperature, currentTextoId, api]);
+    const lectureIdToSet = currentTextoId || 'global';
+    try {
+      apiRef.current.setContext({
+        fullText: texto || '',
+        lengthMode,
+        temperature,
+        webEnrichmentEnabled,
+        lectureId: lectureIdToSet,
+        sourceCourseId: sourceCourseId || null
+      });
+    } catch { /* noop */ }
+  }, [texto, lengthMode, temperature, webEnrichmentEnabled, currentTextoId, sourceCourseId]);
 
   // Reiniciar/rehidratar historial al cambiar de texto
   useEffect(() => {
@@ -160,19 +165,20 @@ function TutorDockEffects({
       if (action && fragment) {
         // Ajustar lengthMode recomendado por acción
         try {
-          if (action === 'summarize') api.setContext({ lengthMode: 'breve' });
-          else if (action === 'explain') api.setContext({ lengthMode: 'media' });
-          else if (action === 'deep') api.setContext({ lengthMode: 'detallada' });
-          else if (action === 'question') api.setContext({ lengthMode: 'breve' });
+          if (action === 'summarize') apiRef.current.setContext({ lengthMode: 'breve' });
+          else if (action === 'explain') apiRef.current.setContext({ lengthMode: 'media' });
+          else if (action === 'deep') apiRef.current.setContext({ lengthMode: 'detallada' });
+          else if (action === 'question') apiRef.current.setContext({ lengthMode: 'breve' });
         } catch { /* noop */ }
-        api.sendAction(action, fragment, {});
+        apiRef.current.sendAction(action, fragment, {});
       } else if (prompt) {
-        api.sendPrompt(prompt);
+        apiRef.current.sendPrompt(prompt);
       }
     }
   });
 
   // Escuchar prompts externos (ej: enriquecimiento web en ReadingWorkspace)
+  // H3 FIX: Usar apiRef.current dentro del handler, sin api en deps
   useEffect(() => {
     const handler = (e) => {
       try {
@@ -181,32 +187,35 @@ function TutorDockEffects({
         if (action && fragment) {
           // Ajustar lengthMode por acción antes de enviar
           try {
-            if (action === 'summarize') api.setContext({ lengthMode: 'breve' });
-            else if (action === 'explain') api.setContext({ lengthMode: 'media' });
-            else if (action === 'deep') api.setContext({ lengthMode: 'detallada' });
-            else if (action === 'question') api.setContext({ lengthMode: 'breve' });
+            if (action === 'summarize') apiRef.current.setContext({ lengthMode: 'breve' });
+            else if (action === 'explain') apiRef.current.setContext({ lengthMode: 'media' });
+            else if (action === 'deep') apiRef.current.setContext({ lengthMode: 'detallada' });
+            else if (action === 'question') apiRef.current.setContext({ lengthMode: 'breve' });
           } catch { /* noop */ }
-          api.sendAction(action, fragment, { fullText });
+          apiRef.current.sendAction(action, fragment, { fullText });
         } else if (prompt && typeof prompt === 'string') {
-          if (fullText) { try { api.setContext({ fullText }); } catch { } }
+          if (fullText) { try { apiRef.current.setContext({ fullText }); } catch { } }
           // Si hay webContext, agregarlo al contexto del sistema antes de enviar
           if (webContext) {
             logger.log('🌐 [TutorDock] Agregando contexto web al sistema');
             try {
-              api.setContext({ webEnrichment: webContext });
+              apiRef.current.setContext({ webEnrichment: webContext });
             } catch (err) {
               logger.warn('⚠️ [TutorDock] Error agregando webContext:', err);
             }
           }
-          api.sendPrompt(prompt);
+          apiRef.current.sendPrompt(prompt);
         }
       } catch { /* noop */ }
     };
     window.addEventListener('tutor-external-prompt', handler);
     return () => window.removeEventListener('tutor-external-prompt', handler);
-  }, [api]);
+  }, []); // Estable: usa apiRef.current
 
   // Auto-scroll cuando aparece el indicador de loading o nuevos mensajes
+  // H3 FIX: Usar apiRef.current para acceder a loading/messages.length
+  const msgCount = api.messages.length;
+  const isLoading = api.loading;
   useEffect(() => {
     if (messagesRef.current) {
       // Scroll al final cuando cambia el estado de loading o cuando hay nuevos mensajes
@@ -217,7 +226,7 @@ function TutorDockEffects({
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [api.loading, api.messages.length, messagesRef]);
+  }, [isLoading, msgCount, messagesRef]);
 
   // Señalizar que el dock está listo (listeners activos).
   useEffect(() => {
@@ -532,7 +541,7 @@ const ToggleFab = styled.button`
 // VERSION MARKER: v3.0.1-performance-fix-jan26
 export default function TutorDock({ followUps, expanded = false, onToggleExpand, onClose }) {
   const appCtx = useContext(AppContext) || {};
-  const { texto, currentTextoId } = appCtx;
+  const { texto, currentTextoId, sourceCourseId } = appCtx;
   const { currentUser } = useAuth();
   const userId = currentUser?.uid || 'guest';
   const [open, setOpen] = useState(true);
@@ -542,7 +551,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   // 🚀 PERF: _pendingExternal solo se escribe, nunca se lee para render → usar ref
   const pendingExternalRef = React.useRef(null);
   const setPendingExternal = useCallback((v) => { pendingExternalRef.current = v; }, []);
-  const [isSaving, setIsSaving] = useState(false);
+  // isSaving eliminado: la persistencia única es useTutorPersistence (localStorage, sincrónico)
 
   // Estado de redimensionamiento
   const [width, setWidth] = useLocalStorageState(`tutorDockWidth:${userId}`, 420, {
@@ -554,12 +563,13 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     legacyKeys: ['tutorDockWidth']
   });
   const [isResizing, setIsResizing] = useState(false);
-  // Historial por texto: clave depende del hash del texto actual
+  // Historial por texto: clave depende del hash del texto actual + courseId para aislar cursos
   const textHash = useMemo(() => {
     try { return texto ? generateTextHash(texto, 'tutor') : 'tutor_empty'; } catch { return 'tutor_empty'; }
   }, [texto]);
+  const courseScope = sourceCourseId || 'free';
 
-  const { initialMessages, handleMessagesChange, clearHistory } = useTutorPersistence({ storageKey: `tutorHistorial:${userId}:${textHash}`, max: 40 });
+  const { initialMessages, handleMessagesChange, clearHistory } = useTutorPersistence({ storageKey: `tutorHistorial:${userId}:${courseScope}:${textHash}`, max: 40 });
   // Preferencia de follow-ups: si no viene prop, leer de localStorage (apagado por defecto - user scoped)
   const [followUpsEnabled, setFollowUpsEnabled] = useLocalStorageState(`tutorFollowUpsEnabled:${userId}`, false, {
     legacyKeys: ['tutorFollowUpsEnabled']
@@ -582,6 +592,11 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
       return Number.isFinite(n) ? n : 0.7;
     },
     legacyKeys: ['tutorTemperature']
+  });
+  const [webEnrichmentEnabled, setWebEnrichmentEnabled] = useLocalStorageState(`tutorWebSearch:${userId}`, false, {
+    serialize: (v) => String(v === true),
+    deserialize: (raw) => raw === 'true',
+    legacyKeys: ['tutorWebSearch']
   });
 
   // Ref para el textarea autoexpandible del chat
@@ -696,13 +711,14 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
               api={api}
               texto={texto}
               currentTextoId={currentTextoId}
+              sourceCourseId={sourceCourseId}
               lengthMode={lengthMode}
               temperature={temperature}
+              webEnrichmentEnabled={webEnrichmentEnabled}
               userId={userId}
               textHash={textHash}
               initialMessages={initialMessages}
               messagesRef={messagesRef}
-              setIsSaving={setIsSaving}
               setPendingExternal={setPendingExternal}
               followUpsEnabled={followUpsEnabled}
             />
@@ -717,11 +733,6 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                 <DockHeader $hidden={headerHidden}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
                     <span>🧑‍🏫 Tutor Inteligente</span>
-                    {isSaving && (
-                      <span style={{ fontSize: '.7rem', opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        ☁️
-                      </span>
-                    )}
                   </div>
 
                   <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center' }}>
@@ -802,6 +813,18 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                         />
                         Seguimiento
                       </label>
+                      <label title="Enriquecer respuestas con fuentes web verificadas (modos explicar/profundizar)">
+                        <input
+                          type="checkbox"
+                          checked={webEnrichmentEnabled}
+                          onChange={(e) => {
+                            const enabled = e.target.checked;
+                            setWebEnrichmentEnabled(enabled);
+                            try { api.setContext({ webEnrichmentEnabled: enabled }); } catch { /* noop */ }
+                          }}
+                        />
+                        Web verificada
+                      </label>
                     </SettingsRow>
 
                     <SettingsDivider />
@@ -862,7 +885,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                             const url = URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = `tutor_conversacion_${new Date().toISOString().slice(0,10)}.txt`;
+                            a.download = `tutor_conversacion_${new Date().toISOString().slice(0, 10)}.txt`;
                             document.body.appendChild(a);
                             a.click();
                             document.body.removeChild(a);

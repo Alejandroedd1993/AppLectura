@@ -6,6 +6,7 @@
  */
 
 import logger from '../../utils/logger';
+import { scopeKey } from '../../utils/storageKeys';
 
 /**
  * Servicio de Almacenamiento Local
@@ -190,8 +191,10 @@ class StorageService {
    * @param {Object} progreso - Datos de progreso (notas, cronograma, etc.)
    * @returns {boolean} True si se guardó exitosamente
    */
-  guardarProgresoNotas(texto, progreso, textoId = null, userId = null) {
-    const idTexto = textoId || this.generarIdTexto(texto);
+  guardarProgresoNotas(texto, progreso, textoId = null, userId = null, courseId = null) {
+    const rawId = textoId || this.generarIdTexto(texto);
+    // 🔧 FIX CROSS-COURSE: Usar clave compuesta cuando hay courseId
+    const idTexto = scopeKey(courseId, rawId) || rawId;
     const progresoActual = this.cargarTodoProgreso(userId);
     
     progresoActual[idTexto] = {
@@ -215,8 +218,10 @@ class StorageService {
    * @param {string} texto - Texto original
    * @returns {Object|null} Progreso cargado o null si no existe
    */
-  cargarProgresoNotas(texto, textoId = null, userId = null) {
-    const idTexto = textoId || this.generarIdTexto(texto);
+  cargarProgresoNotas(texto, textoId = null, userId = null, courseId = null) {
+    const rawId = textoId || this.generarIdTexto(texto);
+    // 🔧 FIX CROSS-COURSE: Usar clave compuesta cuando hay courseId
+    const idTexto = scopeKey(courseId, rawId) || rawId;
     const todoProgreso = this.cargarTodoProgreso(userId);
     
     if (todoProgreso[idTexto]) {

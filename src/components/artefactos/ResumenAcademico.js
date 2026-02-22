@@ -98,7 +98,7 @@ const ResumenAcademico = ({ theme }) => {
 
     // Importar helper dinámicamente para evitar dependencia circular
     import('../../services/sessionManager').then(({ getDraftKey }) => {
-      const key = getDraftKey('resumenAcademico_draft', lectureId);
+      const key = getDraftKey('resumenAcademico_draft', lectureId, sourceCourseId);
       const savedDraft = sessionStorage.getItem(key);
       if (savedDraft) {
         if (!cancelled) setResumen(savedDraft);
@@ -176,7 +176,19 @@ const ResumenAcademico = ({ theme }) => {
     attempts: evaluationAttempts, // 🆕 Persistir intentos
     history, // 🆕 Persistir historial
     submitted: isSubmitted, // 🆕 Persistir estado de entrega
-    onRehydrate: (data) => {
+    onRehydrate: (data, meta) => {
+      if (meta?.isEmpty) {
+        setResumen('');
+        setEvaluacion(null);
+        setEvaluationAttempts(0);
+        setHistory([]);
+        setIsSubmitted(false);
+        setIsLocked(false);
+        setViewingVersion(null);
+        setTeacherScoreOverride(null);
+        return;
+      }
+
       logger.log('📦 [ResumenAcademico] Rehidratando datos...', {
         documentId,
         hasResumen: !!data.student_answers?.resumen,
@@ -238,7 +250,7 @@ const ResumenAcademico = ({ theme }) => {
 
     const cloudData = findCloudArtifact('resumenAcademico');
     
-    // � DEBUG: Ver datos del cloud para diagnóstico
+    // DEBUG: Ver datos del cloud para diagnóstico
     logger.log('🔍 [ResumenAcademico] Cloud data check:', {
       hasCloudData: !!cloudData,
       resetBy: cloudData?.resetBy,
@@ -247,7 +259,7 @@ const ResumenAcademico = ({ theme }) => {
       hasHistory: !!(cloudData?.history?.length)
     });
     
-    // �🔄 DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
+    // DETECTAR RESET: Si cloudData tiene resetBy='docente', verificar si aplica
     // Convertir resetAt a timestamp en milisegundos (puede ser string ISO, Firestore Timestamp, o número)
     const rawResetAt = cloudData?.resetAt;
     let resetTimestamp = 0;
@@ -299,7 +311,7 @@ const ResumenAcademico = ({ theme }) => {
       
       // Limpiar sessionStorage
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const key = getDraftKey('resumenAcademico_draft', lectureId);
+        const key = getDraftKey('resumenAcademico_draft', lectureId, sourceCourseId);
         sessionStorage.removeItem(key);
         logger.log('🧹 [ResumenAcademico] Borrador sessionStorage limpiado tras reset');
       }).catch(() => {});
@@ -310,8 +322,11 @@ const ResumenAcademico = ({ theme }) => {
       }
       // También limpiar directamente localStorage con la key del artefacto
       try {
+        const scopedPrefix = sourceCourseId
+          ? `activity_results_${sourceCourseId}_`
+          : 'activity_results_';
         const storageKeys = Object.keys(localStorage).filter(k => 
-          k.includes('activity_results_') && k.includes(lectureId)
+          k.startsWith(scopedPrefix) && k.includes(lectureId)
         );
         storageKeys.forEach(k => {
           localStorage.removeItem(k);
@@ -358,7 +373,7 @@ const ResumenAcademico = ({ theme }) => {
     // 🆕 Restaurar borrador desde cloud si existe y sessionStorage está vacío
     if (cloudData.draft) {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const key = getDraftKey('resumenAcademico_draft', lectureId);
+        const key = getDraftKey('resumenAcademico_draft', lectureId, sourceCourseId);
         const localDraft = sessionStorage.getItem(key);
         if (!localDraft || localDraft.length === 0) {
           sessionStorage.setItem(key, cloudData.draft);
@@ -384,14 +399,14 @@ const ResumenAcademico = ({ theme }) => {
     import('../../services/sessionManager').then(({ getDraftKey, updateCurrentSession, captureArtifactsDrafts }) => {
       if (cancelled) return;
 
-      const key = getDraftKey('resumenAcademico_draft', lectureId);
+      const key = getDraftKey('resumenAcademico_draft', lectureId, sourceCourseId);
       sessionStorage.setItem(key, resumen);
       logger.log('💾 [ResumenAcademico] Borrador guardado para lectureId:', lectureId);
 
       // 🆕 Trigger cloud sync (debounced)
       timeoutId = setTimeout(() => {
         if (cancelled) return;
-        updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(lectureId) });
+        updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(lectureId, sourceCourseId) });
       }, 4000);
     }).catch(() => {});
 
@@ -409,7 +424,7 @@ const ResumenAcademico = ({ theme }) => {
 
       if (lectureId) {
         import('../../services/sessionManager').then(({ getDraftKey }) => {
-          const key = getDraftKey('resumenAcademico_draft', lectureId);
+          const key = getDraftKey('resumenAcademico_draft', lectureId, sourceCourseId);
           const scoped = sessionStorage.getItem(key);
           const legacy = sessionStorage.getItem('resumenAcademico_draft');
           const picked = scoped || legacy;
@@ -541,7 +556,7 @@ const ResumenAcademico = ({ theme }) => {
         logger.log('☁️ [ResumenAcademico] Historial sincronizado con Firestore');
       }
 
-      // �🎮 REGISTRAR RECOMPENSAS
+      // REGISTRAR RECOMPENSAS
       if (rewards) {
         // Puntos base por enviar evaluación
         rewards.recordEvent('EVALUATION_SUBMITTED', {
@@ -595,7 +610,7 @@ const ResumenAcademico = ({ theme }) => {
       try {
         if (lectureId) {
           import('../../services/sessionManager').then(({ getDraftKey }) => {
-            const key = getDraftKey('resumenAcademico_draft', lectureId);
+            const key = getDraftKey('resumenAcademico_draft', lectureId, sourceCourseId);
             sessionStorage.removeItem(key);
           }).catch(() => {});
         }
@@ -624,9 +639,9 @@ const ResumenAcademico = ({ theme }) => {
   const handleConfirmedSubmit = useCallback(() => {
     setShowSubmitConfirm(false);
     setIsSubmitted(true);
+    setIsLocked(true);
 
-    // Guardar inmediatamente
-    setTimeout(() => persistence.saveManual(), 100);
+    // Evitar save inmediato con estado stale; se guarda al confirmar isSubmitted
 
     // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
     if (lectureId && updateActivitiesProgress) {
@@ -634,6 +649,11 @@ const ResumenAcademico = ({ theme }) => {
         // Obtener el score previo guardado (lastScore) o usar scoreGlobal de la evaluación
         const previousArtifact = prev?.artifacts?.resumenAcademico || {};
         const scoreToUse = previousArtifact.lastScore || evaluacion.scoreGlobal || 0;
+        const attemptsToUse = Math.max(
+          Number(previousArtifact.attempts || 0),
+          Number(evaluationAttempts || 0),
+          Array.isArray(history) ? history.length : 0
+        );
         
         logger.log('📤 [ResumenAcademico] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'scoreGlobal:', evaluacion.scoreGlobal);
         
@@ -648,7 +668,7 @@ const ResumenAcademico = ({ theme }) => {
               score: scoreToUse,
               nivel: evaluacion.nivel || previousArtifact.lastNivel || 'Sin evaluar',
               history: history,
-              attempts: evaluationAttempts,
+              attempts: attemptsToUse,
               finalContent: resumen
             }
           }
@@ -667,6 +687,12 @@ const ResumenAcademico = ({ theme }) => {
 
     logger.log('✅ [ResumenAcademico] Tarea entregada y sincronizada con Dashboard');
   }, [evaluacion, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, resumen]);
+
+  // Garantizar persistencia con estado actualizado tras entregar
+  useEffect(() => {
+    if (!isSubmitted) return;
+    persistence.saveManual();
+  }, [isSubmitted, persistence]);
 
   const handleSubmit = useCallback(() => {
     if (!evaluacion) return;
@@ -834,7 +860,7 @@ const ResumenAcademico = ({ theme }) => {
         >
           <span className="icon">✅</span>
           <span className="text">
-            <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
+            <strong>Tarea Entregada:</strong> Tu nota fue enviada al docente y no se pueden realizar más cambios.
           </span>
         </SubmissionBanner>
       )}
@@ -890,7 +916,7 @@ const ResumenAcademico = ({ theme }) => {
             theme={theme}
           >
             <CitasPanelHeader theme={theme}>
-              <h3 style={{ margin: 0 }}>� Cuaderno de Lectura</h3>
+              <h3 style={{ margin: 0 }}>Cuaderno de Lectura</h3>
               <p style={{ fontSize: '0.85rem', margin: '0.5rem 0 0 0', opacity: 0.8 }}>
                 {citasGuardadas.length === 0
                   ? 'Selecciona texto en "Lectura Guiada" y usa 📌 Cita o 📓 Anotar'
@@ -1504,4 +1530,4 @@ const CitaNota = styled.p`
 
 export default ResumenAcademico;
 
-
+

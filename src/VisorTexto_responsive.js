@@ -7,6 +7,10 @@ import { AppContext } from './context/AppContext';
 import { applyStructureToText } from './services/textStructureService';
 import PDFViewer from './components/PDFViewer';
 import { useReadingTimeTracker } from './hooks/useReadingTimeTracker';
+import { useReadingProgress } from './hooks/useReadingProgress';
+import { copyToClipboard } from './utils/copyToClipboard';
+import { recoverPdfBlobWithFallback } from './utils/pdfRecovery';
+import useLocalStorageState from './hooks/useLocalStorageState';
 import './setupPdfWorker';
 import logger from './utils/logger';
 // Eliminado sistema de anotaciones persistentes (resaltado)
@@ -59,6 +63,14 @@ const VisorWrapper = styled.div`
   font-size: clamp(15px, 1rem, 18px);
   line-height: 1.55;
   overscroll-behavior: contain;
+
+  /* A11y: reducir animaciones si el usuario lo prefiere */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 `;
 
 const MetaBar = styled.div`
@@ -82,13 +94,25 @@ const Parrafo = styled.p`
   position: relative;
   background: ${p => p.$selected ? (p.theme?.surface || '#f0f2f5') : 'transparent'};
   &:hover { background: ${p => p.$compact ? 'transparent' : (p.theme?.surface || '#f0f2f5')}; }
-  /* Eliminamos contorno por párrafo al buscar; ahora se resaltan solo las coincidencias */
+  /* A11y: anillo de foco visible para navegación por teclado (Tab) */
   outline: none;
-  box-shadow: none;
-  mark { background: #fff59d; color: inherit; padding: 0 2px; border-radius: 3px; }
+  &:focus-visible {
+    outline: 2px solid ${p => p.theme?.focus || '#4d90fe'};
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+  /* WCAG: fondo ámbar con tinta oscura forzada para contraste AAA sobre cualquier subtítulo */
+  mark {
+    background: #fff59d;
+    color: #1a1a1a;
+    padding: 1px 3px;
+    border-radius: 3px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
   /* Resalta con más intensidad las coincidencias del párrafo activo en navegación */
   ${p => p.$currentHit ? `
-    mark { background: #ffd54f; box-shadow: 0 0 0 1px rgba(99,102,241,.35) inset; }
+    mark { background: #ffd54f; color: #111; box-shadow: 0 0 0 1px rgba(99,102,241,.35) inset; }
   ` : ''}
   
   /* Estilos para títulos cuando se renderiza como h1, h2, h3 */
@@ -168,8 +192,10 @@ const ListItem = styled.li`
     font-size: ${p => p.$bullet ? '1.2em' : '0.9em'};
   }
   
-  mark { background: #fff59d; color: inherit; padding: 0 2px; border-radius: 3px; }
-  ${p => p.$currentHit ? `mark { background: #ffd54f; }` : ''}
+  mark { background: #fff59d; color: #1a1a1a; padding: 1px 3px; border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  ${p => p.$currentHit ? `mark { background: #ffd54f; color: #111; }` : ''}
+  /* A11y: foco visible */
+  &:focus-visible { outline: 2px solid ${p => p.theme?.focus || '#4d90fe'}; outline-offset: 2px; }
 `;
 
 // Componente para citas o bloques indentados
@@ -200,7 +226,9 @@ const BlockQuote = styled.blockquote`
     line-height: 1;
   }
   
-  mark { background: #fff59d; color: inherit; padding: 0 2px; border-radius: 3px; }
+  mark { background: #fff59d; color: #1a1a1a; padding: 1px 3px; border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  /* A11y: foco visible */
+  &:focus-visible { outline: 2px solid ${p => p.theme?.focus || '#4d90fe'}; outline-offset: 2px; }
 `;
 
 // Componente para notas al pie
@@ -219,7 +247,9 @@ const Footnote = styled.div`
     background: ${p => p.theme?.name === 'dark' ? 'rgba(156, 163, 175, 0.12)' : 'rgba(156, 163, 175, 0.08)'};
   }
   
-  mark { background: #fff59d; color: inherit; padding: 0 2px; border-radius: 3px; }
+  mark { background: #fff59d; color: #1a1a1a; padding: 1px 3px; border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  /* A11y: foco visible */
+  &:focus-visible { outline: 2px solid ${p => p.theme?.focus || '#4d90fe'}; outline-offset: 2px; }
 `;
 
 const SelectionToolbar = styled.div`
@@ -330,6 +360,32 @@ const CopyToast = styled.div`
   font-size: .8rem;
   box-shadow: 0 6px 16px rgba(0,0,0,.2);
   z-index: 2000;
+`;
+
+// 🆕 Botón "volver arriba" que aparece con scroll avanzado
+const BackToTopButton = styled.button`
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid ${p => p.theme?.border || '#ddd'};
+  background: ${p => p.theme?.surface || '#fff'};
+  color: ${p => p.theme?.text || '#333'};
+  font-size: 1.2rem;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+  transition: opacity .2s, transform .2s;
+  touch-action: manipulation;
+  &:hover { opacity: 1; transform: scale(1.1); }
+  &:focus-visible { outline: 2px solid ${p => p.theme?.focus || '#4d90fe'}; outline-offset: 2px; }
+  @media (max-width: 640px) { bottom: 16px; right: 16px; }
 `;
 
 // 🆕 Componente para feedback de cita guardada
@@ -542,7 +598,8 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   useReadingTimeTracker({
     textoId: currentTextoId,
     userId: currentUser?.uid,
-    isActive: isStudent && !!texto && !!currentTextoId
+    isActive: isStudent && !!texto && !!currentTextoId,
+    courseId: activeLecture?.courseId || null  // 🔧 FIX CROSS-COURSE
   });
 
   const [selectionInfo, setSelectionInfo] = useState(null); // {x,y,text}
@@ -550,8 +607,26 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('💾 ¡Cita guardada!');
   const [annotationMode, setAnnotationMode] = useState(null); // null | { text, x, y, tipo, nota }
   const virtuosoRef = useRef(null);
-  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
-  const [progress, setProgress] = useState(0); // 0..1
+
+  // 🔧 Persistir preferencias de visualización por documento
+  const viewerPrefsKey = useMemo(
+    () => currentTextoId ? `visor_prefs_${currentTextoId}` : 'visor_prefs_global',
+    [currentTextoId],
+  );
+  const [viewerPrefs, setViewerPrefs] = useLocalStorageState(viewerPrefsKey, {
+    fontSize: DEFAULT_FONT_SIZE,
+    pdfScale: 1.0,
+  });
+  const fontSize = viewerPrefs.fontSize;
+  const setFontSize = useCallback(
+    (updater) => setViewerPrefs(prev => ({
+      ...prev,
+      fontSize: typeof updater === 'function' ? updater(prev.fontSize) : updater,
+    })),
+    [setViewerPrefs],
+  );
+
+  // progress ahora viene de useReadingProgress (ver abajo)
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHits, setSearchHits] = useState([]); // índices de párrafos
   const [currentHit, setCurrentHit] = useState(-1); // posición en searchHits
@@ -564,7 +639,15 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
 
   // 🆕 Estados para modo PDF (scroll continuo)
   const [pdfNumPages, setPdfNumPages] = useState(null);
-  const [pdfScale, setPdfScale] = useState(1.0);
+  // pdfScale persistido via viewerPrefs (ver arriba)
+  const pdfScale = viewerPrefs.pdfScale;
+  const setPdfScale = useCallback(
+    (updater) => setViewerPrefs(prev => ({
+      ...prev,
+      pdfScale: typeof updater === 'function' ? updater(prev.pdfScale) : updater,
+    })),
+    [setViewerPrefs],
+  );
   const [pdfSource, setPdfSource] = useState(null);
 
   // 🆕 Detectar si el contenido actual es un PDF
@@ -628,6 +711,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     const textoId = currentTextoId || activeLecture?.id || null;
     if (textoId) {
       logger.log('📄 [VisorTexto] Intentando recuperar PDF via Firebase SDK para:', textoId);
+      let cancelled = false;
       (async () => {
         try {
           // Primero: intentar obtener fileURL desde Firestore (colección textos)
@@ -637,31 +721,18 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
           const foundURL = snap.exists() && snap.data().fileURL ? snap.data().fileURL : null;
 
           if (foundURL) {
-            // Intentar descargar via Firebase SDK para evitar CORS
-            try {
-              const { ref: storageRef, getBlob: firebaseGetBlob } = await import('firebase/storage');
-              const { storage: storageInstance } = await import('./firebase/config');
-              let storagePath = null;
-              try {
-                const urlObj = new URL(foundURL);
-                const pathSegment = urlObj.pathname.split('/o/')[1];
-                if (pathSegment) storagePath = decodeURIComponent(pathSegment);
-              } catch (_) { /* ignorar */ }
+            const recovered = await recoverPdfBlobWithFallback(foundURL, {
+              logger,
+              prefix: '[VisorTexto]'
+            });
 
-              if (storagePath) {
-                const fileRef = storageRef(storageInstance, storagePath);
-                const blob = await firebaseGetBlob(fileRef);
-                if (blob && blob.size > 500) {
-                  logger.log('✅ [VisorTexto] PDF descargado via Firebase SDK:', blob.size, 'bytes');
-                  setPdfSource(blob);
-                  return;
-                }
-              }
-            } catch (sdkErr) {
-              logger.warn('⚠️ [VisorTexto] Firebase SDK getBlob falló, usando URL directa:', sdkErr.message);
+            if (cancelled) return;
+
+            if (recovered?.blob) {
+              setPdfSource(recovered.blob);
+              return;
             }
 
-            // Fallback: pasar URL directa a react-pdf
             logger.log('✅ [VisorTexto] fileURL recuperada de Firestore');
             setPdfSource(foundURL);
             return;
@@ -669,10 +740,13 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         } catch (fbErr) {
           logger.warn('⚠️ [VisorTexto] Firestore fallback falló:', fbErr.message);
         }
+        if (cancelled) return;
         logger.warn('⚠️ [VisorTexto] No se encontró fuente válida para PDF');
         setPdfSource(null);
       })();
-      return; // El async se encargará de setPdfSource
+      return () => {
+        cancelled = true;
+      };
     }
 
     logger.warn('⚠️ [VisorTexto] No se encontró fuente válida para PDF (sin textoId)');
@@ -972,21 +1046,21 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     });
   }, [searchHits, scrollToPara]);
 
-  // 🆕 Handlers para zoom en PDF (scroll continuo)
+  // 🆕 Handlers para zoom en PDF (scroll continuo) – persistido via localStorage
   const handlePdfZoomIn = useCallback(() => {
     setPdfScale(prev => Math.min(prev + 0.2, 3.0));
     clearSelection(true);
-  }, []);
+  }, [setPdfScale, clearSelection]);
 
   const handlePdfZoomOut = useCallback(() => {
     setPdfScale(prev => Math.max(prev - 0.2, 0.5));
     clearSelection(true);
-  }, []);
+  }, [setPdfScale, clearSelection]);
 
   const handlePdfZoomReset = useCallback(() => {
     setPdfScale(1.0);
     clearSelection(true);
-  }, []);
+  }, [setPdfScale, clearSelection]);
 
   // 🆕 Estado para navegación de búsqueda en PDF
   const [pdfSearchNav, setPdfSearchNav] = useState({ next: null, prev: null, total: 0, current: 0 });
@@ -1006,51 +1080,59 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
     });
   }, []);
 
-  // Progreso: con virtualización usamos rangeChanged; sin virtualización, IntersectionObserver
-  useEffect(() => {
-    if (isVirtualizedRef.current) return; // manejado por rangeChanged
-    if (!parrafos.length) { setProgress(0); return; }
-    const options = { root: null, rootMargin: '0px', threshold: 0.2 };
-    const seen = new Set();
-    const observer = new IntersectionObserver((entries) => {
-      let maxIdx = -1;
-      entries.forEach(e => {
-        const idx = Number(e.target.getAttribute('data-parrafo'));
-        if (e.isIntersecting) seen.add(idx); else seen.delete(idx);
-        if (e.isIntersecting) {
-          if (idx > maxIdx) maxIdx = idx;
-        }
-      });
-      const highest = seen.size ? Math.max(...Array.from(seen)) : Math.max(maxIdx, 0);
-      setProgress(((highest + 1) / parrafos.length) * 100);
-    }, options);
-    paraRefs.current.forEach(el => el && observer.observe(el));
-    return () => observer.disconnect();
-  }, [parrafos.length]);
+  // copyToClipboard ahora importado de utils/copyToClipboard (sin document.execCommand)
 
-  const _copyToClipboard = useCallback(async (textToCopy) => {
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      // Opcional: mostrar notificación de éxito
-      logger.log('✅ Texto copiado al portapapeles');
-    } catch (err) {
-      logger.error('❌ Error copiando al portapapeles:', err);
-      // Fallback para navegadores antiguos
-      const textArea = document.createElement('textarea');
-      textArea.value = textToCopy;
-      textArea.style.position = 'fixed';
-      textArea.style.opacity = '0';
-      document.body.appendChild(textArea);
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        logger.log('✅ Texto copiado (método fallback)');
-      } catch (e) {
-        logger.error('❌ Error en fallback:', e);
+  // A11y: helper que genera props de interacción (tabIndex + keyboard Enter/Space → click)
+  const a11yClickProps = useCallback((index, content) => ({
+    tabIndex: 0,
+    role: 'article',
+    'aria-label': `Párrafo ${index + 1}`,
+    onKeyDown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleParagraphClick(index, content);
+        setActiveIndex(index);
       }
-      document.body.removeChild(textArea);
-    }
-  }, []);
+    },
+    onClick: (_e) => {
+      handleParagraphClick(index, content);
+      setActiveIndex(index);
+    },
+  }), [handleParagraphClick]);
+
+  // 🆕 Atajos de teclado globales para el visor
+  useEffect(() => {
+    const handler = (e) => {
+      // Solo actuar si el foco está dentro del visor o no hay input activo
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      // Ctrl/Cmd+F → enfocar buscador
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        const searchInput = document.querySelector('[aria-label="buscar-texto"], [aria-label="buscar-pdf"]');
+        if (searchInput) {
+          e.preventDefault();
+          searchInput.focus();
+        }
+      }
+      // Escape → cerrar toolbar / búsqueda
+      if (e.key === 'Escape') {
+        if (selectionInfoRef.current) clearSelection(true);
+        if (annotationMode) setAnnotationMode(null);
+      }
+      // F/N → siguiente/anterior resultado de búsqueda (solo sin modificadores)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === 'F3' || (e.key === 'n' && e.shiftKey === false)) {
+          if (searchHits.length) { e.preventDefault(); goNextHit(); }
+        }
+        if (e.key === 'N' || (e.key === 'F3' && e.shiftKey)) {
+          if (searchHits.length) { e.preventDefault(); goPrevHit(); }
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [searchHits, goNextHit, goPrevHit, clearSelection, annotationMode]);
 
   // Función mejorada para detectar tipo de elemento textual
   const detectParagraphType = useCallback((text) => {
@@ -1222,10 +1304,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
             marginTop: '2rem',
             marginBottom: '1.5rem'
           }}
-          onClick={(_e) => {
-            handleParagraphClick(index, content);
-            setActiveIndex(index);
-          }}
+          {...a11yClickProps(index, content)}
         >
           {renderedContent}
         </Parrafo>
@@ -1247,10 +1326,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
             borderLeft: '3px solid #fbc02d',
             fontWeight: 500
           }}
-          onClick={(_e) => {
-            handleParagraphClick(index, content);
-            setActiveIndex(index);
-          }}
+          {...a11yClickProps(index, content)}
         >
           {renderedContent}
         </Parrafo>
@@ -1269,10 +1345,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
           $selected={activeIndex === index}
           $searchHit={isSearchHit}
           $currentHit={isCurrent}
-          onClick={(_e) => {
-            handleParagraphClick(index, content);
-            setActiveIndex(index);
-          }}
+          {...a11yClickProps(index, content)}
         >
           {renderedContent}
         </ListItem>
@@ -1284,10 +1357,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         <BlockQuote
           key={index}
           data-parrafo={index}
-          onClick={(_e) => {
-            handleParagraphClick(index, content);
-            setActiveIndex(index);
-          }}
+          {...a11yClickProps(index, content)}
         >
           {renderedContent}
         </BlockQuote>
@@ -1299,10 +1369,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         <Footnote
           key={index}
           data-parrafo={index}
-          onClick={(_e) => {
-            handleParagraphClick(index, content);
-            setActiveIndex(index);
-          }}
+          {...a11yClickProps(index, content)}
         >
           {renderedContent}
         </Footnote>
@@ -1320,19 +1387,23 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         $selected={activeIndex === index}
         $searchHit={isSearchHit}
         $currentHit={isCurrent}
-        onClick={(_e) => {
-          handleParagraphClick(index, content);
-          setActiveIndex(index);
-        }}
+        {...a11yClickProps(index, content)}
       >
         {renderedContent}
       </Parrafo>
     );
-  }, [handleParagraphClick, searchHits, currentHit, bigText, activeIndex, searchQuery, detectParagraphType]);
+  }, [handleParagraphClick, searchHits, currentHit, bigText, activeIndex, searchQuery, detectParagraphType, a11yClickProps]);
 
 
   const isVirtualized = parrafos.length > VIRTUALIZATION_THRESHOLD;
   isVirtualizedRef.current = isVirtualized;
+
+  // Progreso unificado: un solo hook para ambas estrategias (IO / Virtuoso)
+  const { progress: readingProgress, onRangeChanged } = useReadingProgress({
+    isVirtualized,
+    totalItems: parrafos.length,
+    itemRefs: paraRefs,
+  });
 
   // 🆕 Header chrome para modo PDF (scroll continuo)
   const pdfHeaderChrome = isPDF && pdfNumPages ? (
@@ -1365,7 +1436,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
   // Header chrome para modo texto
   const headerChrome = !isPDF ? (
     <>
-      <ProgressBar aria-label="progreso-lectura" $percent={progress} />
+      <ProgressBar aria-label="progreso-lectura" $percent={readingProgress} />
       <ToolsBar aria-label="herramientas-lectura">
         <button aria-label="disminuir-tamano" onClick={() => setFontSize(f => Math.max(MIN_FONT_SIZE, f - 1))}>A−</button>
         <button aria-label="aumentar-tamano" onClick={() => setFontSize(f => Math.min(MAX_FONT_SIZE, f + 1))}>A+</button>
@@ -1398,7 +1469,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       {pdfHeaderChrome}
       {pdfSource ? (
         <PDFViewer
-          key={`pdf-${archivoActual?.name || 'none'}-${archivoActual?.size || 0}-${pdfScale.toFixed(2)}`}
+          key={`pdf-${archivoActual?.name || 'none'}-${archivoActual?.size || 0}`}
           file={pdfSource}
           scale={pdfScale}
           searchQuery={searchQuery}
@@ -1423,11 +1494,7 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       totalCount={parrafos.length}
       components={{ Header: () => headerChrome }}
       itemContent={(i) => renderParrafo(parrafos[i], i)}
-      rangeChanged={(range) => {
-        // range: { startIndex, endIndex }
-        const pct = ((range.endIndex + 1) / parrafos.length) * 100;
-        setProgress(pct);
-      }}
+      rangeChanged={onRangeChanged}
     />
   ) : (
     <>
@@ -1444,12 +1511,10 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
           <button aria-label="explicar-seleccion" onClick={() => dispatchAction('explain')}>💡 Explicar</button>
           <button aria-label="guardar-cita-seleccion" onClick={handleSaveCitation}>📌 Cita</button>
           <button aria-label="anotar-seleccion" onClick={handleOpenAnnotation}>📓 Anotar</button>
-          <button aria-label="copiar-seleccion" onClick={() => {
-            try {
-              navigator.clipboard.writeText(selectionInfo.text || '');
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1200);
-            } catch { }
+          <button aria-label="copiar-seleccion" onClick={async () => {
+            await copyToClipboard(selectionInfo.text || '');
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
             clearSelection(true);
           }}>📋 Copiar</button>
           <button aria-label="cerrar-toolbar" onClick={() => clearSelection(true)}>✖</button>
@@ -1489,6 +1554,23 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
       )}
       {showSaveSuccess && (
         <SaveSuccessToast role="status" aria-live="polite">{saveSuccessMsg}</SaveSuccessToast>
+      )}
+      {/* Botón "volver arriba" visible cuando el progreso supera 30% */}
+      {readingProgress > 30 && !isPDF && (
+        <BackToTopButton
+          aria-label="Volver al inicio"
+          title="Volver al inicio"
+          onClick={() => {
+            if (isVirtualized && virtuosoRef.current?.scrollToIndex) {
+              virtuosoRef.current.scrollToIndex({ index: 0, align: 'start', behavior: 'smooth' });
+            } else {
+              visorContainerRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+          }}
+        >
+          ↑
+        </BackToTopButton>
       )}
     </VisorWrapper>
   );

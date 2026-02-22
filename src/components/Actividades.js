@@ -292,6 +292,7 @@ export default function Actividades() {
     activitiesProgress,
     markPreparationProgress,
     currentTextoId,
+    sourceCourseId,
     getCitations,
     globalTutorInteractions
   } = useContext(AppContext);
@@ -309,11 +310,24 @@ export default function Actividades() {
     : false;
 
   // Auto-navegar a dimensiones cuando se completa el checkpoint
+  // 🛡️ FIX CROSS-COURSE: Revertir a checkpoint si preparación ya no es válida
+  //    (ej. al cambiar de curso con el mismo textoId, los datos se resetean 1 frame después)
   React.useEffect(() => {
     if (preparacionCompletada && activeSection === 'checkpoint') {
       setActiveSection('dimensiones');
+    } else if (!preparacionCompletada && activeSection === 'dimensiones') {
+      setActiveSection('checkpoint');
     }
   }, [preparacionCompletada, activeSection]);
+
+  // 🛡️ FIX CROSS-COURSE: Resetear vista al cambiar de curso (mismo textoId)
+  const prevCourseIdRef = React.useRef(sourceCourseId);
+  React.useEffect(() => {
+    if (prevCourseIdRef.current !== sourceCourseId) {
+      prevCourseIdRef.current = sourceCourseId;
+      setActiveSection('checkpoint');
+    }
+  }, [sourceCourseId]);
 
   // 🆕 Escuchar evento de completación de ejercicios
   React.useEffect(() => {
@@ -716,6 +730,7 @@ export default function Actividades() {
                     tutorInteractions={globalTutorInteractions}
                     savedCitations={getCitations ? getCitations(lectureId) : []}
                     lectureId={lectureId}
+                    sourceCourseId={sourceCourseId}
                   />
                 </div>
 

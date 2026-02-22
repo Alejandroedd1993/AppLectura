@@ -464,7 +464,7 @@ const DIMENSIONES = [
 // ============================================
 
 export default function SistemaEvaluacionMejorado() {
-  const { texto, completeAnalysis, modoOscuro, rubricProgress, updateRubricScore, currentTextoId } = useContext(AppContext);
+  const { texto, completeAnalysis, modoOscuro, rubricProgress, updateRubricScore, currentTextoId, sourceCourseId } = useContext(AppContext);
   const theme = modoOscuro ? darkTheme : lightTheme;
 
   // Estados
@@ -493,6 +493,7 @@ export default function SistemaEvaluacionMejorado() {
 
   const { saveManual, clearResults, getMetrics: _getMetrics } = useActivityPersistence(persistenceKey, {
     enabled: !!lectureId && !!texto,
+    courseId: sourceCourseId,  // 🛡️ FIX CROSS-COURSE: Aislar datos por curso
     legacyDocumentIds: legacyDocumentId && legacyDocumentId !== lectureId ? [legacyDocumentId] : [],
     studentAnswers: { 
       [dimensionSeleccionada || 'general']: respuesta 
@@ -501,8 +502,16 @@ export default function SistemaEvaluacionMejorado() {
       [dimensionSeleccionada || 'general']: feedback 
     },
     currentIndex: dimensionSeleccionada ? DIMENSIONES.findIndex(d => d.id === dimensionSeleccionada) : 0,
-    onRehydrate: useCallback((data) => {
+    onRehydrate: useCallback((data, meta) => {
       logger.log('🔄 [SistemaEvaluacion] Rehidratando datos:', data);
+
+      if (meta?.isEmpty) {
+        setRespuesta('');
+        setFeedback(null);
+        setSugerencias([]);
+        setPrerequisitosFaltantes(null);
+        return;
+      }
       
       // Restaurar respuesta de la dimensión actual
       const savedAnswer = data.student_answers?.[dimensionSeleccionada];

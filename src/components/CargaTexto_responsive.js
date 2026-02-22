@@ -254,7 +254,8 @@ function CargaTexto() {
     rubricProgress,
     activitiesProgress, // 🆕 FASE 4: Para verificar artefactos ya entregados
     switchLecture,
-    currentUser
+    currentUser,
+    sourceCourseId // 🔧 FIX CROSS-COURSE: Para scope de borradores
   } = useContext(AppContext);
 
   const { isDocente: _isDocente } = useAuth();
@@ -458,9 +459,9 @@ function CargaTexto() {
     e.preventDefault();
 
     // 🆕 Verificar si hay borradores sin evaluar antes de cargar nuevo texto (FASE 4: también considera activitiesProgress)
-    const { hasDrafts } = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress);
+    const { hasDrafts } = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress, sourceCourseId);
     if (hasDrafts && texto) {
-      const warningMessage = getWarningMessage(currentTextoId, rubricProgress, activitiesProgress);
+      const warningMessage = getWarningMessage(currentTextoId, rubricProgress, activitiesProgress, sourceCourseId);
       const confirmed = window.confirm(warningMessage);
 
       if (!confirmed) {

@@ -11,7 +11,7 @@ import logger from '../../utils/logger';
  * 🆕 FASE 4 FIX: Ahora también considera activitiesProgress para detectar artefactos ya entregados
  */
 const DraftWarning = ({ theme }) => {
-  const { currentTextoId, rubricProgress, activitiesProgress } = useContext(AppContext);
+  const { currentTextoId, rubricProgress, activitiesProgress, sourceCourseId } = useContext(AppContext);
   const [hasDrafts, setHasDrafts] = useState(false);
   const [details, setDetails] = useState([]);
   const [isVisible, setIsVisible] = useState(true);
@@ -19,7 +19,7 @@ const DraftWarning = ({ theme }) => {
   useEffect(() => {
     const checkDrafts = () => {
       // 🆕 FASE 4 FIX: Pasar activitiesProgress para verificar artefactos ya entregados
-      const result = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress);
+      const result = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress, sourceCourseId);
       setHasDrafts(result.hasDrafts);
       setDetails(result.details);
       

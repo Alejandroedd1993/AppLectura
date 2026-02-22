@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import TutorDock from '../../../src/components/tutor/TutorDock';
 import { AppContext } from '../../../src/context/AppContext';
 import { AuthProvider } from '../../../src/context/AuthContext';
@@ -38,5 +38,14 @@ describe('TutorDock - evento tutor-external-prompt', () => {
     // Verificamos que el mensaje aparece (puede tardar un ciclo de render)
     const userMsg = await screen.findByText(prompt, {}, { timeout: 1500 });
     expect(userMsg).toBeInTheDocument();
+
+    // El request del chat debe pedir stream SSE para evitar buffering intermedio.
+    await waitFor(() => {
+      const req = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/chat/completion'));
+      expect(req).toBeTruthy();
+      const options = req?.[1] || {};
+      const headers = options.headers || {};
+      expect(headers.Accept || headers.accept).toBe('text/event-stream');
+    });
   });
 });

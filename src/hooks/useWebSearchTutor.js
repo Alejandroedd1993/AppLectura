@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react';
-import webSearchService from '../services/webSearchService';
-
+import { fetchWebSearch } from '../utils/fetchWebSearch';
 import logger from '../utils/logger';
+
 /**
  * useWebSearchTutor
- * Hook aislado para (re)integrar la búsqueda web dentro del flujo TutorCore sin acoplar
- * estados legacy del componente principal. Por ahora implementa una versión mínima
- * y segura; si la config indica disabled retorna null inmediatamente.
+ * Hook aislado para búsqueda web dentro del flujo tutor.
+ * F3 FIX: Delegates to shared fetchWebSearch utility to avoid duplicating
+ * auth/timeout/fetch logic with TutorCore inline enrichment.
  *
  * API de retorno:
  *  - search(query, contextoOpcional) => Promise<resultados|null>
@@ -20,8 +20,8 @@ export function useWebSearchTutor(config) {
   const [lastQuery, setLastQuery] = useState(null);
   const [lastResults, setLastResults] = useState(null);
 
-  const search = useCallback(async (query, contextoTexto) => {
-    logger.log('🔎 [useWebSearchTutor] Iniciando búsqueda', { enabled: config?.enabled, query });
+  const search = useCallback(async (query, _contextoTexto) => {
+    logger.log('🔎 [useWebSearchTutor] Iniciando búsqueda vía backend', { enabled: config?.enabled, query });
     if (!config?.enabled) {
       logger.warn('⚠️ [useWebSearchTutor] Búsqueda deshabilitada por config');
       return null;
@@ -30,25 +30,13 @@ export function useWebSearchTutor(config) {
     setLoading(true);
     setLastQuery(query);
     try {
-      const contextoLimitado = (contextoTexto || '').slice(0, 2000);
-      // Generar queries derivadas (fallback si no existe método)
-      let queries;
-      if (typeof webSearchService.generateCriticalLiteracyQueries === 'function') {
-        queries = webSearchService.generateCriticalLiteracyQueries(contextoLimitado, config.analysisType);
-      } else if (typeof webSearchService.generateSearchQueries === 'function') {
-        queries = webSearchService.generateSearchQueries(contextoLimitado);
-      } else {
-        queries = [query];
-      }
-      const effectiveQuery = query || queries[0];
-      logger.log('🌐 [useWebSearchTutor] Llamando webSearchService.searchWeb', { effectiveQuery, provider: config.provider });
-      const resultados = await webSearchService.searchWeb(effectiveQuery, config.provider, {
+      const results = await fetchWebSearch(query, {
         maxResults: config.maxResults || 5,
-        language: 'es'
+        timeoutMs: 8000
       });
-      logger.log('✅ [useWebSearchTutor] Resultados recibidos:', resultados?.length || 0);
-      setLastResults(resultados);
-      return resultados;
+      logger.log('✅ [useWebSearchTutor] Resultados recibidos:', results?.length ?? 0);
+      setLastResults(results);
+      return results;
     } catch (e) {
       logger.error('❌ [useWebSearchTutor] Error en búsqueda:', e);
       setError(e.message || 'Error en búsqueda web');

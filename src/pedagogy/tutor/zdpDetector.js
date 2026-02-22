@@ -150,12 +150,15 @@ export class ZDPDetector {
     // Calcular confianza (0-1)
     const confidence = Math.min(currentMatch.score / 3, 1); // Máximo 3 keywords = 100% confianza
 
-    // Registrar en historial
+    // Registrar en historial (H8 FIX: limitar a 200 entradas para evitar crecimiento ilimitado)
     this.history.push({
       text,
       level: currentLevel.id,
       timestamp: Date.now()
     });
+    if (this.history.length > 200) {
+      this.history = this.history.slice(-200);
+    }
 
     return this._createResponse(
       currentLevel,
@@ -404,7 +407,3 @@ ${this.generateZDPQuestion(detection, userQuestion)}
 const exported = { ZDPDetector, BLOOM_LEVELS };
 
 export default exported;
-
-if (typeof window !== 'undefined') {
-  window.ZDPDetector = ZDPDetector;
-}

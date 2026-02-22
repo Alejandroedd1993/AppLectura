@@ -1,6 +1,19 @@
 // Utilidades centralizadas para claves/prefijos de storage.
 // Objetivo: evitar convenciones duplicadas y facilitar migraciones controladas.
 
+/**
+ * 🔧 FIX CROSS-COURSE: Clave canónica con scope de curso.
+ * Cuando hay courseId y textoId NO es global, retorna `{courseId}_{textoId}`.
+ * En cualquier otro caso retorna solo textoId.
+ * Usar en TODAS las claves de localStorage y sessionStorage.
+ */
+export function scopeKey(courseId, textoId) {
+  if (courseId && textoId && textoId !== 'global_progress') {
+    return `${courseId}_${textoId}`;
+  }
+  return textoId;
+}
+
 export const STORAGE_PREFIXES = {
   APP_LECTURA: 'appLectura_',
   APP_LECTURA_LOWER: 'applectura_',
@@ -24,12 +37,15 @@ export function rewardsStateKey(uid) {
   return uid ? `rewards_state_${uid}` : LEGACY_KEYS.REWARDS_STATE;
 }
 
-export function rubricProgressKey(uid, textoId) {
-  return `rubricProgress_${uid}_${textoId}`;
+export function rubricProgressKey(uid, textoId, courseId = null) {
+  const key = courseId ? scopeKey(courseId, textoId) : textoId;
+  return `rubricProgress_${uid}_${key}`;
 }
 
-export function activitiesProgressKey(uid) {
-  return `activitiesProgress_${uid}`;
+export function activitiesProgressKey(uid, textoId = null, courseId = null) {
+  if (!textoId) return `activitiesProgress_${uid}`;
+  const key = courseId ? scopeKey(courseId, textoId) : textoId;
+  return `activitiesProgress_${uid}_${key}`;
 }
 
 export function activitiesProgressMigratedKey(uid) {

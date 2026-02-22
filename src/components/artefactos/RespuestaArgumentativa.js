@@ -118,7 +118,7 @@ export default function RespuestaArgumentativa({ theme }) {
 
     import('../../services/sessionManager').then(({ getDraftKey }) => {
       if (cancelled) return;
-      const getKey = (base) => getDraftKey(base, currentTextoId);
+      const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
       const readAndMigrateLegacy = (base) => {
         const scopedKey = getKey(base);
@@ -184,7 +184,7 @@ export default function RespuestaArgumentativa({ theme }) {
       logger.log('⌨️ Ctrl+S: Guardando borrador RespuestaArgumentativa...');
       if (!currentTextoId) return;
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, currentTextoId);
+        const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
         if (tesis) sessionStorage.setItem(getKey('respuestaArgumentativa_tesis'), tesis);
         if (evidencias) sessionStorage.setItem(getKey('respuestaArgumentativa_evidencias'), evidencias);
         if (contraargumento) sessionStorage.setItem(getKey('respuestaArgumentativa_contraargumento'), contraargumento);
@@ -268,7 +268,7 @@ export default function RespuestaArgumentativa({ theme }) {
     if (!currentTextoId) return;
 
     import('../../services/sessionManager').then(({ getDraftKey }) => {
-      const getKey = (base) => getDraftKey(base, currentTextoId);
+      const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
       if (tesis) sessionStorage.setItem(getKey('respuestaArgumentativa_tesis'), tesis);
       if (evidencias) sessionStorage.setItem(getKey('respuestaArgumentativa_evidencias'), evidencias);
@@ -286,7 +286,7 @@ export default function RespuestaArgumentativa({ theme }) {
     if (tesis || evidencias || contraargumento || refutacion) {
       const timer = setTimeout(() => {
         import('../../services/sessionManager').then(({ updateCurrentSession, captureArtifactsDrafts }) => {
-          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId, sourceCourseId) });
         }).catch(() => {});
       }, 4000);
       return () => clearTimeout(timer);
@@ -299,7 +299,7 @@ export default function RespuestaArgumentativa({ theme }) {
 
     const handleSessionRestored = () => {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, currentTextoId);
+        const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
         const readAndMigrateLegacy = (base) => {
           const scopedKey = getKey(base);
@@ -356,14 +356,31 @@ export default function RespuestaArgumentativa({ theme }) {
     history: history,
     submitted: isSubmitted,
     aiFeedbacks: { respuesta_argumentativa: feedback },
-    onRehydrate: (data) => {
+    onRehydrate: (data, meta) => {
+      if (meta?.isEmpty) {
+        setTesis('');
+        setEvidencias('');
+        setContraargumento('');
+        setRefutacion('');
+        setFeedback(null);
+        setEvaluationAttempts(0);
+        setHistory([]);
+        setIsSubmitted(false);
+        setIsLocked(false);
+        setTeacherScoreOverride(null);
+        return;
+      }
+
       if (data.student_answers?.tesis) setTesis(data.student_answers.tesis);
       if (data.student_answers?.evidencias) setEvidencias(data.student_answers.evidencias);
       if (data.student_answers?.contraargumento) setContraargumento(data.student_answers.contraargumento);
       if (data.student_answers?.refutacion) setRefutacion(data.student_answers.refutacion);
-      if (data.attempts) setEvaluationAttempts(data.attempts);
+      if (typeof data.attempts === 'number') setEvaluationAttempts(data.attempts);
       if (data.history) setHistory(data.history);
-      if (data.submitted) setIsSubmitted(true);
+      if (data.submitted) {
+        setIsSubmitted(true);
+        setIsLocked(true);
+      }
       if (data.ai_feedbacks?.respuesta_argumentativa) setFeedback(data.ai_feedbacks.respuesta_argumentativa);
     }
   });
@@ -445,7 +462,7 @@ export default function RespuestaArgumentativa({ theme }) {
       
       // Limpiar sessionStorage
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, lectureId);
+        const getKey = (base) => getDraftKey(base, lectureId, sourceCourseId);
         sessionStorage.removeItem(getKey('respuestaArgumentativa_tesis'));
         sessionStorage.removeItem(getKey('respuestaArgumentativa_evidencias'));
         sessionStorage.removeItem(getKey('respuestaArgumentativa_contraargumento'));
@@ -465,8 +482,11 @@ export default function RespuestaArgumentativa({ theme }) {
       setHistory(prev => prev.length >= cloudData.history.length ? prev : cloudData.history);
     }
 
-    if (cloudData.attempts) setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
-    if (cloudData.submitted) setIsSubmitted(true);
+    if (typeof cloudData.attempts === 'number') setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
+    if (cloudData.submitted) {
+      setIsSubmitted(true);
+      setIsLocked(true);
+    }
 
     // 🆕 Override de nota docente
     if (cloudData.teacherOverrideScore != null) {
@@ -480,7 +500,7 @@ export default function RespuestaArgumentativa({ theme }) {
 
     if (cloudData.drafts) {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, lectureId);
+        const getKey = (base) => getDraftKey(base, lectureId, sourceCourseId);
 
         if (cloudData.drafts.tesis && !sessionStorage.getItem(getKey('respuestaArgumentativa_tesis'))) {
           sessionStorage.setItem(getKey('respuestaArgumentativa_tesis'), cloudData.drafts.tesis);
@@ -525,9 +545,9 @@ export default function RespuestaArgumentativa({ theme }) {
   const handleConfirmedSubmit = useCallback(() => {
     setShowSubmitConfirm(false);
     setIsSubmitted(true);
+    setIsLocked(true);
 
-    // ✅ Forzar guardado inmediato con saveManual
-    timersRef.current.push(setTimeout(() => persistence.saveManual(), 100));
+    // Evitar save inmediato con estado stale; se guarda al confirmar isSubmitted
 
     // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
     if (lectureId && updateActivitiesProgress) {
@@ -535,6 +555,11 @@ export default function RespuestaArgumentativa({ theme }) {
         // Obtener el score previo guardado (lastScore) o calcular desde feedback
         const previousArtifact = prev?.artifacts?.respuestaArgumentativa || {};
         const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
+        const attemptsToUse = Math.max(
+          Number(previousArtifact.attempts || 0),
+          Number(evaluationAttempts || 0),
+          Array.isArray(history) ? history.length : 0
+        );
         
         logger.log('📤 [RespuestaArgumentativa] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
         
@@ -549,7 +574,7 @@ export default function RespuestaArgumentativa({ theme }) {
               score: scoreToUse,
               nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
               history: history,
-              attempts: evaluationAttempts,
+              attempts: attemptsToUse,
               finalContent: { tesis, evidencias, contraargumento, refutacion }
             }
           }
@@ -568,6 +593,12 @@ export default function RespuestaArgumentativa({ theme }) {
 
     logger.log('✅ [RespuestaArgumentativa] Tarea entregada y sincronizada con Dashboard');
   }, [feedback, persistence, lectureId, updateActivitiesProgress, history, evaluationAttempts, tesis, evidencias, contraargumento, refutacion]);
+
+  // Garantizar persistencia con estado actualizado tras entregar
+  useEffect(() => {
+    if (!isSubmitted) return;
+    persistence.saveManual();
+  }, [isSubmitted, persistence]);
 
   const handleSubmit = useCallback(() => {
     if (!feedback) return;
@@ -743,7 +774,7 @@ export default function RespuestaArgumentativa({ theme }) {
       // 🆕 Limpiar drafts
       if (currentTextoId) {
         import('../../services/sessionManager').then(({ getDraftKey, updateCurrentSession, captureArtifactsDrafts }) => {
-          const getKey = (base) => getDraftKey(base, currentTextoId);
+          const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
           // scoped
           sessionStorage.removeItem(getKey('respuestaArgumentativa_tesis'));
@@ -757,7 +788,7 @@ export default function RespuestaArgumentativa({ theme }) {
           sessionStorage.removeItem('respuestaArgumentativa_contraargumento');
           sessionStorage.removeItem('respuestaArgumentativa_refutacion');
 
-          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId, sourceCourseId) });
         }).catch(() => {});
       }
 
@@ -873,7 +904,7 @@ export default function RespuestaArgumentativa({ theme }) {
         >
           <span className="icon">✅</span>
           <span className="text">
-            <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
+            <strong>Tarea Entregada:</strong> Tu nota fue enviada al docente y no se pueden realizar más cambios.
           </span>
         </SubmissionBanner>
       )}
@@ -894,7 +925,7 @@ export default function RespuestaArgumentativa({ theme }) {
             theme={theme}
           >
             <CitasPanelHeader theme={theme}>
-              <h3 style={{ margin: 0 }}>� Cuaderno de Lectura</h3>
+              <h3 style={{ margin: 0 }}>Cuaderno de Lectura</h3>
               <p style={{ fontSize: '0.85rem', margin: '0.5rem 0 0 0', opacity: 0.8 }}>
                 {citasGuardadas.length === 0
                   ? 'Guarda citas y anotaciones desde "Lectura Guiada"'

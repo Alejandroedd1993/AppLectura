@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useMemo, useRef } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
@@ -33,7 +33,8 @@ const SessionsHistory = ({ theme }) => {
     currentUser,
     currentTextoId,
     rubricProgress,
-    activitiesProgress // 🆕 FASE 4: Para verificar artefactos ya entregados
+    activitiesProgress, // 🆕 FASE 4: Para verificar artefactos ya entregados
+    sourceCourseId // 🔧 FIX CROSS-COURSE: Para scope de borradores
   } = useContext(AppContext);
 
   const [sessions, setSessions] = useState([]);
@@ -41,8 +42,13 @@ const SessionsHistory = ({ theme }) => {
   const [_deletingId, setDeletingId] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [sessionLimit, setSessionLimit] = useState(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [diagnosticMode, setDiagnosticMode] = useState(false);
+  const [diagnosticReport, setDiagnosticReport] = useState(null);
+  const [diagnosticEvents, setDiagnosticEvents] = useState([]);
+  const lastBackgroundRefreshRef = useRef(0);
 
   // 🆕 FASE 2: Estado de filtros
   const [filters, setFilters] = useState({
@@ -54,22 +60,22 @@ const SessionsHistory = ({ theme }) => {
     syncStatus: 'all'
   });
 
-  // Cargar sesiones al montar y cuando cambie el estado
-  useEffect(() => {
-    loadSessions();
+  const loadSessions = useCallback(async ({ silent = false } = {}) => {
+    // En actualizaciones de fondo, hacer throttle para evitar parpadeo continuo de UI
+    if (silent) {
+      const now = Date.now();
+      if (now - lastBackgroundRefreshRef.current < 1200) {
+        return;
+      }
+      lastBackgroundRefreshRef.current = now;
+    }
 
-    // Escuchar eventos de actualización de sesiones
-    const handleSessionUpdate = () => loadSessions();
-    window.addEventListener('session-updated', handleSessionUpdate);
-
-    return () => {
-      window.removeEventListener('session-updated', handleSessionUpdate);
-    };
-  }, [currentUser]);
-
-  const loadSessions = useCallback(async () => {
     try {
-      setLoading(true);
+      if (silent) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
+      }
 
       // Actualizar pendientes aunque falle el fetch de cloud
       setPendingSyncCount(getPendingSyncs().length);
@@ -111,9 +117,114 @@ const SessionsHistory = ({ theme }) => {
       const localSessions = getAllSessions();
       setSessions(localSessions);
     } finally {
-      setLoading(false);
+      if (silent) {
+        setIsRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }, [currentUser]);
+
+  // Cargar sesiones al montar y cuando cambie el estado
+  useEffect(() => {
+    loadSessions({ silent: false });
+
+    // Escuchar eventos de actualización de sesiones (sin bloquear botones)
+    const handleSessionUpdate = () => loadSessions({ silent: true });
+    window.addEventListener('session-updated', handleSessionUpdate);
+
+    return () => {
+      window.removeEventListener('session-updated', handleSessionUpdate);
+    };
+  }, [loadSessions]);
+
+  const pushDiagnosticEvent = useCallback((step, ok, detail = '') => {
+    setDiagnosticEvents(prev => [
+      {
+        ts: Date.now(),
+        step,
+        ok,
+        detail
+      },
+      ...prev
+    ].slice(0, 12));
+  }, []);
+
+  const runSessionDiagnostics = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const localSessions = getAllSessions();
+      const pendingSyncs = getPendingSyncs();
+      const currentSessionId = getCurrentSessionId();
+
+      let mergedSessionsCount = null;
+      if (currentUser) {
+        try {
+          const merged = await getAllSessionsMerged();
+          mergedSessionsCount = merged.length;
+        } catch (error) {
+          mergedSessionsCount = null;
+          pushDiagnosticEvent('fetch-merged', false, error?.message || 'Error obteniendo sesiones merged');
+        }
+      }
+
+      const checks = [
+        {
+          key: 'restore-handler',
+          label: 'RestoreSession disponible en contexto',
+          ok: Boolean(restoreSession),
+          value: Boolean(restoreSession)
+        },
+        {
+          key: 'create-handler',
+          label: 'CreateSession disponible en contexto',
+          ok: Boolean(createSession),
+          value: Boolean(createSession)
+        },
+        {
+          key: 'local-sessions',
+          label: 'Sesiones locales detectadas',
+          ok: localSessions.length > 0,
+          value: localSessions.length
+        },
+        {
+          key: 'current-session-id',
+          label: 'Sesión actual activa',
+          ok: Boolean(currentSessionId),
+          value: currentSessionId || 'ninguna'
+        },
+        {
+          key: 'pending-syncs',
+          label: 'Pendientes de sincronización',
+          ok: pendingSyncs.length === 0,
+          value: pendingSyncs.length
+        },
+        {
+          key: 'merged-sessions',
+          label: 'Sesiones merged (local + cloud)',
+          ok: currentUser ? Number.isFinite(mergedSessionsCount) : true,
+          value: currentUser ? (Number.isFinite(mergedSessionsCount) ? mergedSessionsCount : 'error') : 'sin usuario'
+        }
+      ];
+
+      const okCount = checks.filter(c => c.ok).length;
+      setDiagnosticReport({
+        executedAt: Date.now(),
+        okCount,
+        total: checks.length,
+        checks
+      });
+
+      pushDiagnosticEvent('run-diagnostics', okCount === checks.length, `${okCount}/${checks.length} checks OK`);
+      setDiagnosticMode(true);
+    } catch (error) {
+      logger.error('❌ [SessionsHistory] Error ejecutando diagnóstico:', error);
+      pushDiagnosticEvent('run-diagnostics', false, error?.message || 'Error inesperado');
+    } finally {
+      setLoading(false);
+    }
+  }, [createSession, currentUser, pushDiagnosticEvent, restoreSession]);
 
   const handleSyncPendingNow = useCallback(async () => {
     if (!currentUser) {
@@ -131,15 +242,18 @@ const SessionsHistory = ({ theme }) => {
       setLoading(true);
       const result = await syncPendingSessions();
 
+      pushDiagnosticEvent('sync-pending', result.failed === 0, `${result.synced} ok / ${result.failed} fallidas`);
+
       alert(`✅ Sincronización de pendientes completada:\n${result.synced} sesiones sincronizadas\n${result.failed} fallidas`);
-      loadSessions();
+      loadSessions({ silent: true });
     } catch (error) {
       logger.error('❌ Error sincronizando pendientes:', error);
+      pushDiagnosticEvent('sync-pending', false, error?.message || 'Error en sync pendientes');
       alert('Error sincronizando pendientes. Revisa la consola.');
     } finally {
       setLoading(false);
     }
-  }, [currentUser, loadSessions]);
+  }, [currentUser, loadSessions, pushDiagnosticEvent]);
 
   const handleSessionClick = useCallback(async (session) => {
     logger.log('🖱️ [SessionsHistory] Click en sesión:', {
@@ -155,9 +269,9 @@ const SessionsHistory = ({ theme }) => {
     }
 
     // 🆕 Verificar si hay borradores sin evaluar (FASE 4: también considera activitiesProgress)
-    const { hasDrafts } = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress);
+    const { hasDrafts } = checkUnsaveDrafts(currentTextoId, rubricProgress, activitiesProgress, sourceCourseId);
     if (hasDrafts) {
-      const warningMessage = getWarningMessage(currentTextoId, rubricProgress, activitiesProgress);
+      const warningMessage = getWarningMessage(currentTextoId, rubricProgress, activitiesProgress, sourceCourseId);
       const confirmed = window.confirm(warningMessage);
 
       if (!confirmed) {
@@ -169,6 +283,7 @@ const SessionsHistory = ({ theme }) => {
     logger.log('📂 [SessionsHistory] Restaurando sesión:', session.id);
     const success = await restoreSession(session);
     logger.log('🔄 [SessionsHistory] Resultado restauración:', success ? '✅ Éxito' : '❌ Error');
+    pushDiagnosticEvent('restore-session', success, session.id);
 
     if (success) {
       setIsExpanded(false);
@@ -182,7 +297,7 @@ const SessionsHistory = ({ theme }) => {
     } else {
       logger.error('❌ [SessionsHistory] No se pudo restaurar la sesión');
     }
-  }, [restoreSession, currentTextoId, rubricProgress]);
+  }, [restoreSession, currentTextoId, rubricProgress, activitiesProgress, pushDiagnosticEvent]);
 
   const handleDeleteSession = useCallback(async (sessionId, e) => {
     e.stopPropagation();
@@ -195,7 +310,7 @@ const SessionsHistory = ({ theme }) => {
 
     const success = await deleteSession(sessionId);
     if (success) {
-      loadSessions();
+      loadSessions({ silent: true });
       setTimeout(() => setDeletingId(null), 300);
     }
   }, [loadSessions]);
@@ -212,7 +327,7 @@ const SessionsHistory = ({ theme }) => {
 
     const success = deleteAllSessions();
     if (success) {
-      loadSessions();
+      loadSessions({ silent: true });
       window.dispatchEvent(new CustomEvent('session-updated'));
     }
   }, [sessions.length, loadSessions]);
@@ -225,10 +340,13 @@ const SessionsHistory = ({ theme }) => {
 
     const session = await createSession();
     if (session) {
-      loadSessions();
+      pushDiagnosticEvent('create-session', true, session.id);
+      loadSessions({ silent: true });
       setIsExpanded(false);
+    } else {
+      pushDiagnosticEvent('create-session', false, 'createSession retornó null');
     }
-  }, [texto, createSession, loadSessions]);
+  }, [texto, createSession, loadSessions, pushDiagnosticEvent]);
 
   // 🆕 NUEVA FUNCIÓN: Guardar cambios en sesión actual
   const handleSaveCurrentSession = useCallback(async () => {
@@ -249,15 +367,18 @@ const SessionsHistory = ({ theme }) => {
       setLoading(false);
 
       if (result) {
-        loadSessions();
+        loadSessions({ silent: true });
+        pushDiagnosticEvent('save-session', true, result);
         alert('✅ Sesión guardada exitosamente');
       } else {
+        pushDiagnosticEvent('save-session', false, 'updateCurrentSessionFromState retornó null');
         alert('❌ Error guardando sesión');
       }
     } else {
       logger.error('❌ updateCurrentSessionFromState no disponible');
+      pushDiagnosticEvent('save-session', false, 'updateCurrentSessionFromState no disponible');
     }
-  }, [texto, updateCurrentSessionFromState, loadSessions]);
+  }, [texto, updateCurrentSessionFromState, loadSessions, pushDiagnosticEvent]);
 
   const handleSyncAllToCloud = useCallback(async () => {
     if (!currentUser) {
@@ -273,16 +394,19 @@ const SessionsHistory = ({ theme }) => {
       setLoading(true);
       const result = await syncAllSessionsToCloud();
 
+      pushDiagnosticEvent('sync-all', result.errors === 0, `${result.synced} ok / ${result.errors} errores`);
+
       alert(`✅ Sincronización completada:\n${result.synced} sesiones sincronizadas\n${result.errors} errores`);
 
-      loadSessions();
+      loadSessions({ silent: true });
     } catch (error) {
       logger.error('❌ Error sincronizando:', error);
+      pushDiagnosticEvent('sync-all', false, error?.message || 'Error sincronizando sesiones');
       alert('Error sincronizando sesiones. Revisa la consola.');
     } finally {
       setLoading(false);
     }
-  }, [currentUser, loadSessions]);
+  }, [currentUser, loadSessions, pushDiagnosticEvent]);
 
   // 🆕 FASE 2: Aplicar filtros a las sesiones
   const filteredSessions = useMemo(() => {
@@ -448,7 +572,7 @@ const SessionsHistory = ({ theme }) => {
           {sessions.length > 0 && (
             <SessionCount theme={theme}>({sessions.length})</SessionCount>
           )}
-          {loading && <LoadingSpinner>⏳</LoadingSpinner>}
+          {(loading || isRefreshing) && <LoadingSpinner>⏳</LoadingSpinner>}
         </HistoryTitle>
         <ExpandIcon $expanded={isExpanded}>▼</ExpandIcon>
       </HistoryHeader>
@@ -573,6 +697,67 @@ const SessionsHistory = ({ theme }) => {
               )}
             </ActionsRow>
 
+            <DiagnosticActionsRow>
+              <SyncButton
+                theme={theme}
+                onClick={runSessionDiagnostics}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                disabled={loading}
+              >
+                🩺 Diagnóstico Smart Resume
+              </SyncButton>
+
+              {diagnosticMode && (
+                <ClearAllButton
+                  theme={theme}
+                  onClick={() => setDiagnosticMode(false)}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  disabled={loading}
+                >
+                  Ocultar diagnóstico
+                </ClearAllButton>
+              )}
+            </DiagnosticActionsRow>
+
+            {diagnosticMode && (
+              <DiagnosticPanel theme={theme}>
+                <DiagnosticHeader>
+                  <DiagnosticTitle theme={theme}>🩺 Diagnóstico Smart Resume</DiagnosticTitle>
+                  <DiagnosticSubtitle theme={theme}>
+                    {diagnosticReport
+                      ? `Última ejecución: ${new Date(diagnosticReport.executedAt).toLocaleTimeString('es-ES')} · ${diagnosticReport.okCount}/${diagnosticReport.total} checks OK`
+                      : 'Ejecuta el diagnóstico para revisar el flujo crear → guardar → restaurar'
+                    }
+                  </DiagnosticSubtitle>
+                </DiagnosticHeader>
+
+                {diagnosticReport?.checks?.length > 0 && (
+                  <DiagnosticChecks>
+                    {diagnosticReport.checks.map((check) => (
+                      <DiagnosticCheck key={check.key} $ok={check.ok} theme={theme}>
+                        <span>{check.ok ? '✅' : '❌'} {check.label}</span>
+                        <strong>{String(check.value)}</strong>
+                      </DiagnosticCheck>
+                    ))}
+                  </DiagnosticChecks>
+                )}
+
+                {diagnosticEvents.length > 0 && (
+                  <DiagnosticEvents>
+                    <DiagnosticEventsTitle theme={theme}>Eventos recientes</DiagnosticEventsTitle>
+                    {diagnosticEvents.map((event, index) => (
+                      <DiagnosticEventRow key={`${event.ts}-${event.step}-${index}`} $ok={event.ok} theme={theme}>
+                        <span>{event.ok ? '✅' : '❌'} {event.step}</span>
+                        <small>{new Date(event.ts).toLocaleTimeString('es-ES')} · {event.detail || 'sin detalle'}</small>
+                      </DiagnosticEventRow>
+                    ))}
+                  </DiagnosticEvents>
+                )}
+              </DiagnosticPanel>
+            )}
+
             {/* 🆕 FASE 2: Filtros */}
             {sessions.length > 0 && (
               <SessionFilters
@@ -624,6 +809,8 @@ const HistoryContainer = styled.div`
   margin-top: 1rem;
   border-top: 1px solid ${props => props.theme.border};
   padding-top: 1rem;
+  max-width: 100%;
+  overflow-x: hidden;
 `;
 
 const HistoryHeader = styled.div`
@@ -724,12 +911,35 @@ const SaveSessionButton = styled(motion.button)`
 
 const ActionsRow = styled.div`
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 1rem;
+
+  > button {
+    min-width: 0;
+    flex: 1 1 calc(50% - 0.25rem);
+  }
+
+  @media (max-width: 420px) {
+    > button {
+      flex-basis: 100%;
+    }
+  }
+`;
+
+const DiagnosticActionsRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: -0.25rem 0 1rem;
+
+  > button {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
 `;
 
 const SyncButton = styled(motion.button)`
-  flex: 1;
   padding: 0.65rem;
   background: linear-gradient(135deg, #3B82F6, #1D4ED8);
   color: white;
@@ -738,6 +948,8 @@ const SyncButton = styled(motion.button)`
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
+  white-space: normal;
+  word-break: break-word;
   
   &:hover {
     background: linear-gradient(135deg, #2563EB, #1E40AF);
@@ -750,7 +962,6 @@ const SyncButton = styled(motion.button)`
 `;
 
 const ClearAllButton = styled(motion.button)`
-  flex: 1;
   padding: 0.65rem;
   background: ${props => props.theme.surface || '#FFFFFF'};
   color: ${props => props.theme.danger || '#C62828'};
@@ -760,6 +971,8 @@ const ClearAllButton = styled(motion.button)`
   font-weight: 500;
   cursor: pointer;
   transition: background 0.2s;
+  white-space: normal;
+  word-break: break-word;
 
   &:hover {
     background: ${props => props.theme.border || '#E4EAF1'};
@@ -932,6 +1145,92 @@ const LimitWarning = styled.div`
   font-size: 0.8rem;
   color: ${props => props.theme.textMuted || '#607D8B'};
   line-height: 1.4;
+`;
+
+const DiagnosticPanel = styled.div`
+  margin: 0.5rem 0 1rem;
+  padding: 0.875rem;
+  border: 1px solid ${props => props.theme.border || '#E4EAF1'};
+  background: ${props => props.theme.surface || '#FFFFFF'};
+  border-radius: 8px;
+  max-width: 100%;
+  overflow: hidden;
+`;
+
+const DiagnosticHeader = styled.div`
+  margin-bottom: 0.625rem;
+`;
+
+const DiagnosticTitle = styled.div`
+  font-weight: 700;
+  color: ${props => props.theme.text || '#232B33'};
+`;
+
+const DiagnosticSubtitle = styled.div`
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  color: ${props => props.theme.textMuted || '#607D8B'};
+`;
+
+const DiagnosticChecks = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+`;
+
+const DiagnosticCheck = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid ${props => props.$ok
+    ? (props.theme.success || '#10B981')
+    : (props.theme.error || '#EF4444')};
+  background: ${props => props.$ok
+    ? (props.theme.successLight || '#ECFDF5')
+    : (props.theme.errorLight || '#FEF2F2')};
+  color: ${props => props.theme.text || '#232B33'};
+  font-size: 0.85rem;
+
+  > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  > strong {
+    max-width: 45%;
+    text-align: right;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+`;
+
+const DiagnosticEvents = styled.div`
+  border-top: 1px dashed ${props => props.theme.border || '#E4EAF1'};
+  padding-top: 0.6rem;
+`;
+
+const DiagnosticEventsTitle = styled.div`
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: ${props => props.theme.textMuted || '#607D8B'};
+  margin-bottom: 0.35rem;
+`;
+
+const DiagnosticEventRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  padding: 0.2rem 0;
+  color: ${props => props.$ok
+    ? (props.theme.success || '#10B981')
+    : (props.theme.error || '#EF4444')};
 `;
 
 export default SessionsHistory;

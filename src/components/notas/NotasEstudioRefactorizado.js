@@ -15,7 +15,6 @@ import CronogramaRepaso from './CronogramaRepaso';
 import PanelStudyItems from '../PanelStudyItems';
 import useStudyItems from '../../hooks/useStudyItems';
 import DraftWarning from '../common/DraftWarning';
-import logger from '../../utils/logger';
 import * as tokens from '../../styles/designTokens';
 import useMediaQuery from '../../hooks/useMediaQuery';
 
@@ -25,7 +24,7 @@ import useMediaQuery from '../../hooks/useMediaQuery';
  */
 const NotasEstudio = () => {
   // Contexto global
-  const { texto, modoOscuro, completeAnalysis, currentTextoId } = useContext(AppContext);
+  const { texto, modoOscuro, completeAnalysis, currentTextoId, sourceCourseId } = useContext(AppContext);
 
   // Hook personalizado para gestión de estado (ahora con análisis completo)
   const {
@@ -45,7 +44,7 @@ const NotasEstudio = () => {
     setNivelAcademico, // 🆕 FASE 3
     marcarRepasoCompletado,
     regenerarNotas
-  } = useNotasEstudio(texto, completeAnalysis, currentTextoId); // ✅ Pasar análisis completo + textoId
+  } = useNotasEstudio(texto, completeAnalysis, currentTextoId, sourceCourseId); // ✅ Pasar análisis completo + textoId + courseId
 
   // Estado local para la visibilidad del panel
   const [mostrarConfiguracion, setMostrarConfiguracion] = useState(false);
@@ -54,7 +53,7 @@ const NotasEstudio = () => {
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
 
   // Hook de study items (mismo texto) para mostrar conteo rápido
-  const { dueItems, items } = useStudyItems(texto, currentTextoId);
+  const { dueItems, items } = useStudyItems(texto, currentTextoId, sourceCourseId);
 
 
 
@@ -348,7 +347,7 @@ const NotasEstudio = () => {
       {mostrarPractice && (
         <div style={{ marginBottom: '24px' }}>
           {items?.length ? (
-            <PanelStudyItems texto={texto} textoId={currentTextoId} theme={theme} />
+            <PanelStudyItems texto={texto} textoId={currentTextoId} courseId={sourceCourseId} theme={theme} />
           ) : (
             <div style={{
               border: `1px dashed ${theme.border}`,

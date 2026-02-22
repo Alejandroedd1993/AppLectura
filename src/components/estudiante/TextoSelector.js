@@ -24,6 +24,7 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { procesarArchivo } from '../../utils/fileProcessor';
+import { recoverPdfBlobWithFallback } from '../../utils/pdfRecovery';
 import { AppContext } from '../../context/AppContext';
 import { getAllSessionsMerged, deleteSession } from '../../services/sessionManager';
 import {
@@ -1075,53 +1076,15 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
 
       if (docData.fileURL && !contenido) {
         let blob = null;
-
-        // INTENTO 0: Firebase SDK getBlob (evita CORS completamente)
         try {
-          const { ref: storageRef, getBlob: firebaseGetBlob } = await import('firebase/storage');
-          const { storage: storageInstance } = await import('../../firebase/config');
-          let storagePath = null;
-          try {
-            const urlObj = new URL(docData.fileURL);
-            const pathSegment = urlObj.pathname.split('/o/')[1];
-            if (pathSegment) storagePath = decodeURIComponent(pathSegment);
-          } catch (_) { /* ignorar errores de parseo */ }
-
-          if (storagePath) {
-            const fileRef = storageRef(storageInstance, storagePath);
-            blob = await firebaseGetBlob(fileRef);
-            if (blob && blob.size < 500) blob = null;
-            if (blob) logger.log('✅ [TextoSelector] PDF descargado via Firebase SDK getBlob:', blob.size, 'bytes');
-          }
-        } catch (sdkErr) {
-          logger.warn('⚠️ [TextoSelector] Firebase SDK getBlob falló:', sdkErr.message);
-        }
-
-        // INTENTO 1: Fetch directo desde Firebase Storage (sin proxy)
-        if (!blob) {
-          try {
-            const directRes = await fetch(docData.fileURL, { mode: 'cors' });
-            if (directRes.ok) {
-              blob = await directRes.blob();
-              if (blob.size < 500) blob = null; // Sanity check
-            }
-          } catch (directErr) {
-            logger.warn('⚠️ [TextoSelector] Fetch directo falló:', directErr.message);
-          }
-        }
-
-        // INTENTO 2: Proxy backend
-        if (!blob) {
-          try {
-            const proxyUrl = `${BACKEND_BASE_URL}/api/storage/proxy?url=${encodeURIComponent(docData.fileURL)}`;
-            const proxyRes = await fetch(proxyUrl);
-            if (proxyRes.ok) {
-              blob = await proxyRes.blob();
-              if (blob.size < 500) blob = null;
-            }
-          } catch (proxyErr) {
-            logger.warn('⚠️ [TextoSelector] Proxy falló:', proxyErr.message);
-          }
+          const recovered = await recoverPdfBlobWithFallback(docData.fileURL, {
+            backendBaseUrl: BACKEND_BASE_URL,
+            logger,
+            prefix: '[TextoSelector]'
+          });
+          blob = recovered?.blob || null;
+        } catch (recoverErr) {
+          logger.warn('⚠️ [TextoSelector] Recuperación de PDF falló:', recoverErr?.message || recoverErr);
         }
 
         if (blob) {

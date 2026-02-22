@@ -16,6 +16,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.2.1",
     "firebase": "^12.4.0",
+    "firebase-admin": "^13.0.1",
     "framer-motion": "^12.23.3",
     "jspdf": "^3.0.3",
     "lodash": "^4.17.21",
@@ -47,6 +48,8 @@
     "test:ci": "set NODE_OPTIONS=--expose-gc&& jest --coverage --ci --silent --maxWorkers=1",
     "test:unit": "set NODE_OPTIONS=--expose-gc&& jest --testPathPattern=tests/unit --maxWorkers=1",
     "test:integration": "set NODE_OPTIONS=--expose-gc&& jest --testPathPattern=tests/integration --maxWorkers=1",
+    "test:rules": "firebase emulators:exec --only firestore \"jest --config jest.rules.config.js --silent\"",
+    "test:all": "npm test --silent && npm run test:rules",
     "eject": "react-scripts eject",
     "server": "cd server && node --max-old-space-size=4096 index.js",
     "server:windows": "cd server && set BACKEND_PORT=3001&& node --max-old-space-size=4096 index.js",
@@ -65,6 +68,8 @@
     "clean-restart": "npm run kill-ports && rmdir /s /q node_modules && del /q package-lock.json && npm ci && npm run dev",
     "debug:backend": "cd server && set DEBUG=*&& node index.js",
     "debug:api": "node scripts/test-api-performance.js",
+    "diagnose:websearch": "node scripts/diagnose-websearch.js",
+    "diagnose:admin-cleanup": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\verify-admin-cleanup.ps1",
     "monitor": "concurrently \"npm run start:windows\" \"npm run debug:backend\"",
     "debug": "npm run monitor",
     "clean:legacy": "echo Limpieza de archivos legacy aplicada el 2025-10-11. Consulta ARQUITECTURA.md para el listado y estado actual.",
@@ -102,7 +107,8 @@
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "/build/"
+      "/build/",
+      "/tests/unit/security/"
     ],
     "moduleNameMapper": {
       "\\.(css|less|scss|sass)$": "identity-obj-proxy",
@@ -156,6 +162,7 @@
     "@babel/core": "^7.28.0",
     "@babel/preset-env": "^7.28.0",
     "@babel/preset-react": "^7.27.1",
+    "@firebase/rules-unit-testing": "^5.0.0",
     "copy-webpack-plugin": "^13.0.1",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^27.5.1",

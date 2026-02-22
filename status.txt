@@ -1,0 +1,88 @@
+﻿On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .vscode/tasks.json
+	modified:   package-lock.json
+	modified:   package.json
+	modified:   server/.env.example
+	modified:   server/index.js
+	modified:   server/package.json
+	modified:   src/App.js
+	modified:   src/VisorTexto_responsive.js
+	modified:   src/components/Actividades.js
+	modified:   src/components/CargaTexto_responsive.js
+	modified:   src/components/PDFViewer.js
+	modified:   src/components/PanelStudyItems.js
+	modified:   src/components/SistemaEvaluacion.js
+	modified:   src/components/actividades/ExportProgressButton.js
+	modified:   src/components/artefactos/BitacoraEticaIA.js
+	modified:   src/components/artefactos/MapaActores.js
+	modified:   src/components/artefactos/RespuestaArgumentativa.js
+	modified:   src/components/artefactos/ResumenAcademico.js
+	modified:   src/components/artefactos/TablaACD.js
+	modified:   src/components/common/DraftWarning.js
+	modified:   src/components/common/SessionsHistory.js
+	modified:   src/components/ensayoIntegrador/EnsayoIntegrador.js
+	modified:   src/components/estudiante/TextoSelector.js
+	modified:   src/components/evaluacion/DashboardRubricas.js
+	modified:   src/components/notas/NotasEstudioRefactorizado.js
+	modified:   src/components/tutor/TutorCore.js
+	modified:   src/components/tutor/TutorDock.js
+	modified:   src/context/AppContext.js
+	modified:   src/hooks/notes/useNotasEstudioHook.js
+	modified:   src/hooks/useActivityPersistence.js
+	modified:   src/hooks/useFirestorePersistence.js
+	modified:   src/hooks/useFollowUpQuestion.js
+	modified:   src/hooks/useReadingTimeTracker.js
+	modified:   src/hooks/useStudyItems.js
+	modified:   src/hooks/useWebSearchTutor.js
+	modified:   src/pedagogy/tutor/zdpDetector.js
+	modified:   src/services/notes/StorageService.js
+	modified:   src/services/sessionManager.js
+	modified:   src/services/webSearchService.js
+	modified:   src/utils/checkUnsaveDrafts.js
+	modified:   src/utils/storageKeys.js
+	modified:   tests/integration/ReadingWorkspace.smoke.test.js
+	modified:   tests/integration/TutorDock.persistence.integration.test.js
+	modified:   tests/unit/hooks/useFollowUpQuestion.test.js
+	modified:   tests/unit/tutor/TutorExternalPrompt.test.js
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	PLAN_P3_REFACTORIZACION_MODULOS_MONOLITICOS.md
+	diff-appcontext.txt
+	diff-firestore.txt
+	diff-pdf.txt
+	diff-session.txt
+	diff-utf8.txt
+	diff-visor.txt
+	diff.txt
+	firestore-debug.log
+	scripts/diagnose-websearch.js
+	scripts/verify-admin-cleanup.ps1
+	server/config/firebaseAdmin.js
+	server/controllers/adminCleanup.controller.js
+	server/routes/adminCleanup.routes.js
+	src/hooks/usePedagogyIntegration.js
+	src/hooks/useReadingProgress.js
+	src/hooks/useWebSearchAvailability.js
+	src/pedagogy/prompts/tutorSystemPrompts.js
+	src/pedagogy/safety/
+	src/pedagogy/tutor/studentNeedsAnalyzer.js
+	src/utils/copyToClipboard.js
+	src/utils/courseDataCleanup.js
+	src/utils/fetchWebSearch.js
+	src/utils/pdfRecovery.js
+	status.txt
+	tests/unit/components/TextoSelector.cleanupGuard.test.js
+	tests/unit/context/
+	tests/unit/firebase/
+	tests/unit/hooks/useActivityPersistence.crossCourse.test.js
+	tests/unit/server/adminCleanup.controller.test.js
+	tests/unit/utils/courseDataCleanup.test.js
+	tests/unit/utils/pdfRecovery.test.js
+
+no changes added to commit (use "git add" and/or "git commit -a")

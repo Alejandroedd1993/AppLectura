@@ -45,6 +45,18 @@
 			"label": "Run tests",
 			"type": "shell",
 			"command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"npm test --silent\""
+		},
+		{
+			"label": "Diagnose admin cleanup",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"npm run diagnose:admin-cleanup -- -BackendUrl '${input:cleanupBackendUrl}' -IdToken '${input:cleanupIdToken}' -CourseId '${input:cleanupCourseId}' -StudentUid '${input:cleanupStudentUid}' -CleanupSecret '${input:cleanupSecret}'\"",
+			"problemMatcher": []
+		},
+		{
+			"label": "Diagnose admin cleanup (quick)",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"npm run diagnose:admin-cleanup -- -BackendUrl '${input:cleanupBackendUrl}' -IdToken '${input:cleanupIdToken}' -CourseId '${input:cleanupCourseId}' -StudentUid '${input:cleanupStudentUid}'\"",
+			"problemMatcher": []
 		}
 	],
 	"inputs": [
@@ -53,6 +65,32 @@
 			"type": "promptString",
 			"description": "Puerto del backend",
 			"default": "3001"
+		},
+		{
+			"id": "cleanupBackendUrl",
+			"type": "promptString",
+			"description": "URL backend para admin cleanup",
+			"default": "http://localhost:3001"
+		},
+		{
+			"id": "cleanupIdToken",
+			"type": "promptString",
+			"description": "Firebase ID token del docente"
+		},
+		{
+			"id": "cleanupCourseId",
+			"type": "promptString",
+			"description": "Course ID"
+		},
+		{
+			"id": "cleanupStudentUid",
+			"type": "promptString",
+			"description": "Student UID"
+		},
+		{
+			"id": "cleanupSecret",
+			"type": "promptString",
+			"description": "CLEANUP_WORKER_SECRET (opcional)"
 		}
 	]
 }

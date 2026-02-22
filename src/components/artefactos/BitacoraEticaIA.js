@@ -131,9 +131,10 @@ export default function BitacoraEticaIA({ theme }) {
     ? [`bitacora_etica_ia_${legacyDocumentId}`]
     : [];
 
-  // 🧭 Claves legacy en localStorage (ahora aisladas por lectura)
-  const tutorLogStorageKey = `tutorInteractionsLog:${lectureId}`;
-  const reflectionsStorageKey = `ethicalReflections:${lectureId}`;
+  // Claves en localStorage aisladas por lectura + curso
+  const courseScope = sourceCourseId ? `${sourceCourseId}::` : '';
+  const tutorLogStorageKey = `tutorInteractionsLog:${courseScope}${lectureId}`;
+  const reflectionsStorageKey = `ethicalReflections:${courseScope}${lectureId}`;
 
   // 🆕 Keyboard shortcuts para productividad
   const [_showSaveHint, setShowSaveHint] = useState(false);
@@ -263,8 +264,18 @@ export default function BitacoraEticaIA({ theme }) {
       savedReflections = {};
     }
 
-    // Fallback legacy SOLO para la bitácora global
-    if (Object.keys(savedReflections).length === 0 && lectureId === 'global') {
+    // Fallback legacy solo en modo sin curso (evitar contaminar cursos)
+    if (Object.keys(savedReflections).length === 0 && !sourceCourseId) {
+      try {
+        const legacyByLecture = JSON.parse(localStorage.getItem(`ethicalReflections:${lectureId}`) || '{}');
+        if (legacyByLecture && typeof legacyByLecture === 'object') savedReflections = legacyByLecture;
+      } catch {
+        // ignore
+      }
+    }
+
+    // Fallback final SOLO para bitácora global legacy
+    if (Object.keys(savedReflections).length === 0 && !sourceCourseId && lectureId === 'global') {
       try {
         const legacy = JSON.parse(localStorage.getItem('ethicalReflections') || '{}');
         if (legacy && typeof legacy === 'object') savedReflections = legacy;
@@ -280,7 +291,7 @@ export default function BitacoraEticaIA({ theme }) {
 
     // NOTA: El listener de 'tutor-interaction-logged' ahora está en AppContext
     // para capturar interacciones incluso cuando esta pestaña no está activa
-  }, [reflectionsStorageKey, lectureId]);
+  }, [reflectionsStorageKey, lectureId, sourceCourseId]);
 
   // ✅ Capturamos el retorno del hook para usar saveManual
   const persistence = useActivityPersistence(persistenceKey, {
@@ -297,17 +308,49 @@ export default function BitacoraEticaIA({ theme }) {
     attempts: evaluationAttempts,
     history,
     submitted: isSubmitted,
-    onRehydrate: (data) => {
-      if (data.student_answers?.verificacionFuentes) setVerificacionFuentes(data.student_answers.verificacionFuentes);
-      if (data.student_answers?.procesoUsoIA) setProcesoUsoIA(data.student_answers.procesoUsoIA);
-      if (data.student_answers?.reflexionEtica) setReflexionEtica(data.student_answers.reflexionEtica);
-      if (data.student_answers?.declaraciones) setDeclaraciones(data.student_answers.declaraciones);
-      if (data.ai_feedbacks?.bitacora) setFeedbackCriterial(data.ai_feedbacks.bitacora);
+    onRehydrate: (data, meta) => {
+      if (meta?.isEmpty) {
+        setVerificacionFuentes('');
+        setProcesoUsoIA('');
+        setReflexionEtica('');
+        setDeclaraciones({
+          respuestasPropias: false,
+          verificacionRealizada: false,
+          usoTransparente: false,
+          contrasteMultifuente: false
+        });
+        setFeedbackCriterial(null);
+        setEvaluationAttempts(0);
+        setHistory([]);
+        setIsSubmitted(false);
+        setIsLocked(false);
+        setViewingVersion(null);
+        setTeacherScoreOverride(null);
+        return;
+      }
 
-      // 🆕 Rehidratación de historial
-      if (typeof data.attempts === 'number') setEvaluationAttempts(data.attempts);
-      if (Array.isArray(data.history)) setHistory(data.history);
-      if (data.submitted) setIsSubmitted(true);
+      const answers = data?.student_answers || {};
+      setVerificacionFuentes(answers.verificacionFuentes || '');
+      setProcesoUsoIA(answers.procesoUsoIA || '');
+      setReflexionEtica(answers.reflexionEtica || '');
+      setDeclaraciones(answers.declaraciones || {
+        respuestasPropias: false,
+        verificacionRealizada: false,
+        usoTransparente: false,
+        contrasteMultifuente: false
+      });
+      setFeedbackCriterial(data?.ai_feedbacks?.bitacora || null);
+
+      // Rehidratación de historial
+      if (typeof data?.attempts === 'number') {
+        setEvaluationAttempts(data.attempts);
+      } else {
+        setEvaluationAttempts(0);
+      }
+      setHistory(Array.isArray(data?.history) ? data.history : []);
+      const submitted = Boolean(data?.submitted);
+      setIsSubmitted(submitted);
+      setIsLocked(submitted);
     }
   });
 
@@ -506,9 +549,12 @@ export default function BitacoraEticaIA({ theme }) {
   const handleConfirmedClearLog = useCallback(() => {
     setShowClearLogConfirm(false);
     clearGlobalTutorLog();
-    // Legacy (por si existía)
-    localStorage.removeItem('tutorInteractionsLog');
-  }, [clearGlobalTutorLog]);
+    // Compatibilidad legacy (solo modo sin curso)
+    localStorage.removeItem(tutorLogStorageKey);
+    if (!sourceCourseId && lectureId === 'global') {
+      localStorage.removeItem('tutorInteractionsLog');
+    }
+  }, [clearGlobalTutorLog, tutorLogStorageKey, sourceCourseId, lectureId]);
 
   const clearTutorLog = useCallback(() => {
     setShowClearLogConfirm(true);
@@ -519,7 +565,25 @@ export default function BitacoraEticaIA({ theme }) {
       const { exportGenericPDF } = await import('../../utils/exportUtils');
       const sections = [];
       if (tutorInteractions.length > 0) {
-        sections.push({ heading: 'Interacciones con el Tutor IA', list: tutorInteractions.map(i => typeof i === 'string' ? i : `${i.role || 'usuario'}: ${i.content || JSON.stringify(i)}`) });
+        sections.push({
+          heading: 'Interacciones con el Tutor IA',
+          list: tutorInteractions.map((interaction) => {
+            if (typeof interaction === 'string') return `Estudiante: ${interaction}`;
+
+            const question = String(
+              interaction?.question ??
+              interaction?.content ??
+              ''
+            ).trim();
+            const context = String(interaction?.context || '').trim();
+            const mode = String(interaction?.tutorMode || interaction?.mode || '').trim();
+
+            const contextPart = context ? ` (Contexto: ${context})` : '';
+            const modePart = mode ? ` [Modo: ${mode}]` : '';
+
+            return `Estudiante: ${question || '(sin pregunta)'}${contextPart}${modePart}`;
+          })
+        });
       }
       sections.push({ heading: 'Reflexiones' });
       if (verificacionFuentes) sections.push({ heading: 'Verificación de Fuentes', text: verificacionFuentes });
@@ -686,7 +750,7 @@ export default function BitacoraEticaIA({ theme }) {
         textoId: lectureId && lectureId !== 'global' ? lectureId : null
       });
 
-      // � Registrar recompensas
+      // 🏆 Registrar recompensas
       if (rewards) {
         rewards.recordEvent('ARTIFACT_SUBMITTED', {
           artefacto: 'BitacoraEticaIA',
@@ -708,7 +772,7 @@ export default function BitacoraEticaIA({ theme }) {
           resourceId: rewardsResourceId
         });
 
-        // 🧠 Reflexión metacognitiva (este artefacto ES metacognición ética)
+        // Reflexión metacognitiva (este artefacto es metacognición ética)
         if (reflexionEtica.length > 80) {
           rewards.recordEvent('METACOGNITIVE_REFLECTION', {
             length: reflexionEtica.length,
@@ -729,7 +793,7 @@ export default function BitacoraEticaIA({ theme }) {
         logger.log('🎮 [BitacoraEticaIA] Recompensas registradas');
       }
 
-      // �🆕 Despachar evento de completitud solo si es el primer éxito o mejora
+      // Despachar evento de completitud solo si es el primer exito o mejora
       const event = new CustomEvent('evaluation-complete', {
         detail: {
           artefacto: 'BitacoraEticaIA',
@@ -974,7 +1038,7 @@ export default function BitacoraEticaIA({ theme }) {
       {/* Sección 2: Reflexión Metacognitiva */}
       <Section theme={effectiveTheme}>
         <SectionTitle theme={effectiveTheme}>
-          <span>🧠</span>
+          <span>IA</span>
           2. Reflexión Metacognitiva sobre el Uso de IA
         </SectionTitle>
 
@@ -1920,3 +1984,4 @@ const SecondaryButton = styled.button`
     background: ${props => props.theme.border};
   }
 `;
+

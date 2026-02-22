@@ -30,6 +30,6 @@ describe('generateFollowUp heurística', () => {
   test('fallback genérico', () => {
     const base = 'A'.repeat(160); // texto largo sin patrones especiales
     const res = generateFollowUp(base);
-    expect(res).toMatch(/implicaciones prácticas/);
+    expect(res).toMatch(/resulta más relevante/);
   });
 });

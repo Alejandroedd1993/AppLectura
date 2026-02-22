@@ -267,7 +267,6 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
       <RubricsGrid>
         {Object.entries(RUBRICAS_INFO).map(([rubricId, info]) => {
           const data = rubricProgress[rubricId] || { scores: [], average: 0 };
-          const summativeScore = getSummativeScore(data?.summative);
           const hasSummative = hasSummativeAttempt(data?.summative);
           const summativeAttempts = hasSummative ? Math.max(1, Number(data?.summative?.attemptsUsed || 1)) : 0;
           const intentos = (data?.scores?.length || 0) + summativeAttempts;

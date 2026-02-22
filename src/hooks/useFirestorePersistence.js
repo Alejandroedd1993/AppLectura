@@ -17,6 +17,7 @@ import {
   subscribeToStudentProgress 
 } from '../firebase/firestore';
 import logger from '../utils/logger';
+import { scopeKey } from '../utils/storageKeys';
 
 /**
  * useFirestorePersistence
@@ -32,10 +33,16 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
     onRehydrate = null, 
     autoSave = true, 
     debounceMs = 2000,
-    backupMerge = true
+    backupMerge = true,
+    courseId = null  // 🔧 FIX CROSS-COURSE: Opcional — para doc ID con scope de curso
   } = options;
 
   const { currentUser, isEstudiante } = useAuth();
+
+  const effectiveCourseId = courseId || (textoId && textoId !== 'global_progress' ? `free::${textoId}` : null);
+
+  // 🔧 FIX CROSS-COURSE: Clave local con scope de curso para backups
+  const localScopeKey = scopeKey(effectiveCourseId, textoId) || textoId;
 
   const backupTtlMs = (() => {
     try {
@@ -109,7 +116,7 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
     }
-  }, [currentUser?.uid, textoId, enabled, isEstudiante]);
+  }, [currentUser?.uid, textoId, enabled, isEstudiante, courseId]);
 
   // Actualizar ref cuando cambian los datos
   useEffect(() => {
@@ -127,7 +134,7 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
       logger.log('📥 [FirestorePersistence] Rehidratando desde Firestore...');
       setLoading(true);
       
-      const savedData = await getStudentProgress(currentUser.uid, textoId);
+      const savedData = await getStudentProgress(currentUser.uid, textoId, effectiveCourseId);
       
       if (savedData && onRehydrate) {
         logger.log('✅ [FirestorePersistence] Datos encontrados, rehidratando...');
@@ -145,7 +152,7 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
       
       // Fallback a localStorage
       try {
-        const localKey = `firestore_backup_${currentUser.uid}_${textoId}`;
+        const localKey = `firestore_backup_${currentUser.uid}_${localScopeKey}`;
         const localData = localStorage.getItem(localKey);
         if (localData && onRehydrate) {
           const parsed = JSON.parse(localData);
@@ -180,13 +187,16 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [currentUser, textoId, enabled, isEstudiante, onRehydrate]);
+  }, [currentUser, textoId, enabled, isEstudiante, onRehydrate, effectiveCourseId]);
 
   /**
    * Guarda datos en Firestore
    */
   const save = useCallback(async (dataToSave = null) => {
     const payload = dataToSave || dataRef.current;
+    const payloadWithScope = (payload && typeof payload === 'object')
+      ? { ...payload, sourceCourseId: payload.sourceCourseId ?? effectiveCourseId ?? null }
+      : payload;
     
     if (!currentUser || !textoId || !enabled || !isEstudiante) {
       logger.warn('⚠️ [FirestorePersistence] Guardado deshabilitado (no autenticado o no es estudiante)');
@@ -197,16 +207,16 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
       logger.log('💾 [FirestorePersistence] Guardando en Firestore...');
       setError(null);
       
-      await saveStudentProgress(currentUser.uid, textoId, payload);
+      await saveStudentProgress(currentUser.uid, textoId, payloadWithScope);
       
       setLastSaved(new Date());
       setSynced(true);
       
-      // Backup en localStorage
+      // Backup en localStorage (con scope de curso)
       try {
-        const localKey = `firestore_backup_${currentUser.uid}_${textoId}`;
-        if (!backupMerge || !payload || typeof payload !== 'object') {
-          localStorage.setItem(localKey, JSON.stringify(stampBackupMeta(payload)));
+        const localKey = `firestore_backup_${currentUser.uid}_${localScopeKey}`;
+        if (!backupMerge || !payloadWithScope || typeof payloadWithScope !== 'object') {
+          localStorage.setItem(localKey, JSON.stringify(stampBackupMeta(payloadWithScope)));
         } else {
           let prev = null;
           try {
@@ -217,24 +227,24 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
           }
 
           const base = prev && typeof prev === 'object' ? prev : {};
-          const next = { ...base, ...payload };
+          const next = { ...base, ...payloadWithScope };
 
-          if (payload.rubricProgress && typeof payload.rubricProgress === 'object') {
+          if (payloadWithScope.rubricProgress && typeof payloadWithScope.rubricProgress === 'object') {
             next.rubricProgress = {
               ...(base.rubricProgress && typeof base.rubricProgress === 'object' ? base.rubricProgress : {}),
-              ...payload.rubricProgress
+              ...payloadWithScope.rubricProgress
             };
           }
 
-          if (payload.activitiesProgress && typeof payload.activitiesProgress === 'object') {
+          if (payloadWithScope.activitiesProgress && typeof payloadWithScope.activitiesProgress === 'object') {
             next.activitiesProgress = {
               ...(base.activitiesProgress && typeof base.activitiesProgress === 'object' ? base.activitiesProgress : {}),
-              ...payload.activitiesProgress
+              ...payloadWithScope.activitiesProgress
             };
           }
 
-          if (Object.prototype.hasOwnProperty.call(payload, 'savedCitations')) {
-            next.savedCitations = payload.savedCitations;
+          if (payloadWithScope && typeof payloadWithScope === 'object' && Object.prototype.hasOwnProperty.call(payloadWithScope, 'savedCitations')) {
+            next.savedCitations = payloadWithScope.savedCitations;
           }
 
           localStorage.setItem(localKey, JSON.stringify(stampBackupMeta(next)));
@@ -252,7 +262,7 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
       setSynced(false);
       return false;
     }
-  }, [currentUser, textoId, enabled, isEstudiante]);
+  }, [currentUser, textoId, enabled, isEstudiante, effectiveCourseId]);
 
   // 🛡️ Flush al cambiar de textoId / usuario o desmontar:
   // si hay un autosave pendiente, lo ejecutamos inmediatamente para evitar perder cambios.
@@ -384,14 +394,15 @@ export default function useFirestorePersistence(textoId, data, options = {}) {
           onRehydrate(updatedData);
           setSynced(true);
         }
-      }
+      },
+      effectiveCourseId  // 🔧 FIX CROSS-COURSE: Pasar courseId para suscribirse al doc correcto
     );
     
     return () => {
       logger.log('👂 [FirestorePersistence] Cancelando suscripción');
       unsubscribe();
     };
-  }, [currentUser, textoId, enabled, isEstudiante, onRehydrate]);
+  }, [currentUser, textoId, enabled, isEstudiante, onRehydrate, effectiveCourseId]);
 
   return {
     save,           // Función para guardar manualmente

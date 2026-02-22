@@ -14,12 +14,12 @@ import { getDraftKey } from '../services/sessionManager';
  * @param {object} activitiesProgress - Objeto con progreso de actividades (desde AppContext)
  * @returns {object} - { hasDrafts: boolean, details: array }
  */
-export function checkUnsaveDrafts(textoId = null, rubricProgress = {}, activitiesProgress = {}) {
+export function checkUnsaveDrafts(textoId = null, rubricProgress = {}, activitiesProgress = {}, courseId = null) {
   const details = [];
   let hasDrafts = false;
 
-  // 🆕 Helper para generar claves namespaced
-  const key = (base) => getDraftKey(base, textoId);
+  // 🆕 Helper para generar claves namespaced (con scope de curso)
+  const key = (base) => getDraftKey(base, textoId, courseId);
 
   // 🆕 FASE 3 FIX: rubricProgress ahora viene como parámetro desde React context
   // Ya no leemos de localStorage (la clave 'rubricProgress' nunca existía allí)
@@ -158,8 +158,8 @@ export function checkUnsaveDrafts(textoId = null, rubricProgress = {}, activitie
  * 🆕 FASE 3 FIX: Acepta rubricProgress como parámetro
  * 🆕 FASE 4 FIX: Acepta activitiesProgress como parámetro
  */
-export function getWarningMessage(textoId = null, rubricProgress = {}, activitiesProgress = {}) {
-  const { hasDrafts, details } = checkUnsaveDrafts(textoId, rubricProgress, activitiesProgress);
+export function getWarningMessage(textoId = null, rubricProgress = {}, activitiesProgress = {}, courseId = null) {
+  const { hasDrafts, details } = checkUnsaveDrafts(textoId, rubricProgress, activitiesProgress, courseId);
 
   if (!hasDrafts) return null;
 

@@ -1,0 +1,252 @@
+﻿diff --git a/src/context/AppContext.js b/src/context/AppContext.js
+index 1ea250d0..a85d6d86 100644
+--- a/src/context/AppContext.js
++++ b/src/context/AppContext.js
+@@ -34,12 +34,13 @@ import {
+ import { auth } from '../firebase/config';
+ // (firebase/sessionManager) qued├│ deprecado en AppContext; se mantiene en otros m├│dulos.
+ import { useSessionMaintenance } from '../hooks/useSessionMaintenance';
+ import useFirestorePersistence from '../hooks/useFirestorePersistence';
+ import { generateBasicAnalysis } from '../services/basicAnalysisService';
+ import { runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
++import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
+ import logger from '../utils/logger';
+ import {
+   createEmptyRubricProgressV2,
+   createEmptyFormative,
+   normalizeRubricProgress,
+   checkEssayPrerequisitesFromProgress
+@@ -489,12 +490,14 @@ export const AppContextProvider = ({ children }) => {
+   }, [currentUser?.uid, cloudBackupWriteOnly]);
+ 
+   const isStudent = userData?.role === 'estudiante';
+ 
+   // Ref para controlar restauraci├│n y evitar reset de an├ílisis
+   const isRestoringRef = React.useRef(false);
++  const activeRestoreTokenRef = useRef(null);
++  const pdfRestoreAbortRef = useRef(null);
+ 
+   // ­ƒøí´©Å Anti-loop: cuando el progreso se actualiza desde Firestore, evitamos re-escribir inmediatamente
+   const lastRubricProgressFromCloudAtRef = useRef(0);
+   const lastActivitiesProgressFromCloudAtRef = useRef(0);
+   const lastRewardsStateFromCloudAtRef = useRef(0);
+   const lastSavedCitationsFromCloudAtRef = useRef(0);
+@@ -3286,12 +3289,27 @@ export const AppContextProvider = ({ children }) => {
+       logger.error('ÔØî [AppContext.updateCurrentSession] Error:', error);
+       return null;
+     }
+   }, [texto, archivoActual, activeLecture, completeAnalysis, rubricProgress, savedCitations, activitiesProgress, modoOscuro, currentTextoId, sourceCourseId, currentUser, userData, cloudBackupWriteOnly]);
+ 
+   const restoreSession = useCallback(async (session) => {
++    const restoreToken = `${session?.id || 'unknown'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
++    activeRestoreTokenRef.current = restoreToken;
++
++    if (pdfRestoreAbortRef.current) {
++      try {
++        pdfRestoreAbortRef.current.abort();
++      } catch { }
++    }
++
++    const restoreAbortController = new AbortController();
++    pdfRestoreAbortRef.current = restoreAbortController;
++
++    const isRestoreStillActive = () => activeRestoreTokenRef.current === restoreToken;
++    const canApplyRestoreState = () => isRestoreStillActive() && getCurrentSessionId() === session?.id;
++
+     try {
+       // ­ƒøí´©Å Activar flag de restauraci├│n para bloquear efectos secundarios (como limpieza de an├ílisis)
+       isRestoringRef.current = true;
+ 
+       // ­ƒöÆ Deshabilitar auto-guardado temporalmente durante restauraci├│n
+       const currentId = getCurrentSessionId();
+@@ -3310,12 +3328,17 @@ export const AppContextProvider = ({ children }) => {
+         setSourceCourseId: (id) => setSourceCourseId(id), // ­ƒåò CR├ìTICO: Restaurar ID del curso
+         switchLecture // ­ƒåò CAMBIO AT├ôMICO para restauraci├│n
+       };
+ 
+       const success = restoreSessionToState(session, setters);
+ 
++      if (!isRestoreStillActive()) {
++        logger.log('ÔÅ¡´©Å [AppContext] Restauraci├│n obsoleta detectada, ignorando resultado.');
++        return false;
++      }
++
+       if (success) {
+         // ­ƒåò CR├ìTICO: Si es un PDF con fileURL, descargar el archivo para poder mostrarlo
+         const isPDF = session.text?.fileType === 'application/pdf' ||
+           session.text?.fileName?.toLowerCase().endsWith('.pdf');
+         let fileURL =
+           session.text?.fileURL ||
+@@ -3375,104 +3398,62 @@ export const AppContextProvider = ({ children }) => {
+         }
+ 
+         if (isPDF && fileURL) {
+           logger.log('­ƒôä [AppContext] Restaurando PDF. fileURL:', fileURL?.substring(0, 80));
+           let pdfRestored = false;
+ 
+-          // ÔöÇÔöÇ INTENTO 0: Firebase SDK getBlob (evita CORS completamente) ÔöÇÔöÇ
+-          if (!pdfRestored) {
+-            try {
+-              logger.log('­ƒôä [AppContext] Intento 0: Firebase SDK getBlob...');
+-              const { ref: storageRef, getBlob: firebaseGetBlob } = await import('firebase/storage');
+-              const { storage: storageInstance } = await import('../firebase/config');
++          try {
++            const recovered = await recoverPdfBlobWithFallback(fileURL, {
++              backendBaseUrl: BACKEND_URL.replace(/\/$/, ''),
++              signal: restoreAbortController.signal,
++              logger,
++              prefix: '[AppContext]'
++            });
+ 
+-              // Extraer el storage path de la download URL
+-              // Formato: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encodedPath}?alt=media&token=...
+-              let storagePath = null;
+-              try {
+-                const urlObj = new URL(fileURL);
+-                const pathSegment = urlObj.pathname.split('/o/')[1];
+-                if (pathSegment) {
+-                  storagePath = decodeURIComponent(pathSegment);
+-                }
+-              } catch (_urlErr) {
+-                logger.warn('ÔÜá´©Å [AppContext] No se pudo parsear la URL de Storage:', _urlErr.message);
++            if (recovered?.blob) {
++              if (!canApplyRestoreState()) {
++                logger.log('ÔÅ¡´©Å [AppContext] Restauraci├│n PDF cancelada por cambio de sesi├│n.');
++                return false;
+               }
+ 
+-              if (storagePath) {
+-                const fileRef = storageRef(storageInstance, storagePath);
+-                const blob = await firebaseGetBlob(fileRef);
+-                if (blob && blob.size > 500) {
+-                  const objectUrl = URL.createObjectURL(blob);
+-                  const file = new File([blob], session.text.fileName || 'documento.pdf', { type: 'application/pdf' });
+-                  setArchivoActualStable({ name: session.text.fileName, type: 'application/pdf', fileURL, file, objectUrl });
+-                  logger.log('Ô£à [AppContext] PDF restaurado via Firebase SDK getBlob:', blob.size, 'bytes');
+-                  pdfRestored = true;
+-                }
+-              }
+-            } catch (sdkErr) {
+-              logger.warn('ÔÜá´©Å [AppContext] Firebase SDK getBlob fall├│:', sdkErr.message);
++              const objectUrl = URL.createObjectURL(recovered.blob);
++              const file = new File([recovered.blob], session.text.fileName || 'documento.pdf', { type: 'application/pdf' });
++              setArchivoActualStable({ name: session.text.fileName, type: 'application/pdf', fileURL, file, objectUrl });
++              logger.log(`Ô£à [AppContext] PDF restaurado via ${recovered.method}:`, recovered.blob.size, 'bytes');
++              pdfRestored = true;
+             }
+-          }
+-
+-          // ÔöÇÔöÇ INTENTO 1: Fetch DIRECTO desde Firebase Storage (sin proxy) ÔöÇÔöÇ
+-          if (!pdfRestored) {
+-            try {
+-              logger.log('­ƒôä [AppContext] Intento 1: fetch directo...');
+-              const directRes = await fetch(fileURL, { mode: 'cors' });
+-              if (directRes.ok) {
+-                const blob = await directRes.blob();
+-                if (blob.size > 500) { // Sanity: un PDF real pesa >500 bytes
+-                  const objectUrl = URL.createObjectURL(blob);
+-                  const file = new File([blob], session.text.fileName || 'documento.pdf', { type: 'application/pdf' });
+-                  setArchivoActualStable({ name: session.text.fileName, type: 'application/pdf', fileURL, file, objectUrl });
+-                  logger.log('Ô£à [AppContext] PDF restaurado via fetch directo:', blob.size, 'bytes');
+-                  pdfRestored = true;
+-                }
+-              }
+-            } catch (directErr) {
+-              logger.warn('ÔÜá´©Å [AppContext] Fetch directo fall├│ (CORS?):', directErr.message);
+-            }
+-          }
+-
+-          // ÔöÇÔöÇ INTENTO 2: Proxy backend ÔöÇÔöÇ
+-          if (!pdfRestored) {
+-            try {
+-              logger.log('­ƒôä [AppContext] Intento 2: proxy backend...');
+-              const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+-              const proxyUrl = `${BACKEND_BASE_URL}/api/storage/proxy?url=${encodeURIComponent(fileURL)}`;
+-              const proxyRes = await fetch(proxyUrl);
+-              if (proxyRes.ok) {
+-                const blob = await proxyRes.blob();
+-                if (blob.size > 500) {
+-                  const objectUrl = URL.createObjectURL(blob);
+-                  const file = new File([blob], session.text.fileName || 'documento.pdf', { type: 'application/pdf' });
+-                  setArchivoActualStable({ name: session.text.fileName, type: 'application/pdf', fileURL, file, objectUrl });
+-                  logger.log('Ô£à [AppContext] PDF restaurado via proxy:', blob.size, 'bytes');
+-                  pdfRestored = true;
+-                }
+-              }
+-            } catch (proxyErr) {
+-              logger.warn('ÔÜá´©Å [AppContext] Proxy fall├│:', proxyErr.message);
++          } catch (pdfRecoverErr) {
++            if (pdfRecoverErr?.name === 'AbortError') {
++              logger.log('ÔÅ¡´©Å [AppContext] Restauraci├│n PDF abortada por nueva restauraci├│n.');
++              return false;
+             }
++            logger.warn('ÔÜá´©Å [AppContext] Fall├│ recuperaci├│n de PDF con cascada:', pdfRecoverErr?.message || pdfRecoverErr);
+           }
+ 
+           // ÔöÇÔöÇ INTENTO 3: Pasar URL directa a react-pdf (sin descargar previamente) ÔöÇÔöÇ
+           if (!pdfRestored) {
+             logger.log('­ƒôä [AppContext] Intento 3: pasando URL directa a visor PDF');
++            if (!canApplyRestoreState()) {
++              logger.log('ÔÅ¡´©Å [AppContext] Restauraci├│n PDF cancelada por cambio de sesi├│n (URL directa).');
++              return false;
++            }
+             setArchivoActualStable({
+               name: session.text.fileName || 'documento.pdf',
+               type: 'application/pdf',
+               fileURL: fileURL,
+               objectUrl: fileURL  // react-pdf intentar├í cargarlo internamente
+             });
+             pdfRestored = true; // No ideal, pero al menos le da una oportunidad al visor
+           }
+         } else if (isPDF && !fileURL) {
+           // PDF sin URL - establecer archivoActual para que VisorTexto muestre diagn├│stico
+           logger.warn('ÔÜá´©Å [AppContext] PDF detectado pero sin fileURL. textoId:', session.currentTextoId);
++          if (!canApplyRestoreState()) {
++            logger.log('ÔÅ¡´©Å [AppContext] Restauraci├│n PDF sin URL cancelada por cambio de sesi├│n.');
++            return false;
++          }
+           setArchivoActualStable({
+             name: session.text?.fileName || 'documento.pdf',
+             type: 'application/pdf',
+             fileURL: null,
+             __pdfDiag: {
+               textoId: session.currentTextoId || session.text?.metadata?.id || 'N/A',
+@@ -3480,12 +3461,16 @@ export const AppContextProvider = ({ children }) => {
+               sessionId: session.id || 'N/A',
+               reason: 'fileURL no encontrada en sesi├│n, sesiones locales, ni Firestore'
+             }
+           });
+         } else if (session.text?.fileName && session.text?.fileType) {
+           // Texto plano - solo guardar referencia
++          if (!canApplyRestoreState()) {
++            logger.log('ÔÅ¡´©Å [AppContext] Restauraci├│n de archivo cancelada por cambio de sesi├│n.');
++            return false;
++          }
+           setArchivoActualStable({
+             name: session.text.fileName,
+             type: session.text.fileType,
+             fileURL: fileURL || null
+           });
+         }
+@@ -3541,14 +3526,21 @@ export const AppContextProvider = ({ children }) => {
+       return false;
+     } finally {
+       // ­ƒöº H4 FIX: Siempre programar limpieza del flag, sin importar el resultado
+       // El setTimeout de 500ms permite que React procese los state updates antes
+       // de re-habilitar el auto-guardado
+       setTimeout(() => {
++        if (!isRestoreStillActive()) {
++          return;
++        }
+         localStorage.removeItem('__restoring_session__');
+         isRestoringRef.current = false;
++        if (pdfRestoreAbortRef.current === restoreAbortController) {
++          pdfRestoreAbortRef.current = null;
++        }
++        activeRestoreTokenRef.current = null;
+         logger.log('­ƒöô [AppContext] Auto-guardado re-habilitado y protecci├│n liberada');
+       }, 500);
+     }
+   }, [setTextoWithDebug, setCompleteAnalysis, setArchivoActualStable, setRubricProgress, setSavedCitations, setActivitiesProgress, setCurrentTextoId, setSourceCourseId, currentUser, activeLecture, archivoActual]);
+ 
+   // ­ƒåò AUTO-GUARDAR sesi├│n cuando el an├ílisis se complete

@@ -44,6 +44,7 @@ import {
 } from '../firebase/firestore';
 import { validateAndSanitizeSession } from '../utils/sessionValidator';
 import logger from '../utils/logger';
+import { scopeKey } from '../utils/storageKeys';
 
 const SESSIONS_KEY_PREFIX = 'appLectura_sessions_';
 const LEGACY_SESSIONS_KEY = 'appLectura_sessions';
@@ -54,13 +55,15 @@ const LEGACY_PENDING_SYNCS_KEY = 'appLectura_pending_syncs'; // Compat legacy (s
 
 const MAX_SESSIONS = 20; // 🎯 Límite aumentado a 20 para evitar pérdida de progreso en cursos
 const DELETED_SESSIONS_KEY_PREFIX = 'appLectura_deleted_sessions_'; // 🆕 Tombstones para evitar resurrección
-const TOMBSTONE_TTL = 60000; // 60 segundos de vida para tombstones
+const TOMBSTONE_TTL = 10 * 60 * 1000; // 10 minutos de vida para tombstones (tolerancia offline)
 
 // Variable global para mantener referencia al usuario actual
 let currentUserId = null;
 
 // 🆕 Set para rastrear sesiones pendientes de sincronización
 const pendingSyncIds = new Set();
+let unloadSyncSetupDone = false;
+let opportunisticSyncInFlight = false;
 
 // ============================================
 // 🪦 SISTEMA DE TOMBSTONES ANTI-RESURRECCIÓN
@@ -209,14 +212,14 @@ export async function saveDraftBackupToCloudWriteOnly({
 
   const drafts = artifactsDrafts && typeof artifactsDrafts === 'object'
     ? artifactsDrafts
-    : captureArtifactsDrafts(textoId);
+    : captureArtifactsDrafts(textoId, sourceCourseId);
 
   if (isDraftsEffectivelyEmpty(drafts)) {
     return { ok: false, reason: 'empty-drafts' };
   }
 
   const now = Date.now();
-  const sessionId = `draft_backup_${textoId}`;
+  const sessionId = `draft_backup_${scopeKey(sourceCourseId, textoId) || textoId}`;
 
   await saveDraftBackupToFirestore(currentUserId, {
     id: sessionId,
@@ -325,17 +328,19 @@ function migratePendingSyncsIfNeeded(uid) {
 
 /**
  * 🆕 FASE 1 FIX: Genera clave namespaced para borradores
- * Aísla borradores por textoId para evitar contaminación entre lecturas
+ * Aísla borradores por textoId (y opcionalmente courseId) para evitar contaminación entre lecturas
  * @param {string} baseKey - Clave base (ej: 'resumenAcademico_draft')
  * @param {string|null} textoId - ID del texto actual
- * @returns {string} - Clave namespaced (ej: 'abc123_resumenAcademico_draft')
+ * @param {string|null} courseId - ID del curso (opcional, para aislamiento cross-course)
+ * @returns {string} - Clave namespaced (ej: 'courseId_textoId_resumenAcademico_draft')
  */
-export function getDraftKey(baseKey, textoId = null) {
+export function getDraftKey(baseKey, textoId = null, courseId = null) {
   if (!textoId) {
     // Fallback a clave global si no hay textoId (compatibilidad)
     return baseKey;
   }
-  return `${textoId}_${baseKey}`;
+  const scoped = scopeKey(courseId, textoId) || textoId;
+  return `${scoped}_${baseKey}`;
 }
 
 // 🛡️ MIGRACIÓN LEGACY: Mover datos de la key global a la key del usuario actual (solo primera vez)
@@ -790,7 +795,7 @@ export function createSessionFromState(state, { syncToCloud = true } = {}) {
     rubricProgress: state.rubricProgress || {},
     activitiesProgress: state.activitiesProgress || {},
     notes: state.notes || [],
-    artifactsDrafts: captureArtifactsDrafts(state.currentTextoId || state.text?.metadata?.id || state.text?.textoId || null), // 🆕 Incluir borradores al crear
+    artifactsDrafts: captureArtifactsDrafts(state.currentTextoId || state.text?.metadata?.id || state.text?.textoId || null, state.sourceCourseId || null), // 🆕 Incluir borradores al crear
     settings: {
       modoOscuro: state.modoOscuro || false
     }
@@ -814,22 +819,38 @@ export function updateCurrentSession(updates, { syncToCloud = true } = {}) {
   const session = loadSession(currentId);
   if (!session) return false;
 
-  // 🛡️ FIX CRÍTICO: Validar que el update pertenece al mismo textoId de la sesión
+  // 🛡️ FIX CRÍTICO: Validar que el update pertenece al mismo textoId+courseId de la sesión
   // Esto previene contaminación cruzada entre lecturas durante el auto-save
   const sessionTextoId = session.currentTextoId || session.text?.metadata?.id || session.text?.textoId || null;
   const updateTextoId = updates.currentTextoId || updates.text?.metadata?.id || null;
+  const sessionCourseId = session.sourceCourseId || null;
+  const updateCourseId = updates.sourceCourseId || null;
 
   if (sessionTextoId && updateTextoId && sessionTextoId !== updateTextoId) {
-    logger.warn('🚫 [SessionManager.updateCurrentSession] ¡CONTAMINACIÓN BLOQUEADA!');
+    logger.warn('🚫 [SessionManager.updateCurrentSession] ¡CONTAMINACIÓN BLOQUEADA (textoId)!');
     logger.warn(`   Sesión pertenece a textoId: ${sessionTextoId}`);
     logger.warn(`   Update viene con textoId: ${updateTextoId}`);
     logger.warn('   NO se actualizará para proteger datos de la sesión.');
     return false;
   }
 
+  // 🛡️ FIX: Bloquear si mismo textoId pero courseIds no coinciden.
+  // Incluye el caso donde la sesión es legacy (null) y el update trae courseId, o viceversa.
+  if (sessionTextoId && updateTextoId && sessionTextoId === updateTextoId) {
+    const courseMismatch = (sessionCourseId || updateCourseId) && sessionCourseId !== updateCourseId;
+    if (courseMismatch) {
+      logger.warn('🚫 [SessionManager.updateCurrentSession] ¡CONTAMINACIÓN BLOQUEADA (courseId)!');
+      logger.warn(`   Sesión pertenece a courseId: ${sessionCourseId}`);
+      logger.warn(`   Update viene con courseId: ${updateCourseId}`);
+      logger.warn('   NO se actualizará para proteger datos de la sesión.');
+      return false;
+    }
+  }
+
   // 🆕 CRÍTICO: Siempre capturar artifactsDrafts actuales cuando se actualiza
   const textoIdForDrafts = updates.currentTextoId ?? session.currentTextoId ?? session.text?.metadata?.id ?? session.text?.textoId ?? null;
-  const freshArtifacts = captureArtifactsDrafts(textoIdForDrafts);
+  const courseIdForDrafts = updates.sourceCourseId ?? session.sourceCourseId ?? null;
+  const freshArtifacts = captureArtifactsDrafts(textoIdForDrafts, courseIdForDrafts);
 
   const updated = {
     ...session,
@@ -981,7 +1002,7 @@ export function restoreSessionToState(session, contextSetters) {
     // 🆕 Restaurar borradores de artefactos
     if (session.artifactsDrafts) {
       logger.log('📋 Restaurando borradores de artefactos...');
-      restoreArtifactsDrafts(session.artifactsDrafts, textoIdToRestore);
+      restoreArtifactsDrafts(session.artifactsDrafts, textoIdToRestore, session.sourceCourseId || null);
     }
 
     // Establecer como sesión actual
@@ -1002,11 +1023,12 @@ export function restoreSessionToState(session, contextSetters) {
 
 /**
  * Capturar todos los borradores de artefactos desde sessionStorage
- * 🆕 FASE 1 FIX: Ahora usa claves namespaced por textoId
+ * 🆕 FASE 1 FIX: Ahora usa claves namespaced por textoId (y opcionalmente courseId)
  * @param {string|null} textoId - ID del texto para namespace de claves
+ * @param {string|null} courseId - ID del curso para aislamiento cross-course
  */
-export function captureArtifactsDrafts(textoId = null) {
-  const key = (base) => getDraftKey(base, textoId);
+export function captureArtifactsDrafts(textoId = null, courseId = null) {
+  const key = (base) => getDraftKey(base, textoId, courseId);
 
   const artifacts = {
     resumenAcademico: {
@@ -1041,18 +1063,19 @@ export function captureArtifactsDrafts(textoId = null) {
 
 /**
  * Restaurar borradores de artefactos en sessionStorage
- * 🆕 FASE 1 FIX: Ahora usa claves namespaced por textoId
+ * 🆕 FASE 1 FIX: Ahora usa claves namespaced por textoId (y opcionalmente courseId)
  * @param {object} artifacts - Objeto con borradores
  * @param {string|null} textoId - ID del texto para namespace de claves
+ * @param {string|null} courseId - ID del curso para aislamiento cross-course
  */
-export function restoreArtifactsDrafts(artifacts, textoId = null) {
+export function restoreArtifactsDrafts(artifacts, textoId = null, courseId = null) {
   if (!artifacts) return;
 
-  const key = (base) => getDraftKey(base, textoId);
+  const key = (base) => getDraftKey(base, textoId, courseId);
 
   try {
     // Limpiar primero (solo las claves de este textoId)
-    clearArtifactsDrafts(textoId);
+    clearArtifactsDrafts(textoId, courseId);
 
     // Restaurar resumen académico
     if (artifacts.resumenAcademico?.draft) {
@@ -1125,11 +1148,12 @@ export function restoreArtifactsDrafts(artifacts, textoId = null) {
 
 /**
  * Limpiar todos los borradores de artefactos de sessionStorage
- * 🆕 FASE 1 FIX: Ahora usa claves namespaced por textoId
+ * 🆕 FASE 1 FIX: Ahora usa claves namespaced por textoId (y opcionalmente courseId)
  * @param {string|null} textoId - ID del texto para namespace de claves
+ * @param {string|null} courseId - ID del curso para aislamiento cross-course
  */
-export function clearArtifactsDrafts(textoId = null) {
-  const key = (base) => getDraftKey(base, textoId);
+export function clearArtifactsDrafts(textoId = null, courseId = null) {
+  const key = (base) => getDraftKey(base, textoId, courseId);
 
   try {
     // Resumen Académico
@@ -1170,8 +1194,8 @@ export function clearArtifactsDrafts(textoId = null) {
  * Esto evita la doble llamada que causó guardados duplicados y posible contaminación.
  */
 export function captureCurrentState(contextState) {
-  // Capturar borradores de artefactos
-  const artifactsDrafts = captureArtifactsDrafts(contextState.currentTextoId || null);
+  // Capturar borradores de artefactos (con scope de curso)
+  const artifactsDrafts = captureArtifactsDrafts(contextState.currentTextoId || null, contextState.sourceCourseId || null);
 
   const sessionData = {
     text: contextState.texto ? {
@@ -1439,6 +1463,28 @@ export async function syncPendingSessions() {
  */
 export function setupBeforeUnloadSync() {
   if (typeof window === 'undefined') return;
+  if (unloadSyncSetupDone) return;
+  unloadSyncSetupDone = true;
+
+  const triggerOpportunisticSync = (reason) => {
+    if (!currentUserId || opportunisticSyncInFlight) return;
+    const pendingIds = getPendingSyncs();
+    if (pendingIds.length === 0) return;
+
+    opportunisticSyncInFlight = true;
+    Promise.resolve(syncPendingSessions())
+      .then(({ synced, failed }) => {
+        if (synced > 0 || failed > 0) {
+          logger.log(`🔄 [SessionManager] Sync oportunista (${reason}): ${synced} ok, ${failed} fallidas`);
+        }
+      })
+      .catch((err) => {
+        logger.warn(`⚠️ [SessionManager] Sync oportunista (${reason}) falló:`, err?.message || err);
+      })
+      .finally(() => {
+        opportunisticSyncInFlight = false;
+      });
+  };
 
   window.addEventListener('beforeunload', (_event) => {
     const pendingIds = getPendingSyncs();
@@ -1449,6 +1495,16 @@ export function setupBeforeUnloadSync() {
       // event.preventDefault();
       // event.returnValue = 'Hay cambios sin guardar en la nube';
     }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      triggerOpportunisticSync('visibilitychange:hidden');
+    }
+  });
+
+  window.addEventListener('pagehide', () => {
+    triggerOpportunisticSync('pagehide');
   });
 
   logger.log('✅ [SessionManager] beforeunload sync handler registrado');

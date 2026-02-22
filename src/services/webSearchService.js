@@ -303,11 +303,17 @@ class WebSearchService {
         headers: authHeader
       }, 5000);
       
-      if ([401, 403, 429].includes(response.status)) return true;
+      if ([401, 403, 429].includes(response.status)) return false;
       if (!response.ok) return false;
       
       const data = await response.json();
-      return data.configuracion?.modo_funcionamiento !== 'simulada';
+      const config = data?.configuracion || {};
+      const providerAvailable = Boolean(
+        config.tavily_disponible ||
+        config.serper_disponible ||
+        config.bing_disponible
+      );
+      return Boolean(config.enable_web_search && providerAvailable);
     } catch (error) {
       logger.warn('⚠️ No se pudo verificar disponibilidad de búsqueda web:', error);
       return false;

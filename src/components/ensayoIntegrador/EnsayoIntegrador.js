@@ -251,6 +251,7 @@ export default function EnsayoIntegrador({ theme }) {
     texto,
     rubricProgress,
     currentTextoId,
+    sourceCourseId,
     checkEssayPrerequisites,
     submitSummativeEssay,
     getCitations
@@ -284,8 +285,8 @@ export default function EnsayoIntegrador({ theme }) {
   }, [getCitations, currentTextoId]);
 
   // --- Helper: claves de sessionStorage namespaced ---
-  const draftTextKey = useMemo(() => getDraftKey('ensayoIntegrador_text', currentTextoId), [currentTextoId]);
-  const draftDimKey = useMemo(() => getDraftKey('ensayoIntegrador_dimension', currentTextoId), [currentTextoId]);
+  const draftTextKey = useMemo(() => getDraftKey('ensayoIntegrador_text', currentTextoId, sourceCourseId), [currentTextoId, sourceCourseId]);
+  const draftDimKey = useMemo(() => getDraftKey('ensayoIntegrador_dimension', currentTextoId, sourceCourseId), [currentTextoId, sourceCourseId]);
 
   // rubricId necesita estar antes de los callbacks que lo usan
   const rubricId = dimension ? DIMENSION_TO_RUBRIC[dimension] : null;

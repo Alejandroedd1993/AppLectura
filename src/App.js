@@ -175,20 +175,18 @@ const MainContent = styled.main`
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 100vw;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   position: relative;
   
   /* Responsive breakpoints */
   @media (min-width: 768px) {
     flex-direction: row;
-    max-width: 1400px;
-    padding: 0 1rem;
+    padding: 0 0.5rem;
   }
   
   @media (min-width: 1200px) {
-    max-width: 1600px;
-    padding: 0 2rem;
+    padding: 0 1rem;
   }
 `;
 
@@ -389,8 +387,8 @@ const TeacherModeButton = styled.button`
 const TeacherViewWrapper = styled.div`
   flex: 1;
   width: 100%;
-  margin: 0 auto;
-  max-width: 1600px;
+  margin: 0;
+  max-width: none;
   padding: 1rem;
 `;
 

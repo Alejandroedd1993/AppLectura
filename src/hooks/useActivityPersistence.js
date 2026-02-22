@@ -13,6 +13,9 @@ import { useEffect, useRef, useCallback } from 'react';
 
 import logger from '../utils/logger';
 const STORAGE_KEY_PREFIX = 'activity_results_';
+const STORAGE_INDEX_KEY = `${STORAGE_KEY_PREFIX}index`;
+const LEGACY_SCOPE_KEY = '__legacy__';
+const INDEX_SCOPE_SEPARATOR = '::';
 const VERSION = '1.1'; // Incrementado por cambio en estructura de claves
 const MAX_STORED_DOCUMENTS = 15; // Límite de documentos almacenados
 const TTL_DAYS = 30; // Tiempo de vida: 30 días
@@ -42,7 +45,7 @@ export default function useActivityPersistence(documentId, options = {}) {
     onRehydrate
   } = options;
 
-  const lastDocIdRef = useRef(null);
+  const lastScopeRef = useRef(null);
   const hasRehydratedRef = useRef(false);
 
   // Mantener siempre una referencia al último saveResults (para flush en unmount sin re-ejecutar efectos)
@@ -52,15 +55,53 @@ export default function useActivityPersistence(documentId, options = {}) {
    * Genera la clave de storage para este documento
    * 🆕 Incluye courseId para aislar datos entre cursos
    */
-  const getStorageKey = useCallback((docId) => {
+  const buildStorageKey = useCallback((docId, scopedCourseId = courseId) => {
     if (!docId) return null;
-    // Si hay courseId, incluirlo en la clave para aislar por curso
-    if (courseId) {
-      return `${STORAGE_KEY_PREFIX}${courseId}_${docId}`;
+    if (scopedCourseId) {
+      return `${STORAGE_KEY_PREFIX}${scopedCourseId}_${docId}`;
     }
-    // Fallback a solo docId (para compatibilidad con datos antiguos)
     return `${STORAGE_KEY_PREFIX}${docId}`;
   }, [courseId]);
+
+  const getStorageKey = useCallback((docId) => {
+    return buildStorageKey(docId, courseId);
+  }, [buildStorageKey, courseId]);
+
+  const getIndexEntryKey = useCallback((docId, scopedCourseId = courseId) => {
+    if (!docId) return null;
+    return `${scopedCourseId || LEGACY_SCOPE_KEY}${INDEX_SCOPE_SEPARATOR}${docId}`;
+  }, [courseId]);
+
+  const parseIndexEntry = useCallback((entryKey, entryData = null) => {
+    if (entryData && typeof entryData === 'object' && typeof entryData.docId === 'string') {
+      return {
+        docId: entryData.docId,
+        courseId: entryData.courseId || null
+      };
+    }
+
+    if (typeof entryKey === 'string') {
+      const separatorPos = entryKey.indexOf(INDEX_SCOPE_SEPARATOR);
+      if (separatorPos >= 0) {
+        const parsedScope = entryKey.slice(0, separatorPos);
+        const parsedDocId = entryKey.slice(separatorPos + INDEX_SCOPE_SEPARATOR.length);
+        return {
+          docId: parsedDocId || null,
+          courseId: parsedScope === LEGACY_SCOPE_KEY ? null : parsedScope
+        };
+      }
+
+      return {
+        docId: entryKey || null,
+        courseId: null
+      };
+    }
+
+    return {
+      docId: null,
+      courseId: null
+    };
+  }, []);
 
   /**
    * Calcula métricas de progreso
@@ -114,53 +155,60 @@ export default function useActivityPersistence(documentId, options = {}) {
    */
   const updateDocumentIndex = useCallback((docId, metrics) => {
     try {
-      const indexKey = `${STORAGE_KEY_PREFIX}index`;
-      const indexRaw = localStorage.getItem(indexKey) || '{}';
+      const entryKey = getIndexEntryKey(docId, courseId);
+      if (!entryKey) return;
+
+      const indexRaw = localStorage.getItem(STORAGE_INDEX_KEY) || '{}';
       const index = JSON.parse(indexRaw);
 
-      index[docId] = {
+      index[entryKey] = {
         last_modified: Date.now(),
         completion: metrics.completion_percentage,
-        answered_count: metrics.answered_count
+        answered_count: metrics.answered_count,
+        docId,
+        courseId: courseId || null
       };
 
       // Limpiar entradas antiguas si excedemos el límite
       const entries = Object.entries(index);
       if (entries.length > MAX_STORED_DOCUMENTS) {
         // Ordenar por última modificación (más antiguos primero)
-        entries.sort((a, b) => a[1].last_modified - b[1].last_modified);
+        entries.sort((a, b) => Number(a?.[1]?.last_modified || 0) - Number(b?.[1]?.last_modified || 0));
 
         // Eliminar documentos más antiguos
         const toRemove = entries.slice(0, entries.length - MAX_STORED_DOCUMENTS);
-        toRemove.forEach(([oldDocId]) => {
-          const oldKey = getStorageKey(oldDocId);
+        toRemove.forEach(([oldEntryKey, oldData]) => {
+          const parsed = parseIndexEntry(oldEntryKey, oldData);
+          const oldKey = buildStorageKey(parsed.docId, parsed.courseId);
           if (oldKey) {
             localStorage.removeItem(oldKey);
-            logger.log(`🗑️ [ActivityPersistence] Documento antiguo eliminado: ${oldDocId}`);
+            logger.log(`[ActivityPersistence] Documento antiguo eliminado: ${oldEntryKey}`);
           }
-          delete index[oldDocId];
+          delete index[oldEntryKey];
         });
       }
 
       // Limpiar documentos expirados por TTL
       const now = Date.now();
       const ttlMs = TTL_DAYS * 24 * 60 * 60 * 1000;
-      Object.entries(index).forEach(([expDocId, data]) => {
-        if (now - data.last_modified > ttlMs) {
-          const expiredKey = getStorageKey(expDocId);
+      Object.entries(index).forEach(([expEntryKey, data]) => {
+        const lastModified = Number(data?.last_modified || 0);
+        if (!lastModified || now - lastModified > ttlMs) {
+          const parsed = parseIndexEntry(expEntryKey, data);
+          const expiredKey = buildStorageKey(parsed.docId, parsed.courseId);
           if (expiredKey) {
             localStorage.removeItem(expiredKey);
-            logger.log(`⏰ [ActivityPersistence] Documento expirado eliminado: ${expDocId}`);
+            logger.log(`[ActivityPersistence] Documento expirado eliminado: ${expEntryKey}`);
           }
-          delete index[expDocId];
+          delete index[expEntryKey];
         }
       });
 
-      localStorage.setItem(indexKey, JSON.stringify(index));
+      localStorage.setItem(STORAGE_INDEX_KEY, JSON.stringify(index));
     } catch (error) {
       logger.warn('[ActivityPersistence] Error al actualizar índice:', error);
     }
-  }, [getStorageKey]);
+  }, [buildStorageKey, courseId, getIndexEntryKey, parseIndexEntry]);
 
   /**
    * Guarda los resultados en localStorage
@@ -274,11 +322,15 @@ export default function useActivityPersistence(documentId, options = {}) {
       localStorage.removeItem(storageKey);
 
       // Actualizar índice
-      const indexKey = `${STORAGE_KEY_PREFIX}index`;
-      const indexRaw = localStorage.getItem(indexKey) || '{}';
+      const indexRaw = localStorage.getItem(STORAGE_INDEX_KEY) || '{}';
       const index = JSON.parse(indexRaw);
+      const entryKey = getIndexEntryKey(documentId, courseId);
+      if (entryKey) {
+        delete index[entryKey];
+      }
+      // Compatibilidad: limpiar también entrada legacy por docId simple.
       delete index[documentId];
-      localStorage.setItem(indexKey, JSON.stringify(index));
+      localStorage.setItem(STORAGE_INDEX_KEY, JSON.stringify(index));
 
       logger.log(`🗑️ [ActivityPersistence] Resultados eliminados para: ${documentId}`);
       return true;
@@ -286,7 +338,7 @@ export default function useActivityPersistence(documentId, options = {}) {
       logger.error('[ActivityPersistence] Error al limpiar:', error);
       return false;
     }
-  }, [documentId, getStorageKey]);
+  }, [courseId, documentId, getIndexEntryKey, getStorageKey]);
 
   /**
    * Obtiene métricas actuales
@@ -303,23 +355,43 @@ export default function useActivityPersistence(documentId, options = {}) {
    * Rehidratación cuando cambia el documentId
    */
   useEffect(() => {
+    const currentScopeKey = documentId
+      ? `${courseId || LEGACY_SCOPE_KEY}${INDEX_SCOPE_SEPARATOR}${documentId}`
+      : null;
+
     if (!documentId) {
       hasRehydratedRef.current = false;
-      lastDocIdRef.current = null;
+      lastScopeRef.current = null;
       return;
     }
 
-    // Solo rehidratar si es un documento nuevo
-    if (lastDocIdRef.current === documentId) return;
+    // Solo rehidratar si cambió el scope efectivo
+    if (lastScopeRef.current === currentScopeKey) return;
 
-    lastDocIdRef.current = documentId;
+    lastScopeRef.current = currentScopeKey;
     hasRehydratedRef.current = true;
 
     const loaded = loadResults();
-    if (loaded && onRehydrate) {
-      onRehydrate(loaded);
+    if (onRehydrate) {
+      const payload = loaded && typeof loaded === 'object'
+        ? loaded
+        : {
+          student_answers: {},
+          ai_feedbacks: {},
+          criterion_feedbacks: {},
+          current_index: 0,
+          attempts: 0,
+          history: [],
+          submitted: false
+        };
+
+      onRehydrate(payload, {
+        isEmpty: !loaded,
+        documentId,
+        courseId
+      });
     }
-  }, [documentId, loadResults, onRehydrate]);
+  }, [courseId, documentId, loadResults, onRehydrate]);
 
   /**
    * Guardado automático cuando cambian los datos (debounced)
@@ -384,8 +456,7 @@ export default function useActivityPersistence(documentId, options = {}) {
  */
 export function getAllStoredActivities() {
   try {
-    const indexKey = `${STORAGE_KEY_PREFIX}index`;
-    const indexRaw = localStorage.getItem(indexKey) || '{}';
+    const indexRaw = localStorage.getItem(STORAGE_INDEX_KEY) || '{}';
     return JSON.parse(indexRaw);
   } catch (error) {
     logger.error('[ActivityPersistence] Error al obtener índice:', error);

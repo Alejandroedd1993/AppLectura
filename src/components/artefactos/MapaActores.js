@@ -120,7 +120,7 @@ export default function MapaActores({ theme }) {
 
     import('../../services/sessionManager').then(({ getDraftKey }) => {
       if (cancelled) return;
-      const getKey = (base) => getDraftKey(base, currentTextoId);
+      const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
       const readAndMigrateLegacy = (base) => {
         const scopedKey = getKey(base);
@@ -195,7 +195,7 @@ export default function MapaActores({ theme }) {
       logger.log('⌨️ Ctrl+S: Guardando borrador MapaActores...');
       if (!currentTextoId) return;
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, currentTextoId);
+        const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
         if (actores) sessionStorage.setItem(getKey('mapaActores_actores'), actores);
         if (contextoHistorico) sessionStorage.setItem(getKey('mapaActores_contextoHistorico'), contextoHistorico);
         if (conexiones) sessionStorage.setItem(getKey('mapaActores_conexiones'), conexiones);
@@ -246,7 +246,21 @@ export default function MapaActores({ theme }) {
     attempts: evaluationAttempts,
     history,
     submitted: isSubmitted,
-    onRehydrate: (data) => {
+    onRehydrate: (data, meta) => {
+      if (meta?.isEmpty) {
+        setActores('');
+        setContextoHistorico('');
+        setConexiones('');
+        setConsecuencias('');
+        setFeedback(null);
+        setEvaluationAttempts(0);
+        setHistory([]);
+        setIsSubmitted(false);
+        setIsLocked(false);
+        setTeacherScoreOverride(null);
+        return;
+      }
+
       if (data.student_answers?.actores) setActores(data.student_answers.actores);
       if (data.student_answers?.contexto_historico) setContextoHistorico(data.student_answers.contexto_historico);
       if (data.student_answers?.conexiones) setConexiones(data.student_answers.conexiones);
@@ -255,7 +269,10 @@ export default function MapaActores({ theme }) {
 
       if (typeof data.attempts === 'number') setEvaluationAttempts(data.attempts);
       if (Array.isArray(data.history)) setHistory(data.history);
-      if (data.submitted) setIsSubmitted(true);
+      if (data.submitted) {
+        setIsSubmitted(true);
+        setIsLocked(true);
+      }
     }
   });
 
@@ -336,7 +353,7 @@ export default function MapaActores({ theme }) {
       
       // Limpiar sessionStorage
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, lectureId);
+        const getKey = (base) => getDraftKey(base, lectureId, sourceCourseId);
         sessionStorage.removeItem(getKey('mapaActores_actores'));
         sessionStorage.removeItem(getKey('mapaActores_contextoHistorico'));
         sessionStorage.removeItem(getKey('mapaActores_conexiones'));
@@ -356,8 +373,11 @@ export default function MapaActores({ theme }) {
       setHistory(prev => prev.length >= cloudData.history.length ? prev : cloudData.history);
     }
 
-    if (cloudData.attempts) setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
-    if (cloudData.submitted) setIsSubmitted(true);
+    if (typeof cloudData.attempts === 'number') setEvaluationAttempts(prev => Math.max(prev, cloudData.attempts));
+    if (cloudData.submitted) {
+      setIsSubmitted(true);
+      setIsLocked(true);
+    }
 
     // 🆕 Override de nota docente
     if (cloudData.teacherOverrideScore != null) {
@@ -371,7 +391,7 @@ export default function MapaActores({ theme }) {
 
     if (cloudData.drafts) {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, lectureId);
+        const getKey = (base) => getDraftKey(base, lectureId, sourceCourseId);
 
         if (cloudData.drafts.actores && !sessionStorage.getItem(getKey('mapaActores_actores'))) {
           sessionStorage.setItem(getKey('mapaActores_actores'), cloudData.drafts.actores);
@@ -398,8 +418,8 @@ export default function MapaActores({ theme }) {
   const handleConfirmedSubmit = useCallback(() => {
     setShowSubmitConfirm(false);
     setIsSubmitted(true);
-    const submitSaveTimerId = setTimeout(() => persistence.saveManual(), 100);
-    timersRef.current.push(submitSaveTimerId);
+    setIsLocked(true);
+    // Evitar save inmediato con estado stale; se guarda al confirmar isSubmitted
 
     // 🆕 SYNC: Registrar entrega en contexto global para Dashboard (preservando historial)
     if (lectureId && updateActivitiesProgress) {
@@ -407,6 +427,11 @@ export default function MapaActores({ theme }) {
         // Obtener el score previo guardado (lastScore) o calcular desde feedback
         const previousArtifact = prev?.artifacts?.mapaActores || {};
         const scoreToUse = previousArtifact.lastScore || (feedback.nivel_global ? feedback.nivel_global * 2.5 : 0);
+        const attemptsToUse = Math.max(
+          Number(previousArtifact.attempts || 0),
+          Number(evaluationAttempts || 0),
+          Array.isArray(history) ? history.length : 0
+        );
         
         logger.log('📤 [MapaActores] Entregando con score:', scoreToUse, 'lastScore:', previousArtifact.lastScore, 'feedback.nivel_global:', feedback.nivel_global);
         
@@ -421,7 +446,7 @@ export default function MapaActores({ theme }) {
               score: scoreToUse,
               nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
               history: history,
-              attempts: evaluationAttempts,
+              attempts: attemptsToUse,
               finalContent: { actores, contextoHistorico, conexiones, consecuencias }
             }
           }
@@ -441,6 +466,12 @@ export default function MapaActores({ theme }) {
 
     logger.log('✅ [MapaActores] Tarea entregada y sincronizada con Dashboard');
   }, [feedback, rewards, persistence, lectureId, updateActivitiesProgress, rewardsResourceId, history, evaluationAttempts, actores, contextoHistorico, conexiones, consecuencias]);
+
+  // Garantizar persistencia con estado actualizado tras entregar
+  useEffect(() => {
+    if (!isSubmitted) return;
+    persistence.saveManual();
+  }, [isSubmitted, persistence]);
 
   const handleSubmit = useCallback(() => {
     if (!feedback) return;
@@ -531,7 +562,7 @@ export default function MapaActores({ theme }) {
     if (!currentTextoId) return;
 
     import('../../services/sessionManager').then(({ getDraftKey }) => {
-      const getKey = (base) => getDraftKey(base, currentTextoId);
+      const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
       if (actores) sessionStorage.setItem(getKey('mapaActores_actores'), actores);
       if (contextoHistorico) sessionStorage.setItem(getKey('mapaActores_contextoHistorico'), contextoHistorico);
@@ -549,7 +580,7 @@ export default function MapaActores({ theme }) {
     if (actores || contextoHistorico || conexiones || consecuencias) {
       const timer = setTimeout(() => {
         import('../../services/sessionManager').then(({ updateCurrentSession, captureArtifactsDrafts }) => {
-          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId, sourceCourseId) });
         }).catch(() => {});
       }, 4000);
       return () => clearTimeout(timer);
@@ -562,7 +593,7 @@ export default function MapaActores({ theme }) {
 
     const handleSessionRestored = () => {
       import('../../services/sessionManager').then(({ getDraftKey }) => {
-        const getKey = (base) => getDraftKey(base, currentTextoId);
+        const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
         const restoredActores = sessionStorage.getItem(getKey('mapaActores_actores')) || '';
         const restoredContexto = sessionStorage.getItem(getKey('mapaActores_contextoHistorico')) || '';
@@ -760,7 +791,7 @@ export default function MapaActores({ theme }) {
       // 🆕 Limpiar borrador temporal tras éxito
       if (currentTextoId) {
         import('../../services/sessionManager').then(({ getDraftKey, updateCurrentSession, captureArtifactsDrafts }) => {
-          const getKey = (base) => getDraftKey(base, currentTextoId);
+          const getKey = (base) => getDraftKey(base, currentTextoId, sourceCourseId);
 
           // scoped
           sessionStorage.removeItem(getKey('mapaActores_actores'));
@@ -774,7 +805,7 @@ export default function MapaActores({ theme }) {
           sessionStorage.removeItem('mapaActores_conexiones');
           sessionStorage.removeItem('mapaActores_consecuencias');
 
-          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId) });
+          updateCurrentSession({ artifactsDrafts: captureArtifactsDrafts(currentTextoId, sourceCourseId) });
         }).catch(() => {});
       }
 
@@ -879,7 +910,7 @@ export default function MapaActores({ theme }) {
         >
           <span className="icon">✅</span>
           <span className="text">
-            <strong>Tarea Entregada:</strong> No se pueden realizar más cambios.
+            <strong>Tarea Entregada:</strong> Tu nota fue enviada al docente y no se pueden realizar más cambios.
           </span>
         </SubmissionBanner>
       )}
@@ -899,7 +930,7 @@ export default function MapaActores({ theme }) {
             theme={theme}
           >
             <CitasPanelHeader theme={theme}>
-              <h3 style={{ margin: 0 }}>� Cuaderno de Lectura</h3>
+              <h3 style={{ margin: 0 }}>Cuaderno de Lectura</h3>
               <p style={{ fontSize: '0.85rem', margin: '0.5rem 0 0 0', opacity: 0.8 }}>
                 {citasGuardadas.length === 0
                   ? 'Selecciona texto en "Lectura Guiada" y usa 📌 Cita o 📓 Anotar'
