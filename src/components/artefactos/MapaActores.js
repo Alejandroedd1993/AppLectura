@@ -5,7 +5,7 @@ import { AppContext } from '../../context/AppContext';
 import { useRewards } from '../../context/PedagogyContext';
 import { evaluateMapaActores } from '../../services/mapaActores.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
-import useRateLimit from '../../hooks/useRateLimit';
+import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { getDimension } from '../../pedagogy/rubrics/criticalLiteracyRubric';
 import { renderMarkdown } from '../../utils/markdownUtils';
@@ -163,12 +163,14 @@ export default function MapaActores({ theme }) {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
-  const MAX_ATTEMPTS = 3;
-
-  // 🆕 Rate Limiting
-  const rateLimit = useRateLimit('mapaActores_eval', {
+  const {
+    rateLimit,
+    maxAttempts: MAX_ATTEMPTS
+  } = useArtifactEvaluationPolicy({
+    rateLimitKey: 'mapaActores_eval',
     cooldownMs: 5000,
-    maxPerHour: 10
+    maxPerHour: 10,
+    maxAttempts: 3
   });
 
   // 🆕 Estados para sistema de citas

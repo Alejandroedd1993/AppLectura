@@ -13,7 +13,7 @@ import { AppContext } from '../../context/AppContext';
 import { useRewards } from '../../context/PedagogyContext';
 import { evaluarResumenAcademico, validarResumenAcademico } from '../../services/resumenAcademico.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
-import useRateLimit from '../../hooks/useRateLimit';
+import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
@@ -123,12 +123,14 @@ const ResumenAcademico = ({ theme }) => {
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Info de cambio de nota por docente
-  const MAX_ATTEMPTS = 3;
-
-  // 🆕 Rate limiting: 5s cooldown, máximo 10 evaluaciones/hora
-  const rateLimit = useRateLimit('evaluate_resumen', {
+  const {
+    rateLimit,
+    maxAttempts: MAX_ATTEMPTS
+  } = useArtifactEvaluationPolicy({
+    rateLimitKey: 'evaluate_resumen',
     cooldownMs: 5000,
-    maxPerHour: 10
+    maxPerHour: 10,
+    maxAttempts: 3
   });
 
   // 🆕 Keyboard shortcuts para productividad

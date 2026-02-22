@@ -15,7 +15,7 @@ import { AppContext } from '../../context/AppContext';
 import { usePedagogy, useRewards } from '../../context/PedagogyContext';
 import { evaluateBitacoraEticaIA } from '../../services/bitacoraEticaIA.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
-import useRateLimit from '../../hooks/useRateLimit';
+import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import { renderMarkdown } from '../../utils/markdownUtils';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
@@ -112,12 +112,14 @@ export default function BitacoraEticaIA({ theme }) {
   const [showClearLogConfirm, setShowClearLogConfirm] = useState(false); // 🆕 Modal de confirmación de borrar historial
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
-  const MAX_ATTEMPTS = 3;
-
-  // 🆕 Rate Limiting
-  const rateLimit = useRateLimit('bitacora_eval', {
+  const {
+    rateLimit,
+    maxAttempts: MAX_ATTEMPTS
+  } = useArtifactEvaluationPolicy({
+    rateLimitKey: 'bitacora_eval',
     cooldownMs: 5000,
-    maxPerHour: 10
+    maxPerHour: 10,
+    maxAttempts: 3
   });
 
   // NOTA: tutorInteractions ahora se consume desde AppContext (globalTutorInteractions)

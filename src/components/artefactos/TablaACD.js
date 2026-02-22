@@ -5,7 +5,7 @@ import { AppContext } from '../../context/AppContext';
 import { useRewards } from '../../context/PedagogyContext';
 import { evaluateTablaACD } from '../../services/tablaACD.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
-import useRateLimit from '../../hooks/useRateLimit';
+import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import HistoryRibbon from '../ui/HistoryRibbon';
@@ -163,12 +163,14 @@ export default function TablaACD({ theme }) {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Override docente
   const [isLocked, setIsLocked] = useState(false); // 🆕 Estado de bloqueo después de evaluar
-  const MAX_ATTEMPTS = 3; // 🆕 Límite de intentos
-
-  // 🆕 Rate limiting
-  const rateLimit = useRateLimit('evaluate_tabla_acd', {
+  const {
+    rateLimit,
+    maxAttempts: MAX_ATTEMPTS
+  } = useArtifactEvaluationPolicy({
+    rateLimitKey: 'evaluate_tabla_acd',
     cooldownMs: 5000,
-    maxPerHour: 10
+    maxPerHour: 10,
+    maxAttempts: 3
   });
 
   // 🆕 Keyboard shortcuts para productividad

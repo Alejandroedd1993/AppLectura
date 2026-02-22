@@ -5,7 +5,7 @@ import { AppContext } from '../../context/AppContext';
 import { useRewards } from '../../context/PedagogyContext';
 import { evaluateRespuestaArgumentativa } from '../../services/respuestaArgumentativa.service';
 import useActivityPersistence from '../../hooks/useActivityPersistence';
-import useRateLimit from '../../hooks/useRateLimit'; // 🆕 Rate Limiting
+import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
 import logger from '../../utils/logger';
 
@@ -82,8 +82,15 @@ import {
 export default function RespuestaArgumentativa({ theme }) {
   const { texto, completeAnalysis, setError, updateRubricScore, getCitations, deleteCitation, updateActivitiesProgress, sourceCourseId, currentTextoId, activitiesProgress } = useContext(AppContext);
   const rewards = useRewards(); // 🎮 Hook de recompensas
-  const rateLimit = useRateLimit('evaluate_respuesta_argumentativa', { cooldownMs: 5000, maxPerHour: 10 }); // Rate limiting
-  const MAX_ATTEMPTS = 3; // 🆕 Límite de intentos
+  const {
+    rateLimit,
+    maxAttempts: MAX_ATTEMPTS
+  } = useArtifactEvaluationPolicy({
+    rateLimitKey: 'evaluate_respuesta_argumentativa',
+    cooldownMs: 5000,
+    maxPerHour: 10,
+    maxAttempts: 3
+  });
 
   // 🆕 Ref para rastrear si ya procesamos el reset (evita bucle infinito)
   const resetProcessedRef = useRef(null);
