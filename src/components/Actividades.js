@@ -299,6 +299,7 @@ export default function Actividades() {
   // Vista principal: 'checkpoint' | 'dimensiones' | 'progreso'
   const [activeSection, setActiveSection] = useState('checkpoint');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [selectedRubricId, setSelectedRubricId] = useState(null);
 
   // Obtener documentId del análisis
   const documentId = completeAnalysis?.metadata?.document_id || null;
@@ -326,8 +327,48 @@ export default function Actividades() {
     if (prevCourseIdRef.current !== sourceCourseId) {
       prevCourseIdRef.current = sourceCourseId;
       setActiveSection('checkpoint');
+      setSelectedRubricId(null);
     }
   }, [sourceCourseId]);
+
+  const getArtifactScores = useCallback((scores) => {
+    if (!Array.isArray(scores)) return [];
+    return scores.filter((s) => s?.artefacto !== 'PracticaGuiada');
+  }, []);
+
+  const hasSummativeAttempt = useCallback((summative) => {
+    if (!summative || typeof summative !== 'object') return false;
+    const status = String(summative.status || '').toLowerCase();
+    const attemptsUsed = Number(summative.attemptsUsed || 0);
+    return (
+      attemptsUsed > 0 ||
+      status === 'submitted' ||
+      status === 'graded' ||
+      Number(summative.submittedAt || 0) > 0 ||
+      Number(summative.gradedAt || 0) > 0
+    );
+  }, []);
+
+  const getSummativeScore = useCallback((summative) => {
+    if (String(summative?.status || '').toLowerCase() !== 'graded') return 0;
+    const override = Number(summative?.teacherOverrideScore);
+    if (Number.isFinite(override) && override > 0) return override;
+    const score = Number(summative?.score);
+    return Number.isFinite(score) && score > 0 ? score : 0;
+  }, []);
+
+  const getEffectiveRubricScore = useCallback((rubricData) => {
+    if (!rubricData || typeof rubricData !== 'object') return 0;
+
+    const summativeScore = getSummativeScore(rubricData.summative);
+    if (summativeScore > 0) return summativeScore;
+
+    const artifactScores = getArtifactScores(rubricData.scores);
+    if (!artifactScores.length) return 0;
+
+    const lastScore = Number(artifactScores[artifactScores.length - 1]?.score);
+    return Number.isFinite(lastScore) && lastScore > 0 ? lastScore : 0;
+  }, [getArtifactScores, getSummativeScore]);
 
   // 🆕 Escuchar evento de completación de ejercicios
   React.useEffect(() => {
@@ -345,36 +386,35 @@ export default function Actividades() {
   // 🆕 Función para calcular estado de cada artefacto
   const getArtefactoStatus = useCallback((rubricId) => {
     const data = rubricProgress?.[rubricId];
+    const effectiveScore = getEffectiveRubricScore(data);
 
-    if (!data || !data.scores || data.scores.length === 0) {
+    if (effectiveScore <= 0) {
       return { status: 'empty', icon: '', label: '', color: '' };
     }
 
-    const lastScore = data.scores[data.scores.length - 1].score;
-
-    if (lastScore >= 8.6) {
+    if (effectiveScore >= 8.6) {
       return {
         status: 'excellent',
         icon: '🌟',
-        label: lastScore.toFixed(1),
+        label: effectiveScore.toFixed(1),
         color: '#10b981' // verde brillante
       };
-    } else if (lastScore >= 5.6) {
+    } else if (effectiveScore >= 5.6) {
       return {
         status: 'good',
         icon: '✅',
-        label: lastScore.toFixed(1),
+        label: effectiveScore.toFixed(1),
         color: '#4CAF50' // verde
       };
     } else {
       return {
         status: 'needs-work',
         icon: '⏳',
-        label: lastScore.toFixed(1),
+        label: effectiveScore.toFixed(1),
         color: '#FF9800' // naranja
       };
     }
-  }, [rubricProgress]);
+  }, [rubricProgress, getEffectiveRubricScore]);
 
   // Si no hay texto cargado, mostrar estado vacío
   if (!texto) {
@@ -617,6 +657,7 @@ export default function Actividades() {
                   isRecommended={recommendedDimensions.includes(dim.id)}
                   renderPractice={renderPractice}
                   renderArtifact={renderArtifact}
+                  expandSignal={selectedRubricId === dim.rubricId ? selectedRubricId : null}
                 />
               ))}
             </div>
@@ -640,8 +681,9 @@ export default function Actividades() {
                 </SectionTitle>
                 <DashboardRubricas
                   theme={theme}
-                  onSelectRubric={() => {
+                  onSelectRubric={(rubricId) => {
                     // Navegar a dimensiones al hacer clic en una rúbrica
+                    setSelectedRubricId(rubricId || null);
                     setActiveSection('dimensiones');
                   }}
                 />
@@ -740,10 +782,10 @@ export default function Actividades() {
                     $variant="danger"
                     onClick={() => setShowResetConfirm(true)}
                     disabled={!rubricProgress || Object.values(rubricProgress).every(r => {
-                      const formativeCount = r?.scores?.length || 0;
-                      const summativeScore = Number(r?.summative?.score);
-                      const hasSummative = r?.summative?.status === 'graded' && Number.isFinite(summativeScore) && summativeScore > 0;
-                      return formativeCount === 0 && !hasSummative;
+                      const formativeCount = getArtifactScores(r?.scores).length;
+                      const hasSummative = hasSummativeAttempt(r?.summative);
+                      const effectiveScore = getEffectiveRubricScore(r);
+                      return formativeCount === 0 && !hasSummative && effectiveScore <= 0;
                     })}
                     title="Resetear todo el progreso"
                   >

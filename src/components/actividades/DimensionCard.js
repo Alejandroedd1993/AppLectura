@@ -4,7 +4,7 @@
  * El estudiante elige su camino: practicar antes o ir directo al artefacto.
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -199,7 +199,8 @@ export default function DimensionCard({
   isRecommended,
   renderPractice,
   renderArtifact,
-  defaultExpanded = false
+  defaultExpanded = false,
+  expandSignal = null
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [view, setView] = useState('artefacto'); // 'practica' | 'artefacto'
@@ -210,6 +211,13 @@ export default function DimensionCard({
   );
 
   const handleToggle = useCallback(() => setExpanded(v => !v), []);
+
+  useEffect(() => {
+    if (expandSignal) {
+      setExpanded(true);
+      setView('artefacto');
+    }
+  }, [expandSignal]);
 
   return (
     <Card theme={theme} $expanded={expanded} layout>
