@@ -18,13 +18,19 @@ import {
   getAllStudentProgress,
   getStudentProgress,
   getStudentCourses,
-  withdrawFromCourse
+  withdrawFromCourse,
+  cleanupOrphanedStudentOwnedCourseData
 } from '../../firebase/firestore';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { procesarArchivo } from '../../utils/fileProcessor';
 import { AppContext } from '../../context/AppContext';
 import { getAllSessionsMerged, deleteSession } from '../../services/sessionManager';
+import {
+  cleanupCourseScopedBrowserData,
+  cleanupMultipleCoursesBrowserData,
+  inferCourseIdsFromBrowserData
+} from '../../utils/courseDataCleanup';
 
 import logger from '../../utils/logger';
 const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
@@ -382,6 +388,29 @@ const WithdrawButton = styled.button`
   }
 `;
 
+const PendingCourseNotice = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  gap: 0.5rem;
+
+  h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    color: ${props => props.theme.text};
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: ${props => props.theme.textMuted};
+    max-width: 400px;
+    line-height: 1.5;
+  }
+`;
+
 const ReadingsList = styled.div`
   padding: 20px;
   display: flex;
@@ -581,21 +610,77 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       setLoading(true);
       // 1. Cargar cursos
       const enrolledCourses = await getStudentCourses(currentUser.uid);
+      if (!Array.isArray(enrolledCourses)) {
+        throw new Error('No se pudo validar cursos activos del estudiante; limpieza huérfana abortada');
+      }
+      const activeCourseIds = (enrolledCourses || [])
+        .map((course) => course?.id)
+        .filter(Boolean);
+
+      // 1.1 Limpieza de datos huérfanos (curso eliminado / baja por docente)
+      try {
+        const inferredCourseIds = inferCourseIdsFromBrowserData(currentUser.uid);
+        const cloudCleanupStats = await cleanupOrphanedStudentOwnedCourseData(currentUser.uid, activeCourseIds);
+
+        const orphanCourseIds = Array.from(new Set([
+          ...(inferredCourseIds || []),
+          ...((cloudCleanupStats?.orphanCourseIds || []).filter(Boolean))
+        ])).filter((courseId) => !activeCourseIds.includes(courseId));
+
+        if (orphanCourseIds.length > 0) {
+          const localCleanupStats = cleanupMultipleCoursesBrowserData({
+            courseIds: orphanCourseIds,
+            userId: currentUser.uid
+          });
+
+          logger.log('🧹 [TextoSelector] Limpieza de cursos huérfanos aplicada:', {
+            uid: currentUser.uid,
+            orphanCourseIds,
+            cloudCleanupStats,
+            localCleanupStats
+          });
+        }
+      } catch (cleanupError) {
+        logger.warn('⚠️ [TextoSelector] Error limpiando datos huérfanos por curso:', cleanupError);
+      }
 
       // 2. Cargar progreso global
       const allProgress = await getAllStudentProgress(currentUser.uid);
+      // 🔧 FIX CROSS-COURSE: Usar claves compuestas {sourceCourseId}_{textoId} para aislar progreso entre cursos.
+      // Además mantener fallback por textoId para datos legacy (sin sourceCourseId).
       const pMap = {};
-      allProgress.forEach(p => pMap[p.textoId] = p);
+      allProgress.forEach(p => {
+        const docTextoId = p.textoId || p.id;
+        const docCourseId = p.sourceCourseId;
+        if (docCourseId && docTextoId) {
+          // Clave compuesta: prioridad máxima (aislado por curso)
+          pMap[`${docCourseId}_${docTextoId}`] = p;
+        }
+        // Fallback legacy: solo textoId (se usa si no hay clave compuesta para un curso)
+        // Solo si no existe otra entrada para ese textoId O si no tiene sourceCourseId (legacy)
+        if (!pMap[docTextoId] || !docCourseId) {
+          pMap[docTextoId] = p;
+        }
+      });
 
       // 3. Enriquecer cursos con detalles de lecturas
       const enrichedCourses = await Promise.all(enrolledCourses.map(async (course) => {
         // Resolver objetos de lectura
         const readingDetails = await Promise.all((course.lecturasAsignadas || []).map(async (l) => {
-          // Si ya tenemos el texto en cache local o necesitamos fetch basico
-          // Por optimización, aquí usamos titulo del array. El contenido completo se carga al abrir.
+          // 🔧 FIX CROSS-COURSE: Buscar progreso con clave compuesta primero, luego fallback legacy.
+          // Solo usar fallback si el sourceCourseId coincide o no existe.
+          const compositeKey = `${course.id}_${l.textoId}`;
+          let progress = pMap[compositeKey] || null;
+          if (!progress) {
+            const legacyProgress = pMap[l.textoId] || null;
+            // 🛡️ FIX ESTRICTO: si hay curso actual, no aceptar legacy sin sourceCourseId
+            if (legacyProgress && (!course.id || legacyProgress.sourceCourseId === course.id)) {
+              progress = legacyProgress;
+            }
+          }
           return {
-            ...l, // textoId, titulo, etc
-            progress: pMap[l.textoId] || null
+            ...l,
+            progress
           };
         }));
         return { ...course, readings: readingDetails };
@@ -888,7 +973,29 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
     if (!window.confirm(`¿Estás seguro de salir del curso "${courseName}"? Perderás tu progreso en este grupo.`)) return;
     try {
       await withdrawFromCourse(courseId, currentUser.uid);
+      const localCleanupStats = cleanupCourseScopedBrowserData({
+        courseId,
+        userId: currentUser.uid
+      });
+
       setCourses(prev => prev.filter(c => c.id !== courseId)); // Optimistic UI
+      setLocalSessionsMap((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((key) => {
+          if (key.startsWith(`${courseId}_`)) {
+            delete next[key];
+          }
+        });
+        return next;
+      });
+
+      logger.log('🧹 [TextoSelector] Limpieza local tras baja de curso:', {
+        uid: currentUser.uid,
+        courseId,
+        localCleanupStats
+      });
+
+      await loadDashboard();
     } catch (err) {
       alert('Error al salir del curso: ' + err.message);
     }
@@ -896,7 +1003,8 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
 
   const handleSelectText = async (textoLite, sourceCourseId = null) => {
     if (openingText) return;
-    setOpeningText(textoLite.textoId);
+    const openingKey = `${sourceCourseId || 'free'}_${textoLite.textoId}`;
+    setOpeningText(openingKey);
 
     // 🆕 SMART RESUME: Check if a session already exists for this text
     try {
@@ -1041,11 +1149,12 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       }
 
       // 🆕 CRÍTICO: Propagar textoId Y sourceCourseId
+      // 🛡️ FIX: sourceCourseId DESPUÉS del spread para garantizar que no sea pisado por docData
       onSelectText(contenido, {
+        ...docData,
         id: docSnap.id,
         textoId: textoLite.textoId,
-        sourceCourseId, // 🆕 Propagar ID del curso
-        ...docData,
+        sourceCourseId, // 🆕 Propagar ID del curso (AFTER spread to win)
         archivoInfo
       });
 
@@ -1333,7 +1442,9 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       </JoinCourseSection>
 
       <CourseGrid>
-        {courses.map(course => (
+        {courses.map(course => {
+          const isPending = course.enrollmentStatus === 'pending';
+          return (
           <CourseCard key={course.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <CourseHeader>
               <div>
@@ -1346,11 +1457,20 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
                 </WithdrawButton>
               </div>
             </CourseHeader>
+
+            {isPending ? (
+              <PendingCourseNotice>
+                <span style={{ fontSize: '2.5rem' }}>🔒</span>
+                <h3>Esperando aprobación del docente</h3>
+                <p>Tu solicitud de acceso ha sido enviada. Podrás ver y trabajar las lecturas del curso una vez que el docente te apruebe.</p>
+              </PendingCourseNotice>
+            ) : (
             <ReadingsList>
               {course.readings.length === 0 && <p style={{ padding: '0 20px', color: '#888' }}>No hay lecturas asignadas.</p>}
               {course.readings.map(reading => {
                 const pct = calculateProgress(reading.progress);
-                const hasLocalSession = localSessionsMap[reading.textoId] || localSessionsMap[reading.titulo];
+                const compositeSessionKey = `${course.id}_${reading.textoId}`;
+                const hasLocalSession = Boolean(localSessionsMap[compositeSessionKey]);
                 const canContinue = pct > 0 || hasLocalSession;
 
                 return (
@@ -1376,9 +1496,9 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
                       )}
                       <button
                         onClick={() => handleSelectText(reading, course.id)}
-                        disabled={openingText === reading.textoId}
+                        disabled={openingText === `${course.id || 'free'}_${reading.textoId}`}
                       >
-                        {openingText === reading.textoId ? 'Cargando...' :
+                        {openingText === `${course.id || 'free'}_${reading.textoId}` ? 'Cargando...' :
                           (canContinue ? '▶ Continuar' : 'Iniciar')
                         }
                       </button>
@@ -1387,8 +1507,10 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
                 );
               })}
             </ReadingsList>
+            )}
           </CourseCard>
-        ))}
+          );
+        })}
         {courses.length === 0 && (
           <div style={{ textAlign: 'center', padding: '40px', color: '#888', gridColumn: '1 / -1' }}>
             <h3>No estás inscrito en ningún curso.</h3>
