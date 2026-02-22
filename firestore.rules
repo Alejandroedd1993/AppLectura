@@ -55,6 +55,31 @@ service cloud.firestore {
              get(/databases/$(database)/documents/courses/$(courseId)).data.docenteUid == request.auth.uid;
     }
 
+    function isStudentActiveInCourse(courseId, estudianteUid) {
+      let enrollment = get(/databases/$(database)/documents/courses/$(courseId)/students/$(estudianteUid)).data;
+      return courseId != null &&
+             exists(/databases/$(database)/documents/courses/$(courseId)/students/$(estudianteUid)) &&
+             (
+               enrollment.estado == 'active' ||
+               !enrollment.keys().hasAny(['estado']) ||
+               enrollment.estado == null
+             );
+    }
+
+    function isFreeProgressScope(courseId, textoId) {
+      return courseId != null &&
+             courseId.matches('^free::[A-Za-z0-9_-]+$') &&
+             textoId != null &&
+             courseId == ('free::' + textoId);
+    }
+
+    function isCanonicalProgressDocId(progressDocId, sourceCourseId, textoId) {
+      return progressDocId != null &&
+             sourceCourseId != null &&
+             textoId != null &&
+             progressDocId == (sourceCourseId + '_' + textoId);
+    }
+
     // (helpers eliminados si no se usan para evitar warnings de lint)
     
     // ========================================
@@ -135,28 +160,73 @@ service cloud.firestore {
       // - Cualquier docente autenticado (1 read — getUserRole; filtrado por curso a nivel de app)
       // ⚡ L3 optimización: isDocente() short-circuits → isDocenteOf y isCourseTeacher nunca se evalúan
       allow read: if isAuthenticated() && (
-                    request.auth.uid == studentId || 
-                    isDocenteOf(studentId) ||
-                    (resource.data.sourceCourseId != null &&
-                     isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
-                  );
+                request.auth.uid == studentId ||
+                // Legacy-only fallback: progreso sin scope de curso
+                (resource.data.sourceCourseId == null && isDocenteOf(studentId)) ||
+                // Ruta canónica: docente dueño del curso scopeado
+                (resource.data.sourceCourseId != null &&
+                isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
+              );
       
-      // 🔓 SIMPLIFICADO: Permitir a cualquier usuario autenticado escribir su propio progreso
-      // La validación de curso se hace a nivel de aplicación
-      allow create: if isAuthenticated() && request.auth.uid == studentId;
+      // 🔓 Crear: Solo el propio estudiante, y DEBE incluir sourceCourseId (excepto global_progress)
+      // Esto previene que clientes viejos/alternativos creen docs ambiguos sin scope de curso
+      allow create: if isAuthenticated() && request.auth.uid == studentId
+              && (
+                (textoId == 'global_progress' &&
+                 (request.resource.data.sourceCourseId == null ||
+                  request.resource.data.sourceCourseId == '') &&
+                 (request.resource.data.textoId == null ||
+                  request.resource.data.textoId == 'global_progress')) ||
+                (
+                  request.resource.data.sourceCourseId != null &&
+                  request.resource.data.sourceCourseId != '' &&
+                  isCanonicalProgressDocId(textoId, request.resource.data.sourceCourseId, request.resource.data.textoId) &&
+                  (
+                    isFreeProgressScope(request.resource.data.sourceCourseId, request.resource.data.textoId) ||
+                    isStudentActiveInCourse(request.resource.data.sourceCourseId, studentId)
+                  )
+                )
+              );
       
       // Actualizar: 
-      // - El propio estudiante
+      // - El propio estudiante: DEBE incluir sourceCourseId (excepto global_progress).
+      //   Si el doc ya tiene sourceCourseId, no puede cambiarlo.
+      //   Si el doc es legacy (sin sourceCourseId), el update DEBE fijar uno (excepto global_progress).
       // - 🆕 El docente del curso (para resetear artefactos/oportunidades)
-      allow update: if isAuthenticated() && (
-                      request.auth.uid == studentId ||
-                      isDocenteOf(studentId) ||
-                      (resource.data.sourceCourseId != null && isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
-                    );
+        allow update: if isAuthenticated() && (
+                (request.auth.uid == studentId
+                 && (
+                   (textoId == 'global_progress' &&
+                    (request.resource.data.sourceCourseId == null ||
+                     request.resource.data.sourceCourseId == '') &&
+                    (request.resource.data.textoId == null ||
+                     request.resource.data.textoId == 'global_progress')) ||
+                   (
+                     request.resource.data.sourceCourseId != null &&
+                     request.resource.data.sourceCourseId != '' &&
+                     isCanonicalProgressDocId(textoId, request.resource.data.sourceCourseId, request.resource.data.textoId) &&
+                     (isFreeProgressScope(request.resource.data.sourceCourseId, request.resource.data.textoId) ||
+                      isStudentActiveInCourse(request.resource.data.sourceCourseId, studentId))
+                   )
+                 )
+                 && (resource.data.sourceCourseId == null
+                   || request.resource.data.sourceCourseId == resource.data.sourceCourseId)) ||
+                // Legacy-only fallback: progreso sin scope de curso
+                (resource.data.sourceCourseId == null && isDocenteOf(studentId)) ||
+                // Ruta canónica: docente dueño del curso scopeado
+                (resource.data.sourceCourseId != null &&
+                 request.resource.data.sourceCourseId == resource.data.sourceCourseId &&
+                 request.resource.data.textoId == resource.data.textoId &&
+                 isCanonicalProgressDocId(textoId, request.resource.data.sourceCourseId, request.resource.data.textoId) &&
+                 isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
+              );
       
       // Eliminar: Solo el docente (para resetear progreso completo)
-      allow delete: if isDocenteOf(studentId) || 
-                      (resource.data.sourceCourseId != null && isCourseTeacherForProgress(resource.data.sourceCourseId, studentId));
+      allow delete: if isOwner(studentId) ||
+              // Legacy-only fallback: progreso sin scope de curso
+              (resource.data.sourceCourseId == null && isDocenteOf(studentId)) ||
+              // Ruta canónica: docente dueño del curso scopeado
+              (resource.data.sourceCourseId != null && isCourseTeacherForProgress(resource.data.sourceCourseId, studentId));
     }
 
     // ========================================

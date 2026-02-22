@@ -31,6 +31,7 @@ import { getSessionContentHash, compareSessionContent, mergeSessionsWithConflict
 import logger from '../utils/logger';
 
 const COURSE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 let __firestoreWritesDisabled = false;
 let __firestoreWritesDisabledLogged = false;
@@ -40,6 +41,127 @@ function __isPermissionDeniedError(error) {
   const message = String(error?.message || '').toLowerCase();
   return code === 'permission-denied' || message.includes('missing or insufficient permissions') || message.includes('permission-denied');
 }
+
+async function __enqueueOwnedCloudCleanupJob({ courseId, studentUid, reason = 'teacher_action' } = {}) {
+  if (!courseId || !studentUid) return { ok: false, skipped: true, reason: 'missing_params' };
+
+  const currentUser = auth?.currentUser;
+  if (!currentUser?.uid) {
+    return { ok: false, skipped: true, reason: 'missing_auth_user' };
+  }
+
+  let authHeader = {};
+  try {
+    const token = await currentUser.getIdToken();
+    if (token) authHeader = { Authorization: `Bearer ${token}` };
+  } catch (error) {
+    logger.warn('⚠️ [cleanup-owner-only] No se pudo obtener token para enqueue:', error?.message || error);
+  }
+
+  if (!authHeader.Authorization) {
+    return { ok: false, skipped: true, reason: 'missing_id_token' };
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/admin-cleanup/enqueue`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader
+      },
+      body: JSON.stringify({
+        courseId,
+        studentUid,
+        reason,
+        processNow: true
+      })
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        ok: false,
+        skipped: true,
+        reason: 'backend_rejected',
+        status: res.status,
+        details: text
+      };
+    }
+
+    const payload = await res.json();
+    const processFailed = payload?.processNow && payload?.processResult && payload?.processResult?.ok === false;
+    if (payload?.ok === false || processFailed) {
+      return {
+        ok: false,
+        skipped: true,
+        reason: processFailed ? 'backend_process_failed' : 'backend_payload_rejected',
+        status: res.status,
+        details: payload?.error || payload?.processResult?.error || null,
+        processResult: payload?.processResult || null,
+        jobId: payload?.jobId || null
+      };
+    }
+
+    return {
+      ok: true,
+      queued: Boolean(payload?.queued),
+      jobId: payload?.jobId || null,
+      processResult: payload?.processResult || null
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'request_failed',
+      details: error?.message || String(error)
+    };
+  }
+}
+
+function __resolveProgressCourseId(courseId, textoId) {
+  if (!textoId || textoId === 'global_progress') return null;
+  if (courseId) return courseId;
+  return `free::${textoId}`;
+}
+
+function __progressDocId(courseId, textoId) {
+  if (courseId && textoId && textoId !== 'global_progress') {
+    return `${courseId}_${textoId}`;
+  }
+  return textoId;
+}
+
+async function __resolveProgressDoc(estudianteUid, textoId, courseId = null) {
+  if (!estudianteUid || !textoId) {
+    return { ref: null, snap: null, usedDocId: null };
+  }
+
+  if (courseId) {
+    const compositeDocId = __progressDocId(courseId, textoId);
+    const compositeRef = doc(db, 'students', estudianteUid, 'progress', compositeDocId);
+    const compositeSnap = await getDoc(compositeRef);
+    if (compositeSnap.exists()) {
+      return { ref: compositeRef, snap: compositeSnap, usedDocId: compositeDocId };
+    }
+  }
+
+  const legacyRef = doc(db, 'students', estudianteUid, 'progress', textoId);
+  const legacySnap = await getDoc(legacyRef);
+  if (!legacySnap.exists()) {
+    return { ref: null, snap: null, usedDocId: null };
+  }
+
+  const legacyCourseId = legacySnap.data()?.sourceCourseId || null;
+  const canUseLegacy = !courseId ? !legacyCourseId : legacyCourseId === courseId;
+
+  if (!canUseLegacy) {
+    return { ref: null, snap: null, usedDocId: null, legacyCourseId };
+  }
+
+  return { ref: legacyRef, snap: legacySnap, usedDocId: textoId };
+}
+
+export const getProgressDocId = __progressDocId;
 
 /**
  * 🔧 FIX Bug 5: Reintentar operaciones con backoff exponencial.
@@ -476,7 +598,9 @@ function __stableStringify(value) {
 }
 
 export async function saveStudentProgress(estudianteUid, textoId, progressData) {
-  const queueKey = `${estudianteUid}::${textoId}`;
+  const incomingCourseId = __resolveProgressCourseId(progressData?.sourceCourseId || null, textoId);
+  const docId = __progressDocId(incomingCourseId, textoId);
+  const queueKey = `${estudianteUid}::${docId}`;
   const queue = __progressWriteQueueByDoc.get(queueKey) || {
     inFlight: false,
     pendingPayload: null,
@@ -617,9 +741,18 @@ if (typeof window !== 'undefined') {
  * @param {object} progressData - { rubrica1: {...}, rubrica2: {...}, ... }
  */
 async function __saveStudentProgressDirect(estudianteUid, textoId, progressData) {
+  const incomingCourseId = __resolveProgressCourseId(progressData?.sourceCourseId || null, textoId);
+  if (textoId !== 'global_progress') {
+    progressData = {
+      ...(progressData || {}),
+      sourceCourseId: incomingCourseId
+    };
+  }
+
   logger.log('🔵 [Firestore] saveStudentProgress llamado:', {
     uid: estudianteUid,
     textoId,
+    courseScopedDocId: __progressDocId(incomingCourseId, textoId),
     hasRewardsState: !!progressData?.rewardsState,
     rewardsResetAt: progressData?.rewardsState?.resetAt,
     rewardsTotalPoints: progressData?.rewardsState?.totalPoints,
@@ -629,7 +762,7 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
   });
 
   // 🔵 Log de la ruta completa para debug
-  logger.log(`🔵 [Firestore] Ruta de escritura: students/${estudianteUid}/progress/${textoId}`);
+  logger.log(`🔵 [Firestore] Ruta de escritura tentativa: students/${estudianteUid}/progress/${__progressDocId(incomingCourseId, textoId)}`);
 
   try {
     if (__firestoreWritesDisabled) {
@@ -657,7 +790,8 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
     }
 
     // 🔁 DEDUPE: si el payload útil es idéntico y reciente, saltar write
-    const dedupeKey = `${estudianteUid}::${textoId}`;
+    const earlyDocId = __progressDocId(incomingCourseId, textoId);
+    const dedupeKey = `${estudianteUid}::${earlyDocId}`;
     const now = Date.now();
     const signature = __stableStringify(__stripVolatileDeep(progressData || {}));
     const prev = __progressWriteDedupe.get(dedupeKey);
@@ -681,8 +815,6 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
     // Métrica: write real (no dedupe)
     __trackFirestoreStat('writeAttempted');
 
-    const progressRef = doc(db, 'students', estudianteUid, 'progress', textoId);
-
     // 🔧 FIX Bug 4: Resolver sourceCourseId si viene null (fallback desde enrolledCourses)
     let resolvedSourceCourseId = null;
     if (!progressData.sourceCourseId) {
@@ -698,6 +830,11 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
         logger.warn('⚠️ [Firestore] No se pudo resolver sourceCourseId:', err.message);
       }
     }
+
+    const finalCourseId = incomingCourseId || resolvedSourceCourseId || null;
+    const finalDocId = __progressDocId(finalCourseId, textoId);
+    const progressRef = doc(db, 'students', estudianteUid, 'progress', finalDocId);
+    logger.log(`🔵 [Firestore] Ruta de escritura final: students/${estudianteUid}/progress/${finalDocId}`);
 
     // 🔄 FIX Bug 3+5: Transacción atómica con retry para evitar race conditions
     let _savedFinalData;
@@ -1032,7 +1169,7 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
           fechaEntrega: fechaEntregaFinal ? new Date(fechaEntregaFinal).toISOString() : null
         },
         // 🆕 CRÍTICO: Preservar sourceCourseId con fallback desde enrolledCourses (Bug 4)
-        sourceCourseId: progressData.sourceCourseId || existingData.sourceCourseId || resolvedSourceCourseId || null,
+        sourceCourseId: progressData.sourceCourseId || existingData.sourceCourseId || finalCourseId || resolvedSourceCourseId || null,
         ultima_actividad: serverTimestamp(),
         updatedAt: serverTimestamp(),
         lastSync: progressData.lastSync || new Date().toISOString(),
@@ -1110,15 +1247,17 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
  * @param {string} textoId 
  * @returns {Promise<object|null>}
  */
-export async function getStudentProgress(estudianteUid, textoId) {
-  logger.log('🔵 [Firestore] getStudentProgress llamado:', { uid: estudianteUid, textoId });
+export async function getStudentProgress(estudianteUid, textoId, courseId = null) {
+  logger.log('🔵 [Firestore] getStudentProgress llamado:', { uid: estudianteUid, textoId, courseId });
 
   try {
-    const progressRef = doc(db, 'students', estudianteUid, 'progress', textoId);
-    const progressDoc = await getDoc(progressRef);
+    const { snap: progressDoc, usedDocId, legacyCourseId } = await __resolveProgressDoc(estudianteUid, textoId, courseId);
 
-    if (!progressDoc.exists()) {
-      logger.log('ℹ️ [Firestore] No existe documento de progreso para:', { uid: estudianteUid, textoId });
+    if (!progressDoc) {
+      if (legacyCourseId && courseId) {
+        logger.warn('🚫 [Firestore] Legacy doc ignorado: pertenece a curso', legacyCourseId, 'pero se pidió', courseId);
+      }
+      logger.log('ℹ️ [Firestore] No existe documento de progreso para:', { uid: estudianteUid, textoId, courseId });
       return null;
     }
 
@@ -1130,11 +1269,12 @@ export async function getStudentProgress(estudianteUid, textoId) {
     logger.log('✅ [Firestore] Progreso encontrado:', {
       uid: estudianteUid,
       textoId,
+      courseId,
+      usedDocId,
       rubricasConDatos: rubricKeys,
       tieneActivities: !!data.activitiesProgress
     });
 
-    // Asegurar que la estructura tenga los campos esperados
     return {
       ...data,
       rubricProgress: data.rubricProgress || {},
@@ -1143,7 +1283,6 @@ export async function getStudentProgress(estudianteUid, textoId) {
       ultima_actividad: data.ultima_actividad?.toDate?.() || data.ultima_actividad,
       updatedAt: data.updatedAt?.toDate?.() || data.updatedAt
     };
-
   } catch (error) {
     logger.error('❌ Error obteniendo progreso:', error);
     throw error;
@@ -1217,14 +1356,17 @@ export async function saveEvaluacion(evaluacionData) {
  * @param {string} textoId
  * @param {number} deltaMinutes – minutos a sumar (puede ser fraccionario, ej. 0.5)
  */
-export async function updateReadingTime(estudianteUid, textoId, deltaMinutes) {
+export async function updateReadingTime(estudianteUid, textoId, deltaMinutes, courseId = null) {
   if (!estudianteUid || !textoId || !deltaMinutes || deltaMinutes <= 0) return;
   if (__firestoreWritesDisabled) return;
 
-  const progressRef = doc(db, 'students', estudianteUid, 'progress', textoId);
+  const scopedCourseId = __resolveProgressCourseId(courseId, textoId);
+  const docId = __progressDocId(scopedCourseId, textoId);
+  const progressRef = doc(db, 'students', estudianteUid, 'progress', docId);
 
   try {
     await updateDoc(progressRef, {
+      sourceCourseId: scopedCourseId,
       tiempoLecturaTotal: increment(deltaMinutes),
       tiempoTotal: increment(deltaMinutes),
       tiempo_total_min: increment(deltaMinutes),
@@ -1236,6 +1378,7 @@ export async function updateReadingTime(estudianteUid, textoId, deltaMinutes) {
     if (error?.code === 'not-found') {
       try {
         await setDoc(progressRef, {
+          sourceCourseId: scopedCourseId,
           tiempoLecturaTotal: deltaMinutes,
           tiempoTotal: deltaMinutes,
           tiempo_total_min: deltaMinutes,
@@ -1263,8 +1406,10 @@ export async function updateReadingTime(estudianteUid, textoId, deltaMinutes) {
  * @param {Function} callback - Función a llamar cuando hay cambios
  * @returns {Function} - Función para cancelar la suscripción
  */
-export function subscribeToStudentProgress(estudianteUid, textoId, callback) {
-  const progressRef = doc(db, 'students', estudianteUid, 'progress', textoId);
+export function subscribeToStudentProgress(estudianteUid, textoId, callback, courseId = null) {
+  const scopedCourseId = __resolveProgressCourseId(courseId, textoId);
+  const docId = __progressDocId(scopedCourseId, textoId);
+  const progressRef = doc(db, 'students', estudianteUid, 'progress', docId);
 
   return onSnapshot(progressRef, (doc) => {
     if (doc.exists()) {
@@ -2126,14 +2271,19 @@ export async function removeLecturaFromCourse(courseId, textoId) {
       // 🔧 FIX Bug #2: Limpiar progreso huérfano de la lectura removida
       // Solo eliminar si el doc de progreso pertenece a ESTE curso
       try {
-        const progressRef = doc(db, 'students', studentDoc.id, 'progress', textoId);
-        const progressSnap = await getDoc(progressRef);
-        if (progressSnap.exists()) {
-          const scid = progressSnap.data()?.sourceCourseId;
-          if (scid === courseId || scid === undefined || scid === null || scid === '') {
-            await deleteDoc(progressRef);
-            logger.log(`🧹 [removeLectura] Progreso huérfano eliminado: ${textoId} para estudiante ${studentDoc.id}`);
-          }
+        const compositeDocId = __progressDocId(courseId, textoId);
+        const compositeRef = doc(db, 'students', studentDoc.id, 'progress', compositeDocId);
+        const compositeSnap = await getDoc(compositeRef);
+        if (compositeSnap.exists()) {
+          await deleteDoc(compositeRef);
+          logger.log(`🧹 [removeLectura] Progreso compuesto eliminado: ${compositeDocId} para estudiante ${studentDoc.id}`);
+        }
+
+        const legacyRef = doc(db, 'students', studentDoc.id, 'progress', textoId);
+        const legacySnap = await getDoc(legacyRef);
+        if (legacySnap.exists() && legacySnap.data()?.sourceCourseId === courseId) {
+          await deleteDoc(legacyRef);
+          logger.log(`🧹 [removeLectura] Progreso legacy eliminado: ${textoId} para estudiante ${studentDoc.id}`);
         }
       } catch (cleanupError) {
         logger.warn(`⚠️ [removeLectura] Error limpiando progreso huérfano:`, cleanupError.message);
@@ -2263,16 +2413,31 @@ async function syncCourseAssignments(courseId, estudianteUid, lecturasAsignadas 
       continue;
     }
 
-    const progressRef = doc(db, 'students', estudianteUid, 'progress', lectura.textoId);
+    const scopedDocId = __progressDocId(courseId, lectura.textoId);
+    const progressRef = doc(db, 'students', estudianteUid, 'progress', scopedDocId);
     const progressSnap = await getDoc(progressRef);
 
     if (progressSnap.exists()) {
-      logger.log('✅ [syncCourseAssignments] Progreso ya existente para texto:', lectura.textoId);
+      logger.log('✅ [syncCourseAssignments] Progreso ya existente para lectura scopeada:', scopedDocId);
+      continue;
+    }
+
+    // Compatibilidad: si existe doc legacy para el mismo curso, migrarlo al doc compuesto.
+    const legacyRef = doc(db, 'students', estudianteUid, 'progress', lectura.textoId);
+    const legacySnap = await getDoc(legacyRef);
+    if (legacySnap.exists() && legacySnap.data()?.sourceCourseId === courseId) {
+      await setDoc(progressRef, {
+        ...legacySnap.data(),
+        textoId: lectura.textoId,
+        sourceCourseId: courseId,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      logger.log('♻️ [syncCourseAssignments] Progreso legacy migrado a doc compuesto:', scopedDocId);
       continue;
     }
 
     try {
-      logger.log('🆕 [syncCourseAssignments] Creando progreso para texto:', lectura.textoId);
+      logger.log('🆕 [syncCourseAssignments] Creando progreso para lectura scopeada:', scopedDocId);
       await setDoc(progressRef, {
         estudianteUid, // Required by seguridad
         textoId: lectura.textoId,
@@ -2462,35 +2627,45 @@ export async function getCourseMetrics(courseId, options = {}) {
     }
 
     if (lecturasIds.length) {
+        const resolveLecturaTextoId = (docSnap, data = {}) => {
+          if (data?.textoId && lecturasIds.includes(data.textoId)) {
+            return data.textoId;
+          }
+          return lecturasIds.find((lectureTextoId) =>
+            docSnap.id === lectureTextoId || docSnap.id.endsWith(`_${lectureTextoId}`)
+          ) || null;
+        };
+
       const progressQuery = query(
         collection(db, 'students', estudiante.estudianteUid, 'progress'),
         where('sourceCourseId', '==', courseId)
       );
 
       const progressSnap = await getDocs(progressQuery);
-      let relevantes = progressSnap.docs.filter(docSnap => lecturasIds.includes(docSnap.id));
+      let relevantes = progressSnap.docs.filter((docSnap) => {
+        const data = docSnap.data() || {};
+          const docTextoId = resolveLecturaTextoId(docSnap, data);
+        return !!docTextoId && lecturasIds.includes(docTextoId);
+      });
 
-      // Fallback: si no hay docs por sourceCourseId, intentar por ID exacto de lectura
-      // SOLO si el doc no tiene sourceCourseId (null/undefined) para evitar mezclar cursos.
+      // Fallback seguro: si no hay docs por sourceCourseId,
+      // intentar docId compuesto {courseId}_{textoId} para evitar contaminación cross-course.
       if (!relevantes.length) {
         const fallbackDocs = [];
         await Promise.all(lecturasIds.map(async (textoId) => {
           try {
-            const ref = doc(db, 'students', estudiante.estudianteUid, 'progress', textoId);
+            const compositeDocId = `${courseId}_${textoId}`;
+            const ref = doc(db, 'students', estudiante.estudianteUid, 'progress', compositeDocId);
             const snap = await getDoc(ref);
             if (!snap.exists()) return;
-            const data = snap.data();
-            const scid = data?.sourceCourseId;
-            if (scid === undefined || scid === null || scid === '' || scid === courseId) {
-              fallbackDocs.push(snap);
-            }
+            fallbackDocs.push(snap);
           } catch (e) {
             // best-effort
           }
         }));
 
         if (fallbackDocs.length) {
-          logger.warn('⚠️ [getCourseMetrics] Usando fallback por textoId (sourceCourseId ausente) para estudiante:', estudiante.estudianteUid);
+          logger.warn('⚠️ [getCourseMetrics] Usando fallback por docId compuesto para estudiante:', estudiante.estudianteUid);
         }
 
         // Simular la misma estructura (docs) para reusar el cálculo
@@ -2571,8 +2746,10 @@ export async function getCourseMetrics(courseId, options = {}) {
         // 🆕 DETALLE POR LECTURA: Construir objeto con progreso específico por lectura
         const lecturaDetails = {};
         relevantes.forEach(docSnap => {
-          const textoId = docSnap.id;
           const data = docSnap.data();
+          const textoId = resolveLecturaTextoId(docSnap, data);
+          if (!textoId) return;
+
           const activitiesProgress = data.activitiesProgress || {};
           const rubricProgress = data.rubricProgress || {};
 
@@ -2580,6 +2757,8 @@ export async function getCourseMetrics(courseId, options = {}) {
           let artifacts = {};
           if (activitiesProgress[textoId]?.artifacts) {
             artifacts = activitiesProgress[textoId].artifacts;
+          } else if (activitiesProgress[docSnap.id]?.artifacts) {
+            artifacts = activitiesProgress[docSnap.id].artifacts;
           } else if (activitiesProgress.artifacts) {
             artifacts = activitiesProgress.artifacts;
           } else {
@@ -2802,6 +2981,401 @@ export async function deleteTextEverywhere(textId, docenteUid) {
   }
 }
 
+function __isRealCourseId(courseId) {
+  return Boolean(courseId) &&
+    typeof courseId === 'string' &&
+    courseId !== 'global_progress' &&
+    !courseId.startsWith('free::');
+}
+
+function __resolveOwnedCloudCourseIdFromDoc(docSnap) {
+  const data = docSnap?.data?.() || {};
+  const candidateIds = [
+    data.sourceCourseId,
+    data.courseId,
+    data.currentCourseId,
+    data.text?.sourceCourseId,
+    data.textMetadata?.sourceCourseId,
+    data.backupMeta?.sourceCourseId,
+    data.metadata?.sourceCourseId
+  ];
+
+  for (const candidate of candidateIds) {
+    if (__isRealCourseId(candidate)) return candidate;
+  }
+
+  const docId = String(docSnap?.id || '');
+  const textoId = typeof data.textoId === 'string' ? data.textoId : null;
+  if (docId.startsWith('draft_backup_') && textoId && docId.endsWith(`_${textoId}`)) {
+    const prefix = 'draft_backup_';
+    const suffix = `_${textoId}`;
+    const maybeCourseId = docId.slice(prefix.length, docId.length - suffix.length);
+    if (__isRealCourseId(maybeCourseId)) return maybeCourseId;
+  }
+
+  return null;
+}
+
+async function __cleanupCourseProgressForStudent(studentUid, courseId, lecturasAsignadas = []) {
+  let deleted = 0;
+  const deletedDocIds = new Set();
+
+  const progressRef = collection(db, 'students', studentUid, 'progress');
+  const byCourseQuery = query(progressRef, where('sourceCourseId', '==', courseId));
+  const byCourseSnap = await getDocs(byCourseQuery);
+
+  for (const docSnap of byCourseSnap.docs) {
+    await deleteDoc(docSnap.ref);
+    if (!deletedDocIds.has(docSnap.id)) {
+      deletedDocIds.add(docSnap.id);
+      deleted += 1;
+    }
+  }
+
+  // Barrido adicional: capturar docs compuestos huérfanos con ID {courseId}_{textoId}
+  // que podrían no tener sourceCourseId (datos legacy incompletos).
+  const allProgressSnap = await getDocs(progressRef);
+  for (const docSnap of allProgressSnap.docs) {
+    const data = docSnap.data() || {};
+    const isOwnedByCourse = data.sourceCourseId === courseId;
+    const isCompositeOwned = typeof docSnap.id === 'string' && docSnap.id.startsWith(`${courseId}_`);
+    if (!isOwnedByCourse && !isCompositeOwned) continue;
+    if (deletedDocIds.has(docSnap.id)) continue;
+
+    try {
+      await deleteDoc(docSnap.ref);
+      deletedDocIds.add(docSnap.id);
+      deleted += 1;
+    } catch (error) {
+      logger.warn('⚠️ [deleteCourseData] Error eliminando doc huérfano por barrido completo:', {
+        studentUid,
+        courseId,
+        docId: docSnap.id,
+        message: error?.message
+      });
+    }
+  }
+
+  // Fallback defensivo para datos legacy o docs huérfanos con ID compuesto.
+  for (const lectura of (lecturasAsignadas || [])) {
+    if (!lectura?.textoId) continue;
+
+    try {
+      const compositeDocId = __progressDocId(courseId, lectura.textoId);
+      const compositeDocRef = doc(db, 'students', studentUid, 'progress', compositeDocId);
+      const compositeSnap = await getDoc(compositeDocRef);
+      if (compositeSnap.exists()) {
+        await deleteDoc(compositeDocRef);
+        deleted += 1;
+      }
+
+      const legacyRef = doc(db, 'students', studentUid, 'progress', lectura.textoId);
+      const legacySnap = await getDoc(legacyRef);
+      if (legacySnap.exists() && legacySnap.data()?.sourceCourseId === courseId) {
+        await deleteDoc(legacyRef);
+        deleted += 1;
+      }
+    } catch (error) {
+      logger.warn('⚠️ [deleteCourseData] Error en fallback de progreso legacy:', {
+        studentUid,
+        courseId,
+        textoId: lectura.textoId,
+        message: error?.message
+      });
+    }
+  }
+
+  return deleted;
+}
+
+async function __cleanupCourseNotificationsForStudent(studentUid, courseId) {
+  let deleted = 0;
+  const notificationsRef = collection(db, 'students', studentUid, 'notifications');
+  const byCourseQuery = query(notificationsRef, where('courseId', '==', courseId));
+  const byCourseSnap = await getDocs(byCourseQuery);
+
+  for (const docSnap of byCourseSnap.docs) {
+    await deleteDoc(docSnap.ref);
+    deleted += 1;
+  }
+
+  return deleted;
+}
+
+async function __cleanupOwnedCloudCourseDataForStudent(studentUid, courseId) {
+  let sessionsDeleted = 0;
+  let draftBackupsDeleted = 0;
+  let notificationsDeleted = 0;
+  const deletedSessionIds = new Set();
+  const deletedBackupIds = new Set();
+
+  const sessionsRef = collection(db, 'users', studentUid, 'sessions');
+  const sessionsByCourse = query(sessionsRef, where('sourceCourseId', '==', courseId));
+  const sessionsSnap = await getDocs(sessionsByCourse);
+  for (const docSnap of sessionsSnap.docs) {
+    try {
+      await deleteSessionFromFirestore(studentUid, docSnap.id);
+      if (!deletedSessionIds.has(docSnap.id)) {
+        deletedSessionIds.add(docSnap.id);
+        sessionsDeleted += 1;
+      }
+    } catch (error) {
+      logger.warn('⚠️ [cleanupOwnedCloudCourseData] Error eliminando sesión:', {
+        studentUid,
+        courseId,
+        sessionId: docSnap.id,
+        message: error?.message
+      });
+    }
+  }
+
+  const allSessionsSnap = await getDocs(sessionsRef);
+  for (const docSnap of allSessionsSnap.docs) {
+    if (deletedSessionIds.has(docSnap.id)) continue;
+    const scid = __resolveOwnedCloudCourseIdFromDoc(docSnap);
+    if (scid !== courseId) continue;
+
+    try {
+      await deleteSessionFromFirestore(studentUid, docSnap.id);
+      deletedSessionIds.add(docSnap.id);
+      sessionsDeleted += 1;
+    } catch (error) {
+      logger.warn('⚠️ [cleanupOwnedCloudCourseData] Error eliminando sesión legacy:', {
+        studentUid,
+        courseId,
+        sessionId: docSnap.id,
+        message: error?.message
+      });
+    }
+  }
+
+  const draftBackupsRef = collection(db, 'users', studentUid, 'draftBackups');
+  const backupsByCourse = query(draftBackupsRef, where('sourceCourseId', '==', courseId));
+  const backupsSnap = await getDocs(backupsByCourse);
+  for (const docSnap of backupsSnap.docs) {
+    try {
+      await deleteDoc(docSnap.ref);
+      if (!deletedBackupIds.has(docSnap.id)) {
+        deletedBackupIds.add(docSnap.id);
+        draftBackupsDeleted += 1;
+      }
+    } catch (error) {
+      logger.warn('⚠️ [cleanupOwnedCloudCourseData] Error eliminando draftBackup:', {
+        studentUid,
+        courseId,
+        draftBackupId: docSnap.id,
+        message: error?.message
+      });
+    }
+  }
+
+  const allBackupsSnap = await getDocs(draftBackupsRef);
+  for (const docSnap of allBackupsSnap.docs) {
+    if (deletedBackupIds.has(docSnap.id)) continue;
+    const scid = __resolveOwnedCloudCourseIdFromDoc(docSnap);
+    if (scid !== courseId) continue;
+
+    try {
+      await deleteDoc(docSnap.ref);
+      deletedBackupIds.add(docSnap.id);
+      draftBackupsDeleted += 1;
+    } catch (error) {
+      logger.warn('⚠️ [cleanupOwnedCloudCourseData] Error eliminando draftBackup legacy:', {
+        studentUid,
+        courseId,
+        draftBackupId: docSnap.id,
+        message: error?.message
+      });
+    }
+  }
+
+  notificationsDeleted = await __cleanupCourseNotificationsForStudent(studentUid, courseId);
+
+  return {
+    sessionsDeleted,
+    draftBackupsDeleted,
+    notificationsDeleted
+  };
+}
+
+/**
+ * Purga todos los datos del estudiante asociados a un curso.
+ * - Siempre limpia progreso de lecturas y notificaciones con `courseId`.
+ * - Opcionalmente (solo cuando el actor es el propio estudiante) limpia
+ *   sesiones cloud y draftBackups de ese curso.
+ */
+export async function purgeStudentCourseData(studentUid, courseId, options = {}) {
+  const {
+    lecturasAsignadas = [],
+    includeOwnedCloudData = false
+  } = options || {};
+
+  if (!studentUid || !courseId) {
+    throw new Error('studentUid y courseId son requeridos');
+  }
+
+  const stats = {
+    progressDeleted: 0,
+    notificationsDeleted: 0,
+    sessionsDeleted: 0,
+    draftBackupsDeleted: 0
+  };
+
+  stats.progressDeleted = await __cleanupCourseProgressForStudent(studentUid, courseId, lecturasAsignadas);
+  stats.notificationsDeleted = await __cleanupCourseNotificationsForStudent(studentUid, courseId);
+
+  if (includeOwnedCloudData) {
+    const owned = await __cleanupOwnedCloudCourseDataForStudent(studentUid, courseId);
+    stats.sessionsDeleted = owned.sessionsDeleted;
+    stats.draftBackupsDeleted = owned.draftBackupsDeleted;
+    // Este valor ya se contó arriba. Mantener el mayor por robustez.
+    stats.notificationsDeleted = Math.max(stats.notificationsDeleted, owned.notificationsDeleted);
+  }
+
+  return stats;
+}
+
+/**
+ * Limpia datos "huérfanos" del estudiante en nube cuando ya no está inscrito
+ * en ciertos cursos (ej: docente lo retira o elimina el curso).
+ * Incluye progreso por curso y datos owner-owned del estudiante.
+ */
+export async function cleanupOrphanedStudentOwnedCourseData(studentUid, activeCourseIds = []) {
+  if (!studentUid) throw new Error('studentUid requerido');
+
+  const activeSet = new Set((activeCourseIds || []).filter(Boolean));
+  const orphanCourseIds = new Set();
+  const stats = {
+    orphanCourseIds: [],
+    progressDeleted: 0,
+    sessionsDeleted: 0,
+    draftBackupsDeleted: 0,
+    notificationsDeleted: 0
+  };
+
+  const shouldDeleteCourseData = (courseId) => {
+    if (!__isRealCourseId(courseId)) return false;
+    return !activeSet.has(courseId);
+  };
+
+  const resolveProgressCourseId = (docSnap) => {
+    const data = docSnap.data() || {};
+    const fromField = data.sourceCourseId || null;
+    if (fromField) return fromField;
+
+    const textoId = data.textoId || null;
+    const docId = docSnap.id || '';
+    if (!textoId || !docId.endsWith(`_${textoId}`)) return null;
+    const maybeCourseId = docId.slice(0, docId.length - (`_${textoId}`).length);
+    return maybeCourseId || null;
+  };
+
+  const resolveOwnedCloudCourseId = (docSnap) => __resolveOwnedCloudCourseIdFromDoc(docSnap);
+
+  // 1) Progreso por curso huérfano
+  try {
+    const progressRef = collection(db, 'students', studentUid, 'progress');
+    const progressSnap = await getDocs(progressRef);
+
+    for (const docSnap of progressSnap.docs) {
+      const scid = resolveProgressCourseId(docSnap);
+      if (!shouldDeleteCourseData(scid)) continue;
+      try {
+        orphanCourseIds.add(scid);
+        await deleteDoc(docSnap.ref);
+        stats.progressDeleted += 1;
+      } catch (error) {
+        logger.warn('⚠️ [cleanupOrphanedStudentOwnedCourseData] Error eliminando progreso huérfano:', {
+          studentUid,
+          courseId: scid,
+          docId: docSnap.id,
+          message: error?.message
+        });
+      }
+    }
+  } catch (error) {
+    logger.warn('⚠️ [cleanupOrphanedStudentOwnedCourseData] Error limpiando progreso huérfano:', error?.message);
+  }
+
+  // 2) Sessions cloud por curso huérfano
+  try {
+    const sessionsRef = collection(db, 'users', studentUid, 'sessions');
+    const sessionsSnap = await getDocs(sessionsRef);
+
+    for (const docSnap of sessionsSnap.docs) {
+      const scid = resolveOwnedCloudCourseId(docSnap);
+      if (!shouldDeleteCourseData(scid)) continue;
+      try {
+        orphanCourseIds.add(scid);
+        await deleteSessionFromFirestore(studentUid, docSnap.id);
+        stats.sessionsDeleted += 1;
+      } catch (error) {
+        logger.warn('⚠️ [cleanupOrphanedStudentOwnedCourseData] Error eliminando sesión huérfana:', {
+          studentUid,
+          courseId: scid,
+          sessionId: docSnap.id,
+          message: error?.message
+        });
+      }
+    }
+  } catch (error) {
+    logger.warn('⚠️ [cleanupOrphanedStudentOwnedCourseData] Error limpiando sessions huérfanas:', error?.message);
+  }
+
+  // 3) Draft backups cloud por curso huérfano
+  try {
+    const backupsRef = collection(db, 'users', studentUid, 'draftBackups');
+    const backupsSnap = await getDocs(backupsRef);
+
+    for (const docSnap of backupsSnap.docs) {
+      const scid = resolveOwnedCloudCourseId(docSnap);
+      if (!shouldDeleteCourseData(scid)) continue;
+      try {
+        orphanCourseIds.add(scid);
+        await deleteDoc(docSnap.ref);
+        stats.draftBackupsDeleted += 1;
+      } catch (error) {
+        logger.warn('⚠️ [cleanupOrphanedStudentOwnedCourseData] Error eliminando draftBackup huérfano:', {
+          studentUid,
+          courseId: scid,
+          draftBackupId: docSnap.id,
+          message: error?.message
+        });
+      }
+    }
+  } catch (error) {
+    logger.warn('⚠️ [cleanupOrphanedStudentOwnedCourseData] Error limpiando draftBackups huérfanos:', error?.message);
+  }
+
+  // 4) Notificaciones por curso huérfano
+  try {
+    const notificationsRef = collection(db, 'students', studentUid, 'notifications');
+    const notificationsSnap = await getDocs(notificationsRef);
+
+    for (const docSnap of notificationsSnap.docs) {
+      const courseId = docSnap.data()?.courseId || null;
+      if (!shouldDeleteCourseData(courseId)) continue;
+      try {
+        orphanCourseIds.add(courseId);
+        await deleteDoc(docSnap.ref);
+        stats.notificationsDeleted += 1;
+      } catch (error) {
+        logger.warn('⚠️ [cleanupOrphanedStudentOwnedCourseData] Error eliminando notificación huérfana:', {
+          studentUid,
+          courseId,
+          notificationId: docSnap.id,
+          message: error?.message
+        });
+      }
+    }
+  } catch (error) {
+    logger.warn('⚠️ [cleanupOrphanedStudentOwnedCourseData] Error limpiando notificaciones huérfanas:', error?.message);
+  }
+
+  stats.orphanCourseIds = Array.from(orphanCourseIds);
+  return stats;
+}
+
 export async function deleteCourse(courseId) {
   try {
     if (!courseId) throw new Error('ID de curso requerido');
@@ -2824,44 +3398,70 @@ export async function deleteCourse(courseId) {
     const code = courseData.codigoJoin;
     const lecturasAsignadas = courseData.lecturasAsignadas || [];
 
-    // 2. Eliminar código del curso
-    if (code) {
+    // 2. Obtener estudiantes
+    const studentsSnap = await getDocs(collection(db, 'courses', courseId, 'students'));
+    const studentUids = studentsSnap.docs.map((d) => d.id).filter(Boolean);
+
+    // 2.1 Fail-fast: validar enqueue owner-only ANTES de borrar matrícula/curso.
+    const ownerCleanupFailures = [];
+    for (const studentUid of studentUids) {
       try {
-        await deleteDoc(doc(db, 'courseCodes', code));
-      } catch (codeError) {
-        // No bloquear el borrado del curso por datos legacy en courseCodes.
-        // Un código huérfano solo causará que joinCourse falle con "Curso no encontrado".
-        logger.warn('⚠️ No se pudo eliminar courseCodes para el curso. Continuando...', {
-          code,
+        const ownerCleanup = await __enqueueOwnedCloudCleanupJob({
           courseId,
-          message: codeError?.message
+          studentUid,
+          reason: 'teacher_delete_course'
+        });
+        if (!ownerCleanup?.ok) {
+          ownerCleanupFailures.push({ studentUid, ...ownerCleanup });
+        }
+      } catch (ownerCleanupError) {
+        ownerCleanupFailures.push({
+          studentUid,
+          reason: 'enqueue_exception',
+          details: ownerCleanupError?.message
         });
       }
     }
 
-    // 3. Obtener estudiantes y limpiar sus datos
-    const studentsSnap = await getDocs(collection(db, 'courses', courseId, 'students'));
+    if (ownerCleanupFailures.length > 0) {
+      throw new Error(`No se pudo encolar cleanup owner-only para ${ownerCleanupFailures.length} estudiante(s). Operación abortada.`);
+    }
 
+    // 2.2 Limpiar datos de todos los estudiantes (fase fail-fast)
+    const purgeFailures = [];
     for (const studentDoc of studentsSnap.docs) {
       const studentUid = studentDoc.id;
 
-      // 🆕 D12 FIX: Limpiar progreso de lecturas asociadas a este curso
-      for (const lectura of lecturasAsignadas) {
-        if (lectura?.textoId) {
-          try {
-            const progressRef = doc(db, 'students', studentUid, 'progress', lectura.textoId);
-            const progressSnap = await getDoc(progressRef);
-
-            // Solo eliminar si el progreso pertenece a este curso
-            if (progressSnap.exists() && progressSnap.data().sourceCourseId === courseId) {
-              await deleteDoc(progressRef);
-              logger.log(`🗑️ Progreso ${lectura.textoId} eliminado para estudiante ${studentUid}`);
-            }
-          } catch (progressError) {
-            logger.warn(`⚠️ Error limpiando progreso ${lectura.textoId}:`, progressError.message);
-          }
-        }
+      try {
+        const cleanupStats = await purgeStudentCourseData(studentUid, courseId, {
+          lecturasAsignadas,
+          includeOwnedCloudData: false
+        });
+        logger.log('🧹 [deleteCourse] Limpieza aplicada al estudiante:', {
+          courseId,
+          studentUid,
+          ...cleanupStats
+        });
+      } catch (cleanupError) {
+        purgeFailures.push({
+          courseId,
+          studentUid,
+          message: cleanupError?.message
+        });
       }
+    }
+
+    if (purgeFailures.length > 0) {
+      logger.error('❌ [deleteCourse] Purga incompleta; se aborta borrado de matrícula/curso para evitar residuos:', {
+        courseId,
+        purgeFailures
+      });
+      throw new Error(`No se pudo purgar completamente el curso para ${purgeFailures.length} estudiante(s). Operación abortada.`);
+    }
+
+    // 3. Eliminar matrícula tras purga exitosa
+    for (const studentDoc of studentsSnap.docs) {
+      const studentUid = studentDoc.id;
 
       // 🆕 D12 FIX: Quitar curso de enrolledCourses del estudiante
       try {
@@ -2879,6 +3479,21 @@ export async function deleteCourse(courseId) {
 
     // 4. Eliminar documento del curso
     await deleteDoc(courseRef);
+
+    // 5. Eliminar código del curso (al final para evitar estado inconsistente)
+    if (code) {
+      try {
+        await deleteDoc(doc(db, 'courseCodes', code));
+      } catch (codeError) {
+        // No revertir la eliminación del curso por código legacy huérfano.
+        logger.warn('⚠️ No se pudo eliminar courseCodes tras borrar curso. Continuando...', {
+          code,
+          courseId,
+          message: codeError?.message
+        });
+      }
+    }
+
     logger.log('✅ Curso eliminado con limpieza completa:', courseId);
     return true;
   } catch (error) {
@@ -2891,10 +3506,53 @@ export async function deleteStudentFromCourse(courseId, studentUid) {
   try {
     if (!courseId || !studentUid) throw new Error('IDs requeridos');
 
-    // 1. Eliminar de la subcolección del curso
+    // 1) Resolver lecturas asignadas para fallback de limpieza legacy
+    let lecturasAsignadas = [];
+    try {
+      const courseSnap = await getDoc(doc(db, 'courses', courseId));
+      if (courseSnap.exists()) {
+        lecturasAsignadas = courseSnap.data()?.lecturasAsignadas || [];
+      }
+    } catch (courseReadError) {
+      logger.warn('⚠️ [deleteStudentFromCourse] No se pudieron leer lecturas del curso:', courseReadError?.message);
+    }
+
+    const actorUid = auth?.currentUser?.uid || null;
+    const includeOwnedCloudData = actorUid === studentUid;
+
+    // 2) Si el actor es docente (no owner), exigir enqueue owner-only antes de continuar.
+    if (!includeOwnedCloudData) {
+      const ownerCleanup = await __enqueueOwnedCloudCleanupJob({
+        courseId,
+        studentUid,
+        reason: 'teacher_remove_student'
+      });
+      if (!ownerCleanup?.ok) {
+        throw new Error('No se pudo encolar cleanup owner-only; baja abortada para evitar residuos.');
+      }
+    }
+
+    // 3) Limpiar datos de curso del estudiante ANTES de borrar la matrícula.
+    // Si falla la purga, abortar para no dejar residuos con baja aparentemente exitosa.
+    try {
+      const cleanupStats = await purgeStudentCourseData(studentUid, courseId, {
+        lecturasAsignadas,
+        includeOwnedCloudData
+      });
+      logger.log('🧹 [deleteStudentFromCourse] Limpieza por baja aplicada:', {
+        courseId,
+        studentUid,
+        includeOwnedCloudData,
+        ...cleanupStats
+      });
+    } catch (cleanupError) {
+      throw new Error(`No se pudo completar limpieza previa a la baja: ${cleanupError?.message || 'error desconocido'}`);
+    }
+
+    // 4. Eliminar de la subcolección del curso
     await deleteDoc(doc(db, 'courses', courseId, 'students', studentUid));
 
-    // 2. 🆕 CRÍTICO: También quitar del array enrolledCourses del usuario
+    // 5. También quitar del array enrolledCourses del usuario
     try {
       const userRef = doc(db, 'users', studentUid);
       await updateDoc(userRef, {
@@ -2935,13 +3593,26 @@ export async function getStudentCourses(studentUid) {
 
     if (enrolledIds.length > 0) {
       logger.log('📚 [getStudentCourses] Usando lista de cursos del perfil:', enrolledIds.length);
+      const staleEnrolledIds = [];
       const coursesPromises = enrolledIds.map(async (courseId) => {
         const courseSnap = await getDoc(doc(db, 'courses', courseId));
-        if (!courseSnap.exists()) return null;
+        if (!courseSnap.exists()) {
+          staleEnrolledIds.push(courseId);
+          return null;
+        }
 
         // Obtener estado real desde la subcolección del curso
         const enrollmentSnap = await getDoc(doc(db, 'courses', courseId, 'students', studentUid));
-        const status = enrollmentSnap.exists() ? enrollmentSnap.data().estado : 'unknown';
+        if (!enrollmentSnap.exists()) {
+          staleEnrolledIds.push(courseId);
+          return null;
+        }
+
+        const status = enrollmentSnap.data()?.estado || 'unknown';
+        if (status === 'removed' || status === 'deleted' || status === 'inactive') {
+          staleEnrolledIds.push(courseId);
+          return null;
+        }
 
         return {
           id: courseSnap.id,
@@ -2951,6 +3622,18 @@ export async function getStudentCourses(studentUid) {
       });
 
       const courses = await Promise.all(coursesPromises);
+
+      if (staleEnrolledIds.length > 0) {
+        try {
+          await updateDoc(userRef, {
+            enrolledCourses: arrayRemove(...staleEnrolledIds)
+          });
+          logger.warn('🧹 [getStudentCourses] EnrolledCourses desalineados removidos del perfil:', staleEnrolledIds);
+        } catch (cleanupError) {
+          logger.warn('⚠️ [getStudentCourses] No se pudieron limpiar enrolledCourses desalineados:', cleanupError?.message);
+        }
+      }
+
       return courses.filter(Boolean);
     }
 
@@ -2961,9 +3644,14 @@ export async function getStudentCourses(studentUid) {
       where('estudianteUid', '==', studentUid)
     );
     const snapshot = await getDocs(studentsQuery);
-    // ... lógica anterior ...
+    const inactiveStatuses = new Set(['removed', 'deleted', 'inactive']);
     const courses = [];
     for (const docSnap of snapshot.docs) {
+      const enrollmentStatus = docSnap.data()?.estado || 'unknown';
+      if (inactiveStatuses.has(enrollmentStatus)) {
+        continue;
+      }
+
       const courseRef = docSnap.ref.parent.parent;
       if (courseRef) {
         const courseSnap = await getDoc(courseRef);
@@ -2971,7 +3659,7 @@ export async function getStudentCourses(studentUid) {
           courses.push({
             id: courseSnap.id,
             ...courseSnap.data(),
-            enrollmentStatus: docSnap.data().estado
+            enrollmentStatus
           });
         }
       }
@@ -2979,7 +3667,7 @@ export async function getStudentCourses(studentUid) {
     return courses;
   } catch (error) {
     logger.error('❌ Error obteniendo cursos del estudiante:', error);
-    return [];
+    throw error;
   }
 }
 
@@ -2994,18 +3682,20 @@ export async function getStudentCourses(studentUid) {
  * @param {string} artifactName - Nombre del artefacto (resumenAcademico, tablaACD, etc.)
  * @returns {Promise<{success: boolean, message: string}>}
  */
-export async function resetStudentArtifact(studentUid, textoId, artifactName) {
+export async function resetStudentArtifact(studentUid, textoId, artifactName, courseId = null) {
   try {
     if (!studentUid || !textoId || !artifactName) {
       throw new Error('Se requieren studentUid, textoId y artifactName');
     }
 
-    logger.log(`🔄 [Reset] Iniciando reset de ${artifactName} para ${studentUid} en ${textoId}`);
+    logger.log(`🔄 [Reset] Iniciando reset de ${artifactName} para ${studentUid} en ${textoId} (courseId: ${courseId || 'legacy'})`);
+    const { ref: progressRef, snap: progressSnap, legacyCourseId } = await __resolveProgressDoc(studentUid, textoId, courseId);
 
-    const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
-    const progressSnap = await getDoc(progressRef);
+    if (!progressSnap && legacyCourseId && courseId) {
+      logger.warn('🚫 [Reset] Legacy doc ignorado: pertenece a curso', legacyCourseId, 'pero se pidió', courseId);
+    }
 
-    if (!progressSnap.exists()) {
+    if (!progressSnap || !progressSnap.exists() || !progressRef) {
       return { success: true, message: 'No hay progreso que resetear' };
     }
 
@@ -3110,18 +3800,20 @@ export async function resetStudentArtifact(studentUid, textoId, artifactName) {
  * @param {string} textoId - ID del texto/lectura
  * @returns {Promise<{success: boolean, message: string, resetCount: number}>}
  */
-export async function resetAllStudentArtifacts(studentUid, textoId) {
+export async function resetAllStudentArtifacts(studentUid, textoId, courseId = null) {
   try {
     if (!studentUid || !textoId) {
       throw new Error('Se requieren studentUid y textoId');
     }
 
-    logger.log(`🔄 [Reset ALL] Iniciando reset de todos los artefactos para ${studentUid} en ${textoId}`);
+    logger.log(`🔄 [Reset ALL] Iniciando reset de todos los artefactos para ${studentUid} en ${textoId} (courseId: ${courseId || 'legacy'})`);
+    const { ref: progressRef, snap: progressSnap, legacyCourseId } = await __resolveProgressDoc(studentUid, textoId, courseId);
 
-    const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
-    const progressSnap = await getDoc(progressRef);
+    if (!progressSnap && legacyCourseId && courseId) {
+      logger.warn('🚫 [Reset ALL] Legacy doc ignorado: pertenece a curso', legacyCourseId, 'pero se pidió', courseId);
+    }
 
-    if (!progressSnap.exists()) {
+    if (!progressSnap || !progressSnap.exists() || !progressRef) {
       return { success: true, message: 'No hay progreso que resetear', resetCount: 0 };
     }
 
@@ -3208,20 +3900,22 @@ export async function resetAllStudentArtifacts(studentUid, textoId) {
  * @param {string} textoId - ID del texto/lectura
  * @returns {Promise<Object>} Detalle de artefactos con intentos, estado, historial
  */
-export async function getStudentArtifactDetails(studentUid, textoId) {
+export async function getStudentArtifactDetails(studentUid, textoId, courseId = null) {
   try {
     if (!studentUid || !textoId) {
       throw new Error('Se requieren studentUid y textoId');
     }
 
-    logger.log('🔍 [getStudentArtifactDetails] Buscando:', { studentUid, textoId });
+    logger.log('🔍 [getStudentArtifactDetails] Buscando:', { studentUid, textoId, courseId });
+    const { snap: progressSnap, usedDocId, legacyCourseId } = await __resolveProgressDoc(studentUid, textoId, courseId);
 
-    const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
-    const progressSnap = await getDoc(progressRef);
+    if (!progressSnap && legacyCourseId && courseId) {
+      logger.warn('🚫 [getStudentArtifactDetails] Legacy doc ignorado: pertenece a curso', legacyCourseId, 'pero se pidió', courseId);
+    }
 
-    logger.log('📄 [getStudentArtifactDetails] Documento existe:', progressSnap.exists());
+    logger.log('📄 [getStudentArtifactDetails] Documento encontrado:', Boolean(progressSnap), usedDocId ? `(${usedDocId})` : '');
 
-    if (!progressSnap.exists()) {
+    if (!progressSnap) {
       logger.log('⚠️ [getStudentArtifactDetails] No existe documento de progreso');
       return {
         hasProgress: false,
@@ -3429,3 +4123,4 @@ export async function getStudentArtifactDetails(studentUid, textoId) {
     return { hasProgress: false, artifacts: {}, rubricProgress: {}, error: error.message };
   }
 }
+
