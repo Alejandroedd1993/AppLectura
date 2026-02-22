@@ -1,4 +1,4 @@
-﻿import React, { useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { buildReadingWorkspaceContext } from '../utils/contextBuilders';
 import styled from 'styled-components';
 
@@ -11,6 +11,7 @@ import VisorTextoResponsive from '../VisorTexto_responsive';
 import TutorDock from './tutor/TutorDock';
 import WebEnrichmentButton from './chat/WebEnrichmentButton';
 import useNotesWorkspaceAdapter from '../hooks/useNotesWorkspaceAdapter';
+import useWebSearchAvailability from '../hooks/useWebSearchAvailability';
 import NotesPanelDock from './notes/NotesPanelDock';
 import useReaderActions from '../hooks/useReaderActions';
 // FASE 2: Integración pedagógica migrada de LecturaInteractiva
@@ -18,8 +19,6 @@ import { PedagogyContext } from '../context/PedagogyContext';
 import BloomLevelIndicator from './bloom/BloomLevelIndicator';
 import CriticalProgressionPanel from './pedagogy/CriticalProgressionPanel';
 import ACDAnalysisPanel from './acd/ACDAnalysisPanel';
-import { fetchWithTimeout } from '../utils/netUtils';
-import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 
 /**
  * ReadingWorkspace (Esqueleto Inicial)
@@ -94,105 +93,6 @@ const ContentArea = styled.div`
   overflow: auto;
   position: relative;
   padding-bottom: calc(80px + env(safe-area-inset-bottom)); /* Espacio para PromptBar fijo + safe-area */
-`;
-
-const _NotesPanel = styled.div`
-  position: fixed;
-  top: 60px;
-  right: 20px;
-  width: 320px;
-  max-height: 60vh;
-  display: flex;
-  flex-direction: column;
-  background: ${p => p.theme?.surface || '#fff'};
-  border: 1px solid ${p => p.theme?.border || '#ccc'};
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgba(0,0,0,.15);
-  z-index: 1700;
-  overflow: hidden;
-  @media (max-width: 768px) {
-    right: 12px;
-    left: 12px;
-    width: auto;
-    max-height: 70vh;
-  }
-`;
-
-const _NotesHeader = styled.div`
-  padding: .55rem .75rem;
-  background: ${p => p.theme?.primary || '#2563eb'};
-  color: #fff;
-  font-size: .7rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-`;
-
-const _NotesList = styled.div`
-  flex: 1;
-  overflow-y: auto;
-  padding: .6rem .65rem .75rem;
-  display: flex;
-  flex-direction: column;
-  gap: .55rem;
-  background: ${p => p.theme?.background || '#f8f9fb'};
-`;
-
-const _NoteItem = styled.div`
-  background: ${p => p.theme?.surface || '#fff'};
-  border: 1px solid ${p => p.theme?.border || '#ddd'};
-  border-radius: 8px;
-  padding: .5rem .55rem .6rem;
-  font-size: .65rem;
-  line-height: 1.3;
-  position: relative;
-`;
-
-const _NoteActions = styled.div`
-  display: flex;
-  gap: .35rem;
-  margin-top: .4rem;
-`;
-
-// Usar prefijo $ para evitar pasar prop no estándar al DOM
-const _SmallBtn = styled.button`
-  background: ${p => p.$danger ? (p.theme?.danger || '#b91c1c') : (p.theme?.primary || '#2563eb')};
-  color: #fff;
-  border: none;
-  font-size: .55rem;
-  padding: .3rem .5rem;
-  border-radius: 4px;
-  cursor: pointer;
-  &:hover { opacity:.85; }
-`;
-
-const _EmptyNote = styled.div`
-  font-size: .6rem;
-  opacity: .7;
-  text-align: center;
-  padding: .75rem 0 .5rem;
-`;
-
-const _NewNoteForm = styled.form`
-  padding: .45rem .55rem .55rem;
-  border-top: 1px solid ${p => p.theme?.border || '#ddd'};
-  background: ${p => p.theme?.surface || '#fff'};
-  display: flex;
-  flex-direction: column;
-  gap: .4rem;
-`;
-
-const _NoteInput = styled.textarea`
-  resize: vertical;
-  min-height: 52px;
-  max-height: 140px;
-  font-size: .6rem;
-  line-height: 1.25;
-  border: 1px solid ${p => p.theme?.border || '#ccc'};
-  border-radius: 6px;
-  padding: .4rem .45rem;
-  background: ${p => p.theme?.inputBg || '#fff'};
-  color: ${p => p.theme?.text || '#222'};
 `;
 
 const PromptBar = styled.form`
@@ -275,7 +175,6 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
   const theme = useMemo(() => modoOscuro ? { border: '#ddd', surface: '#f4f4f7' } : { border: '#ddd', surface: '#fff' }, [modoOscuro]);
   const [showTutor, setShowTutor] = useState(() => isTestEnv ? true : false);
   const [prompt, setPrompt] = useState('');
-  const [webSearchAvailable, setWebSearchAvailable] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [tutorExpanded, setTutorExpanded] = useState(false);
   const [tutorWidth, setTutorWidth] = useState(420);
@@ -301,56 +200,7 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
   const handleCloseNotes = useCallback(() => setShowNotes(false), []);
   const handleToggleFocus = toggleFocusMode; // 🆕 Reemplazar por versión global
 
-  // Verificar disponibilidad de búsqueda web en el backend
-  useEffect(() => {
-    let cancelled = false;
-    const verifyWebSearchAvailability = async () => {
-      try {
-        const authHeader = await getFirebaseAuthHeader();
-        const endpoint = buildBackendEndpoint('/api/web-search/test');
-
-        const res = await fetchWithTimeout(endpoint, {
-          method: 'GET',
-          headers: authHeader
-        }, 10000);
-
-        if (res.status === 401 || res.status === 403) {
-          devWarn('[ReadingWorkspace] /api/web-search/test requiere sesion autenticada');
-          if (!cancelled) setWebSearchAvailable(false);
-          return;
-        }
-
-        if (res.status === 429) {
-          devWarn('[ReadingWorkspace] /api/web-search/test rate limited');
-          if (!cancelled) setWebSearchAvailable(false);
-          return;
-        }
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-
-        const data = await res.json();
-        const available = data.configuracion?.serper_disponible ||
-          data.configuracion?.bing_disponible ||
-          data.configuracion?.tavily_disponible ||
-          data.api_utilizada !== 'simulada';
-
-        if (!cancelled) {
-          setWebSearchAvailable(available);
-        }
-        devLog('🌐 Búsqueda web disponible:', available, '- API:', data.configuracion?.modo_funcionamiento);
-      } catch (err) {
-        devWarn('⚠️ No se pudo verificar búsqueda web:', err);
-        if (!cancelled) {
-          setWebSearchAvailable(false);
-        }
-      }
-    };
-
-    verifyWebSearchAvailability();
-    return () => { cancelled = true; };
-  }, []);
+  const webSearchAvailable = useWebSearchAvailability();
 
   // 🚀 PERF: Estabilizado con refs para evitar recreación en cada keystroke
   const enviarPromptDirecto = useCallback(() => {

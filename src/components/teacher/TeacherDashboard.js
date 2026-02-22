@@ -19,7 +19,9 @@ import {
   // 🆕 Funciones para reset de artefactos
   resetStudentArtifact,
   resetAllStudentArtifacts,
-  getStudentArtifactDetails
+  getStudentArtifactDetails,
+  // 🔧 FIX CROSS-COURSE: Helper para doc IDs con scope de curso
+  getProgressDocId
 } from '../../firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 
@@ -29,6 +31,7 @@ const initialCourseForm = {
   periodo: '2025',
   descripcion: '',
   autoApprove: true,
+  lecturasFechaLimite: '',
   lecturas: []
 };
 
@@ -45,7 +48,12 @@ function TeacherDashboard() {
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [creatingCourse, setCreatingCourse] = useState(false);
+  const creatingCourseLockRef = useRef(false);
+  const lastCreateCourseAttemptRef = useRef(0);
   const [savingLecturas, setSavingLecturas] = useState(false);
+  const [savingLecturaFechaLimiteId, setSavingLecturaFechaLimiteId] = useState(null);
+  const [lecturasFechaLimiteDrafts, setLecturasFechaLimiteDrafts] = useState({});
+  const [showBiblioteca, setShowBiblioteca] = useState(false);
   const [approvingStudent, setApprovingStudent] = useState(null);
 
   // 🆕 D1, D9, D10, D11 FIX: Estados de carga para operaciones de eliminación
@@ -274,6 +282,10 @@ function TeacherDashboard() {
   const feedbackTimeoutRef = useRef(null);
 
   const selectedCourse = useMemo(() => courses.find(course => course.id === selectedCourseId), [courses, selectedCourseId]);
+
+  useEffect(() => {
+    setLecturasFechaLimiteDrafts({});
+  }, [selectedCourseId]);
 
   // 🆕 D6 FIX: showFeedback con cola y debounce
   const showFeedback = useCallback((type, message) => {
@@ -517,12 +529,26 @@ function TeacherDashboard() {
 
   const handleCreateCourse = async (event) => {
     event.preventDefault();
-    if (!courseForm.nombre.trim()) {
+    if (creatingCourseLockRef.current || creatingCourse) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastCreateCourseAttemptRef.current < 1200) {
+      return;
+    }
+    lastCreateCourseAttemptRef.current = now;
+
+    const courseName = courseForm.nombre.trim();
+    const initialLecturasFechaLimite = (courseForm.lecturasFechaLimite || '').trim() || null;
+
+    if (!courseName) {
       showFeedback('error', 'El curso necesita un nombre');
       return;
     }
     if (!docenteUid) return;
 
+    creatingCourseLockRef.current = true;
     setCreatingCourse(true);
     try {
       const lecturasPayload = formLecturas.map(textoId => {
@@ -530,29 +556,33 @@ function TeacherDashboard() {
         return texto ? {
           textoId: texto.id,
           titulo: texto.titulo,
-          fechaLimite: null,
+          fechaLimite: initialLecturasFechaLimite,
           notas: ''
         } : null;
       }).filter(Boolean);
 
       const nuevoCurso = await createCourse(docenteUid, {
-        ...courseForm,
+        nombre: courseName,
+        periodo: courseForm.periodo,
+        descripcion: courseForm.descripcion,
+        autoApprove: courseForm.autoApprove,
         lecturas: lecturasPayload
       });
 
-      setCourses(prev => [
-        { id: nuevoCurso.id, ...nuevoCurso },
-        ...prev
-      ]);
+      setCourses(prev => {
+        const withoutNew = prev.filter(course => course.id !== nuevoCurso.id);
+        return [{ id: nuevoCurso.id, ...nuevoCurso }, ...withoutNew];
+      });
       setCourseForm(initialCourseForm);
       setFormLecturas([]);
       setSelectedCourseId(nuevoCurso.id);
-      showFeedback('success', `Curso "${courseForm.nombre}" creado`);
+      showFeedback('success', `Curso "${courseName}" creado`);
     } catch (error) {
       logger.error('Error al crear curso:', error);
       showFeedback('error', error.message || 'No se pudo crear el curso');
     } finally {
       setCreatingCourse(false);
+      creatingCourseLockRef.current = false;
     }
   };
 
@@ -563,17 +593,77 @@ function TeacherDashboard() {
     );
   };
 
+  const handleLecturaFechaLimiteDraftChange = (textoId, value) => {
+    setLecturasFechaLimiteDrafts(prev => ({
+      ...prev,
+      [textoId]: value || ''
+    }));
+  };
+
+  const handleSaveLecturaFechaLimite = async (textoId) => {
+    if (!selectedCourse) return;
+
+    const currentLecturas = (
+      selectedCourse.lecturasAsignadas ||
+      courseMetrics?.curso?.lecturasAsignadas ||
+      []
+    ).filter(Boolean);
+
+    const lecturaActual = currentLecturas.find((lectura) => lectura.textoId === textoId);
+    if (!lecturaActual) return;
+
+    const rawDraft = Object.prototype.hasOwnProperty.call(lecturasFechaLimiteDrafts, textoId)
+      ? lecturasFechaLimiteDrafts[textoId]
+      : (lecturaActual.fechaLimite || '');
+    const nextFechaLimite = (rawDraft || '').trim() || null;
+    const currentFechaLimite = lecturaActual.fechaLimite || null;
+
+    if (nextFechaLimite === currentFechaLimite) {
+      return;
+    }
+
+    setSavingLecturaFechaLimiteId(textoId);
+    try {
+      const payload = currentLecturas.map((lectura) => ({
+        textoId: lectura.textoId,
+        titulo: lectura.titulo || 'Lectura sin título',
+        fechaLimite: lectura.textoId === textoId ? nextFechaLimite : (lectura.fechaLimite || null),
+        notas: lectura.notas || ''
+      }));
+
+      await assignLecturasToCourse(selectedCourse.id, payload);
+      await loadMetrics(selectedCourse.id);
+      setLecturasFechaLimiteDrafts(prev => ({
+        ...prev,
+        [textoId]: nextFechaLimite || ''
+      }));
+      showFeedback('success', nextFechaLimite ? 'Fecha límite actualizada' : 'Fecha límite eliminada');
+    } catch (error) {
+      logger.error('Error actualizando fecha límite de lectura:', error);
+      showFeedback('error', error.message || 'No se pudo actualizar la fecha límite');
+    } finally {
+      setSavingLecturaFechaLimiteId(null);
+    }
+  };
+
   const handleUpdateLecturas = async () => {
     if (!selectedCourse) return;
     setSavingLecturas(true);
     try {
+      const existingLecturasById = new Map(
+        ((selectedCourse.lecturasAsignadas || courseMetrics?.curso?.lecturasAsignadas || []) || [])
+          .filter(Boolean)
+          .map((lectura) => [lectura.textoId, lectura])
+      );
+
       const payload = lecturasSeleccionadas.map(textoId => {
         const texto = textos.find(t => t.id === textoId);
+        const existingLectura = existingLecturasById.get(textoId);
         return texto ? {
           textoId: texto.id,
           titulo: texto.titulo,
-          fechaLimite: null,
-          notas: ''
+          fechaLimite: existingLectura?.fechaLimite || null,
+          notas: existingLectura?.notas || ''
         } : null;
       }).filter(Boolean);
 
@@ -693,7 +783,7 @@ function TeacherDashboard() {
     setLoadingArtifacts(true);
 
     try {
-      const details = await getStudentArtifactDetails(student.estudianteUid, lectura.textoId);
+      const details = await getStudentArtifactDetails(student.estudianteUid, lectura.textoId, selectedCourse?.id);
       setArtifactDetails(details);
     } catch (error) {
       logger.error('Error cargando detalles de artefactos:', error);
@@ -722,7 +812,8 @@ function TeacherDashboard() {
       const result = await resetStudentArtifact(
         selectedStudentForReset.estudianteUid,
         selectedLecturaForReset.textoId,
-        artifactName
+        artifactName,
+        selectedCourse?.id
       );
 
       if (result.success) {
@@ -730,7 +821,8 @@ function TeacherDashboard() {
         // Recargar detalles
         const details = await getStudentArtifactDetails(
           selectedStudentForReset.estudianteUid,
-          selectedLecturaForReset.textoId
+          selectedLecturaForReset.textoId,
+          selectedCourse?.id
         );
         setArtifactDetails(details);
         // Recargar métricas del curso
@@ -757,7 +849,8 @@ function TeacherDashboard() {
     try {
       const result = await resetAllStudentArtifacts(
         selectedStudentForReset.estudianteUid,
-        selectedLecturaForReset.textoId
+        selectedLecturaForReset.textoId,
+        selectedCourse?.id
       );
 
       if (result.success) {
@@ -765,7 +858,8 @@ function TeacherDashboard() {
         // Recargar detalles
         const details = await getStudentArtifactDetails(
           selectedStudentForReset.estudianteUid,
-          selectedLecturaForReset.textoId
+          selectedLecturaForReset.textoId,
+          selectedCourse?.id
         );
         setArtifactDetails(details);
         // Recargar métricas del curso
@@ -823,7 +917,7 @@ function TeacherDashboard() {
         const { doc, updateDoc } = await import('firebase/firestore');
         const { db } = await import('../../firebase/config');
 
-        const progressRef = doc(db, 'students', selectedStudentForReset.estudianteUid, 'progress', selectedLecturaForReset.textoId);
+        const progressRef = doc(db, 'students', selectedStudentForReset.estudianteUid, 'progress', getProgressDocId(selectedCourse?.id, selectedLecturaForReset.textoId));
         const updatePath = `activitiesProgress.${selectedLecturaForReset.textoId}.artifacts.${artifactKey}`;
 
         await updateDoc(progressRef, {
@@ -918,7 +1012,7 @@ function TeacherDashboard() {
       const { doc, updateDoc, setDoc, serverTimestamp } = await import('firebase/firestore');
       const { db } = await import('../../firebase/config');
 
-      const progressRef = doc(db, 'students', selectedStudentForReset.estudianteUid, 'progress', selectedLecturaForReset.textoId);
+      const progressRef = doc(db, 'students', selectedStudentForReset.estudianteUid, 'progress', getProgressDocId(selectedCourse?.id, selectedLecturaForReset.textoId));
 
       if (viewingArtifact.isSummativeEssay) {
         const rubricKey = viewingArtifact.rubricId;
@@ -978,7 +1072,8 @@ function TeacherDashboard() {
       // Recargar detalles
       const details = await getStudentArtifactDetails(
         selectedStudentForReset.estudianteUid,
-        selectedLecturaForReset.textoId
+        selectedLecturaForReset.textoId,
+        selectedCourse?.id
       );
       setArtifactDetails(details);
 
@@ -1013,7 +1108,7 @@ function TeacherDashboard() {
 
       const studentUid = selectedStudentForReset.estudianteUid;
       const textoId = selectedLecturaForReset.textoId;
-      const progressRef = doc(db, 'students', studentUid, 'progress', textoId);
+      const progressRef = doc(db, 'students', studentUid, 'progress', getProgressDocId(selectedCourse?.id, textoId));
       if (viewingArtifact.isSummativeEssay) {
         const rubricKey = viewingArtifact.rubricId;
         if (!rubricKey) {
@@ -1095,7 +1190,7 @@ function TeacherDashboard() {
       setViewingArtifact(prev => ({ ...prev, score: newScore, teacherOverrideScore: newScore, scoreOverrideReason: scoreOverrideReason.trim() }));
 
       // Recargar detalles y métricas
-      const details = await getStudentArtifactDetails(studentUid, textoId);
+      const details = await getStudentArtifactDetails(studentUid, textoId, selectedCourse?.id);
       setArtifactDetails(details);
       if (selectedCourseId) loadMetrics(selectedCourseId);
 
@@ -1119,7 +1214,7 @@ function TeacherDashboard() {
       const { doc, updateDoc, deleteDoc, collection, query, where, getDocs, deleteField } = await import('firebase/firestore');
       const { db } = await import('../../firebase/config');
 
-      const progressRef = doc(db, 'students', selectedStudentForReset.estudianteUid, 'progress', selectedLecturaForReset.textoId);
+      const progressRef = doc(db, 'students', selectedStudentForReset.estudianteUid, 'progress', getProgressDocId(selectedCourse?.id, selectedLecturaForReset.textoId));
 
       if (viewingArtifact.isSummativeEssay) {
         const rubricKey = viewingArtifact.rubricId;
@@ -1170,7 +1265,8 @@ function TeacherDashboard() {
       // Recargar detalles
       const details = await getStudentArtifactDetails(
         selectedStudentForReset.estudianteUid,
-        selectedLecturaForReset.textoId
+        selectedLecturaForReset.textoId,
+        selectedCourse?.id
       );
       setArtifactDetails(details);
 
@@ -1212,7 +1308,7 @@ function TeacherDashboard() {
       for (const estudiante of estudiantes || []) {
         for (const lectura of lecturas) {
           try {
-            const details = await getStudentArtifactDetails(estudiante.estudianteUid, lectura.textoId);
+            const details = await getStudentArtifactDetails(estudiante.estudianteUid, lectura.textoId, selectedCourse?.id);
 
             if (details.hasProgress && details.artifacts) {
               for (const [_artifactKey, artifact] of Object.entries(details.artifacts)) {
@@ -1425,8 +1521,10 @@ function TeacherDashboard() {
           });
 
           if (Object.keys(updates).length > 0) {
-            const progressRef = fbDoc(fbDb, 'students', est.estudianteUid, 'progress', lectura.textoId);
-            await fbUpdateDoc(progressRef, updates).catch(() => { /* silencioso */ });
+            const progressRef = fbDoc(fbDb, 'students', est.estudianteUid, 'progress', getProgressDocId(selectedCourseId, lectura.textoId));
+            await fbUpdateDoc(progressRef, updates).catch((err) => {
+              logger.warn(`⚠️ [TeacherDashboard] Error marcando artefactos como vistos para ${est.estudianteNombre}:`, err?.code || err?.message);
+            });
           }
         }
 
@@ -1480,21 +1578,13 @@ function TeacherDashboard() {
         <LeftColumn>
           <SectionHeader>
             <div>
-              <SectionLabel>Mis cursos</SectionLabel>
-              <SectionSub>Gestiona tus grupos y códigos</SectionSub>
+              <SectionLabel>🎓 Mis cursos</SectionLabel>
+              <SectionSub>Gestiona tus grupos y códigos de acceso</SectionSub>
             </div>
             <ActionButton type="button" onClick={() => selectedCourseId && loadMetrics(selectedCourseId)} disabled={loadingCourses || loadingMetrics}>
-              {loadingCourses ? 'Actualizando...' : '↻ Actualizar'}
+              {loadingCourses ? '⏳ Actualizando...' : '↻ Actualizar'}
             </ActionButton>
           </SectionHeader>
-
-          {/* Botón para subir nueva lectura */}
-          <UploadSection>
-            <SectionLabel>Biblioteca de Lecturas</SectionLabel>
-            <ActionButton type="button" onClick={() => setShowUploadModal(true)}>
-              + Nueva Lectura
-            </ActionButton>
-          </UploadSection>
 
           {loadingCourses && (
             <InlineLoader>
@@ -1504,8 +1594,9 @@ function TeacherDashboard() {
 
           {!loadingCourses && !courses.length && (
             <EmptyState>
+              <span style={{ fontSize: '2.5rem' }}>📭</span>
               <h3>Aún no tienes cursos</h3>
-              <p>Crea tu primer curso y comparte el código con tus estudiantes.</p>
+              <p>Crea tu primer curso abajo y comparte el código con tus estudiantes.</p>
             </EmptyState>
           )}
 
@@ -1516,104 +1607,170 @@ function TeacherDashboard() {
                 $active={course.id === selectedCourseId}
                 onClick={() => handleCourseSelect(course.id)}
               >
-                <CourseTitle>{course.nombre}</CourseTitle>
-                <CourseMeta>
-                  <span>{course.periodo}</span>
-                  <span>{course.autoApprove ? 'Autoaprueba' : 'Requiere aprobación'}</span>
-                </CourseMeta>
-                <CourseCode>
-                  Código: <strong>{course.codigoJoin}</strong>
-                </CourseCode>
-                <CourseLecturas>{course.totalLecturas || 0} lecturas</CourseLecturas>
-                <DeleteButton
-                  onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course.id, course.nombre); }}
-                  title="Eliminar curso"
-                >
-                  ✕
-                </DeleteButton>
+                <CourseCardHeader>
+                  <CourseTitle>{course.nombre}</CourseTitle>
+                  <CourseDeleteBtn
+                    onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course.id, course.nombre); }}
+                    title="Eliminar curso"
+                    aria-label={`Eliminar ${course.nombre}`}
+                  >
+                    🗑️
+                  </CourseDeleteBtn>
+                </CourseCardHeader>
+                <CourseMetaRow>
+                  <CourseBadge>📅 {course.periodo}</CourseBadge>
+                  <CourseBadge $variant={course.autoApprove ? 'success' : 'warning'}>
+                    {course.autoApprove ? '✅ Autoaprueba' : '🔒 Requiere aprobación'}
+                  </CourseBadge>
+                </CourseMetaRow>
+                <CourseCodeStrip>
+                  <CourseCodeLabel>Código de acceso</CourseCodeLabel>
+                  <CourseCodeValue>{course.codigoJoin}</CourseCodeValue>
+                </CourseCodeStrip>
+                <CourseMetaRow>
+                  <CourseBadge>📖 {course.totalLecturas || 0} lectura{(course.totalLecturas || 0) !== 1 ? 's' : ''}</CourseBadge>
+                </CourseMetaRow>
               </CourseCard>
             ))}
           </CoursesScroller>
 
           <CreateCourseCard>
-            <h3>Crear curso</h3>
+            <CreateCourseHeader>
+              <span style={{ fontSize: '1.5rem' }}>➕</span>
+              <div>
+                <SectionLabel>Crear nuevo curso</SectionLabel>
+                <SectionSub>Completa los datos y asigna lecturas iniciales</SectionSub>
+              </div>
+            </CreateCourseHeader>
             <CourseForm onSubmit={handleCreateCourse}>
-              <label>
-                Nombre del curso
-                <input
+              <FormFieldGroup>
+                <FormLabel htmlFor="course-nombre">Nombre del curso</FormLabel>
+                <FormInput
+                  id="course-nombre"
                   type="text"
                   name="nombre"
-                  placeholder="Literatura 3°B"
+                  placeholder="Ej: Literatura 3°B"
                   value={courseForm.nombre}
                   onChange={handleCourseFormChange}
                   required
                 />
-              </label>
+              </FormFieldGroup>
 
               <FormRow>
-                <label>
-                  Periodo
-                  <input
+                <FormFieldGroup style={{ flex: 1 }}>
+                  <FormLabel htmlFor="course-periodo">📅 Periodo</FormLabel>
+                  <FormInput
+                    id="course-periodo"
                     type="text"
                     name="periodo"
                     value={courseForm.periodo}
                     onChange={handleCourseFormChange}
                   />
-                </label>
-                <label>
-                  Autoaprueba
-                  <input
-                    type="checkbox"
-                    name="autoApprove"
-                    checked={courseForm.autoApprove}
-                    onChange={handleCourseFormChange}
-                  />
-                </label>
+                </FormFieldGroup>
+                <FormFieldGroup>
+                  <FormLabel>Aprobación automática</FormLabel>
+                  <ToggleRow onClick={() => setCourseForm(prev => ({ ...prev, autoApprove: !prev.autoApprove }))}>
+                    <ToggleTrack $active={courseForm.autoApprove}>
+                      <ToggleThumb $active={courseForm.autoApprove} />
+                    </ToggleTrack>
+                    <ToggleLabel $active={courseForm.autoApprove}>
+                      {courseForm.autoApprove ? '✅ Sí' : '🔒 No'}
+                    </ToggleLabel>
+                  </ToggleRow>
+                </FormFieldGroup>
               </FormRow>
 
-              <label>
-                Descripción
-                <textarea
+              <FormFieldGroup>
+                <FormLabel htmlFor="course-lecturas-fecha-limite">Fecha límite lecturas iniciales (opcional)</FormLabel>
+                <FormInput
+                  id="course-lecturas-fecha-limite"
+                  type="date"
+                  name="lecturasFechaLimite"
+                  value={courseForm.lecturasFechaLimite}
+                  onChange={handleCourseFormChange}
+                />
+                <SmallMuted style={{ marginTop: '0.4rem' }}>
+                  Se aplicará a las lecturas seleccionadas al crear el curso.
+                </SmallMuted>
+              </FormFieldGroup>
+
+              <FormFieldGroup>
+                <FormLabel htmlFor="course-descripcion">Descripción (opcional)</FormLabel>
+                <FormTextarea
+                  id="course-descripcion"
                   name="descripcion"
                   rows="2"
-                  placeholder="Grupo de lecturas guiadas"
+                  placeholder="Ej: Grupo de lecturas guiadas para tercer año"
                   value={courseForm.descripcion}
                   onChange={handleCourseFormChange}
                 />
-              </label>
+              </FormFieldGroup>
 
-              <LecturasSelector>
-                <LecturasLabel>Lecturas iniciales</LecturasLabel>
-                {!textos.length && (
-                  <SmallMuted>No tienes lecturas subidas todavía.</SmallMuted>
-                )}
-                {textos.slice(0, 5).map(texto => (
-                  <LecturaCheckbox key={texto.id}>
-                    <input
-                      type="checkbox"
-                      checked={formLecturas.includes(texto.id)}
-                      onChange={() => handleFormLecturaToggle(texto.id)}
-                    />
-                    <span style={{ flex: 1 }}>{texto.titulo}</span>
-                    <DeleteButtonSmall
-                      onClick={(e) => { e.stopPropagation(); handleDeleteText(texto.id, texto.titulo); }}
-                      title="Eliminar de biblioteca"
-                      style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}
-                    >
-                      ✕
-                    </DeleteButtonSmall>
-                  </LecturaCheckbox>
-                ))}
-                {textos.length > 5 && (
-                  <SmallMuted>Solo se muestran las 5 lecturas más recientes.</SmallMuted>
-                )}
-              </LecturasSelector>
+              <FormDivider />
 
-              <ActionButton type="submit" disabled={creatingCourse}>
-                {creatingCourse ? 'Creando...' : 'Guardar curso'}
+              <FormFieldGroup>
+                <FormLabel>📖 Lecturas iniciales</FormLabel>
+                <SmallMuted style={{ marginBottom: '0.5rem' }}>
+                  {textos.length
+                    ? 'Selecciona las lecturas que se asignarán al crear el curso'
+                    : 'No tienes lecturas subidas todavía. Sube una desde la biblioteca arriba.'}
+                </SmallMuted>
+                <FormLecturasGrid>
+                  {textos.slice(0, 6).map(texto => {
+                    const selected = formLecturas.includes(texto.id);
+                    return (
+                      <FormLecturaCard
+                        key={texto.id}
+                        $selected={selected}
+                        onClick={() => handleFormLecturaToggle(texto.id)}
+                        role="checkbox"
+                        aria-checked={selected}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); handleFormLecturaToggle(texto.id); } }}
+                      >
+                        <FormLecturaCheck $selected={selected}>
+                          {selected ? '✓' : ''}
+                        </FormLecturaCheck>
+                        <FormLecturaInfo>
+                          <FormLecturaTitulo>{texto.titulo}</FormLecturaTitulo>
+                          <SmallMuted>{texto.genero || 'Sin género'}</SmallMuted>
+                        </FormLecturaInfo>
+                        <FormLecturaDeleteBtn
+                          onClick={(e) => { e.stopPropagation(); handleDeleteText(texto.id, texto.titulo); }}
+                          title={`Eliminar "${texto.titulo}" de la biblioteca`}
+                        >
+                          🗑️
+                        </FormLecturaDeleteBtn>
+                      </FormLecturaCard>
+                    );
+                  })}
+                </FormLecturasGrid>
+                {textos.length > 6 && (
+                  <SmallMuted style={{ marginTop: '0.4rem' }}>Mostrando las 6 más recientes de {textos.length} lecturas.</SmallMuted>
+                )}
+                {formLecturas.length > 0 && (
+                  <FormLecturasCount>
+                    {formLecturas.length} lectura{formLecturas.length !== 1 ? 's' : ''} seleccionada{formLecturas.length !== 1 ? 's' : ''}
+                  </FormLecturasCount>
+                )}
+              </FormFieldGroup>
+
+              <ActionButton type="submit" disabled={creatingCourse} style={{ marginTop: '0.5rem' }}>
+                {creatingCourse ? '⏳ Creando...' : '🚀 Crear curso'}
               </ActionButton>
             </CourseForm>
           </CreateCourseCard>
+
+          {/* Biblioteca de lecturas — sube textos para asignar */}
+          <UploadSection>
+            <div>
+              <SectionLabel>📚 Biblioteca de Lecturas</SectionLabel>
+              <SectionSub style={{ marginTop: '0.15rem' }}>Sube textos para asignar a tus cursos</SectionSub>
+            </div>
+            <ActionButton type="button" onClick={() => setShowUploadModal(true)}>
+              + Nueva Lectura
+            </ActionButton>
+          </UploadSection>
         </LeftColumn>
 
         <RightColumn>
@@ -1647,7 +1804,6 @@ function TeacherDashboard() {
                     type="button"
                     onClick={handleBackfillProgress}
                     disabled={backfillingProgress || loadingMetrics}
-                    style={{ marginLeft: '0.5rem' }}
                     title="Repara progreso antiguo (sourceCourseId)"
                   >
                     {backfillingProgress ? 'Reparando...' : 'Reparar progreso'}
@@ -1670,73 +1826,173 @@ function TeacherDashboard() {
                     ))}
                   </MetricsGrid>
 
+                  {/* ── Lecturas activas en el curso ── */}
                   <LecturasPanel>
-                    <PanelHeader>
-                      <div>
-                        <SectionLabel>Lecturas asignadas</SectionLabel>
+                    <LecturasSectionHeader>
+                      <LecturasSectionIcon>📚</LecturasSectionIcon>
+                      <div style={{ flex: 1 }}>
+                        <SectionLabel>Lecturas activas en el curso</SectionLabel>
                         <SectionSub>
-                          {selectedCourse.totalLecturas || 0} lecturas activas en el curso
+                          {assignedLecturas.length
+                            ? `${assignedLecturas.length} lectura${assignedLecturas.length > 1 ? 's' : ''} publicada${assignedLecturas.length > 1 ? 's' : ''} para estudiantes`
+                            : 'Aún no hay lecturas publicadas en este curso'}
                         </SectionSub>
                       </div>
-                      <ActionButton type="button" onClick={handleUpdateLecturas} disabled={savingLecturas}>
-                        {savingLecturas ? 'Guardando...' : 'Actualizar lecturas'}
-                      </ActionButton>
-                    </PanelHeader>
+                    </LecturasSectionHeader>
 
-                    <LecturasLabel style={{ marginTop: '0.75rem', display: 'block' }}>En este curso</LecturasLabel>
-                    <SmallMuted style={{ display: 'block' }}>✕ = quitar del curso (no elimina de la biblioteca)</SmallMuted>
-
-                    <LecturasList>
+                    <LecturasActiveList>
                       {assignedLecturas.map((lectura) => {
                         const texto = textos.find(t => t.id === lectura.textoId);
                         const titulo = lectura.titulo || texto?.titulo || 'Lectura';
+                        const isRemoving = _removingLecturaId === lectura.textoId;
+                        const draftFechaLimite = Object.prototype.hasOwnProperty.call(lecturasFechaLimiteDrafts, lectura.textoId)
+                          ? lecturasFechaLimiteDrafts[lectura.textoId]
+                          : (lectura.fechaLimite || '');
+                        const hasFechaLimiteChanges = (lectura.fechaLimite || '') !== draftFechaLimite;
+                        const isSavingFechaLimite = savingLecturaFechaLimiteId === lectura.textoId;
+                        const canClearFechaLimite = Boolean(draftFechaLimite || lectura.fechaLimite);
                         return (
-                          <LecturaItem as="div" key={lectura.textoId}>
-                            <div style={{ flex: 1 }}>
-                              <strong>{titulo}</strong>
-                              <SmallMuted>{texto?.genero || 'Sin género'} · {texto?.complejidad || 'intermedio'}</SmallMuted>
-                            </div>
-                            <DeleteButtonSmall
-                              onClick={(e) => { e.stopPropagation(); handleRemoveLecturaFromCourse(lectura.textoId, titulo); }}
-                              title="Quitar del curso"
-                            >
-                              ✕
-                            </DeleteButtonSmall>
-                          </LecturaItem>
+                          <LecturaActiveCard key={lectura.textoId} $removing={isRemoving}>
+                            <LecturaActiveInfo>
+                              <LecturaActiveTitulo>{titulo}</LecturaActiveTitulo>
+                              <LecturaActiveMeta>
+                                <LecturaMetaTag>📖 {texto?.genero || 'Sin género'}</LecturaMetaTag>
+                                <LecturaMetaTag>📊 {texto?.complejidad || 'intermedio'}</LecturaMetaTag>
+                                <LecturaMetaTag>
+                                  {lectura.fechaLimite ? `⏰ Vence: ${lectura.fechaLimite}` : '⏰ Sin fecha límite'}
+                                </LecturaMetaTag>
+                              </LecturaActiveMeta>
+                            </LecturaActiveInfo>
+                            <LecturaActiveActions>
+                              <LecturaDeadlineField>
+                                <LecturaDeadlineLabel htmlFor={`lectura-deadline-${lectura.textoId}`}>Fecha límite</LecturaDeadlineLabel>
+                                <LecturaDeadlineInput
+                                  id={`lectura-deadline-${lectura.textoId}`}
+                                  type="date"
+                                  value={draftFechaLimite}
+                                  onChange={(e) => handleLecturaFechaLimiteDraftChange(lectura.textoId, e.target.value)}
+                                  disabled={isRemoving || isSavingFechaLimite}
+                                />
+                              </LecturaDeadlineField>
+                              <LecturaDeadlineButtons>
+                                <LecturaDeadlineClearButton
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleLecturaFechaLimiteDraftChange(lectura.textoId, '');
+                                  }}
+                                  disabled={!canClearFechaLimite || isRemoving || isSavingFechaLimite}
+                                >
+                                  Limpiar
+                                </LecturaDeadlineClearButton>
+                                <LecturaDeadlineSaveButton
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSaveLecturaFechaLimite(lectura.textoId);
+                                  }}
+                                  disabled={!hasFechaLimiteChanges || isRemoving || isSavingFechaLimite}
+                                >
+                                  {isSavingFechaLimite ? '⏳ Guardando...' : '💾 Guardar fecha'}
+                                </LecturaDeadlineSaveButton>
+                                <LecturaRemoveButton
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveLecturaFromCourse(lectura.textoId, titulo); }}
+                                  disabled={isRemoving || isSavingFechaLimite}
+                                  title={`Quitar "${titulo}" de este curso (no se elimina de tu biblioteca)`}
+                                >
+                                  {isRemoving ? '⏳' : '🗑️'} Quitar
+                                </LecturaRemoveButton>
+                              </LecturaDeadlineButtons>
+                            </LecturaActiveActions>
+                          </LecturaActiveCard>
                         );
                       })}
                       {!assignedLecturas.length && (
-                        <SmallMuted>No hay lecturas asignadas en este curso.</SmallMuted>
+                        <LecturasEmptyState>
+                          <span style={{ fontSize: '2rem' }}>📭</span>
+                          <strong>Sin lecturas asignadas</strong>
+                          <SmallMuted>Usa &quot;Editar selección&quot; para agregar lecturas de tu biblioteca</SmallMuted>
+                        </LecturasEmptyState>
                       )}
-                    </LecturasList>
+                    </LecturasActiveList>
 
-                    <LecturasSelector style={{ marginTop: '0.75rem' }}>
-                      <LecturasLabel>Biblioteca (asignación)</LecturasLabel>
-                      <SmallMuted>Marca/desmarca y pulsa “Actualizar lecturas”</SmallMuted>
-                    </LecturasSelector>
-
-                    <LecturasList>
-                      {textos.map(texto => {
-                        const isAssigned = lecturasSeleccionadas.includes(texto.id);
-                        return (
-                          <LecturaItem key={texto.id}>
-                            <input
-                              type="checkbox"
-                              checked={isAssigned}
-                              onChange={() => handleLecturaToggle(texto.id)}
-                            />
-                            <div style={{ flex: 1 }}>
-                              <strong>{texto.titulo}</strong>
-                              <SmallMuted>{texto.genero || 'Sin género'} · {texto.complejidad || 'intermedio'}</SmallMuted>
-                            </div>
-                          </LecturaItem>
-                        );
-                      })}
-                      {!textos.length && (
-                        <SmallMuted>No hay lecturas disponibles para asignar.</SmallMuted>
-                      )}
-                    </LecturasList>
+                    <LecturasGuardarRow>
+                      <SecondaryButton type="button" onClick={() => setShowBiblioteca(prev => !prev)}>
+                        {showBiblioteca ? '▲ Cerrar biblioteca' : '📂 Editar selección de lecturas'}
+                      </SecondaryButton>
+                    </LecturasGuardarRow>
                   </LecturasPanel>
+
+                  {/* ── Biblioteca (colapsable) ── */}
+                  <AnimatePresence>
+                    {showBiblioteca && (
+                      <LecturasPanel
+                        as={motion.div}
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <LecturasSectionHeader>
+                          <LecturasSectionIcon>📂</LecturasSectionIcon>
+                          <div style={{ flex: 1 }}>
+                            <SectionLabel>Tu biblioteca de lecturas</SectionLabel>
+                            <SectionSub>
+                              Marca o desmarca lecturas y pulsa &quot;Aplicar cambios&quot;
+                            </SectionSub>
+                          </div>
+                        </LecturasSectionHeader>
+
+                        <LecturasBibliotecaList>
+                          {textos.map(texto => {
+                            const isAssigned = lecturasSeleccionadas.includes(texto.id);
+                            return (
+                              <LecturaBibliotecaCard
+                                key={texto.id}
+                                $selected={isAssigned}
+                                onClick={() => handleLecturaToggle(texto.id)}
+                                role="checkbox"
+                                aria-checked={isAssigned}
+                                tabIndex={0}
+                                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); handleLecturaToggle(texto.id); } }}
+                              >
+                                <LecturaBibliotecaCheck $selected={isAssigned}>
+                                  {isAssigned ? '✓' : ''}
+                                </LecturaBibliotecaCheck>
+                                <LecturaBibliotecaInfo>
+                                  <LecturaBibliotecaTitulo>{texto.titulo}</LecturaBibliotecaTitulo>
+                                  <LecturaActiveMeta>
+                                    <LecturaMetaTag>📖 {texto.genero || 'Sin género'}</LecturaMetaTag>
+                                    <LecturaMetaTag>📊 {texto.complejidad || 'intermedio'}</LecturaMetaTag>
+                                  </LecturaActiveMeta>
+                                </LecturaBibliotecaInfo>
+                                <LecturaBibliotecaBadge $selected={isAssigned}>
+                                  {isAssigned ? 'Incluida ✓' : 'No incluida'}
+                                </LecturaBibliotecaBadge>
+                              </LecturaBibliotecaCard>
+                            );
+                          })}
+                          {!textos.length && (
+                            <LecturasEmptyState>
+                              <span style={{ fontSize: '2rem' }}>📁</span>
+                              <strong>Biblioteca vacía</strong>
+                              <SmallMuted>Sube lecturas (PDF o TXT) para poder asignarlas a tus cursos</SmallMuted>
+                            </LecturasEmptyState>
+                          )}
+                        </LecturasBibliotecaList>
+
+                        {textos.length > 0 && (
+                          <LecturasGuardarRow>
+                            <SmallMuted>{lecturasSeleccionadas.length} de {textos.length} lectura{textos.length > 1 ? 's' : ''} seleccionada{lecturasSeleccionadas.length !== 1 ? 's' : ''}</SmallMuted>
+                            <ActionButton type="button" onClick={handleUpdateLecturas} disabled={savingLecturas}>
+                              {savingLecturas ? '⏳ Guardando...' : '💾 Aplicar cambios'}
+                            </ActionButton>
+                          </LecturasGuardarRow>
+                        )}
+                      </LecturasPanel>
+                    )}
+                  </AnimatePresence>
 
                   {/* 🆕 Panel de ponderación formativa/sumativa */}
                   <WeightsPanel>
@@ -2497,10 +2753,12 @@ function TeacherDashboard() {
 
 const DashboardWrapper = styled.section`
   width: 100%;
+  box-sizing: border-box;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  overflow-x: hidden;
 
   @media (max-width: 640px) {
     padding: 1rem;
@@ -2512,6 +2770,10 @@ const DashboardGrid = styled.div`
   display: grid;
   grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
   gap: 1.5rem;
+
+  & > * {
+    min-width: 0;
+  }
 
   @media (max-width: 1080px) {
     grid-template-columns: 1fr;
@@ -2562,7 +2824,7 @@ const SectionSub = styled.p`
 
 const ActionButton = styled.button`
   background: ${props => props.theme.primary};
-  color: #fff;
+  color: ${props => props.theme.name === 'dark' ? props.theme.backgroundSecondary : '#fff'};
   border: none;
   border-radius: 8px;
   padding: 0.5rem 1rem;
@@ -2603,19 +2865,100 @@ const CoursesScroller = styled.div`
 `;
 
 const CourseCard = styled.div`
-  border: 1px solid ${props => props.$active ? props.theme.primary : props.theme.border};
-  padding: 1rem;
-  border-radius: 12px;
+  border: 2px solid ${props => props.$active ? props.theme.primary : props.theme.border};
+  padding: 1rem 1.15rem;
+  border-radius: 14px;
   cursor: pointer;
   background: ${props => props.$active ? props.theme.surfaceHover : props.theme.surface};
   box-shadow: ${props => props.$active ? '0 6px 18px rgba(0,0,0,0.12)' : '0 2px 6px rgba(0,0,0,0.06)'};
   transition: all 0.2s ease;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  &:hover {
+    border-color: ${props => props.theme.primary};
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+`;
+
+const CourseCardHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 `;
 
 const CourseTitle = styled.h3`
   margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+`;
+
+const CourseDeleteBtn = styled.button`
+  background: none;
+  border: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s;
+  padding: 0.25rem;
+  border-radius: 6px;
+
+  &:hover {
+    background: ${props => props.theme.error}22;
+    opacity: 1;
+  }
+
+  ${CourseCard}:hover & {
+    opacity: 0.6;
+  }
+`;
+
+const CourseMetaRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+`;
+
+const CourseBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.2rem 0.55rem;
+  border-radius: 20px;
+  background: ${props => {
+    if (props.$variant === 'success') return (props.theme.name === 'dark' ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)');
+    if (props.$variant === 'warning') return (props.theme.name === 'dark' ? 'rgba(234,179,8,0.15)' : 'rgba(234,179,8,0.1)');
+    return props.theme.name === 'dark' ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.1)';
+  }};
+  color: ${props => props.theme.textMuted};
+`;
+
+const CourseCodeStrip = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.75rem;
+  background: ${props => props.theme.background};
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 8px;
+`;
+
+const CourseCodeLabel = styled.span`
+  font-size: 0.75rem;
+  color: ${props => props.theme.textMuted};
+  white-space: nowrap;
+`;
+
+const CourseCodeValue = styled.strong`
   font-size: 1rem;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 0.08em;
+  color: ${props => props.theme.primary};
 `;
 
 const CourseMeta = styled.div`
@@ -2625,77 +2968,191 @@ const CourseMeta = styled.div`
   color: ${props => props.theme.textMuted};
 `;
 
-const CourseCode = styled.div`
-  font-size: 0.85rem;
-  margin-top: 0.5rem;
-`;
-
-const CourseLecturas = styled.span`
-  font-size: 0.8rem;
-  color: ${props => props.theme.textMuted};
-`;
-
 const CreateCourseCard = styled.div`
-  border: 1px dashed ${props => props.theme.border};
-  border-radius: 12px;
-  padding: 1rem;
+  border: 1px dashed ${props => props.theme.borderLight || props.theme.border};
+  border-radius: 16px;
+  padding: 1.25rem;
   background: ${props => props.theme.surface};
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 `;
 
+const CreateCourseHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+`;
 
-const DeleteButton = styled.button`
+const FormFieldGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+`;
+
+const FormLabel = styled.label`
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: ${props => props.theme.text};
+`;
+
+const FormInput = styled.input`
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  background: ${props => props.theme.background};
+  color: ${props => props.theme.text};
+  transition: border-color 0.2s;
+
+  &:focus {
+    border-color: ${props => props.theme.primary};
+    outline: none;
+    box-shadow: 0 0 0 2px ${props => props.theme.primary}33;
+  }
+`;
+
+const FormTextarea = styled.textarea`
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  background: ${props => props.theme.background};
+  color: ${props => props.theme.text};
+  resize: vertical;
+  transition: border-color 0.2s;
+
+  &:focus {
+    border-color: ${props => props.theme.primary};
+    outline: none;
+    box-shadow: 0 0 0 2px ${props => props.theme.primary}33;
+  }
+`;
+
+const FormDivider = styled.div`
+  height: 1px;
+  background: ${props => props.theme.border};
+  margin: 0.25rem 0;
+`;
+
+const ToggleRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+`;
+
+const ToggleTrack = styled.div`
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: ${props => props.$active ? props.theme.primary : (props.theme.name === 'dark' ? '#444' : '#ccc')};
+  position: relative;
+  transition: background 0.25s;
+  flex-shrink: 0;
+`;
+
+const ToggleThumb = styled.div`
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 2px;
+  left: ${props => props.$active ? '20px' : '2px'};
+  transition: left 0.25s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+`;
+
+const ToggleLabel = styled.span`
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: ${props => props.$active ? props.theme.text : props.theme.textMuted};
+`;
+
+const FormLecturasGrid = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+`;
+
+const FormLecturaCard = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid ${props => props.$selected ? props.theme.primary : props.theme.border};
+  border-radius: 10px;
+  background: ${props => props.$selected ? (props.theme.name === 'dark' ? 'rgba(91,165,253,0.08)' : 'rgba(59,130,246,0.05)') : props.theme.surface};
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+
+  &:hover {
+    border-color: ${props => props.theme.primary};
+    background: ${props => props.theme.surfaceHover};
+  }
+`;
+
+const FormLecturaCheck = styled.div`
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid ${props => props.$selected ? props.theme.primary : props.theme.border};
+  background: ${props => props.$selected ? props.theme.primary : 'transparent'};
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.2s;
+`;
+
+const FormLecturaInfo = styled.div`
+  flex: 1;
+  min-width: 0;
+`;
+
+const FormLecturaTitulo = styled.div`
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const FormLecturaDeleteBtn = styled.button`
   background: none;
   border: none;
-  color: ${props => props.theme.textMuted};
-  font-size: 1.2rem;
+  font-size: 0.8rem;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s;
-  
-  &:hover {
-    color: ${props => props.theme.error || '#ef4444'};
-    opacity: 1;
-  }
+  opacity: 0.35;
+  padding: 0.2rem 0.35rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+  flex-shrink: 0;
 
-  ${CourseCard}:hover & {
-    opacity: 0.7;
+  &:hover {
+    opacity: 1;
+    background: ${props => props.theme.error}22;
   }
 `;
 
-const DeleteButtonSmall = styled(DeleteButton)`
-  position: static;
-  opacity: 0.5;
-  font-size: 1rem;
+const FormLecturasCount = styled.div`
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: ${props => props.theme.primary};
+  margin-top: 0.3rem;
 `;
 
 const CourseForm = styled.form`
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    font-size: 0.85rem;
-  }
-
-  input[type='text'],
-  textarea {
-    border: 1px solid ${props => props.theme.border};
-    border-radius: 8px;
-    padding: 0.45rem 0.65rem;
-    font-size: 0.9rem;
-    background: ${props => props.theme.background};
-    color: ${props => props.theme.text};
-  }
-
-  textarea {
-    resize: vertical;
-  }
+  gap: 0.85rem;
 `;
 
 const FormRow = styled.div`
@@ -2703,29 +3160,10 @@ const FormRow = styled.div`
   gap: 0.75rem;
   align-items: flex-end;
 
-  label {
-    flex: 1;
+  @media (max-width: 480px) {
+    flex-direction: column;
+    align-items: stretch;
   }
-`;
-
-const LecturasSelector = styled.div`
-  border-top: 1px solid ${props => props.theme.border};
-  padding-top: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-`;
-
-const LecturasLabel = styled.span`
-  font-weight: 600;
-  font-size: 0.85rem;
-`;
-
-const LecturaCheckbox = styled.label`
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.85rem;
 `;
 
 const SmallMuted = styled.span`
@@ -2772,6 +3210,13 @@ const CourseHeaderCard = styled.div`
   align-items: center;
   flex-wrap: wrap;
   gap: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
+
+  @media (max-width: 640px) {
+    padding: 1rem;
+    gap: 1rem;
+  }
 `;
 
 const CourseCodeBox = styled.div`
@@ -2785,6 +3230,11 @@ const CourseCodeBox = styled.div`
   border-radius: 12px;
   text-align: center;
 
+  & > button {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+
   @media (max-width: 640px) {
     min-width: 0;
     width: 100%;
@@ -2796,6 +3246,10 @@ const MetricsGrid = styled.div`
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.75rem;
   margin: 1rem 0;
+
+  @media (max-width: 640px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 `;
 
 const MetricCard = styled.div`
@@ -2831,33 +3285,330 @@ const PanelHeader = styled.div`
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    align-items: stretch;
+  }
 `;
 
 const LecturasPanel = styled.div`
   border: 1px solid ${props => props.theme.border};
   border-radius: 16px;
-  padding: 1rem;
+  padding: 1.25rem;
   background: ${props => props.theme.surface};
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 `;
 
-const LecturasList = styled.div`
-  margin-top: 1rem;
+const LecturasSectionHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+`;
+
+const LecturasSectionIcon = styled.span`
+  font-size: 1.6rem;
+  line-height: 1;
+`;
+
+const LecturasActiveList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+`;
+
+const LecturaActiveCard = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: ${props => props.theme.surfaceHover};
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  opacity: ${props => props.$removing ? 0.5 : 1};
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+`;
+
+const LecturaActiveInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 0;
+`;
+
+const LecturaActiveTitulo = styled.span`
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: ${props => props.theme.text};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const LecturaActiveMeta = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+`;
+
+const LecturaMetaTag = styled.span`
+  font-size: 0.75rem;
+  color: ${props => props.theme.textMuted};
+  background: ${props => props.theme.background};
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+`;
+
+const LecturaActiveActions = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 220px;
+
+  @media (max-width: 640px) {
+    min-width: 0;
+    width: 100%;
+  }
+`;
+
+const LecturaDeadlineField = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+
+  @media (max-width: 640px) {
+    justify-content: space-between;
+  }
+`;
+
+const LecturaDeadlineLabel = styled.label`
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: ${props => props.theme.textMuted};
+  white-space: nowrap;
+`;
+
+const LecturaDeadlineInput = styled.input`
+  width: 148px;
+  max-width: 100%;
+  min-height: 34px;
+  border: 1px solid ${props => props.theme.border};
+  border-radius: 8px;
+  background: ${props => props.theme.surface};
+  color: ${props => props.theme.text};
+  padding: 0.25rem 0.5rem;
+  font-size: 0.78rem;
+  font-family: inherit;
+
+  &:focus {
+    outline: none;
+    border-color: ${props => props.theme.primary};
+    box-shadow: 0 0 0 3px ${props => props.theme.name === 'dark' ? 'rgba(91, 165, 253, 0.22)' : 'rgba(49, 144, 252, 0.15)'};
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+`;
+
+const LecturaDeadlineButtons = styled.div`
+  display: flex;
+  gap: 0.45rem;
+  justify-content: flex-end;
+
+  @media (max-width: 640px) {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+`;
+
+const LecturaDeadlineClearButton = styled.button`
+  background: transparent;
+  color: ${props => props.theme.textMuted};
+  border: 1px solid ${props => props.theme.borderDark || props.theme.border};
+  padding: 0.4rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  min-height: 36px;
+
+  &:hover:not(:disabled) {
+    background: ${props => props.theme.surfaceHover};
+    color: ${props => props.theme.text};
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const LecturaDeadlineSaveButton = styled.button`
+  background: ${props => props.theme.primary};
+  color: ${props => props.theme.name === 'dark' ? props.theme.backgroundSecondary : 'white'};
+  border: 1px solid ${props => props.theme.primary};
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  min-height: 36px;
+
+  &:hover:not(:disabled) {
+    background: ${props => props.theme.primaryDark || props.theme.primary};
+    border-color: ${props => props.theme.primaryDark || props.theme.primary};
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const LecturaRemoveButton = styled.button`
+  background: transparent;
+  color: ${props => props.theme.error};
+  border: 1px solid ${props => props.theme.error};
+  padding: 0.4rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  min-height: 36px;
+
+  &:hover:not(:disabled) {
+    background: ${props => props.theme.error};
+    color: white;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const LecturasEmptyState = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: ${props => props.theme.textMuted};
+  border: 1px dashed ${props => props.theme.border};
+  border-radius: 12px;
+
+  strong {
+    color: ${props => props.theme.text};
+    font-size: 0.95rem;
+  }
+`;
+
+const LecturasBibliotecaList = styled.div`
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: 250px;
+  max-height: 280px;
   overflow-y: auto;
+  padding-right: 0.25rem;
 `;
 
-const LecturaItem = styled.label`
+const LecturaBibliotecaCard = styled.div`
   display: flex;
-  gap: 0.65rem;
   align-items: center;
-  padding: 0.4rem 0.2rem;
-  border-bottom: 1px solid ${props => props.theme.border};
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid ${props => props.$selected ? props.theme.primary : props.theme.border};
+  background: ${props => props.$selected ? (props.theme.name === 'dark' ? 'rgba(49,144,252,0.08)' : '#EFF6FF') : props.theme.surface};
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
 
-  &:last-child {
-    border-bottom: none;
+  &:hover {
+    border-color: ${props => props.$selected ? props.theme.primary : props.theme.borderDark};
+    background: ${props => props.$selected ? (props.theme.name === 'dark' ? 'rgba(49,144,252,0.12)' : '#DBEAFE') : props.theme.surfaceHover};
+  }
+
+  @media (max-width: 640px) {
+    flex-wrap: wrap;
+  }
+`;
+
+const LecturaBibliotecaCheck = styled.div`
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 2px solid ${props => props.$selected ? props.theme.primary : props.theme.border};
+  background: ${props => props.$selected ? props.theme.primary : 'transparent'};
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+`;
+
+const LecturaBibliotecaInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+`;
+
+const LecturaBibliotecaTitulo = styled.span`
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: ${props => props.theme.text};
+`;
+
+const LecturaBibliotecaBadge = styled.span`
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: ${props => props.$selected ? (props.theme.name === 'dark' ? 'rgba(49,144,252,0.2)' : '#DBEAFE') : props.theme.surfaceHover};
+  color: ${props => props.$selected ? props.theme.primary : props.theme.textMuted};
+`;
+
+const LecturasGuardarRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid ${props => props.theme.border};
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    align-items: stretch;
   }
 `;
 
@@ -3137,8 +3888,8 @@ const _ResetDropdownContent = styled.div`
   top: 100%;
   min-width: 220px;
   max-width: 92vw;
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: ${props => props.theme.surface};
+  border: 1px solid ${props => props.theme.border};
   border-radius: 8px;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -3152,11 +3903,11 @@ const _ResetDropdownContent = styled.div`
 
 const _ResetDropdownHeader = styled.div`
   padding: 0.75rem 1rem;
-  background: #f3f4f6;
+  background: ${props => props.theme.surfaceHover};
   font-size: 0.75rem;
   font-weight: 600;
-  color: #6b7280;
-  border-bottom: 1px solid #e5e7eb;
+  color: ${props => props.theme.textMuted};
+  border-bottom: 1px solid ${props => props.theme.border};
 `;
 
 const _ResetDropdownItem = styled.button`
@@ -3167,17 +3918,17 @@ const _ResetDropdownItem = styled.button`
   background: transparent;
   border: none;
   font-size: 0.85rem;
-  color: #374151;
+  color: ${props => props.theme.text};
   cursor: pointer;
   transition: background 0.15s ease;
   
   &:hover:not(:disabled) {
-    background: #eff6ff;
-    color: #2563eb;
+    background: ${props => props.theme.surfaceHover};
+    color: ${props => props.theme.primary};
   }
   
   &:disabled {
-    color: #9ca3af;
+    color: ${props => props.theme.disabledText};
     cursor: not-allowed;
   }
 `;
@@ -3199,7 +3950,7 @@ const ResetModalOverlay = styled(motion.div)`
 `;
 
 const ResetModalContent = styled(motion.div)`
-  background: #f8fafc;
+  background: ${props => props.theme.surface};
   border-radius: 20px;
   width: 100%;
   max-width: 1000px;
@@ -3246,7 +3997,7 @@ const CloseModalButton = styled.button`
 
 // Card de información del estudiante
 const StudentInfoCard = styled.div`
-  background: white;
+  background: ${props => props.theme.surface};
   margin: 1.5rem;
   border-radius: 16px;
   padding: 1.5rem;
@@ -3294,7 +4045,7 @@ const StudentName = styled.h4`
   margin: 0;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #1e293b;
+  color: ${props => props.theme.text};
 `;
 
 const StudentMeta = styled.div`
@@ -3311,8 +4062,8 @@ const MetaBadge = styled.span`
   border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 500;
-  background: ${props => props.$type === 'lecture' ? '#dbeafe' : '#f1f5f9'};
-  color: ${props => props.$type === 'lecture' ? '#1e40af' : '#64748b'};
+  background: ${props => props.$type === 'lecture' ? props.theme.infoBg : props.theme.surfaceHover};
+  color: ${props => props.$type === 'lecture' ? props.theme.infoLight : props.theme.textMuted};
 `;
 
 const ProgressSummaryBadges = styled.div`
@@ -3341,7 +4092,7 @@ const SummaryBadge = styled.div`
   .label {
     font-size: 0.7rem;
     font-weight: 600;
-    color: #64748b;
+    color: ${props => props.theme.textMuted};
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-top: 0.25rem;
@@ -3354,15 +4105,15 @@ const LoadingArtifacts = styled.div`
   flex-direction: column;
   align-items: center;
   gap: 1rem;
-  color: #64748b;
+  color: ${props => props.theme.textMuted};
   font-size: 1rem;
 `;
 
 const LoadingSpinner = styled.div`
   width: 40px;
   height: 40px;
-  border: 3px solid #e5e7eb;
-  border-top-color: #3b82f6;
+  border: 3px solid ${props => props.theme.border};
+  border-top-color: ${props => props.theme.primary};
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   
@@ -3390,7 +4141,7 @@ const SectionTitle = styled.h4`
   margin: 0 1.5rem 0.5rem;
   font-size: 1rem;
   font-weight: 700;
-  color: #374151;
+  color: ${props => props.theme.text};
 `;
 
 const ArtifactsGrid = styled.div`
@@ -3405,7 +4156,7 @@ const ArtifactsGrid = styled.div`
 `;
 
 const ArtifactCard = styled.div`
-  background: white;
+  background: ${props => props.theme.surface};
   border: 2px solid ${props =>
     props.$submitted ? '#86efac' :
       props.$hasAttempts ? '#fde047' : '#e5e7eb'};
@@ -3432,7 +4183,7 @@ const ArtifactHeader = styled.div`
   gap: 0.75rem;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid ${props => props.theme.border};
 `;
 
 const ArtifactIcon = styled.span`
@@ -3446,14 +4197,14 @@ const ArtifactTitleGroup = styled.div`
 
 const ArtifactName = styled.div`
   font-weight: 700;
-  color: #1e293b;
+  color: ${props => props.theme.text};
   font-size: 1rem;
   line-height: 1.2;
 `;
 
 const ArtifactRubric = styled.div`
   font-size: 0.7rem;
-  color: #94a3b8;
+  color: ${props => props.theme.textMuted};
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -3487,7 +4238,7 @@ const MetricBox = styled.div`
   background: ${props => {
     if (props.$type === 'score' && props.$success) return '#f0fdf4';
     if (props.$warning) return '#fef2f2';
-    return '#f8fafc';
+    return props.theme.surfaceHover;
   }};
   border-radius: 10px;
   position: relative;
@@ -3496,20 +4247,20 @@ const MetricBox = styled.div`
 const MetricValue = styled.div`
   font-size: clamp(1.1rem, 4vw, 1.5rem);
   font-weight: 800;
-  color: #1e293b;
+  color: ${props => props.theme.text};
   line-height: 1;
   
   span {
     font-size: 0.85rem;
     font-weight: 600;
-    color: #94a3b8;
+    color: ${props => props.theme.textMuted};
   }
 `;
 
 const MetricLabel = styled.div`
   font-size: 0.65rem;
   font-weight: 600;
-  color: #64748b;
+  color: ${props => props.theme.textMuted};
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-top: 0.35rem;
@@ -3517,7 +4268,7 @@ const MetricLabel = styled.div`
 
 const MetricBar = styled.div`
   height: 4px;
-  background: #e5e7eb;
+  background: ${props => props.theme.border};
   border-radius: 2px;
   margin-top: 0.5rem;
   overflow: hidden;
@@ -3546,7 +4297,7 @@ const _ScoreRing = styled.div`
 `;
 
 const VersionsTimeline = styled.div`
-  background: #f8fafc;
+  background: ${props => props.theme.surfaceHover};
   border-radius: 10px;
   padding: 0.75rem;
   margin-bottom: 1rem;
@@ -3555,7 +4306,7 @@ const VersionsTimeline = styled.div`
 const TimelineTitle = styled.div`
   font-size: 0.7rem;
   font-weight: 700;
-  color: #64748b;
+  color: ${props => props.theme.textMuted};
   margin-bottom: 0.5rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -3590,7 +4341,7 @@ const TimelineContent = styled.div`
 
 const TimelineDate = styled.span`
   font-size: 0.75rem;
-  color: #64748b;
+  color: ${props => props.theme.textMuted};
 `;
 
 const TimelineScore = styled.span`
@@ -3609,8 +4360,8 @@ const TimelineScore = styled.span`
 const ResetArtifactButton = styled.button`
   width: 100%;
   padding: 0.75rem;
-  background: ${props => props.$disabled ? '#e5e7eb' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'};
-  color: ${props => props.$disabled ? '#9ca3af' : 'white'};
+  background: ${props => props.$disabled ? props.theme.disabled : `linear-gradient(135deg, ${props.theme.primary} 0%, ${props.theme.primaryDark || props.theme.primary} 100%)`};
+  color: ${props => props.$disabled ? props.theme.disabledText : (props.theme.name === 'dark' ? props.theme.backgroundSecondary : 'white')};
   border: none;
   border-radius: 10px;
   font-size: 0.85rem;
@@ -3634,7 +4385,7 @@ const ResetArtifactButton = styled.button`
 const ResetAllSection = styled.div`
   margin: 0 1.5rem 1.5rem;
   padding: 1.25rem;
-  background: white;
+  background: ${props => props.theme.surface};
   border: 2px solid #fecaca;
   border-radius: 12px;
 `;
@@ -3675,7 +4426,7 @@ const ResetAllButton = styled.button`
 const NoProgressMessage = styled.div`
   padding: 4rem 2rem;
   text-align: center;
-  background: white;
+  background: ${props => props.theme.surface};
   margin: 1.5rem;
   border-radius: 16px;
 `;
@@ -3688,19 +4439,19 @@ const NoProgressIcon = styled.div`
 const NoProgressTitle = styled.h4`
   margin: 0 0 0.5rem 0;
   font-size: 1.25rem;
-  color: #374151;
+  color: ${props => props.theme.text};
 `;
 
 const NoProgressText = styled.p`
   margin: 0;
-  color: #64748b;
+  color: ${props => props.theme.textMuted};
   font-size: 0.95rem;
 `;
 
 const ResetModalFooter = styled.div`
   padding: 1.25rem 2rem;
-  border-top: 1px solid #e5e7eb;
-  background: white;
+  border-top: 1px solid ${props => props.theme.border};
+  background: ${props => props.theme.surface};
   border-radius: 0 0 20px 20px;
   display: flex;
   justify-content: flex-end;
@@ -3734,7 +4485,7 @@ const ViewArtifactButton = styled.button`
 
 const ViewContentPanel = styled.div`
   margin: 1rem 1.5rem;
-  background: white;
+  background: ${props => props.theme.surface};
   border-radius: 16px;
   border: 2px solid #3b82f6;
   overflow: hidden;
@@ -3790,13 +4541,13 @@ const ViewContentBody = styled.div`
 `;
 
 const StudentWorkContent = styled.div`
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: ${props => props.theme.surfaceHover};
+  border: 1px solid ${props => props.theme.border};
   border-radius: 12px;
   padding: 1.25rem;
   font-size: 0.95rem;
   line-height: 1.7;
-  color: #374151;
+  color: ${props => props.theme.text};
   max-height: 300px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -3815,28 +4566,28 @@ const WorkFields = styled.div`
 
 const WorkField = styled.div`
   padding: 0.85rem 0.95rem;
-  background: white;
-  border: 1px solid #e2e8f0;
+  background: ${props => props.theme.surface};
+  border: 1px solid ${props => props.theme.border};
   border-radius: 10px;
 `;
 
 const WorkFieldLabel = styled.div`
   font-size: 0.85rem;
   font-weight: 700;
-  color: #1f2937;
+  color: ${props => props.theme.text};
   margin-bottom: 0.4rem;
 `;
 
 const WorkFieldValue = styled.div`
   font-size: 0.95rem;
   line-height: 1.6;
-  color: #374151;
+  color: ${props => props.theme.text};
   white-space: pre-wrap;
 `;
 
 const WorkEmptyValue = styled.div`
   font-size: 0.95rem;
-  color: #9ca3af;
+  color: ${props => props.theme.textMuted};
 `;
 
 const WorkFieldPre = styled.pre`
@@ -3844,7 +4595,7 @@ const WorkFieldPre = styled.pre`
   white-space: pre-wrap;
   font-size: 0.9rem;
   line-height: 1.55;
-  color: #374151;
+  color: ${props => props.theme.text};
 `;
 
 const NoContentMessage = styled.div`
@@ -3870,22 +4621,31 @@ const SubmittedBadge = styled.div`
 
 const TeacherCommentSection = styled.div`
   padding: 1.5rem;
-  background: #f0f9ff;
-  border-top: 1px solid #e0f2fe;
+  background: ${props => props.theme.infoBg};
+  border-top: 1px solid ${props => props.theme.border};
+
+  @media (max-width: 640px) {
+    padding: 1rem;
+  }
 `;
 
 const CommentLabel = styled.label`
   display: block;
   font-weight: 600;
-  color: #0369a1;
+  color: ${props => props.theme.infoLight};
   margin-bottom: 0.75rem;
   font-size: 0.9rem;
 `;
 
 const CommentTextarea = styled.textarea`
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: block;
   padding: 1rem;
-  border: 2px solid #bae6fd;
+  background: ${props => props.theme.surface};
+  color: ${props => props.theme.text};
+  border: 2px solid ${props => props.theme.border};
   border-radius: 10px;
   font-size: 0.95rem;
   line-height: 1.6;
@@ -3896,12 +4656,12 @@ const CommentTextarea = styled.textarea`
   
   &:focus {
     outline: none;
-    border-color: #0ea5e9;
-    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+    border-color: ${props => props.theme.primary};
+    box-shadow: 0 0 0 3px ${props => props.theme.name === 'dark' ? 'rgba(91, 165, 253, 0.22)' : 'rgba(49, 144, 252, 0.15)'};
   }
   
   &::placeholder {
-    color: #94a3b8;
+    color: ${props => props.theme.textMuted};
   }
 `;
 
@@ -3911,6 +4671,10 @@ const CommentActions = styled.div`
   gap: 1rem;
   margin-top: 1rem;
   flex-wrap: wrap;
+
+  @media (max-width: 640px) {
+    gap: 0.75rem;
+  }
 `;
 
 const SaveCommentButton = styled.button`
@@ -3924,6 +4688,10 @@ const SaveCommentButton = styled.button`
   cursor: pointer;
   transition: all 0.2s ease;
   min-height: 44px;
+
+  @media (max-width: 640px) {
+    width: 100%;
+  }
   
   &:hover:not(:disabled) {
     transform: translateY(-2px);
@@ -3940,17 +4708,21 @@ const SaveCommentButton = styled.button`
 const DeleteCommentButton = styled.button`
   padding: 0.5rem 1rem;
   background: transparent;
-  color: #dc2626;
-  border: 1px solid #dc2626;
+  color: ${props => props.theme.error};
+  border: 1px solid ${props => props.theme.error};
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   min-height: 40px;
+
+  @media (max-width: 640px) {
+    width: 100%;
+  }
   
   &:hover:not(:disabled) {
-    background: #dc2626;
+    background: ${props => props.theme.error};
     color: white;
   }
   
@@ -3961,7 +4733,7 @@ const DeleteCommentButton = styled.button`
 `;
 
 const CommentSavedIndicator = styled.span`
-  color: #059669;
+  color: ${props => props.theme.success};
   font-size: 0.85rem;
   font-weight: 500;
 `;
@@ -3970,7 +4742,7 @@ const CommentSavedIndicator = styled.span`
 const ScoreEditSection = styled.div`
   margin-bottom: 1rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(0,0,0,0.1);
+  border-bottom: 1px solid ${props => props.theme.border};
 `;
 
 const ScoreEditRow = styled.div`
@@ -3978,34 +4750,40 @@ const ScoreEditRow = styled.div`
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.5rem;
+
+  @media (max-width: 640px) {
+    flex-wrap: wrap;
+  }
   
   & > span {
     font-weight: 600;
     font-size: 1rem;
-    color: #374151;
+    color: ${props => props.theme.text};
   }
 `;
 
 const ScoreInput = styled.input`
   width: 80px;
+  box-sizing: border-box;
   padding: 0.5rem 0.75rem;
-  border: 2px solid #d1d5db;
+  background: ${props => props.theme.surface};
+  border: 2px solid ${props => props.theme.border};
   border-radius: 8px;
   font-size: 1.1rem;
   font-weight: 700;
   text-align: center;
-  color: #1f2937;
+  color: ${props => props.theme.text};
   transition: border-color 0.2s ease;
   
   &:focus {
     outline: none;
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    border-color: ${props => props.theme.primary};
+    box-shadow: 0 0 0 3px ${props => props.theme.name === 'dark' ? 'rgba(91, 165, 253, 0.22)' : 'rgba(49, 144, 252, 0.15)'};
   }
   
   &:disabled {
     opacity: 0.6;
-    background: #f3f4f6;
+    background: ${props => props.theme.disabled};
   }
 `;
 
@@ -4020,6 +4798,10 @@ const SaveScoreButton = styled.button`
   cursor: pointer;
   transition: all 0.2s ease;
   min-height: 40px;
+
+  @media (max-width: 640px) {
+    width: 100%;
+  }
   
   &:hover:not(:disabled) {
     transform: translateY(-1px);
@@ -4070,9 +4852,9 @@ const StudentsList = styled.div`
 `;
 
 const StudentCard = styled.div`
-  background: white;
+  background: ${props => props.theme.surface};
   border-radius: 16px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid ${props => props.theme.border};
   overflow: hidden;
   transition: box-shadow 0.2s ease;
   
@@ -4087,13 +4869,13 @@ const StudentCardHeader = styled.div`
   justify-content: space-between;
   padding: 1rem 1.25rem;
   cursor: pointer;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
+  background: ${props => props.theme.surfaceHover};
+  border-bottom: 1px solid ${props => props.theme.border};
   gap: 0.75rem;
   flex-wrap: wrap;
   
   &:hover {
-    background: #f5f5f5;
+    background: ${props => props.theme.hover};
   }
 
   @media (max-width: 640px) {
@@ -4127,7 +4909,7 @@ const StudentNameRow = styled.div`
 const StudentFullName = styled.span`
   font-size: clamp(0.95rem, 2.6vw, 1.05rem);
   font-weight: 600;
-  color: #1f2937;
+  color: ${props => props.theme.text};
 `;
 
 const StudentQuickStats = styled.div`
@@ -4144,16 +4926,16 @@ const QuickStat = styled.div`
   align-items: center;
   gap: 0.35rem;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: ${props => props.theme.textMuted};
   
   .icon { font-size: 0.9rem; }
-  .value { font-weight: 600; color: #374151; }
-  .label { color: #9ca3af; }
+  .value { font-weight: 600; color: ${props => props.theme.text}; }
+  .label { color: ${props => props.theme.textMuted}; }
 `;
 
 const ExpandButton = styled.button`
-  background: ${props => props.$expanded ? '#3b82f6' : '#e5e7eb'};
-  color: ${props => props.$expanded ? 'white' : '#6b7280'};
+  background: ${props => props.$expanded ? props.theme.primary : props.theme.border};
+  color: ${props => props.$expanded ? (props.theme.name === 'dark' ? props.theme.backgroundSecondary : 'white') : props.theme.textMuted};
   border: none;
   width: 32px;
   height: 32px;
@@ -4166,13 +4948,13 @@ const ExpandButton = styled.button`
   transition: all 0.2s ease;
   
   &:hover {
-    background: ${props => props.$expanded ? '#2563eb' : '#d1d5db'};
+    background: ${props => props.$expanded ? (props.theme.primaryDark || props.theme.primary) : props.theme.borderLight};
   }
 `;
 
 const StudentDetailPanel = styled.div`
   overflow: hidden;
-  background: white;
+  background: ${props => props.theme.surface};
 `;
 
 const LecturasProgressSection = styled.div`
@@ -4183,12 +4965,12 @@ const LecturasProgressTitle = styled.h4`
   margin: 0 0 1rem 0;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #374151;
+  color: ${props => props.theme.text};
 `;
 
 const LecturaProgressCard = styled.div`
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: ${props => props.theme.surfaceHover};
+  border: 1px solid ${props => props.theme.border};
   border-radius: 12px;
   padding: 1rem;
   margin-bottom: 0.75rem;
@@ -4219,14 +5001,14 @@ const LecturaInfo = styled.div`
 
 const LecturaTitulo = styled.div`
   font-weight: 600;
-  color: #1f2937;
+  color: ${props => props.theme.text};
   font-size: 0.95rem;
   margin-bottom: 0.2rem;
 `;
 
 const LecturaAutor = styled.div`
   font-size: 0.8rem;
-  color: #6b7280;
+  color: ${props => props.theme.textMuted};
 `;
 
 const LecturaStats = styled.div`
@@ -4241,14 +5023,15 @@ const LecturaStat = styled.div`
   align-items: center;
   padding: 0.5rem 0.75rem;
   background: ${props => {
+    const isDark = props.theme.name === 'dark';
     if (props.$type === 'score') {
       const score = props.$score || 0;
-      if (score >= 7) return '#dcfce7';
-      if (score >= 4) return '#fef3c7';
-      if (score > 0) return '#fee2e2';
-      return '#f1f5f9';
+      if (score >= 7) return isDark ? 'rgba(38, 166, 154, 0.2)' : '#dcfce7';
+      if (score >= 4) return isDark ? 'rgba(255, 183, 77, 0.2)' : '#fef3c7';
+      if (score > 0) return isDark ? 'rgba(255, 107, 107, 0.2)' : '#fee2e2';
+      return props.theme.surface;
     }
-    return '#f1f5f9';
+    return props.theme.surface;
   }};
   border-radius: 8px;
   min-width: 60px;
@@ -4257,20 +5040,20 @@ const LecturaStat = styled.div`
     font-size: 1.1rem;
     font-weight: 700;
     color: ${props => {
-    if (props.$type === 'score') {
-      const score = props.$score || 0;
-      if (score >= 7) return '#166534';
-      if (score >= 4) return '#92400e';
-      if (score > 0) return '#991b1b';
-      return '#64748b';
-    }
-    return '#3b82f6';
-  }};
+      if (props.$type === 'score') {
+        const score = props.$score || 0;
+        if (score >= 7) return props.theme.name === 'dark' ? props.theme.successLight : '#166534';
+        if (score >= 4) return props.theme.name === 'dark' ? props.theme.warningLight : '#92400e';
+        if (score > 0) return props.theme.name === 'dark' ? props.theme.errorLight : '#991b1b';
+        return props.theme.textMuted;
+      }
+      return props.theme.primary;
+    }};
   }
   
   .label {
     font-size: 0.7rem;
-    color: #64748b;
+    color: ${props => props.theme.textMuted};
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -4319,14 +5102,14 @@ const ArtifactMiniCard = styled.div`
   border-radius: 8px;
   font-size: 0.8rem;
   background: ${props => {
-    if (props.$status === 'submitted') return '#dcfce7';
-    if (props.$status === 'progress') return '#fef3c7';
-    return '#f1f5f9';
+    if (props.$status === 'submitted') return props.theme.name === 'dark' ? 'rgba(38, 166, 154, 0.2)' : '#dcfce7';
+    if (props.$status === 'progress') return props.theme.name === 'dark' ? 'rgba(255, 183, 77, 0.2)' : '#fef3c7';
+    return props.theme.surface;
   }};
   border: 1px solid ${props => {
-    if (props.$status === 'submitted') return '#bbf7d0';
-    if (props.$status === 'progress') return '#fde68a';
-    return '#e2e8f0';
+    if (props.$status === 'submitted') return props.theme.name === 'dark' ? 'rgba(38, 166, 154, 0.35)' : '#bbf7d0';
+    if (props.$status === 'progress') return props.theme.name === 'dark' ? 'rgba(255, 183, 77, 0.35)' : '#fde68a';
+    return props.theme.border;
   }};
   
   .icon { font-size: 0.9rem; }
@@ -4334,8 +5117,13 @@ const ArtifactMiniCard = styled.div`
   .score {
     font-weight: 700;
     font-size: 0.75rem;
-    color: #166534;
-    background: white;
+    color: ${props => {
+      if (props.$status === 'submitted') return props.theme.name === 'dark' ? props.theme.successLight : '#166534';
+      if (props.$status === 'progress') return props.theme.name === 'dark' ? props.theme.warningLight : '#92400e';
+      return props.theme.textMuted;
+    }};
+    background: ${props => props.theme.surface};
+    border: 1px solid ${props => props.theme.border};
     padding: 0.1rem 0.3rem;
     border-radius: 4px;
   }
@@ -4344,14 +5132,14 @@ const ArtifactMiniCard = styled.div`
 const NoLecturasMessage = styled.div`
   text-align: center;
   padding: 2rem;
-  color: #64748b;
+  color: ${props => props.theme.textMuted};
   font-size: 0.9rem;
 `;
 
 const StudentActionsBar = styled.div`
   padding: 1rem 1.25rem;
-  background: #fafafa;
-  border-top: 1px solid #e5e7eb;
+  background: ${props => props.theme.surfaceHover};
+  border-top: 1px solid ${props => props.theme.border};
   display: flex;
   justify-content: flex-end;
 `;
@@ -4359,8 +5147,8 @@ const StudentActionsBar = styled.div`
 const DeleteStudentButton = styled.button`
   padding: 0.5rem 1rem;
   background: transparent;
-  color: #dc2626;
-  border: 1px solid #fecaca;
+  color: ${props => props.theme.error};
+  border: 1px solid ${props => props.theme.errorBorder || props.theme.error};
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 500;
@@ -4368,17 +5156,17 @@ const DeleteStudentButton = styled.button`
   transition: all 0.2s ease;
   
   &:hover {
-    background: #fee2e2;
-    border-color: #fca5a5;
+    background: ${props => props.theme.errorBackground || 'rgba(255, 107, 107, 0.15)'};
+    border-color: ${props => props.theme.error};
   }
 `;
 
 const EmptyStudentsMessage = styled.div`
   text-align: center;
   padding: 3rem 2rem;
-  background: white;
+  background: ${props => props.theme.surface};
   border-radius: 16px;
-  border: 2px dashed #e5e7eb;
+  border: 2px dashed ${props => props.theme.border};
   
   .icon {
     font-size: 3rem;
@@ -4388,14 +5176,14 @@ const EmptyStudentsMessage = styled.div`
   
   .text {
     display: block;
-    color: #64748b;
+    color: ${props => props.theme.textMuted};
     font-size: 1rem;
     margin-bottom: 0.5rem;
   }
   
   .hint {
     display: block;
-    color: #94a3b8;
+    color: ${props => props.theme.disabledText};
     font-size: 0.9rem;
   }
 `;
