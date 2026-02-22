@@ -3306,6 +3306,12 @@ export const AppContextProvider = ({ children }) => {
 
     const isRestoreStillActive = () => activeRestoreTokenRef.current === restoreToken;
     const canApplyRestoreState = () => isRestoreStillActive() && getCurrentSessionId() === session?.id;
+    const releaseRestoreLock = (reason = 'unknown') => {
+      if (!isRestoreStillActive()) return;
+      localStorage.removeItem('__restoring_session__');
+      isRestoringRef.current = false;
+      logger.log(`🔓 [AppContext] Auto-guardado re-habilitado (${reason})`);
+    };
 
     try {
       // 🛡️ Activar flag de restauración para bloquear efectos secundarios (como limpieza de análisis)
@@ -3337,6 +3343,10 @@ export const AppContextProvider = ({ children }) => {
       }
 
       if (success) {
+        // ✅ Cerrar ventana de bloqueo de auto-guardado apenas se restaura el estado base.
+        // La recuperación del PDF puede tardar; no debe bloquear el guardado de progreso.
+        setTimeout(() => releaseRestoreLock('estado base restaurado'), 250);
+
         // 🆕 CRÍTICO: Si es un PDF con fileURL, descargar el archivo para poder mostrarlo
         const isPDF = session.text?.fileType === 'application/pdf' ||
           session.text?.fileName?.toLowerCase().endsWith('.pdf');
@@ -3532,13 +3542,12 @@ export const AppContextProvider = ({ children }) => {
         if (!isRestoreStillActive()) {
           return;
         }
-        localStorage.removeItem('__restoring_session__');
-        isRestoringRef.current = false;
+        releaseRestoreLock('finally');
         if (pdfRestoreAbortRef.current === restoreAbortController) {
           pdfRestoreAbortRef.current = null;
         }
         activeRestoreTokenRef.current = null;
-        logger.log('🔓 [AppContext] Auto-guardado re-habilitado y protección liberada');
+        logger.log('🔓 [AppContext] Protección de restauración liberada');
       }, 500);
     }
   }, [setTextoWithDebug, setCompleteAnalysis, setArchivoActualStable, setRubricProgress, setSavedCitations, setActivitiesProgress, setCurrentTextoId, setSourceCourseId, currentUser, activeLecture, archivoActual]);

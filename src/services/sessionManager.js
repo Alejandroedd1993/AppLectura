@@ -760,6 +760,8 @@ export function createSessionFromState(state, { syncToCloud = true } = {}) {
       minute: '2-digit'
     })}`;
 
+  const normalizedFileURL = state.archivoActual?.fileURL || null;
+
   const session = {
     id: sessionId,
     title,
@@ -769,13 +771,12 @@ export function createSessionFromState(state, { syncToCloud = true } = {}) {
       content: state.texto,
       fileName: state.archivoActual?.name || 'texto_manual',
       fileType: state.archivoActual?.type || 'text/plain',
-      fileURL: state.archivoActual?.fileURL || null, // 🆕 Para restaurar PDFs
+      fileURL: normalizedFileURL, // Canonical: fuente principal para restaurar PDFs
       metadata: {
         id: state.currentTextoId, // 🆕
         // 🆕 Compat: algunos flows legacy leen fileName/fileType/fileURL desde metadata
         fileName: state.archivoActual?.name || 'texto_manual',
         fileType: state.archivoActual?.type || 'text/plain',
-        fileURL: state.archivoActual?.fileURL || null,
         length: state.texto.length,
         words: state.texto.split(/\s+/).length
       }
@@ -1196,18 +1197,18 @@ export function clearArtifactsDrafts(textoId = null, courseId = null) {
 export function captureCurrentState(contextState) {
   // Capturar borradores de artefactos (con scope de curso)
   const artifactsDrafts = captureArtifactsDrafts(contextState.currentTextoId || null, contextState.sourceCourseId || null);
+  const normalizedFileURL = contextState.archivoActual?.fileURL || null;
 
   const sessionData = {
     text: contextState.texto ? {
       content: contextState.texto,
       fileName: contextState.archivoActual?.name || 'texto_manual',
       fileType: contextState.archivoActual?.type || 'text/plain',
-      fileURL: contextState.archivoActual?.fileURL || null,
+      fileURL: normalizedFileURL,
       metadata: {
         id: contextState.currentTextoId,
         fileName: contextState.archivoActual?.name || 'texto_manual',
         fileType: contextState.archivoActual?.type || 'text/plain',
-        fileURL: contextState.archivoActual?.fileURL || null,
         length: contextState.texto.length,
         words: contextState.texto.split(/\s+/).length
       }
