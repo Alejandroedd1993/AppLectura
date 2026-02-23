@@ -271,19 +271,6 @@ export default function BitacoraEticaIA({ theme }) {
     setTeacherScoreOverride(null);
   }, []);
 
-  const maybeApplyTeacherReset = useTeacherArtifactReset({
-    artifactLabel: 'BitacoraEticaIA',
-    lectureId,
-    sourceCourseId,
-    persistence,
-    draftKeyBases: [
-      'bitacoraEticaIA_verificacionFuentes',
-      'bitacoraEticaIA_procesoUsoIA',
-      'bitacoraEticaIA_reflexionEtica'
-    ],
-    onApplyReset: applyTeacherReset
-  });
-
   // Cargar reflexiones guardadas (interacciones del tutor ahora se manejan en AppContext)
 
   useEffect(() => {
@@ -384,6 +371,19 @@ export default function BitacoraEticaIA({ theme }) {
       setIsSubmitted(submitted);
       setIsLocked(submitted);
     }
+  });
+
+  const maybeApplyTeacherReset = useTeacherArtifactReset({
+    artifactLabel: 'BitacoraEticaIA',
+    lectureId,
+    sourceCourseId,
+    persistence,
+    draftKeyBases: [
+      'bitacoraEticaIA_verificacionFuentes',
+      'bitacoraEticaIA_procesoUsoIA',
+      'bitacoraEticaIA_reflexionEtica'
+    ],
+    onApplyReset: applyTeacherReset
   });
 
   // 🆕 CLOUD SYNC: Cargar history/drafts desde Firestore (activitiesProgress)
