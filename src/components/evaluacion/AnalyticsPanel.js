@@ -300,9 +300,10 @@ const AnalyticsPanel = ({ rubricProgress = {}, theme }) => {
           <MetricCard theme={theme}>
             <MetricValue theme={theme}>
               <TrendBadge $trend={analytics.trends.overallTrend} theme={theme}>
+                {!analytics.trends.hasSufficientData && 'ℹ️ Datos insuficientes'}
                 {analytics.trends.overallTrend === 'improving' && '📈 Mejorando'}
                 {analytics.trends.overallTrend === 'declining' && '📉 Declinando'}
-                {analytics.trends.overallTrend === 'stable' && '➡️ Estable'}
+                {analytics.trends.overallTrend === 'stable' && analytics.trends.hasSufficientData && '➡️ Estable'}
               </TrendBadge>
             </MetricValue>
             <MetricLabel theme={theme}>Tendencia</MetricLabel>

@@ -9,6 +9,14 @@
  */
 export function calculateDetailedStats(rubricProgress) {
   const rubrics = Object.entries(rubricProgress);
+  const toNumericScore = (entry) => {
+    if (typeof entry === 'object' && entry !== null) return Number(entry.score);
+    return Number(entry);
+  };
+  const getArtifactScores = (scores = []) => {
+    if (!Array.isArray(scores)) return [];
+    return scores.filter((entry) => !(typeof entry === 'object' && entry?.artefacto === 'PracticaGuiada'));
+  };
   
   if (rubrics.length === 0) {
     return {
@@ -29,15 +37,16 @@ export function calculateDetailedStats(rubricProgress) {
       trends: {
         overallTrend: 'stable',
         consistencyScore: 0,
+        hasSufficientData: false,
       },
       recommendations: [],
     };
   }
 
   // Resumen básico
-  const evaluated = rubrics.filter(([_, data]) => data.scores?.length > 0);
+  const evaluated = rubrics.filter(([_, data]) => getArtifactScores(data?.scores).length > 0);
   const allScores = rubrics.flatMap(([_, data]) => 
-    (data.scores || []).map(s => typeof s === 'object' ? Number(s.score) : Number(s))
+    getArtifactScores(data.scores).map(toNumericScore)
   );
   const totalAttempts = allScores.length;
   
@@ -66,12 +75,14 @@ export function calculateDetailedStats(rubricProgress) {
   // Tendencias (últimos 3 vs primeros 3 intentos)
   const improving = [];
   const declining = [];
+  let rubricsWithTrendData = 0;
   
   evaluated.forEach(([id, data]) => {
-    if (data.scores.length >= 3) {
-      const getScore = (s) => typeof s === 'object' ? Number(s.score) : Number(s);
-      const first3 = data.scores.slice(0, 3).reduce((a, b) => a + getScore(b), 0) / 3;
-      const last3 = data.scores.slice(-3).reduce((a, b) => a + getScore(b), 0) / 3;
+    const artifactScores = getArtifactScores(data.scores);
+    if (artifactScores.length >= 3) {
+      rubricsWithTrendData += 1;
+      const first3 = artifactScores.slice(0, 3).reduce((sum, entry) => sum + toNumericScore(entry), 0) / 3;
+      const last3 = artifactScores.slice(-3).reduce((sum, entry) => sum + toNumericScore(entry), 0) / 3;
       const change = last3 - first3;
       
       if (change > 1) improving.push({ rubricId: id, improvement: change });
@@ -81,8 +92,11 @@ export function calculateDetailedStats(rubricProgress) {
 
   // Tendencia general
   let overallTrend = 'stable';
-  if (improving.length > declining.length) overallTrend = 'improving';
-  if (declining.length > improving.length) overallTrend = 'declining';
+  if (rubricsWithTrendData > 0) {
+    if (improving.length > declining.length) overallTrend = 'improving';
+    if (declining.length > improving.length) overallTrend = 'declining';
+  }
+  const hasSufficientData = rubricsWithTrendData > 0;
 
   // Consistencia (desviación estándar normalizada)
   const variance = allScores.reduce((sum, score) => 
@@ -119,6 +133,7 @@ export function calculateDetailedStats(rubricProgress) {
     trends: {
       overallTrend,
       consistencyScore: parseFloat(consistencyScore.toFixed(2)),
+      hasSufficientData,
     },
     recommendations,
   };
