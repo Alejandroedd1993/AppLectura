@@ -23,7 +23,24 @@ import { chatCompletion } from '../../../src/services/unifiedAiService';
 
 // 🆕 Textos válidos para pasar la validación de producción
 const VALID_TEXT = 'Este es un texto base de prueba suficientemente largo para pasar la validación del servicio de evaluación de ensayos integrador.';
-const VALID_ESSAY = 'Este es un ensayo de prueba con contenido suficiente para superar la validación mínima de longitud. Incluye desarrollo de ideas y argumentación básica para testing.';
+const buildValidEssay = () => {
+  const quoteA = '"Esta cita extensa evidencia un marco ideológico explícito en el discurso público analizado"';
+  const quoteB = '"La construcción retórica del texto prioriza ciertas voces y silencia otras perspectivas relevantes"';
+  const quoteC = '"El argumento central del autor cambia su sentido cuando se considera el contexto histórico y social"';
+  const coreSentence = 'Relaciono el resumen, el análisis, el mapa y la respuesta para sostener una lectura crítica con evidencias textuales y contexto histórico.';
+
+  const paragraphs = [
+    `${quoteA} ${Array(8).fill(coreSentence).join(' ')}`,
+    `${quoteB} ${Array(8).fill(coreSentence).join(' ')}`,
+    `${quoteC} ${Array(8).fill(coreSentence).join(' ')}`,
+    `${Array(8).fill(coreSentence).join(' ')}`,
+    `${Array(8).fill(coreSentence).join(' ')}`
+  ];
+
+  return paragraphs.join('\n\n');
+};
+
+const VALID_ESSAY = buildValidEssay();
 
 describe('ensayoIntegrador.service', () => {
   test('combineDualEssayEvaluations promedia y unifica listas', () => {

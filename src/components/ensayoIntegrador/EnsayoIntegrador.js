@@ -434,13 +434,18 @@ export default function EnsayoIntegrador({ theme }) {
 
       const status = String(summative.status || '').toLowerCase();
       const attemptsUsed = Number(summative.attemptsUsed || 0);
+      const hasNumericScore =
+        summative?.score !== null &&
+        summative?.score !== undefined &&
+        Number.isFinite(Number(summative.score));
+
       const hasSubmission =
         status === 'submitted' ||
         status === 'graded' ||
         attemptsUsed > 0 ||
         Number(summative.submittedAt || 0) > 0 ||
         Number(summative.gradedAt || 0) > 0 ||
-        Number.isFinite(Number(summative.score));
+        hasNumericScore;
 
       if (!hasSubmission) continue;
 
@@ -821,7 +826,7 @@ export default function EnsayoIntegrador({ theme }) {
               <DraftBadge theme={theme} $cloud={draftStatus === 'saved-cloud'}>
                 {draftStatus === 'saving' && '⏳ Guardando...'}
                 {draftStatus === 'saved-local' && '💾 Borrador local guardado'}
-                {draftStatus === 'saved-cloud' && '☁️ Guardado en la nube'}
+                {draftStatus === 'saved-cloud' && '☁️ Guardado (sincronizando nube)'}
               </DraftBadge>
             )}
             <CloudButton
@@ -829,7 +834,7 @@ export default function EnsayoIntegrador({ theme }) {
               type="button"
               onClick={handleSaveDraftToCloud}
               disabled={loading || cloudSaving || !dimension || !essayText.trim() || isLockedByAttempts || isGlobalEssayLocked}
-              title="Guardar borrador en la nube"
+              title="Guardar borrador (sincronización en segundo plano)"
             >
               ☁️ Guardar
             </CloudButton>

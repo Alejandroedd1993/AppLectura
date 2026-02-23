@@ -5,6 +5,7 @@ import {
   extractContent,
   parseJSONFromContent
 } from './unifiedAiService';
+import { validateEssayFormat } from './essayFormatValidator';
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
 import { CHAT_TIMEOUT_MS } from '../constants/timeoutConstants';
 
@@ -41,6 +42,7 @@ export class EssayEvaluationError extends Error {
       MISSING_TEXT: 'Falta el texto base para evaluar. Asegúrate de tener una lectura cargada.',
       MISSING_ESSAY: 'No has escrito ningún ensayo para evaluar.',
       ESSAY_TOO_SHORT: 'Tu ensayo es demasiado corto para una evaluación significativa.',
+      ESSAY_FORMAT_INVALID: 'Tu ensayo no cumple el formato requerido (extensión, citas, párrafos o referencias).',
       PROVIDER_ERROR: 'Error al conectar con el servicio de evaluación. Intenta de nuevo en unos segundos.',
       PARSE_ERROR: 'El servicio respondió con un formato inesperado. Intenta de nuevo.',
       TIMEOUT: 'La evaluación está tardando demasiado. Intenta de nuevo en unos minutos.',
@@ -109,8 +111,16 @@ function validateEssayInput({ texto, essayText, dimension }) {
 
   if (!essayText || typeof essayText !== 'string') {
     errors.push({ field: 'essayText', code: 'MISSING_ESSAY', message: 'Ensayo requerido' });
-  } else if (essayText.trim().length < 100) {
-    errors.push({ field: 'essayText', code: 'ESSAY_TOO_SHORT', message: 'Ensayo demasiado corto (mín. 100 caracteres)' });
+  } else {
+    const formatValidation = validateEssayFormat(essayText);
+    if (!formatValidation.valid) {
+      errors.push({
+        field: 'essayText',
+        code: 'ESSAY_FORMAT_INVALID',
+        message: formatValidation.errors?.[0] || 'Formato de ensayo inválido',
+        details: formatValidation.stats
+      });
+    }
   }
 
   return errors;
