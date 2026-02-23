@@ -922,6 +922,37 @@ export const AppContextProvider = ({ children }) => {
 
         if (!isMounted) return; // Evitar updates si el componente se desmontó
 
+        // 🆕 Cargar citas guardadas del cuaderno para esta lectura
+        const remoteCitations = (() => {
+          const source = progress?.savedCitations;
+          if (Array.isArray(source)) return source;
+          if (source && typeof source === 'object') {
+            const byCurrent = source[currentTextoId];
+            if (Array.isArray(byCurrent)) return byCurrent;
+          }
+          return [];
+        })();
+
+        if (Array.isArray(remoteCitations)) {
+          setSavedCitations(prevLocal => {
+            const local = Array.isArray(prevLocal[currentTextoId]) ? prevLocal[currentTextoId] : [];
+            const remoteLen = remoteCitations.length;
+            const localLen = local.length;
+            const remoteMaxTs = remoteCitations.reduce((m, c) => Math.max(m, c?.timestamp || 0), 0);
+            const localMaxTs = local.reduce((m, c) => Math.max(m, c?.timestamp || 0), 0);
+
+            const shouldApply = remoteLen > localLen || (remoteLen === localLen && remoteMaxTs > localMaxTs);
+            if (!shouldApply) return prevLocal;
+
+            lastSavedCitationsFromCloudAtRef.current = Date.now();
+
+            return {
+              ...prevLocal,
+              [currentTextoId]: remoteCitations
+            };
+          });
+        }
+
         // 🔄 DETECTAR RESET: Si lastResetAt existe, limpiar datos locales
         if (progress?.lastResetAt) {
           const resetTime = progress.lastResetAt?.seconds
