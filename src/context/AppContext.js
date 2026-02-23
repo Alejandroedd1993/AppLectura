@@ -1932,42 +1932,93 @@ export const AppContextProvider = ({ children }) => {
           }
         }
 
-        if (!legacyActivityDoc?.artifacts || Object.keys(legacyActivityDoc.artifacts).length === 0) {
+        const legacySavedCitations = (() => {
+          const source = legacyProgress?.savedCitations;
+          if (Array.isArray(source)) return source;
+          if (source && typeof source === 'object') {
+            if (Array.isArray(source[currentTextoId])) return source[currentTextoId];
+            if (Array.isArray(source[legacyDocId])) return source[legacyDocId];
+          }
+          return [];
+        })();
+
+        const hasLegacyArtifacts = Boolean(legacyActivityDoc?.artifacts && Object.keys(legacyActivityDoc.artifacts).length > 0);
+        const hasLegacyCitations = Array.isArray(legacySavedCitations) && legacySavedCitations.length > 0;
+
+        if (!hasLegacyArtifacts && !hasLegacyCitations) {
           legacyProgressMigratedRef.current.add(migrationKey);
           return;
         }
 
         // Fallback defensivo: evitar payload null si React difiere la ejecución del updater.
-        let mergedForWrite = mergeActivityDoc({}, legacyActivityDoc);
+        let mergedForWrite = hasLegacyArtifacts ? mergeActivityDoc({}, legacyActivityDoc) : null;
+        let mergedCitationsForWrite = hasLegacyCitations ? legacySavedCitations : [];
 
-        lastActivitiesProgressFromCloudAtRef.current = Date.now();
-        setActivitiesProgress((prev) => {
-          const currentDoc = prev?.[currentTextoId] || {};
-          const mergedDoc = mergeActivityDoc(currentDoc, legacyActivityDoc);
-          mergedForWrite = mergedDoc;
+        if (hasLegacyArtifacts) {
+          lastActivitiesProgressFromCloudAtRef.current = Date.now();
+          setActivitiesProgress((prev) => {
+            const currentDoc = prev?.[currentTextoId] || {};
+            const mergedDoc = mergeActivityDoc(currentDoc, legacyActivityDoc);
+            mergedForWrite = mergedDoc;
 
-          return {
-            ...prev,
-            [currentTextoId]: mergedDoc
-          };
-        });
+            return {
+              ...prev,
+              [currentTextoId]: mergedDoc
+            };
+          });
+        }
+
+        if (hasLegacyCitations) {
+          lastSavedCitationsFromCloudAtRef.current = Date.now();
+          setSavedCitations((prev) => {
+            const current = Array.isArray(prev?.[currentTextoId]) ? prev[currentTextoId] : [];
+            const merged = [...current];
+            const existing = new Set(merged.map((c) => `${c?.id || ''}:${(c?.texto || '').substring(0, 50)}`));
+
+            for (const c of legacySavedCitations) {
+              const sig = `${c?.id || ''}:${(c?.texto || '').substring(0, 50)}`;
+              if (!sig || existing.has(sig)) continue;
+              merged.push(c);
+              existing.add(sig);
+            }
+
+            mergedCitationsForWrite = merged;
+            return {
+              ...prev,
+              [currentTextoId]: merged
+            };
+          });
+        }
 
         // Persistir explícitamente en el doc canónico del texto (visible para docente)
-        await saveGlobalProgress({
-          activitiesProgress: {
-            [currentTextoId]: mergedForWrite
-          },
+        const migrationPayload = {
           sourceCourseId,
           syncType: 'legacy_docid_migration'
-        }, { textoId: currentTextoId });
+        };
+
+        if (hasLegacyArtifacts && mergedForWrite) {
+          migrationPayload.activitiesProgress = {
+            [currentTextoId]: mergedForWrite
+          };
+        }
+
+        if (hasLegacyCitations) {
+          migrationPayload.savedCitations = mergedCitationsForWrite;
+        }
+
+        await saveGlobalProgress(migrationPayload, { textoId: currentTextoId });
 
         if (!cancelled) {
           lastActivitiesTouchedTextoIdRef.current = currentTextoId;
+          if (hasLegacyCitations) {
+            lastSavedCitationsTouchedTextoIdRef.current = currentTextoId;
+          }
           legacyProgressMigratedRef.current.add(migrationKey);
           logger.log('♻️ [AppContext] Migración Firestore legacy completada:', {
             legacyDocId,
             currentTextoId,
-            artifacts: Object.keys(mergedForWrite?.artifacts || {})
+            artifacts: Object.keys(mergedForWrite?.artifacts || {}),
+            citations: hasLegacyCitations ? mergedCitationsForWrite.length : 0
           });
         }
       } catch (error) {
