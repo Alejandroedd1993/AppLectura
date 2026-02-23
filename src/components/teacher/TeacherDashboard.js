@@ -100,6 +100,8 @@ function TeacherDashboard() {
   const [pesoFormativa, setPesoFormativa] = useState(70);
   const [pesoSumativa, setPesoSumativa] = useState(30);
   const [savingWeights, setSavingWeights] = useState(false);
+  const selectedCourseIdRef = useRef(null);
+  const metricsRequestSeqRef = useRef(0);
 
   // 🆕 Estado para expandir estudiante y ver detalle por lectura
   const [expandedStudent, setExpandedStudent] = useState(null);
@@ -284,6 +286,10 @@ function TeacherDashboard() {
   const selectedCourse = useMemo(() => courses.find(course => course.id === selectedCourseId), [courses, selectedCourseId]);
 
   useEffect(() => {
+    selectedCourseIdRef.current = selectedCourseId;
+  }, [selectedCourseId]);
+
+  useEffect(() => {
     setLecturasFechaLimiteDrafts({});
   }, [selectedCourseId]);
 
@@ -380,9 +386,14 @@ function TeacherDashboard() {
       setCourseMetrics(null);
       return;
     }
+    const requestId = ++metricsRequestSeqRef.current;
     setLoadingMetrics(true);
     try {
       const metrics = await getCourseMetrics(courseId);
+      if (requestId !== metricsRequestSeqRef.current || selectedCourseIdRef.current !== courseId) {
+        logger.log('⏭️ [TeacherDashboard] Respuesta de métricas obsoleta ignorada:', { courseId });
+        return;
+      }
       setCourseMetrics(metrics);
       setCourses(prev => prev.map(course => (
         course.id === courseId ? { ...course, ...metrics.curso } : course
@@ -398,10 +409,15 @@ function TeacherDashboard() {
         setPesoSumativa(30);
       }
     } catch (error) {
+      if (requestId !== metricsRequestSeqRef.current || selectedCourseIdRef.current !== courseId) {
+        return;
+      }
       logger.error('Error cargando métricas:', error);
       showFeedback('error', error.message || 'No se pudieron cargar las métricas');
     } finally {
-      setLoadingMetrics(false);
+      if (requestId === metricsRequestSeqRef.current && selectedCourseIdRef.current === courseId) {
+        setLoadingMetrics(false);
+      }
     }
   }, [showFeedback]);
 

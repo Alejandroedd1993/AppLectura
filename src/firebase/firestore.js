@@ -2802,8 +2802,11 @@ export async function getCourseMetrics(courseId, options = {}) {
               rubricScore = typeof lastEntry === 'object' ? (lastEntry.score || 0) : (lastEntry || 0);
             }
             // 🆕 Fallback: ensayo sumativo (summative) si existe
-            if (rubricScore <= 0 && rubric.summative?.status === 'graded' && rubric.summative?.score > 0) {
-              rubricScore = Number(rubric.summative.score) || 0;
+            if (rubricScore <= 0 && rubric.summative?.status === 'graded') {
+              const summativeScore = rubric.summative?.teacherOverrideScore ?? rubric.summative?.score;
+              if (summativeScore > 0) {
+                rubricScore = Number(summativeScore) || 0;
+              }
             }
 
             // 🆕 Si el docente hizo override, usar ese como score definitivo
@@ -4006,8 +4009,11 @@ export async function getStudentArtifactDetails(studentUid, textoId, courseId = 
       }
 
       // Prioridad 3.5: Ensayo Integrador (SUMATIVO) si existe (para casos sin formativo)
-      if (rubric?.summative && rubric.summative.status === 'graded' && rubric.summative.score != null) {
-        return Number(rubric.summative.score) || 0;
+      if (rubric?.summative && rubric.summative.status === 'graded') {
+        const summativeScore = rubric.summative.teacherOverrideScore ?? rubric.summative.score;
+        if (summativeScore != null) {
+          return Number(summativeScore) || 0;
+        }
       }
 
       // Prioridad 4: Último score del array

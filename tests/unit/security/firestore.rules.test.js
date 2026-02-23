@@ -332,4 +332,76 @@ describe('firestore.rules - progress security', () => {
       }, { merge: true })
     );
   });
+
+  test('docente dueño de curso puede crear notificación para estudiante del curso', async () => {
+    const studentUid = 'student-1';
+    const courseId = 'course-notif-1';
+
+    await seedUsers();
+    await seedCourseEnrollment({ courseId, studentUid, estado: 'active' });
+
+    const teacherOwnerDb = testEnv.authenticatedContext('teacher-1').firestore();
+
+    await assertSucceeds(
+      teacherOwnerDb.doc(`students/${studentUid}/notifications/notif-1`).set({
+        type: 'teacher_comment',
+        textoId: 'texto-1',
+        artifactKey: 'resumenAcademico',
+        docenteUid: 'teacher-1',
+        courseId,
+        read: false,
+        createdAtMs: Date.now()
+      })
+    );
+  });
+
+  test('docente no dueño de curso NO puede crear notificación para estudiante', async () => {
+    const studentUid = 'student-1';
+    const courseId = 'course-notif-2';
+
+    await seedUsers();
+    await seedCourseEnrollment({ courseId, studentUid, estado: 'active' });
+
+    const teacherOtherDb = testEnv.authenticatedContext('teacher-2').firestore();
+
+    await assertFails(
+      teacherOtherDb.doc(`students/${studentUid}/notifications/notif-2`).set({
+        type: 'teacher_comment',
+        textoId: 'texto-2',
+        artifactKey: 'tablaACD',
+        docenteUid: 'teacher-2',
+        courseId,
+        read: false,
+        createdAtMs: Date.now()
+      })
+    );
+  });
+
+  test('fallback legacy: docenteAsignado puede crear notificación sin courseId', async () => {
+    const studentUid = 'student-1';
+
+    await seedUsers();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await db.doc(`users/${studentUid}`).set({
+        uid: studentUid,
+        role: 'estudiante',
+        docenteAsignado: 'teacher-1'
+      }, { merge: true });
+    });
+
+    const teacherOwnerDb = testEnv.authenticatedContext('teacher-1').firestore();
+
+    await assertSucceeds(
+      teacherOwnerDb.doc(`students/${studentUid}/notifications/notif-legacy`).set({
+        type: 'teacher_comment',
+        textoId: 'texto-legacy',
+        artifactKey: 'mapaActores',
+        docenteUid: 'teacher-1',
+        courseId: null,
+        read: false,
+        createdAtMs: Date.now()
+      })
+    );
+  });
 });

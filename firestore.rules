@@ -237,8 +237,14 @@ service cloud.firestore {
       // Leer: Solo el estudiante dueño
       allow read: if isOwner(studentId);
       
-      // Crear: Docentes autenticados pueden crear notificaciones para estudiantes
-      allow create: if isDocente();
+      // Crear: Solo docente válido del estudiante (curso scopeado o vínculo legacy)
+      allow create: if isDocente() &&
+                      request.resource.data.docenteUid == request.auth.uid &&
+                      (
+                        (request.resource.data.courseId != null &&
+                         isCourseTeacherForProgress(request.resource.data.courseId, studentId)) ||
+                        (request.resource.data.courseId == null && isDocenteOf(studentId))
+                      );
       
       // Actualizar: Solo el estudiante (para marcar como leída)
       allow update: if isOwner(studentId);
