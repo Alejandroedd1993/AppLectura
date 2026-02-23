@@ -1037,6 +1037,12 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
         });
       }
 
+      // 🆕 MERGEAR savedCitations (Cuaderno de Lectura)
+      // Las citas nuevas del payload reemplazan las existentes (last-write-wins por textoId)
+      if (Object.prototype.hasOwnProperty.call(progressData, 'savedCitations')) {
+        mergedData.savedCitations = progressData.savedCitations;
+      }
+
       // 🆕 MERGEAR rewardsState (Gamificación) - MERGE INTELIGENTE
       // 🧩 FASE 4: solo se permite en global_progress
       if (textoId === 'global_progress' && progressData.rewardsState) {

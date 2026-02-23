@@ -948,7 +948,10 @@ export const AppContextProvider = ({ children }) => {
             const remoteMaxTs = remoteCitations.reduce((m, c) => Math.max(m, c?.timestamp || 0), 0);
             const localMaxTs = local.reduce((m, c) => Math.max(m, c?.timestamp || 0), 0);
 
-            const shouldApply = remoteLen > localLen || (remoteLen === localLen && remoteMaxTs > localMaxTs);
+            // Aplicar datos remotos si: tienen más items, o son más recientes (incluyendo eliminaciones)
+            const shouldApply = remoteLen > localLen
+              || (remoteLen === localLen && remoteMaxTs > localMaxTs)
+              || (remoteLen < localLen && remoteMaxTs > localMaxTs);
             if (!shouldApply) return prevLocal;
 
             lastSavedCitationsFromCloudAtRef.current = Date.now();
@@ -1164,12 +1167,29 @@ export const AppContextProvider = ({ children }) => {
   // Persistir citas guardadas cuando cambien (con namespace)
   useEffect(() => {
     if (currentUser?.uid && !disableLocalProgressMirror && !useFirestorePersistenceHook) {
-      // 🛡️ FIX CROSS-COURSE: No persistir citas vacías (evita copiar datos del curso anterior con clave nueva)
+      const key = `savedCitations_${currentUser.uid}_${progressLocalKey}`;
       const hasCitations = currentTextoId && Array.isArray(savedCitations[currentTextoId]) && savedCitations[currentTextoId].length > 0;
+
       if (!hasCitations && currentTextoId && currentTextoId !== 'global_progress') {
+        // 🛡️ FIX: Limpiar localStorage si se eliminaron todas las citas (delete/clear)
+        // Evita que citas eliminadas reaparezcan tras recargar la página.
+        try {
+          const existing = localStorage.getItem(key);
+          if (existing) {
+            const parsed = JSON.parse(existing);
+            if (parsed && parsed[currentTextoId]) {
+              delete parsed[currentTextoId];
+              if (Object.keys(parsed).length === 0) {
+                localStorage.removeItem(key);
+              } else {
+                localStorage.setItem(key, JSON.stringify(parsed));
+              }
+            }
+          }
+        } catch { /* ignore */ }
         return;
       }
-      const key = `savedCitations_${currentUser.uid}_${progressLocalKey}`;
+
       const scopedCitations = (() => {
         if (!currentTextoId || currentTextoId === 'global_progress') return savedCitations;
         const scoped = {};
@@ -1462,7 +1482,10 @@ export const AppContextProvider = ({ children }) => {
             const remoteMaxTs = remote.reduce((m, c) => Math.max(m, c?.timestamp || 0), 0);
             const localMaxTs = local.reduce((m, c) => Math.max(m, c?.timestamp || 0), 0);
 
-            const shouldApply = remoteLen > localLen || (remoteLen === localLen && remoteMaxTs > localMaxTs);
+            // Aplicar datos remotos si: tienen más items, o son más recientes (incluyendo eliminaciones)
+            const shouldApply = remoteLen > localLen
+              || (remoteLen === localLen && remoteMaxTs > localMaxTs)
+              || (remoteLen < localLen && remoteMaxTs > localMaxTs);
             if (!shouldApply) return prevLocal;
 
             lastSavedCitationsFromCloudAtRef.current = Date.now();
