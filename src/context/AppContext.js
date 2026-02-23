@@ -503,6 +503,7 @@ export const AppContextProvider = ({ children }) => {
   const lastSavedCitationsFromCloudAtRef = useRef(0);
   const activitiesProgressLocalDirtyRef = useRef(false);
   const lastActivitiesTouchedTextoIdRef = useRef(null);
+  const lastSavedCitationsTouchedTextoIdRef = useRef(null);
   const legacyProgressMigratedRef = useRef(new Set());
   const savedCitationsLocalDirtyRef = useRef(false);
   const progressHookHasAppliedInitialRef = useRef(false);
@@ -1249,7 +1250,11 @@ export const AppContextProvider = ({ children }) => {
   const applyRemoteStudentProgress = useCallback((progressData, { isInitial } = { isInitial: false }) => {
     if (!progressData) return;
 
-    const currentDocId = currentTextoIdRef.current || 'global_progress';
+    const currentDocId = (
+      progressData?.textoId && progressData.textoId !== 'global_progress'
+        ? progressData.textoId
+        : (currentTextoIdRef.current || 'global_progress')
+    );
 
     // 🔄 DETECTAR RESET: Si Firestore tiene lastResetAt, verificar si es más reciente
     const remoteResetAt = progressData.lastResetAt?.seconds
@@ -2348,6 +2353,7 @@ export const AppContextProvider = ({ children }) => {
     }
 
     savedCitationsLocalDirtyRef.current = true;
+    lastSavedCitationsTouchedTextoIdRef.current = targetId;
 
     setSavedCitations(prev => {
       const docCitations = prev[targetId] || [];
@@ -2387,6 +2393,9 @@ export const AppContextProvider = ({ children }) => {
     logger.log(`🗑️ [deleteCitation] Eliminando cita ${citationId} del documento ${documentId}`);
 
     savedCitationsLocalDirtyRef.current = true;
+    if (documentId) {
+      lastSavedCitationsTouchedTextoIdRef.current = documentId;
+    }
 
     setSavedCitations(prev => {
       const docCitations = prev[documentId] || [];
@@ -2416,6 +2425,9 @@ export const AppContextProvider = ({ children }) => {
     logger.log(`🗑️ [clearDocumentCitations] Limpiando todas las citas del documento ${documentId}`);
 
     savedCitationsLocalDirtyRef.current = true;
+    if (documentId) {
+      lastSavedCitationsTouchedTextoIdRef.current = documentId;
+    }
 
     setSavedCitations(prev => {
       const { [documentId]: _removed, ...rest } = prev;
@@ -2938,11 +2950,10 @@ export const AppContextProvider = ({ children }) => {
     };
   }, [activitiesProgress, currentUser, userData, saveGlobalProgress, sourceCourseId, disableLocalProgressMirror, useFirestorePersistenceHook, saveProgressViaHook, currentTextoId, progressDocId]);
 
-  // 🔄 CLOUD-FIRST (hook): cuando cambia savedCitations, sincronizar a Firestore (solo doc actual)
+  // 🔄 CLOUD-FIRST (hook): cuando cambia savedCitations, sincronizar a Firestore (doc tocado)
   useEffect(() => {
     if (!useFirestorePersistenceHook || typeof saveProgressViaHook !== 'function') return;
     if (!currentUser?.uid || !userData?.role || userData.role !== 'estudiante') return;
-    if (!currentTextoId || currentTextoId === 'global_progress') return;
 
     // 🛡️ Evitar bucle: si este cambio viene de Firestore, no re-escribir inmediatamente
     if (Date.now() - (lastSavedCitationsFromCloudAtRef.current || 0) < 5000) {
@@ -2954,8 +2965,16 @@ export const AppContextProvider = ({ children }) => {
       return;
     }
 
-    const scheduledForTextoId = currentTextoId;
-    const citationsForDoc = Array.isArray(savedCitations[currentTextoId]) ? savedCitations[currentTextoId] : [];
+    const targetTextoId = (
+      (currentTextoId && currentTextoId !== 'global_progress')
+        ? currentTextoId
+        : (lastSavedCitationsTouchedTextoIdRef.current || null)
+    );
+
+    if (!targetTextoId || targetTextoId === 'global_progress') return;
+
+    const scheduledForTextoId = targetTextoId;
+    const citationsForDoc = Array.isArray(savedCitations[targetTextoId]) ? savedCitations[targetTextoId] : [];
 
     const writeNow = () => {
       const progressData = {
@@ -2966,7 +2985,17 @@ export const AppContextProvider = ({ children }) => {
         syncType: 'citations_update'
       };
 
-      Promise.resolve(saveProgressViaHook(progressData))
+      const canUseHookWriter = Boolean(
+        useFirestorePersistenceHook &&
+        typeof saveProgressViaHook === 'function' &&
+        targetTextoId === progressDocId
+      );
+
+      const writePromise = canUseHookWriter
+        ? saveProgressViaHook(progressData)
+        : saveGlobalProgress(progressData, { textoId: targetTextoId });
+
+      Promise.resolve(writePromise)
         .then(() => {
           savedCitationsLocalDirtyRef.current = false;
         })
@@ -2985,7 +3014,7 @@ export const AppContextProvider = ({ children }) => {
         writeNow();
       }
     };
-  }, [savedCitations, currentUser, userData, currentTextoId, sourceCourseId, useFirestorePersistenceHook, saveProgressViaHook]);
+  }, [savedCitations, currentUser, userData, currentTextoId, sourceCourseId, useFirestorePersistenceHook, saveProgressViaHook, progressDocId, saveGlobalProgress]);
 
   // 🔥 Establecer usuario actual en sessionManager cuando cambie
   useEffect(() => {
