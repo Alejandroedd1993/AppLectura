@@ -182,10 +182,10 @@ export default function MapaActores({ theme }) {
   const conexionesRef = React.useRef(null);
   const consecuenciasRef = React.useRef(null);
   const [cursorPositions, setCursorPositions] = React.useState({
-    actores: 0,
-    contexto: 0,
-    conexiones: 0,
-    consecuencias: 0
+    actores: { start: 0, end: 0 },
+    contexto: { start: 0, end: 0 },
+    conexiones: { start: 0, end: 0 },
+    consecuencias: { start: 0, end: 0 }
   });
 
   // 🆕 Keyboard shortcuts para productividad
@@ -606,11 +606,12 @@ export default function MapaActores({ theme }) {
 
     const ref = refMap[campo];
     const setter = setterMap[campo];
+    const selection = cursorPositions[campo] || { start: 0, end: 0 };
+    const start = selection.start ?? 0;
+    const end = selection.end ?? start;
 
     if (ref && ref.current && setter) {
       const textarea = ref.current;
-      const start = textarea.selectionStart || cursorPositions[campo] || 0;
-      const end = textarea.selectionEnd || cursorPositions[campo] || 0;
 
       setter(prev => {
         const before = prev.substring(0, start);
@@ -622,6 +623,10 @@ export default function MapaActores({ theme }) {
             const newPosition = start + citaFormateada.length;
             textarea.focus();
             textarea.setSelectionRange(newPosition, newPosition);
+            setCursorPositions((prevPos) => ({
+              ...prevPos,
+              [campo]: { start: newPosition, end: newPosition }
+            }));
           }
         }, 0);
         timersRef.current.push(focusTimerId);
@@ -635,8 +640,9 @@ export default function MapaActores({ theme }) {
 
   // 🆕 Capturar posición del cursor
   const handleCursorChange = useCallback((campo, event) => {
-    const position = event.target.selectionStart;
-    setCursorPositions(prev => ({ ...prev, [campo]: position }));
+    const start = event?.target?.selectionStart ?? 0;
+    const end = event?.target?.selectionEnd ?? start;
+    setCursorPositions(prev => ({ ...prev, [campo]: { start, end } }));
   }, []);
 
   // 🆕 Eliminar cita
@@ -1069,6 +1075,7 @@ export default function MapaActores({ theme }) {
               onChange={(e) => !viewingVersion && setActores(e.target.value)}
               onClick={(e) => handleCursorChange('actores', e)}
               onKeyUp={(e) => handleCursorChange('actores', e)}
+              onSelect={(e) => handleCursorChange('actores', e)}
               onPaste={handlePaste}
               placeholder="Ej: Empresas transnacionales, trabajadores precarizados, gobiernos neoliberales, organizaciones sindicales, movimientos sociales..."
               disabled={loading || isReadOnly}
@@ -1089,6 +1096,7 @@ export default function MapaActores({ theme }) {
               onChange={(e) => !viewingVersion && setContextoHistorico(e.target.value)}
               onClick={(e) => handleCursorChange('contexto', e)}
               onKeyUp={(e) => handleCursorChange('contexto', e)}
+              onSelect={(e) => handleCursorChange('contexto', e)}
               onPaste={handlePaste}
               placeholder="Ej: Contexto de globalización neoliberal post-1990, crisis financiera 2008, pandemia COVID-19, dictadura militar Chile 1973-1990..."
               disabled={loading || isReadOnly}
@@ -1109,6 +1117,7 @@ export default function MapaActores({ theme }) {
               onChange={(e) => !viewingVersion && setConexiones(e.target.value)}
               onClick={(e) => handleCursorChange('conexiones', e)}
               onKeyUp={(e) => handleCursorChange('conexiones', e)}
+              onSelect={(e) => handleCursorChange('conexiones', e)}
               onPaste={handlePaste}
               placeholder="Ej: Empresas buscan maximizar ganancias mediante desregulación laboral, lo cual entra en conflicto con trabajadores que buscan estabilidad. Gobiernos median según correlación de fuerzas..."
               disabled={loading || isReadOnly}
@@ -1129,6 +1138,7 @@ export default function MapaActores({ theme }) {
               onChange={(e) => !viewingVersion && setConsecuencias(e.target.value)}
               onClick={(e) => handleCursorChange('consecuencias', e)}
               onKeyUp={(e) => handleCursorChange('consecuencias', e)}
+              onSelect={(e) => handleCursorChange('consecuencias', e)}
               onPaste={handlePaste}
               placeholder="Ej: Corto plazo: aumento del desempleo, protestas sociales. Largo plazo: debilitamiento de identidades colectivas, naturalización del individualismo competitivo..."
               disabled={loading || isReadOnly}

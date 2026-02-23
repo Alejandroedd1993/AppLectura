@@ -216,10 +216,10 @@ export default function TablaACD({ theme }) {
   const presentesRef = React.useRef(null);
   const silenciadasRef = React.useRef(null);
   const [cursorPositions, setCursorPositions] = React.useState({
-    marco: 0,
-    estrategias: 0,
-    presentes: 0,
-    silenciadas: 0
+    marco: { start: 0, end: 0 },
+    estrategias: { start: 0, end: 0 },
+    presentes: { start: 0, end: 0 },
+    silenciadas: { start: 0, end: 0 }
   });
 
   // Validación
@@ -647,11 +647,12 @@ export default function TablaACD({ theme }) {
 
     const ref = refMap[campo];
     const setter = setterMap[campo];
+    const selection = cursorPositions[campo] || { start: 0, end: 0 };
+    const start = selection.start ?? 0;
+    const end = selection.end ?? start;
 
     if (ref && ref.current && setter) {
       const textarea = ref.current;
-      const start = textarea.selectionStart || cursorPositions[campo] || 0;
-      const end = textarea.selectionEnd || cursorPositions[campo] || 0;
 
       setter(prev => {
         const before = prev.substring(0, start);
@@ -664,6 +665,10 @@ export default function TablaACD({ theme }) {
             const newPosition = start + citaFormateada.length;
             textarea.focus();
             textarea.setSelectionRange(newPosition, newPosition);
+            setCursorPositions((prevPos) => ({
+              ...prevPos,
+              [campo]: { start: newPosition, end: newPosition }
+            }));
           }
         }, 0));
 
@@ -676,8 +681,9 @@ export default function TablaACD({ theme }) {
 
   // 🆕 Capturar posición del cursor
   const handleCursorChange = useCallback((campo, event) => {
-    const position = event.target.selectionStart;
-    setCursorPositions(prev => ({ ...prev, [campo]: position }));
+    const start = event?.target?.selectionStart ?? 0;
+    const end = event?.target?.selectionEnd ?? start;
+    setCursorPositions(prev => ({ ...prev, [campo]: { start, end } }));
   }, []);
 
   // 🆕 Eliminar cita
@@ -1134,6 +1140,7 @@ export default function TablaACD({ theme }) {
               onChange={(e) => !viewingVersion && !isSubmitted && setMarcoIdeologico(e.target.value)}
               onClick={(e) => handleCursorChange('marco', e)}
               onKeyUp={(e) => handleCursorChange('marco', e)}
+              onSelect={(e) => handleCursorChange('marco', e)}
               onPaste={handlePaste}
               placeholder="Ej: El texto opera desde un marco neoliberal que naturaliza la competencia individual..."
               disabled={loading || isReadOnly}
@@ -1154,6 +1161,7 @@ export default function TablaACD({ theme }) {
               onChange={(e) => !viewingVersion && !isSubmitted && setEstrategiasRetoricas(e.target.value)}
               onClick={(e) => handleCursorChange('estrategias', e)}
               onKeyUp={(e) => handleCursorChange('estrategias', e)}
+              onSelect={(e) => handleCursorChange('estrategias', e)}
               onPaste={handlePaste}
               placeholder='Ej: Uso de metáforas biológicas ("supervivencia del más apto") para justificar desigualdades...'
               disabled={loading || isReadOnly}
@@ -1174,6 +1182,7 @@ export default function TablaACD({ theme }) {
               onChange={(e) => !viewingVersion && !isSubmitted && setVocesPresentes(e.target.value)}
               onClick={(e) => handleCursorChange('presentes', e)}
               onKeyUp={(e) => handleCursorChange('presentes', e)}
+              onSelect={(e) => handleCursorChange('presentes', e)}
               onPaste={handlePaste}
               placeholder="Ej: Expertos económicos, organismos internacionales, empresarios exitosos..."
               disabled={loading || isReadOnly}
@@ -1191,6 +1200,7 @@ export default function TablaACD({ theme }) {
               onChange={(e) => !viewingVersion && !isSubmitted && setVocesSilenciadas(e.target.value)}
               onClick={(e) => handleCursorChange('silenciadas', e)}
               onKeyUp={(e) => handleCursorChange('silenciadas', e)}
+              onSelect={(e) => handleCursorChange('silenciadas', e)}
               onPaste={handlePaste}
               placeholder="Ej: Trabajadores informales, sindicatos, comunidades afectadas, perspectivas ecológicas..."
               disabled={loading || isReadOnly}

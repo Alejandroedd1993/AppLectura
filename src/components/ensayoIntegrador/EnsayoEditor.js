@@ -388,6 +388,13 @@ export default function EnsayoEditor({ theme, value, onChange, disabled = false,
   const [showTips, setShowTips] = useState(true);
   const [showCitations, setShowCitations] = useState(false);
   const textareaRef = useRef(null);
+  const [cursorSelection, setCursorSelection] = useState({ start: 0, end: 0 });
+
+  const handleCursorChange = (event) => {
+    const start = event?.target?.selectionStart ?? 0;
+    const end = event?.target?.selectionEnd ?? start;
+    setCursorSelection({ start, end });
+  };
   
   const stats = useMemo(() => {
     const words = countWords(value);
@@ -452,6 +459,9 @@ export default function EnsayoEditor({ theme, value, onChange, disabled = false,
         theme={theme}
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
+        onClick={handleCursorChange}
+        onKeyUp={handleCursorChange}
+        onSelect={handleCursorChange}
         placeholder="Escribe aquí tu Ensayo Integrador…"
         disabled={disabled}
       />
@@ -492,8 +502,21 @@ export default function EnsayoEditor({ theme, value, onChange, disabled = false,
                     theme={theme}
                     type="button"
                     onClick={() => {
-                      const cursorPos = textareaRef.current?.selectionStart;
-                      onInsertCitation?.(cit.texto, cursorPos, tipo);
+                      const selection = {
+                        start: cursorSelection?.start ?? 0,
+                        end: cursorSelection?.end ?? (cursorSelection?.start ?? 0)
+                      };
+                      onInsertCitation?.(cit.texto, selection, tipo);
+
+                      const insertedText = tipo === 'cita' ? `«${cit.texto}»` : cit.texto;
+                      const nextPos = (selection.start || 0) + insertedText.length;
+                      requestAnimationFrame(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.focus();
+                          textareaRef.current.setSelectionRange(nextPos, nextPos);
+                          setCursorSelection({ start: nextPos, end: nextPos });
+                        }
+                      });
                     }}
                     disabled={disabled}
                     title={tipo === 'cita' ? 'Insertar cita textual' : 'Insertar en el ensayo'}

@@ -72,6 +72,7 @@ const ResumenAcademico = ({ theme }) => {
   const lectureId = currentTextoId || documentId || null;
   const rewardsResourceId = lectureId ? `${lectureId}:ResumenAcademico` : null;
   const timersRef = useRef([]);
+  const resumenRef = useRef(null);
 
   // 🧹 Cleanup de todos los timers al desmontar
   useEffect(() => {
@@ -121,6 +122,7 @@ const ResumenAcademico = ({ theme }) => {
   const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega final
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false); // 🆕 Modal de confirmación de entrega
   const [teacherScoreOverride, setTeacherScoreOverride] = useState(null); // 🆕 Info de cambio de nota por docente
+  const [cursorSelection, setCursorSelection] = useState({ start: 0, end: 0 });
   const {
     rateLimit,
     maxAttempts: MAX_ATTEMPTS
@@ -657,16 +659,38 @@ const ResumenAcademico = ({ theme }) => {
     return Array.isArray(arr) ? arr : [];
   }, [lectureId, getCitations]);
 
+  const handleResumenCursorChange = useCallback((event) => {
+    const start = event?.target?.selectionStart ?? 0;
+    const end = event?.target?.selectionEnd ?? start;
+    setCursorSelection({ start, end });
+  }, []);
+
   // Insertar entrada del cuaderno en el resumen con formato según tipo
   const insertarCita = useCallback((textoCita, tipo = 'cita') => {
     // Citas textuales van entre comillas, reflexiones/comentarios van como texto directo
     const textoFormateado = tipo === 'cita' ? `"${textoCita}" ` : `${textoCita} `;
+    const start = cursorSelection.start ?? 0;
+    const end = cursorSelection.end ?? start;
+
     setResumen(prev => {
-      return prev + (prev && !prev.endsWith(' ') ? ' ' : '') + textoFormateado;
+      const before = prev.substring(0, start);
+      const after = prev.substring(end);
+      const nextValue = before + textoFormateado + after;
+
+      timersRef.current.push(setTimeout(() => {
+        if (resumenRef.current) {
+          const newPos = start + textoFormateado.length;
+          resumenRef.current.focus();
+          resumenRef.current.setSelectionRange(newPos, newPos);
+          setCursorSelection({ start: newPos, end: newPos });
+        }
+      }, 0));
+
+      return nextValue;
     });
     setShowCitasPanel(false);
     logger.log(`✅ Entrada (${tipo}) insertada en el resumen`);
-  }, []);
+  }, [cursorSelection]);
 
   // 🆕 Eliminar cita guardada
   const handleEliminarCita = useCallback((citaId) => {
@@ -1013,8 +1037,12 @@ const ResumenAcademico = ({ theme }) => {
         />
 
         <Textarea
+          ref={resumenRef}
           value={displayedResumen}
           onChange={(e) => !viewingVersion && !isSubmitted && !isLocked && setResumen(e.target.value)}
+          onClick={handleResumenCursorChange}
+          onKeyUp={handleResumenCursorChange}
+          onSelect={handleResumenCursorChange}
           onPaste={handlePaste}
           placeholder="Escribe tu resumen académico aquí..."
           rows={12}

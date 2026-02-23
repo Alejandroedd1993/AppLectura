@@ -339,6 +339,83 @@ const ReflectionPrompt = styled.p`
   line-height: 1.5;
 `;
 
+const NotebookToggle = styled.button`
+  margin-top: 0.4rem;
+  background: ${p => p.$active ? `${p.theme.primary}18` : 'transparent'};
+  color: ${p => p.$active ? p.theme.primary : p.theme.textSecondary};
+  border: 1px solid ${p => p.$active ? `${p.theme.primary}50` : p.theme.border};
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover {
+    border-color: ${p => p.theme.primary};
+    color: ${p => p.theme.primary};
+  }
+`;
+
+const NotebookPanel = styled.div`
+  margin-top: 0.65rem;
+  border: 1px solid ${p => p.theme.border};
+  border-radius: 10px;
+  background: ${p => p.theme.surface};
+  padding: 0.65rem;
+  max-height: 220px;
+  overflow-y: auto;
+`;
+
+const NotebookItem = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.55rem;
+  border: 1px solid ${p => p.theme.border};
+  border-radius: 8px;
+  background: ${p => p.theme.background};
+  padding: 0.5rem;
+
+  & + & {
+    margin-top: 0.45rem;
+  }
+`;
+
+const NotebookText = styled.div`
+  flex: 1;
+  font-size: 0.83rem;
+  line-height: 1.45;
+  color: ${p => p.theme.textPrimary};
+  white-space: pre-wrap;
+`;
+
+const NotebookMeta = styled.div`
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: ${p => p.theme.textSecondary};
+`;
+
+const NotebookInsert = styled.button`
+  flex-shrink: 0;
+  background: ${p => `${p.theme.primary}15`};
+  color: ${p => p.theme.primary};
+  border: 1px solid ${p => `${p.theme.primary}40`};
+  border-radius: 7px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: ${p => `${p.theme.primary}25`};
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
 const ReflectionArea = styled.textarea`
   width: 100%;
   max-width: 100%;
@@ -482,7 +559,7 @@ const normalizeScore4 = (value) => {
 };
 
 export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimension }) {
-  const { texto, completeAnalysis, currentTextoId } = useContext(AppContext);
+  const { texto, completeAnalysis, currentTextoId, getCitations } = useContext(AppContext);
   const { recordEvent } = useRewards() || {};
   const [selectedDimension, setSelectedDimension] = useState(fixedDimension || null);
   const [practiceConfig, setPracticeConfig] = useState(null);
@@ -492,6 +569,7 @@ export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimensi
   const [question, setQuestion] = useState(null);
   const [answer, setAnswer] = useState('');
   const [feedback, setFeedback] = useState(null);
+  const [showNotebook, setShowNotebook] = useState(false);
   const [loadingQuestion, setLoadingQuestion] = useState(false);
   const [questionHints, setQuestionHints] = useState(null);
   const [loadingHints, setLoadingHints] = useState(false);
@@ -512,6 +590,8 @@ export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimensi
   const [reflectionSaved, setReflectionSaved] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [hintsRevealed, setHintsRevealed] = useState(0);
+  const answerRef = useRef(null);
+  const [answerSelection, setAnswerSelection] = useState({ start: 0, end: 0 });
 
   const hintsKey = useMemo(() => {
     const base = practiceConfig?.practiceId || `${practiceConfig?.dimension || selectedDimension || 'practice'}:${practiceConfig?.difficulty || 'default'}`;
@@ -538,6 +618,42 @@ export default function ModoPracticaGuiada({ theme, rubricProgress, fixedDimensi
     if (d === 'hard') return 'difícil';
     return 'intermedio';
   }, [practiceConfig]);
+
+  const notebookEntries = useMemo(() => {
+    if (!lectureId || typeof getCitations !== 'function') return [];
+    const entries = getCitations(lectureId);
+    return Array.isArray(entries) ? entries : [];
+  }, [lectureId, getCitations]);
+
+  const handleAnswerCursorChange = useCallback((event) => {
+    const start = event?.target?.selectionStart ?? 0;
+    const end = event?.target?.selectionEnd ?? start;
+    setAnswerSelection({ start, end });
+  }, []);
+
+  const handleInsertNotebookEntry = useCallback((entryText, tipo = 'cita') => {
+    const formatted = tipo === 'cita' ? `«${entryText}»` : entryText;
+    const start = answerSelection?.start ?? 0;
+    const end = answerSelection?.end ?? start;
+
+    setAnswer((prev) => {
+      const base = String(prev || '');
+      if (start >= 0 && end >= start && end <= base.length) {
+        return base.slice(0, start) + formatted + base.slice(end);
+      }
+      const separator = base.trim().length > 0 ? '\n' : '';
+      return `${base}${separator}${formatted}`;
+    });
+
+    const nextPos = start + formatted.length;
+    requestAnimationFrame(() => {
+      if (answerRef.current) {
+        answerRef.current.focus();
+        answerRef.current.setSelectionRange(nextPos, nextPos);
+        setAnswerSelection({ start: nextPos, end: nextPos });
+      }
+    });
+  }, [answerSelection]);
 
   const feedbackText = useMemo(() => {
     if (!feedback || typeof feedback !== 'object') return '';
@@ -1054,10 +1170,59 @@ Ve a “Análisis del Texto” y vuelve a intentarlo.`
           )}
 
           <AnswerLabel theme={theme}>Tu respuesta (mín. 30 caracteres)</AnswerLabel>
+          <NotebookToggle
+            type="button"
+            theme={theme}
+            $active={showNotebook}
+            onClick={() => setShowNotebook((v) => !v)}
+            disabled={notebookEntries.length === 0}
+            title={notebookEntries.length === 0 ? 'No hay entradas guardadas en el cuaderno' : 'Abrir cuaderno'}
+          >
+            {showNotebook ? '✕ Cerrar cuaderno' : `📓 Cuaderno (${notebookEntries.length})`}
+          </NotebookToggle>
+
+          {showNotebook && (
+            <NotebookPanel theme={theme}>
+              {notebookEntries.length === 0 ? (
+                <Message theme={theme}>No tienes entradas en el cuaderno para esta lectura.</Message>
+              ) : (
+                notebookEntries.map((entry) => {
+                  const tipo = entry?.tipo || 'cita';
+                  const isInsertable = tipo !== 'pregunta';
+                  const text = String(entry?.texto || '').trim();
+                  if (!text) return null;
+
+                  return (
+                    <NotebookItem key={entry.id || `${tipo}-${text.slice(0, 20)}`} theme={theme}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <NotebookText theme={theme}>{tipo === 'cita' ? `«${text}»` : text}</NotebookText>
+                        <NotebookMeta theme={theme}>{tipo}</NotebookMeta>
+                      </div>
+                      {isInsertable && (
+                        <NotebookInsert
+                          type="button"
+                          theme={theme}
+                          onClick={() => handleInsertNotebookEntry(text, tipo)}
+                          disabled={loadingQuestion || evaluating}
+                        >
+                          ➕ Insertar
+                        </NotebookInsert>
+                      )}
+                    </NotebookItem>
+                  );
+                })
+              )}
+            </NotebookPanel>
+          )}
+
           <AnswerArea
+            ref={answerRef}
             theme={theme}
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
+            onClick={handleAnswerCursorChange}
+            onKeyUp={handleAnswerCursorChange}
+            onSelect={handleAnswerCursorChange}
             placeholder="Escribe tu respuesta aquí…"
             disabled={!question?.pregunta || loadingQuestion || evaluating}
           />

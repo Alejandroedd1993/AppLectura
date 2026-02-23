@@ -175,10 +175,10 @@ export default function RespuestaArgumentativa({ theme }) {
   const contraargumentoRef = React.useRef(null);
   const refutacionRef = React.useRef(null);
   const [cursorPositions, setCursorPositions] = React.useState({
-    tesis: 0,
-    evidencias: 0,
-    contraargumento: 0,
-    refutacion: 0
+    tesis: { start: 0, end: 0 },
+    evidencias: { start: 0, end: 0 },
+    contraargumento: { start: 0, end: 0 },
+    refutacion: { start: 0, end: 0 }
   });
 
   // 🆕 Keyboard shortcuts para productividad
@@ -602,11 +602,12 @@ export default function RespuestaArgumentativa({ theme }) {
 
     const ref = refMap[campo];
     const setter = setterMap[campo];
+    const selection = cursorPositions[campo] || { start: 0, end: 0 };
+    const start = selection.start ?? 0;
+    const end = selection.end ?? start;
 
     if (ref && ref.current && setter) {
       const textarea = ref.current;
-      const start = textarea.selectionStart || cursorPositions[campo] || 0;
-      const end = textarea.selectionEnd || cursorPositions[campo] || 0;
 
       setter(prev => {
         const before = prev.substring(0, start);
@@ -619,6 +620,10 @@ export default function RespuestaArgumentativa({ theme }) {
             const newPosition = start + citaFormateada.length;
             textarea.focus();
             textarea.setSelectionRange(newPosition, newPosition);
+            setCursorPositions((prevPos) => ({
+              ...prevPos,
+              [campo]: { start: newPosition, end: newPosition }
+            }));
           }
         }, 0));
 
@@ -630,8 +635,9 @@ export default function RespuestaArgumentativa({ theme }) {
   }, [cursorPositions]);
 
   const handleCursorChange = useCallback((campo, event) => {
-    const position = event.target.selectionStart;
-    setCursorPositions(prev => ({ ...prev, [campo]: position }));
+    const start = event?.target?.selectionStart ?? 0;
+    const end = event?.target?.selectionEnd ?? start;
+    setCursorPositions(prev => ({ ...prev, [campo]: { start, end } }));
   }, []);
 
   const handleEliminarCita = useCallback((citaId) => {
@@ -1071,6 +1077,7 @@ export default function RespuestaArgumentativa({ theme }) {
               onChange={(e) => !viewingVersion && setTesis(e.target.value)}
               onClick={(e) => handleCursorChange('tesis', e)}
               onKeyUp={(e) => handleCursorChange('tesis', e)}
+              onSelect={(e) => handleCursorChange('tesis', e)}
               onPaste={handlePaste}
               placeholder="Ej: Sostengo que el texto naturaliza la lógica neoliberal al presentar la competencia como única forma legítima de organización social, excluyendo alternativas cooperativas del debate público."
               disabled={loading || isReadOnly}
@@ -1091,6 +1098,7 @@ export default function RespuestaArgumentativa({ theme }) {
               onChange={(e) => !viewingVersion && setEvidencias(e.target.value)}
               onClick={(e) => handleCursorChange('evidencias', e)}
               onKeyUp={(e) => handleCursorChange('evidencias', e)}
+              onSelect={(e) => handleCursorChange('evidencias', e)}
               onPaste={handlePaste}
               placeholder='Ej: En el párrafo 3, el autor afirma que "la competencia es ley natural", naturalizando así un modelo económico histórico como inevitable. Además, al usar metáforas deportivas ("ganar/perder") en el párrafo 5, refuerza una visión individualista donde solo hay ganadores y perdedores, omitiendo modelos de economía solidaria documentados en...'
               disabled={loading || isReadOnly}
@@ -1110,6 +1118,7 @@ export default function RespuestaArgumentativa({ theme }) {
               onChange={(e) => !viewingVersion && setContraargumento(e.target.value)}
               onClick={(e) => handleCursorChange('contraargumento', e)}
               onKeyUp={(e) => handleCursorChange('contraargumento', e)}
+              onSelect={(e) => handleCursorChange('contraargumento', e)}
               onPaste={handlePaste}
               placeholder="Ej: Se podría objetar que la competencia ha demostrado históricamente generar innovación tecnológica y mejora de productos, como evidencia el desarrollo industrial de los últimos dos siglos."
               disabled={loading || isReadOnly}
@@ -1129,6 +1138,7 @@ export default function RespuestaArgumentativa({ theme }) {
               onChange={(e) => !viewingVersion && setRefutacion(e.target.value)}
               onClick={(e) => handleCursorChange('refutacion', e)}
               onKeyUp={(e) => handleCursorChange('refutacion', e)}
+              onSelect={(e) => handleCursorChange('refutacion', e)}
               onPaste={handlePaste}
               placeholder="Ej: Si bien es cierto que la competencia puede generar innovación, esta lógica ignora los costos sociales (precarización laboral, desigualdad extrema) y excluye del análisis modelos donde la cooperación también produjo innovación significativa, como el software libre, las cooperativas de Mondragón, o la economía social y solidaria en América Latina."
               disabled={loading || isReadOnly}

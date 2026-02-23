@@ -381,14 +381,27 @@ export default function EnsayoIntegrador({ theme }) {
   }, [dimension, rubricId, essayText, cloudSaving, submitSummativeEssay, currentTextoId]);
 
   // --- Insertar entrada del cuaderno en el editor (posición del cursor gestionada por EnsayoEditor) ---
-  const handleInsertCitation = useCallback((citationText, cursorPos, tipo = 'cita') => {
+  const handleInsertCitation = useCallback((citationText, insertionSelection, tipo = 'cita') => {
     setEssayText(prev => {
       // Citas textuales van entre «», reflexiones/comentarios van como texto directo
       const formatted = tipo === 'cita' ? `«${citationText}»` : citationText;
-      // Si se proporciona posición del cursor, insertar ahí; si no, al final
-      if (typeof cursorPos === 'number' && cursorPos >= 0 && cursorPos <= prev.length) {
-        return prev.slice(0, cursorPos) + formatted + prev.slice(cursorPos);
+
+      let start = null;
+      let end = null;
+
+      if (typeof insertionSelection === 'number') {
+        start = insertionSelection;
+        end = insertionSelection;
+      } else if (insertionSelection && typeof insertionSelection === 'object') {
+        start = Number.isFinite(Number(insertionSelection.start)) ? Number(insertionSelection.start) : null;
+        end = Number.isFinite(Number(insertionSelection.end)) ? Number(insertionSelection.end) : start;
       }
+
+      // Si se proporciona selección/posición válida, insertar/reemplazar ahí; si no, al final
+      if (start != null && end != null && start >= 0 && end >= start && end <= prev.length) {
+        return prev.slice(0, start) + formatted + prev.slice(end);
+      }
+
       const separator = prev.trim().length > 0 ? '\n\n' : '';
       return prev + separator + formatted;
     });
