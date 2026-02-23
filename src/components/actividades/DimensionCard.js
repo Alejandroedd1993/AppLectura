@@ -202,6 +202,7 @@ export default function DimensionCard({
   defaultExpanded = false,
   expandSignal = null
 }) {
+  const supportsPractice = dimension?.id !== 'metacognicion_etica_ia';
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [view, setView] = useState('artefacto'); // 'practica' | 'artefacto'
 
@@ -218,6 +219,12 @@ export default function DimensionCard({
       setView('artefacto');
     }
   }, [expandSignal]);
+
+  useEffect(() => {
+    if (!supportsPractice && view !== 'artefacto') {
+      setView('artefacto');
+    }
+  }, [supportsPractice, view]);
 
   return (
     <Card theme={theme} $expanded={expanded} layout>
@@ -251,27 +258,29 @@ export default function DimensionCard({
               </RecommendBanner>
             )}
 
-            <ViewToggle theme={theme}>
-              <ToggleBtn
-                $active={view === 'artefacto'}
-                onClick={() => setView('artefacto')}
-                theme={theme}
-              >
-                📝 Artefacto
-              </ToggleBtn>
-              <ToggleBtn
-                $active={view === 'practica'}
-                onClick={() => setView('practica')}
-                theme={theme}
-              >
-                🎮 Práctica
-                <PracticeBonusBadge>+pts</PracticeBonusBadge>
-              </ToggleBtn>
-            </ViewToggle>
+            {supportsPractice && (
+              <ViewToggle theme={theme}>
+                <ToggleBtn
+                  $active={view === 'artefacto'}
+                  onClick={() => setView('artefacto')}
+                  theme={theme}
+                >
+                  📝 Artefacto
+                </ToggleBtn>
+                <ToggleBtn
+                  $active={view === 'practica'}
+                  onClick={() => setView('practica')}
+                  theme={theme}
+                >
+                  🎮 Práctica
+                  <PracticeBonusBadge>+pts</PracticeBonusBadge>
+                </ToggleBtn>
+              </ViewToggle>
+            )}
 
             <ContentArea>
               <AnimatePresence mode="wait">
-                {view === 'practica' ? (
+                {supportsPractice && view === 'practica' ? (
                   <motion.div
                     key="practica"
                     initial={{ opacity: 0, x: -15 }}
