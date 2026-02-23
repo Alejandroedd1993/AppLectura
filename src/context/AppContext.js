@@ -668,6 +668,11 @@ export const AppContextProvider = ({ children }) => {
       logger.warn('⚠️ [AppContext] switchLecture sin textoId, no se puede asignar sesión');
     }
 
+    // 🛡️ FIX: Permitir que restoreSessionToState salte el reset de progreso
+    // para evitar race condition donde queueMicrotask borra citas/rúbricas/actividades
+    // DESPUÉS de que fueron restauradas sincrónicamente.
+    const skipReset = Boolean(lectureData.__skipProgressReset);
+
     setActiveLecture(prev => {
       // 🛡️ FIX CROSS-COURSE: Detectar si cambia el curso (o el textoId)
       // para resetear inmediatamente el estado de progreso y evitar que
@@ -675,7 +680,7 @@ export const AppContextProvider = ({ children }) => {
       const isCourseChanging = prev.courseId !== (lectureData.courseId || null);
       const isTextoChanging = prev.id !== (lectureData.id || null);
 
-      if (isCourseChanging || isTextoChanging) {
+      if ((isCourseChanging || isTextoChanging) && !skipReset) {
         logger.log('🛡️ [switchLecture] Curso/texto cambió — reseteando progreso eagerly');
         // Los setters de useState son estables y accesibles desde la closure
         // aunque estén declarados más abajo en el cuerpo del componente.
@@ -684,6 +689,8 @@ export const AppContextProvider = ({ children }) => {
           setRubricProgress(createEmptyRubricProgressV2());
           setSavedCitations({});
         });
+      } else if ((isCourseChanging || isTextoChanging) && skipReset) {
+        logger.log('🛡️ [switchLecture] Curso/texto cambió — skip reset (restauración de sesión)');
       }
 
       return {
@@ -2696,21 +2703,34 @@ export const AppContextProvider = ({ children }) => {
   }, [currentUser, userData, saveGlobalProgress, sourceCourseId]);
 
   /**
-   * Sincroniza citas guardadas con Firestore (pendiente de implementación)
+   * Sincroniza citas guardadas con Firestore para el texto activo.
    */
   const syncCitationsToFirestore = useCallback(async () => {
-    if (!currentUser || Object.keys(savedCitations).length === 0) return;
+    if (!currentUser?.uid || !userData?.role || userData.role !== 'estudiante') return;
+
+    const targetTextoId = currentTextoId || lastSavedCitationsTouchedTextoIdRef.current;
+    if (!targetTextoId || targetTextoId === 'global_progress') return;
+
+    const citationsForDoc = Array.isArray(savedCitations[targetTextoId]) ? savedCitations[targetTextoId] : [];
+    if (citationsForDoc.length === 0 && Object.keys(savedCitations).length === 0) return;
 
     try {
-      logger.log('💾 [Firestore] Citas disponibles para sincronizar:', Object.keys(savedCitations).length);
-      logger.log('ℹ️ [Firestore] Sincronización de citas pendiente de implementación');
+      logger.log('💾 [Firestore] Sincronizando citas para texto:', targetTextoId, '- total:', citationsForDoc.length);
 
-      // TODO: Implementar guardado de notas/citas cuando se agregue la función correspondiente
+      const progressData = {
+        savedCitations: citationsForDoc,
+        sourceCourseId,
+        lastSync: new Date().toISOString(),
+        userId: currentUser.uid,
+        syncType: 'citations_update'
+      };
 
+      await saveGlobalProgress(progressData, { textoId: targetTextoId });
+      logger.log('✅ [Firestore] Citas sincronizadas exitosamente');
     } catch (error) {
       logger.error('❌ [Firestore] Error sincronizando citas:', error);
     }
-  }, [currentUser, savedCitations]);
+  }, [currentUser, userData, savedCitations, currentTextoId, sourceCourseId, saveGlobalProgress]);
 
   // 🆕 OPTIMIZADO: Sincronizar rúbricas solo cuando se dispara evento de evaluación completa
   useEffect(() => {
@@ -3032,20 +3052,19 @@ export const AppContextProvider = ({ children }) => {
     };
   }, [activitiesProgress, currentUser, userData, saveGlobalProgress, sourceCourseId, disableLocalProgressMirror, useFirestorePersistenceHook, saveProgressViaHook, currentTextoId, progressDocId]);
 
-  // 🔄 CLOUD-FIRST (hook): cuando cambia savedCitations, sincronizar a Firestore (doc tocado)
+  // 🔄 SINCRONIZACIÓN DE CITAS: cuando cambia savedCitations, sincronizar a Firestore
+  // Funciona en TODOS los modos (default + cloud-first) — igual que activitiesProgress.
   useEffect(() => {
-    if (!useFirestorePersistenceHook || typeof saveProgressViaHook !== 'function') return;
     if (!currentUser?.uid || !userData?.role || userData.role !== 'estudiante') return;
 
-    // 🛡️ Evitar bucle: si este cambio viene de Firestore, no re-escribir inmediatamente
-    if (Date.now() - (lastSavedCitationsFromCloudAtRef.current || 0) < 5000) {
-      return;
-    }
+    // Cloud-first: sincronizar SOLO si el cambio fue local.
+    if (disableLocalProgressMirror && !savedCitationsLocalDirtyRef.current) return;
 
-    // Cloud-first: sincronizar SOLO si el cambio fue local
-    if (!savedCitationsLocalDirtyRef.current) {
-      return;
-    }
+    // 🛡️ Evitar bucle: si este cambio viene de Firestore, no re-escribir inmediatamente
+    if (Date.now() - (lastSavedCitationsFromCloudAtRef.current || 0) < 5000) return;
+
+    // Solo sincronizar si hay cambios reales (dirty ref o si hay citas)
+    if (!savedCitationsLocalDirtyRef.current) return;
 
     const targetTextoId = (
       (currentTextoId && currentTextoId !== 'global_progress')
@@ -3058,6 +3077,8 @@ export const AppContextProvider = ({ children }) => {
     const scheduledForTextoId = targetTextoId;
     const citationsForDoc = Array.isArray(savedCitations[targetTextoId]) ? savedCitations[targetTextoId] : [];
 
+    logger.log('🔄 [AppContext] Programando sync de savedCitations en 1s para:', targetTextoId, '- total:', citationsForDoc.length);
+
     const writeNow = () => {
       const progressData = {
         savedCitations: citationsForDoc,
@@ -3067,6 +3088,7 @@ export const AppContextProvider = ({ children }) => {
         syncType: 'citations_update'
       };
 
+      // Preferir writer del hook SOLO si el destino coincide con el doc actual.
       const canUseHookWriter = Boolean(
         useFirestorePersistenceHook &&
         typeof saveProgressViaHook === 'function' &&
@@ -3079,6 +3101,7 @@ export const AppContextProvider = ({ children }) => {
 
       Promise.resolve(writePromise)
         .then(() => {
+          logger.log('✅ [AppContext] savedCitations sincronizado para:', targetTextoId);
           savedCitationsLocalDirtyRef.current = false;
         })
         .catch((error) => {
@@ -3096,7 +3119,7 @@ export const AppContextProvider = ({ children }) => {
         writeNow();
       }
     };
-  }, [savedCitations, currentUser, userData, currentTextoId, sourceCourseId, useFirestorePersistenceHook, saveProgressViaHook, progressDocId, saveGlobalProgress]);
+  }, [savedCitations, currentUser, userData, currentTextoId, sourceCourseId, disableLocalProgressMirror, useFirestorePersistenceHook, saveProgressViaHook, progressDocId, saveGlobalProgress]);
 
   // 🔥 Establecer usuario actual en sessionManager cuando cambie
   useEffect(() => {

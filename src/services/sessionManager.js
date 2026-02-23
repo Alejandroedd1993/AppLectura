@@ -937,6 +937,8 @@ export function restoreSessionToState(session, contextSetters) {
       logger.log('📎 courseId:', courseIdToRestore);
 
       // Primero: cambio atómico de lectura (texto + IDs + reset análisis)
+      // 🛡️ __skipProgressReset: evita que queueMicrotask borre citas/rúbricas/actividades
+      // que serán restauradas sincrónicamente más abajo en esta misma función.
       contextSetters.switchLecture({
         id: textoIdToRestore,
         courseId: courseIdToRestore,
@@ -945,7 +947,8 @@ export function restoreSessionToState(session, contextSetters) {
         // (metadata históricamente solo tenía length/words, pero mantenemos fallback)
         fileName: session.text?.fileName || session.text?.metadata?.fileName || null,
         fileType: session.text?.fileType || session.text?.metadata?.fileType || null,
-        fileURL: session.text?.fileURL || session.text?.metadata?.fileURL || null
+        fileURL: session.text?.fileURL || session.text?.metadata?.fileURL || null,
+        __skipProgressReset: true
       });
 
       // Después: restaurar análisis específico de la sesión
