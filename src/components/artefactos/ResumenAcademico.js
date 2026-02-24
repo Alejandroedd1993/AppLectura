@@ -622,7 +622,10 @@ const ResumenAcademico = ({ theme }) => {
               nivel: evaluacion.nivel || previousArtifact.lastNivel || 'Sin evaluar',
               history: history,
               attempts: attemptsToUse,
-              finalContent: resumen
+              finalContent: resumen,
+              // 🔧 FIX: Limpiar marcadores de reset al hacer nueva entrega
+              resetBy: null,
+              resetAt: null
             }
           }
         };

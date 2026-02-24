@@ -477,7 +477,10 @@ export default function BitacoraEticaIA({ theme }) {
               nivel: feedbackCriterial.nivel_global || previousArtifact.lastNivel || 0,
               history: history,
               attempts: evaluationAttempts,
-              finalContent: { verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones }
+              finalContent: { verificacionFuentes, procesoUsoIA, reflexionEtica, declaraciones },
+              // 🔧 FIX: Limpiar marcadores de reset al hacer nueva entrega
+              resetBy: null,
+              resetAt: null
             }
           }
         };

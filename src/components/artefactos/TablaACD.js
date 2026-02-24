@@ -525,7 +525,10 @@ export default function TablaACD({ theme }) {
               nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
               history: history,
               attempts: attemptsToUse,
-              finalContent: { marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas }
+              finalContent: { marcoIdeologico, estrategiasRetoricas, vocesPresentes, vocesSilenciadas },
+              // 🔧 FIX: Limpiar marcadores de reset al hacer nueva entrega
+              resetBy: null,
+              resetAt: null
             }
           }
         };

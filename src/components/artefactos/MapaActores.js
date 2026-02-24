@@ -416,7 +416,10 @@ export default function MapaActores({ theme }) {
               nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
               history: history,
               attempts: attemptsToUse,
-              finalContent: { actores, contextoHistorico, conexiones, consecuencias }
+              finalContent: { actores, contextoHistorico, conexiones, consecuencias },
+              // 🔧 FIX: Limpiar marcadores de reset al hacer nueva entrega
+              resetBy: null,
+              resetAt: null
             }
           }
         };

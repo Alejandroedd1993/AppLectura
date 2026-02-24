@@ -550,7 +550,10 @@ export default function RespuestaArgumentativa({ theme }) {
               nivel: feedback.nivel_global || previousArtifact.lastNivel || 0,
               history: history,
               attempts: attemptsToUse,
-              finalContent: { tesis, evidencias, contraargumento, refutacion }
+              finalContent: { tesis, evidencias, contraargumento, refutacion },
+              // 🔧 FIX: Limpiar marcadores de reset al hacer nueva entrega
+              resetBy: null,
+              resetAt: null
             }
           }
         };

@@ -1049,47 +1049,80 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
             return;
           }
 
-          // 🔧 CRITICAL FIX: Si hay reset de docente activo, verificar que los datos entrantes
-          // NO sean pre-reset. Si algún artefacto existente tiene resetBy='docente',
-          // y el entrante tiene submitted=true sin resetBy, descartar el entrante (es pre-reset).
+          // 🔧 FIX v2: Si hay reset de docente activo, usar merge POR ARTEFACTO.
+          // El estado local del alumno puede haberse vaciado al recibir el reset,
+          // por lo que comparar submittedCount total falla (newActivity tiene menos artefactos
+          // que Firestore, donde los demás artefactos no-reseteados siguen entregados).
           if (docResetTime > 0) {
             const existingArtifacts = existingActivity?.artifacts || {};
             const anyExistingReset = Object.values(existingArtifacts).some(a => a?.resetBy === 'docente');
 
             if (anyExistingReset) {
-              // Verificar cada artefacto del newActivity
               const newArtifacts = newActivity?.artifacts || {};
+
+              // 1) Detectar si algún artefacto entrante es pre-reset (debe descartarse todo)
               const anyNewIsPreReset = Object.entries(newArtifacts).some(([name, a]) => {
-                // Si está submitted y la versión entrante es anterior al reset docente,
-                // es data pre-reset y debe descartarse. Si es posterior, debe aceptarse.
                 const existingArt = existingArtifacts[name];
                 if (!(a?.submitted && existingArt?.resetBy === 'docente' && !existingArt?.submitted)) return false;
-
                 const incomingSubmittedAt = Math.max(
                   toMillis(a?.submittedAt),
                   toMillis(a?.lastEvaluatedAt),
                   toMillis(newActivity?.preparation?.updatedAt),
                   toMillis(newActivity?.updatedAt)
                 );
-
-                const resetBoundary = Math.max(
-                  docResetTime,
-                  toMillis(existingArt?.resetAt)
-                );
-
-                if (incomingSubmittedAt <= 0 || resetBoundary <= 0) {
-                  // Sin timestamps confiables, no bloquear para evitar falsos negativos
-                  return false;
-                }
-
+                const resetBoundary = Math.max(docResetTime, toMillis(existingArt?.resetAt));
+                if (incomingSubmittedAt <= 0 || resetBoundary <= 0) return false;
                 return incomingSubmittedAt <= resetBoundary;
               });
 
               if (anyNewIsPreReset) {
                 logger.log(`🛡️ [Firestore] activitiesProgress[${docId}]: Datos pre-reset descartados (docente reseteó)`);
-                // Mantener los datos existentes (reseteados)
                 return;
               }
+
+              // 2) Sin pre-reset: merge POR ARTEFACTO para preservar entregas no-reseteadas de Firestore
+              const mergedArtifacts = { ...existingArtifacts };
+              Object.entries(newArtifacts).forEach(([artName, newArt]) => {
+                const existingArt = existingArtifacts[artName];
+                if (existingArt?.resetBy === 'docente' && !existingArt?.submitted) {
+                  // Artefacto reseteado: solo aceptar si la nueva entrega es post-reset
+                  if (newArt?.submitted) {
+                    const newSubmitTime = Math.max(toMillis(newArt?.submittedAt), toMillis(newArt?.lastEvaluatedAt));
+                    const artResetBoundary = Math.max(docResetTime, toMillis(existingArt?.resetAt));
+                    if (artResetBoundary <= 0 || newSubmitTime > artResetBoundary) {
+                      // Entrega post-reset válida: aceptar y limpiar marcadores de reset
+                      mergedArtifacts[artName] = { ...newArt, resetBy: null, resetAt: null };
+                      logger.log(`✅ [Firestore] ${artName}: Reentrega post-reset aceptada en ${docId}`);
+                    }
+                    // else: es pre-reset → mantener estado reseteado existente
+                  }
+                  // else: no entregado → mantener estado reseteado
+                } else {
+                  // Artefacto no-reseteado: merge normal por artefacto individual
+                  const newSubmitted = newArt?.submitted || false;
+                  const existingSubmitted = existingArt?.submitted || false;
+                  if (newSubmitted && !existingSubmitted) {
+                    mergedArtifacts[artName] = newArt;
+                  } else if (newSubmitted && existingSubmitted) {
+                    const newTs = toMillis(newArt?.submittedAt);
+                    const existingTs = toMillis(existingArt?.submittedAt);
+                    mergedArtifacts[artName] = newTs >= existingTs ? newArt : existingArt;
+                  } else if (!newSubmitted && existingSubmitted) {
+                    mergedArtifacts[artName] = existingArt; // preservar entrega existente
+                  } else {
+                    const newTs = toMillis(newArt?.updatedAt) || toMillis(newActivity?.preparation?.updatedAt) || 0;
+                    const existingTs = toMillis(existingArt?.updatedAt) || 0;
+                    mergedArtifacts[artName] = newTs > existingTs ? newArt : (existingArt || newArt);
+                  }
+                }
+              });
+              mergedData.activitiesProgress[docId] = {
+                ...existingActivity,
+                ...newActivity,
+                artifacts: mergedArtifacts
+              };
+              logger.log(`🔄 [Firestore] activitiesProgress[${docId}]: Merge por artefacto con contexto reset`);
+              return;
             }
           }
 
