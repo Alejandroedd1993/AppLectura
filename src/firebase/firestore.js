@@ -474,7 +474,16 @@ function __compactGlobalProgressPayload(progressData) {
           gradedAt: rubric.summative.gradedAt || null,
           timestamp: rubric.summative.timestamp || null,
           teacherOverrideScore: rubric.summative.teacherOverrideScore ?? null,
-          blocked: Boolean(rubric.summative.blocked)
+          blocked: Boolean(rubric.summative.blocked),
+          // 🆕 FIX: Preservar campos esenciales para Dashboard docente
+          essayContent: rubric.summative.essayContent || null,
+          feedback: rubric.summative.feedback || null,
+          evaluators: rubric.summative.evaluators || null,
+          dimension: rubric.summative.dimension || null,
+          allowRevision: rubric.summative.allowRevision || false,
+          teacherComment: rubric.summative.teacherComment || null,
+          docenteNombre: rubric.summative.docenteNombre || null,
+          scoreOverrideReason: rubric.summative.scoreOverrideReason || null
         } : null
       };
     });

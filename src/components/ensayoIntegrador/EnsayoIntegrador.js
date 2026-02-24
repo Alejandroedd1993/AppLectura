@@ -226,6 +226,20 @@ const CloudButton = styled(Button)`
   }
 `;
 
+const SubmitEssayButton = styled(Button)`
+  background: ${props => props.theme.primary};
+  color: white;
+  font-size: 0.95rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 10px;
+  width: 100%;
+  margin-top: 0.5rem;
+
+  &:hover:not(:disabled) {
+    opacity: 0.92;
+  }
+`;
+
 const DRAFT_SAVE_DELAY = 800; // ms debounce para auto-guardado
 
 const ProgressHint = styled.div`
@@ -268,6 +282,7 @@ export default function EnsayoIntegrador({ theme }) {
   const [prefillHint, setPrefillHint] = useState(null);
   const [partialEvaluation, setPartialEvaluation] = useState(null);
   const [draftStatus, setDraftStatus] = useState(null); // 'saving' | 'saved-local' | 'saved-cloud' | null
+  const [isSubmitted, setIsSubmitted] = useState(false); // 🆕 Estado de entrega formal
   const [cloudSaving, setCloudSaving] = useState(false);
 
   const draftTimerRef = useRef(null);
@@ -455,6 +470,7 @@ export default function EnsayoIntegrador({ theme }) {
       const hasSubmission =
         status === 'submitted' ||
         status === 'graded' ||
+        status === 'evaluated' ||
         attemptsUsed > 0 ||
         Number(summative.submittedAt || 0) > 0 ||
         Number(summative.gradedAt || 0) > 0 ||
@@ -496,7 +512,8 @@ export default function EnsayoIntegrador({ theme }) {
 
   const savedEvaluation = useMemo(() => {
     if (!savedSummative) return null;
-    if (savedSummative.status !== 'graded') return null;
+    // 🆕 También mostrar feedback para status 'evaluated' (evaluado pero sin entrega formal)
+    if (savedSummative.status !== 'graded' && savedSummative.status !== 'evaluated') return null;
 
     const feedback = savedSummative.feedback || {};
     return {
@@ -512,6 +529,18 @@ export default function EnsayoIntegrador({ theme }) {
       attemptsUsed: savedSummative.attemptsUsed
     };
   }, [savedSummative]);
+
+  // 🆕 Inicializar isSubmitted desde datos guardados
+  React.useEffect(() => {
+    if (savedSummative?.status === 'graded' && isLockedByAttempts) {
+      setIsSubmitted(true);
+    }
+  }, [savedSummative?.status, isLockedByAttempts]);
+
+  // 🆕 Evaluación activa pendiente de entrega formal
+  const hasActiveEvaluation = Boolean(
+    evaluation || (savedEvaluation && savedSummative?.status === 'evaluated')
+  );
 
   const teacherScoreOverride = useMemo(() => {
     if (!savedSummative || savedSummative.teacherOverrideScore == null) return null;
@@ -555,10 +584,10 @@ export default function EnsayoIntegrador({ theme }) {
   }, [rubricId, attemptsUsed, maxAttempts, allowRevision, isLockedByAttempts]);
 
   const submitLabel = useMemo(() => {
-    if (!rubricId) return 'Enviar ensayo';
+    if (!rubricId) return 'Solicitar Evaluación';
     if (loading) return 'Evaluando…';
     if (allowRevision && attemptsUsed === 1 && !isLockedByAttempts) return 'Enviar revisión';
-    return 'Enviar ensayo';
+    return 'Solicitar Evaluación';
   }, [rubricId, loading, allowRevision, attemptsUsed, isLockedByAttempts]);
 
   const displayEvaluation = useMemo(() => {
@@ -685,14 +714,13 @@ export default function EnsayoIntegrador({ theme }) {
         setPartialEvaluation(null);
       }
 
+      // 🆕 Guardar evaluación (sin entrega formal, sin consumir intento)
       if (submitSummativeEssay) {
-        const nextAttemptsUsed = Math.min(attemptsUsed + 1, maxAttempts);
         submitSummativeEssay(rubricId, {
           textoId: currentTextoId || null,
-          status: 'graded',
-          submittedAt: Date.now(),
+          status: 'evaluated',
           gradedAt: Date.now(),
-          attemptsUsed: nextAttemptsUsed,
+          attemptsUsed: attemptsUsed,
           score: result.score,
           nivel: result.nivel,
           essayContent: essayText,
@@ -704,12 +732,6 @@ export default function EnsayoIntegrador({ theme }) {
           evaluators: result.evaluators,
           dimension: result.dimension
         });
-
-        // 🆕 Limpiar borrador local tras envío exitoso
-        try {
-          sessionStorage.removeItem(draftTextKey);
-          sessionStorage.removeItem(draftDimKey);
-        } catch (e) { /* ignore */ }
       }
     } catch (err) {
       // 🆕 Usar mensaje amigable si es EssayEvaluationError
@@ -728,7 +750,41 @@ export default function EnsayoIntegrador({ theme }) {
       setLoading(false);
       setEvaluationPhase(null);
     }
-  }, [canAccess, dimension, rubricId, isGlobalEssayLocked, isLockedByAttempts, essayText, texto, submitSummativeEssay, currentTextoId, attemptsUsed, maxAttempts, draftTextKey, draftDimKey]);
+  }, [canAccess, dimension, rubricId, isGlobalEssayLocked, isLockedByAttempts, essayText, texto, submitSummativeEssay, currentTextoId, attemptsUsed, maxAttempts]);
+
+  // 🆕 Entrega formal del ensayo (después de la evaluación IA)
+  const handleFormalSubmit = useCallback(() => {
+    const currentEval = evaluation || savedEvaluation;
+    if (!submitSummativeEssay || !rubricId || !currentEval) return;
+
+    setIsSubmitted(true);
+
+    submitSummativeEssay(rubricId, {
+      textoId: currentTextoId || null,
+      status: 'graded',
+      submittedAt: Date.now(),
+      gradedAt: currentEval.gradedAt || Date.now(),
+      attemptsUsed: Math.min(attemptsUsed + 1, maxAttempts),
+      score: currentEval.score,
+      nivel: currentEval.nivel,
+      essayContent: essayText,
+      feedback: {
+        fortalezas: currentEval.fortalezas,
+        debilidades: currentEval.debilidades,
+        recomendaciones: currentEval.recomendaciones
+      },
+      evaluators: currentEval.evaluators,
+      dimension: currentEval.dimension
+    });
+
+    // Limpiar borradores locales tras entrega exitosa
+    try {
+      sessionStorage.removeItem(draftTextKey);
+      sessionStorage.removeItem(draftDimKey);
+    } catch (e) { /* ignore */ }
+
+    logger.log('📝 [EnsayoIntegrador] Ensayo entregado formalmente');
+  }, [submitSummativeEssay, rubricId, evaluation, savedEvaluation, essayText, currentTextoId, attemptsUsed, maxAttempts, draftTextKey, draftDimKey]);
 
   const handleReset = useCallback(() => {
     setEssayText('');
@@ -785,7 +841,7 @@ export default function EnsayoIntegrador({ theme }) {
             setEssayText(t);
             if (formatErrors.length) setFormatErrors([]);
           }}
-          disabled={!canAccess || loading || isLockedByAttempts || isGlobalEssayLocked}
+          disabled={!canAccess || loading || isLockedByAttempts || isGlobalEssayLocked || isSubmitted}
           citations={citations}
           onInsertCitation={handleInsertCitation}
         />
@@ -848,24 +904,37 @@ export default function EnsayoIntegrador({ theme }) {
               theme={theme}
               type="button"
               onClick={handleSaveDraftToCloud}
-              disabled={loading || cloudSaving || !dimension || !essayText.trim() || isLockedByAttempts || isGlobalEssayLocked}
+              disabled={loading || cloudSaving || !dimension || !essayText.trim() || isLockedByAttempts || isGlobalEssayLocked || isSubmitted}
               title="Guardar borrador (sincronización en segundo plano)"
             >
               ☁️ Guardar
             </CloudButton>
-            <Secondary theme={theme} type="button" onClick={handleReset} disabled={loading}>
+            <Secondary theme={theme} type="button" onClick={handleReset} disabled={loading || isLockedByAttempts || isGlobalEssayLocked || isSubmitted}>
               Limpiar
             </Secondary>
             <Primary
               theme={theme}
               type="button"
               onClick={handleSubmit}
-              disabled={loading || !canAccess || !dimension || isLockedByAttempts || isGlobalEssayLocked || !essayText.trim()}
+              disabled={loading || !canAccess || !dimension || isLockedByAttempts || isGlobalEssayLocked || !essayText.trim() || isSubmitted || hasActiveEvaluation}
             >
               {submitLabel}
             </Primary>
           </ButtonGroup>
         </Actions>
+
+        {/* 🆕 Botón de entrega formal (similar a artefactos) */}
+        {hasActiveEvaluation && !isSubmitted && !isGlobalEssayLocked && (
+          <SubmitEssayButton theme={theme} type="button" onClick={handleFormalSubmit} disabled={loading}>
+            📤 Entregar Ensayo
+          </SubmitEssayButton>
+        )}
+
+        {isSubmitted && (
+          <InfoBox theme={theme}>
+            ✅ <strong>Ensayo entregado exitosamente.</strong> Tu evaluación ha sido registrada.
+          </InfoBox>
+        )}
 
         {showRevisionTip && (
           <InfoBox theme={theme}>
