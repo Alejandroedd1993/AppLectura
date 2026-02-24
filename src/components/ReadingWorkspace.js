@@ -1,5 +1,4 @@
 import React, { useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { buildReadingWorkspaceContext } from '../utils/contextBuilders';
 import styled from 'styled-components';
 
 // 🚀 PERF: Log silenciado en producción para evitar overhead de serialización
@@ -9,9 +8,7 @@ const devWarn = __DEV__ ? console.warn.bind(console) : () => { };
 import { AppContext } from '../context/AppContext';
 import VisorTextoResponsive from '../VisorTexto_responsive';
 import TutorDock from './tutor/TutorDock';
-import WebEnrichmentButton from './chat/WebEnrichmentButton';
 import useNotesWorkspaceAdapter from '../hooks/useNotesWorkspaceAdapter';
-import useWebSearchAvailability from '../hooks/useWebSearchAvailability';
 import NotesPanelDock from './notes/NotesPanelDock';
 import useReaderActions from '../hooks/useReaderActions';
 // FASE 2: Integración pedagógica migrada de LecturaInteractiva
@@ -92,69 +89,6 @@ const ContentArea = styled.div`
   min-height: 0;
   overflow: auto;
   position: relative;
-  padding-bottom: calc(80px + env(safe-area-inset-bottom)); /* Espacio para PromptBar fijo + safe-area */
-`;
-
-const PromptBar = styled.form`
-  position: fixed;
-  bottom: calc(8px + env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 700px;
-  width: min(92%, 700px);
-  display: flex;
-  gap: .45rem;
-  padding: .5rem .75rem;
-  border: 1px solid ${p => p.theme?.border || '#e5e7eb'};
-  background: ${p => p.theme?.surface || '#fff'};
-  box-shadow: 0 2px 16px rgba(0,0,0,.1);
-  z-index: 100;
-  border-radius: 24px;
-  @media (max-width: 640px) {
-    width: min(94%, 700px);
-    padding: 0.45rem 0.6rem;
-    border-radius: 20px;
-  }
-`;
-
-const PromptInput = styled.textarea`
-  flex: 1;
-  font-size: clamp(0.75rem, 2.2vw, 0.85rem);
-  padding: .5rem .7rem;
-  border: none;
-  border-radius: 18px;
-  background: ${p => p.theme?.inputBg || '#f5f5f5'};
-  color: ${p => p.theme?.text || '#222'};
-  font-family: inherit;
-  resize: none;
-  min-height: 36px;
-  max-height: 120px;
-  overflow-y: auto;
-  line-height: 1.4;
-  transition: height 0.2s ease;
-  &:focus {
-    outline: none;
-    background: ${p => p.theme?.inputBg || '#f0f0f0'};
-  }
-`;
-
-const SendBtn = styled.button`
-  background: ${p => p.theme?.primary || '#2563eb'};
-  color: #fff;
-  border: none;
-  padding: .5rem .75rem;
-  border-radius: 18px;
-  font-size: .75rem;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: .35rem;
-  transition: all 0.2s ease;
-  min-height: 44px;
-  touch-action: manipulation;
-  &:hover { transform: scale(1.02); opacity: 0.9; }
-  &:disabled { opacity:.55; cursor:not-allowed; transform: scale(1); }
 `;
 
 export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followUps = true }) {
@@ -174,16 +108,12 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
   // 🚀 PERF: Memoizar theme para evitar objeto nuevo en cada render
   const theme = useMemo(() => modoOscuro ? { border: '#ddd', surface: '#f4f4f7' } : { border: '#ddd', surface: '#fff' }, [modoOscuro]);
   const [showTutor, setShowTutor] = useState(() => isTestEnv ? true : false);
-  const [prompt, setPrompt] = useState('');
   const [showNotes, setShowNotes] = useState(false);
   const [tutorExpanded, setTutorExpanded] = useState(false);
   const [tutorWidth, setTutorWidth] = useState(420);
   const pendingPromptRef = React.useRef(null);
   const [tutorReady, setTutorReady] = useState(false);
-  const promptInputRef = React.useRef(null);
   // 🚀 PERF: Refs para acceder a valores actuales sin invalidar callbacks
-  const promptRef = React.useRef(prompt);
-  promptRef.current = prompt;
   const showTutorRef = React.useRef(showTutor);
   showTutorRef.current = showTutor;
   const textoRef = React.useRef(texto);
@@ -199,38 +129,6 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
   const handleToggleExpand = useCallback(() => setTutorExpanded(v => !v), []);
   const handleCloseNotes = useCallback(() => setShowNotes(false), []);
   const handleToggleFocus = toggleFocusMode; // 🆕 Reemplazar por versión global
-
-  const webSearchAvailable = useWebSearchAvailability();
-
-  // 🚀 PERF: Estabilizado con refs para evitar recreación en cada keystroke
-  const enviarPromptDirecto = useCallback(() => {
-    const currentPrompt = promptRef.current;
-    if (!currentPrompt.trim()) return;
-
-    devLog('📤 [ReadingWorkspace] enviarPromptDirecto - Enviando prompt:', currentPrompt.trim());
-
-    if (!showTutorRef.current) {
-      devLog('📖 [ReadingWorkspace] Tutor cerrado, abriéndolo primero');
-      setShowTutor(true);
-      pendingPromptRef.current = {
-        prompt: currentPrompt.trim(),
-        fullText: textoRef.current
-      };
-    } else {
-      devLog('✅ [ReadingWorkspace] Tutor abierto, enviando evento inmediatamente');
-      const ev = new CustomEvent('tutor-external-prompt', {
-        detail: {
-          prompt: currentPrompt.trim(),
-          fullText: textoRef.current
-        }
-      });
-      window.dispatchEvent(ev);
-    }
-
-    setPrompt('');
-  }, []); // deps vacías — usa refs para valores actuales
-
-  const contextBuilder = useCallback(() => buildReadingWorkspaceContext(texto), [texto]);
 
   // Integrar acciones contextuales del lector (reader-action)
   // Evitar duplicados: si el TutorDock está visible (showTutor=true), él ya escucha directamente 'reader-action'.
@@ -341,28 +239,6 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
     return () => window.removeEventListener('tutor-width-change', handleWidthChange);
   }, []);
 
-  // Auto-ajustar altura del textarea según contenido
-  const handlePromptChange = useCallback((e) => {
-    setPrompt(e.target.value);
-    // Auto-expandir el textarea
-    if (promptInputRef.current) {
-      const textarea = promptInputRef.current;
-      textarea.style.height = 'auto';
-      const newHeight = Math.min(Math.max(textarea.scrollHeight, 36), 120);
-      textarea.style.height = `${newHeight}px`;
-    }
-  }, []);
-
-  // 🚀 PERF: Estabilizado — usa promptRef y enviarPromptDirecto estable
-  const handlePromptKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (promptRef.current.trim()) {
-        enviarPromptDirecto();
-      }
-    }
-  }, [enviarPromptDirecto]);
-
   // Handler completo para acciones del lector (notes, explain, summarize, question)
   useEffect(() => {
     const handler = (e) => {
@@ -433,8 +309,15 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
 
         case 'question':
           if (showTutor) {
-            devLog('✅ Tutor ya abierto, precargando prompt');
-            setPrompt(`Genera 3 preguntas de comprensión profunda sobre: "${text.slice(0, 100)}..."`);
+            devLog('✅ Tutor ya abierto, enviando evento inmediatamente');
+            window.dispatchEvent(new CustomEvent('tutor-external-prompt', {
+              detail: {
+                prompt: `Genera 3 preguntas de comprensión profunda (nivel análisis/evaluación según Bloom) sobre este fragmento: "${text}"`,
+                action: 'question',
+                fragment: text,
+                fullText: texto
+              }
+            }));
           } else {
             devLog('⏳ Tutor cerrado, guardando prompt pendiente');
             pendingPromptRef.current = {
@@ -479,54 +362,7 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
           </div>
         )}
         {hasText && (
-          <>
-            <VisorTextoResponsive texto={texto} />
-            {/* Barra de prompt permanente debajo del texto */}
-            <PromptBar onSubmit={(e) => { e.preventDefault(); enviarPromptDirecto(); }}>
-              <PromptInput
-                ref={promptInputRef}
-                placeholder="Pregunta algo sobre el texto..."
-                value={prompt}
-                onChange={handlePromptChange}
-                onKeyDown={handlePromptKeyDown}
-                rows={1}
-              />
-              <WebEnrichmentButton
-                query={prompt}
-                disabled={!webSearchAvailable || !prompt.trim()}
-                contextBuilder={contextBuilder}
-                rewardsResourceId={lectureId}
-                onEnriched={(enriched) => {
-                  devLog('🌐 [ReadingWorkspace] Prompt enriquecido con web:', enriched.substring(0, 100));
-
-                  // Si el tutor no está visible, mostrarlo primero
-                  if (!showTutor) {
-                    devLog('📖 [ReadingWorkspace] Mostrando tutor antes de enviar prompt enriquecido');
-                    setShowTutor(true);
-                    // Guardar prompt original y contexto enriquecido
-                    pendingPromptRef.current = {
-                      prompt: prompt.trim(), // Pregunta original del usuario
-                      webContext: enriched   // Contexto web para el sistema
-                    };
-                  } else {
-                    // Tutor ya visible, enviar directamente
-                    const ev = new CustomEvent('tutor-external-prompt', {
-                      detail: {
-                        prompt: prompt.trim(),  // Pregunta original
-                        webContext: enriched,   // Contexto web
-                        fullText: texto
-                      }
-                    });
-                    window.dispatchEvent(ev);
-                    devLog('✅ [ReadingWorkspace] Evento tutor-external-prompt enviado con búsqueda web');
-                  }
-
-                  setPrompt(''); // Limpiar prompt tras enriquecer
-                }}
-              />
-              <SendBtn type="submit" disabled={!prompt.trim()}>Enviar</SendBtn>
-            </PromptBar>
-          </>
+          <VisorTextoResponsive texto={texto} />
         )}
         {showTutor && (
           <TutorDock

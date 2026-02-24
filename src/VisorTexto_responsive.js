@@ -1424,7 +1424,6 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         <button aria-label="anterior-coincidencia" disabled={pdfSearchNav.total === 0} onClick={() => pdfSearchNav.prev?.()}>◀</button>
         <button aria-label="siguiente-coincidencia" disabled={pdfSearchNav.total === 0} onClick={() => pdfSearchNav.next?.()}>▶</button>
         <span aria-live="polite" style={{ fontSize: '.8rem' }}>{pdfSearchNav.total > 0 ? `${pdfSearchNav.current} / ${pdfSearchNav.total}` : '0 / 0'}</span>
-        <button aria-label="abrir-notas" onClick={() => window.dispatchEvent(new CustomEvent('reader-action', { detail: { action: 'notes' } }))}>📝 Notas</button>
       </ToolsBar>
       <MetaBar>
         <span>📄 {archivoActual?.name || 'Documento PDF'}</span>
@@ -1451,7 +1450,6 @@ function VisorTextoResponsive({ texto, onParagraphClick }) {
         <button aria-label="anterior-coincidencia" disabled={!searchHits.length} onClick={goPrevHit}>◀</button>
         <button aria-label="siguiente-coincidencia" disabled={!searchHits.length} onClick={goNextHit}>▶</button>
         <span aria-live="polite" style={{ fontSize: '.8rem' }}>{searchHits.length ? `${(currentHit + 1)} / ${searchHits.length}` : '0 / 0'}</span>
-        <button aria-label="abrir-notas" onClick={() => window.dispatchEvent(new CustomEvent('reader-action', { detail: { action: 'notes' } }))}>📝 Notas</button>
       </ToolsBar>
       <MetaBar data-testid="rw-stats">
         <span>{parrafos.length} párrafos</span>
