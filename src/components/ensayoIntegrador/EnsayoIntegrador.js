@@ -578,7 +578,7 @@ export default function EnsayoIntegrador({ theme }) {
 
     if (allowRevision) {
       if (isLockedByAttempts) return { base, hint: 'Revisión no disponible (máximo alcanzado).' };
-      if (used === 0) return { base, hint: 'Incluye 1 revisión opcional.' };
+      if (used === 0) return { base, hint: 'Incluye 1 revisión opcional (2 intentos totales).' };
       if (used === 1) return { base, hint: 'Revisión disponible (último intento).' };
       return { base, hint: 'Revisión no disponible.' };
     }
