@@ -188,10 +188,9 @@ function getScoreInfo(rubricProgress, rubricId, isArtifactSubmitted) {
 
   const last = artifactScores[artifactScores.length - 1].score;
 
-  // 🆕 FIX: Si el artefacto fue entregado, mostrar "Entregado" independientemente del score
+  // 🆕 FIX: Si el artefacto fue entregado, mostrar "Entregado" con color uniforme
   if (isArtifactSubmitted) {
-    const color = last >= 8.6 ? '#10b981' : last >= 5.6 ? '#4CAF50' : '#2196F3';
-    return { value: last.toFixed(1), color, label: 'Entregado' };
+    return { value: last.toFixed(1), color: '#2196F3', label: 'Entregado' };
   }
 
   if (last >= 8.6) return { value: last.toFixed(1), color: '#10b981', label: 'Excelente' };

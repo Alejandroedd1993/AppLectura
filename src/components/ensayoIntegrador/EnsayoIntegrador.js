@@ -472,8 +472,10 @@ export default function EnsayoIntegrador({ theme }) {
     return null;
   }, [rubricProgress]);
 
-  const isGlobalEssayLocked = Boolean(globalSubmittedEssay);
+  // 🆕 FIX: Solo bloquear globalmente si el estudiante está en una dimensión DIFERENTE
+  // Esto permite la revisión (2do intento) en la misma dimensión
   const globallyLockedDimension = globalSubmittedEssay?.dimension || null;
+  const isGlobalEssayLocked = Boolean(globalSubmittedEssay && dimension !== globallyLockedDimension);
 
   useEffect(() => {
     if (!isGlobalEssayLocked || !globallyLockedDimension) return;

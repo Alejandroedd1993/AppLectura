@@ -407,7 +407,7 @@ function __stripVerboseFromRubricProgress(rubricProgress) {
     if (slim.formative && slim.formative.scores) {
       slim.formative = { ...slim.formative, scores: stripScores(slim.formative.scores) };
     }
-    // Strip summative verbose fields (keep only numeric/status)
+    // Strip summative verbose fields (keep essential for dashboard)
     if (slim.summative && typeof slim.summative === 'object') {
       const sum = slim.summative;
       slim.summative = {
@@ -419,7 +419,16 @@ function __stripVerboseFromRubricProgress(rubricProgress) {
         gradedAt: sum.gradedAt || null,
         timestamp: sum.timestamp || null,
         teacherOverrideScore: sum.teacherOverrideScore ?? null,
-        blocked: sum.blocked || false
+        blocked: sum.blocked || false,
+        // 🆕 FIX: Preservar campos esenciales para el Dashboard docente
+        essayContent: sum.essayContent || null,
+        feedback: sum.feedback || null,
+        evaluators: sum.evaluators || null,
+        dimension: sum.dimension || null,
+        allowRevision: sum.allowRevision || false,
+        teacherComment: sum.teacherComment || null,
+        docenteNombre: sum.docenteNombre || null,
+        scoreOverrideReason: sum.scoreOverrideReason || null
       };
     }
     stripped[rubricId] = slim;
