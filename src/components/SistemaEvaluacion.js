@@ -648,12 +648,13 @@ export default function SistemaEvaluacionMejorado() {
           guidedMode.difficulty,
           result.score
         );
+        const guidedLevelLabel = guidedMode?.level?.label || guidedMode?.difficulty || 'No definido';
         finalResult = {
           ...result,
           feedback_combined: adaptedFeedback,
           practiceMode: {
             difficulty: guidedMode.difficulty,
-            level: guidedMode.level.label,
+            level: guidedLevelLabel,
             hintsUsed: revealedHintsCount
           }
         };
@@ -736,7 +737,8 @@ export default function SistemaEvaluacionMejorado() {
   const handleStartGuidedPractice = useCallback((practiceConfig) => {
     setGuidedMode(practiceConfig);
     setRevealedHintsCount(0);
-    announceToScreenReader(`Modo de práctica guiada activado. Nivel: ${practiceConfig.level.label}`);
+    const practiceLevelLabel = practiceConfig?.level?.label || practiceConfig?.difficulty || 'No definido';
+    announceToScreenReader(`Modo de práctica guiada activado. Nivel: ${practiceLevelLabel}`);
   }, []);
 
   const handleHintRevealed = useCallback((index, hint) => {
