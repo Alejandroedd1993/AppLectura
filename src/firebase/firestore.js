@@ -1031,6 +1031,18 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
           const newActivity = progressData.activitiesProgress[docId];
           const existingActivity = mergedData.activitiesProgress[docId];
 
+          const toMillis = (value) => {
+            if (!value) return 0;
+            if (typeof value === 'number') return value;
+            if (typeof value === 'string') {
+              const parsed = Date.parse(value);
+              return Number.isFinite(parsed) ? parsed : 0;
+            }
+            if (typeof value?.toMillis === 'function') return value.toMillis();
+            if (typeof value?.seconds === 'number') return value.seconds * 1000;
+            return 0;
+          };
+
           // Si no existe, agregar
           if (!existingActivity) {
             mergedData.activitiesProgress[docId] = newActivity;
@@ -1048,9 +1060,29 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
               // Verificar cada artefacto del newActivity
               const newArtifacts = newActivity?.artifacts || {};
               const anyNewIsPreReset = Object.entries(newArtifacts).some(([name, a]) => {
-                // Si está submitted pero no tiene resetBy, probablemente es data pre-reset
+                // Si está submitted y la versión entrante es anterior al reset docente,
+                // es data pre-reset y debe descartarse. Si es posterior, debe aceptarse.
                 const existingArt = existingArtifacts[name];
-                return a?.submitted && existingArt?.resetBy === 'docente' && !existingArt?.submitted;
+                if (!(a?.submitted && existingArt?.resetBy === 'docente' && !existingArt?.submitted)) return false;
+
+                const incomingSubmittedAt = Math.max(
+                  toMillis(a?.submittedAt),
+                  toMillis(a?.lastEvaluatedAt),
+                  toMillis(newActivity?.preparation?.updatedAt),
+                  toMillis(newActivity?.updatedAt)
+                );
+
+                const resetBoundary = Math.max(
+                  docResetTime,
+                  toMillis(existingArt?.resetAt)
+                );
+
+                if (incomingSubmittedAt <= 0 || resetBoundary <= 0) {
+                  // Sin timestamps confiables, no bloquear para evitar falsos negativos
+                  return false;
+                }
+
+                return incomingSubmittedAt <= resetBoundary;
               });
 
               if (anyNewIsPreReset) {
