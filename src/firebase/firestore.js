@@ -934,7 +934,18 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
                 scores: newScores,
                 average: newAverage,
                 lastUpdate: Math.max(existingRubric.lastUpdate || 0, newRubric.lastUpdate || 0),
-                artefactos: newRubric.artefactos || []
+                artefactos: newRubric.artefactos || [],
+                // 🔧 Preservar campos no-scores (summative, formative, etc.)
+                ...(newRubric.summative && { summative: newRubric.summative }),
+                ...(existingRubric.summative && !newRubric.summative && { summative: existingRubric.summative }),
+                ...(newRubric.formative && { formative: newRubric.formative }),
+                ...(existingRubric.formative && !newRubric.formative && { formative: existingRubric.formative }),
+                ...(newRubric.finalScore != null && { finalScore: newRubric.finalScore }),
+                ...(existingRubric.finalScore != null && newRubric.finalScore == null && { finalScore: existingRubric.finalScore }),
+                ...(newRubric.certified != null && { certified: newRubric.certified }),
+                ...(existingRubric.certified != null && newRubric.certified == null && { certified: existingRubric.certified }),
+                ...(newRubric.completionDate && { completionDate: newRubric.completionDate }),
+                ...(existingRubric.completionDate && !newRubric.completionDate && { completionDate: existingRubric.completionDate }),
               };
 
               logger.log(`🔄 [Firestore] ${rubricId}: Post-reset merge, ${newScores.length} scores válidos (post-reset)`);
@@ -971,7 +982,19 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
               scores: combinedScores,
               average: newAverage,
               lastUpdate: Math.max(existingRubric.lastUpdate || 0, newRubric.lastUpdate || 0),
-              artefactos: combinedArtefactos
+              artefactos: combinedArtefactos,
+              // 🔧 Preservar campos no-scores (summative, formative, etc.)
+              // Prioridad: incoming > existing (los datos más recientes ganan)
+              ...(newRubric.summative && { summative: newRubric.summative }),
+              ...(existingRubric.summative && !newRubric.summative && { summative: existingRubric.summative }),
+              ...(newRubric.formative && { formative: newRubric.formative }),
+              ...(existingRubric.formative && !newRubric.formative && { formative: existingRubric.formative }),
+              ...(newRubric.finalScore != null && { finalScore: newRubric.finalScore }),
+              ...(existingRubric.finalScore != null && newRubric.finalScore == null && { finalScore: existingRubric.finalScore }),
+              ...(newRubric.certified != null && { certified: newRubric.certified }),
+              ...(existingRubric.certified != null && newRubric.certified == null && { certified: existingRubric.certified }),
+              ...(newRubric.completionDate && { completionDate: newRubric.completionDate }),
+              ...(existingRubric.completionDate && !newRubric.completionDate && { completionDate: existingRubric.completionDate }),
             };
 
             logger.log(`🔄 [Firestore] Merge de ${rubricId}: ${existingScores.length} existentes + ${uniqueNewScores.length} nuevos = ${combinedScores.length} total`);
