@@ -440,7 +440,10 @@ export default function EnsayoIntegrador({ theme }) {
   const allowRevision = useMemo(() => {
     if (!rubricId) return false;
     const s = rubricProgress?.[rubricId]?.summative;
-    return Boolean(s?.allowRevision);
+    // Política por defecto: el ensayo permite 1 revisión opcional (2 intentos totales).
+    // Solo deshabilitar si viene explícitamente en false desde datos persistidos.
+    if (s?.allowRevision === false) return false;
+    return true;
   }, [rubricProgress, rubricId]);
 
   const maxAttempts = allowRevision ? 2 : 1;
