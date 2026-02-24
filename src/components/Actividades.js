@@ -654,6 +654,8 @@ export default function Actividades() {
                   dimension={dim}
                   theme={theme}
                   rubricProgress={rubricProgress}
+                  activitiesProgress={activitiesProgress}
+                  lectureId={lectureId}
                   isRecommended={recommendedDimensions.includes(dim.id)}
                   renderPractice={renderPractice}
                   renderArtifact={renderArtifact}

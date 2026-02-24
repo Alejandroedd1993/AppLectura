@@ -784,6 +784,8 @@ const ResumenAcademico = ({ theme }) => {
   const displayedResumen = viewingVersion ? viewingVersion.content.resumen : resumen;
   const displayedEvaluacion = viewingVersion ? viewingVersion.feedback : evaluacion;
   const _isReadOnly = !!viewingVersion || (isLocked && !viewingVersion); // Read only if viewing history OR locked current
+  // 🆕 FIX: Deshabilitar campos cuando se agotaron los intentos (solo queda entregar)
+  const attemptsExhausted = evaluationAttempts >= MAX_ATTEMPTS && !isSubmitted;
 
   // Helper para obtener label por nivel
   const getNivelLabel = useCallback((nivel) => {
@@ -1042,7 +1044,7 @@ const ResumenAcademico = ({ theme }) => {
         <Textarea
           ref={resumenRef}
           value={displayedResumen}
-          onChange={(e) => !viewingVersion && !isSubmitted && !isLocked && setResumen(e.target.value)}
+          onChange={(e) => !viewingVersion && !isSubmitted && !isLocked && !attemptsExhausted && setResumen(e.target.value)}
           onClick={handleResumenCursorChange}
           onKeyUp={handleResumenCursorChange}
           onSelect={handleResumenCursorChange}
@@ -1050,9 +1052,9 @@ const ResumenAcademico = ({ theme }) => {
           placeholder="Escribe tu resumen académico aquí..."
           rows={12}
           theme={theme}
-          disabled={loading || !!viewingVersion || isSubmitted || isLocked}
+          disabled={loading || !!viewingVersion || isSubmitted || isLocked || attemptsExhausted}
           spellCheck="false"
-          style={isLocked ? { borderColor: theme.success || '#4CAF50' } : {}}
+          style={isLocked || attemptsExhausted ? { borderColor: theme.success || '#4CAF50' } : {}}
         />
 
         {/* 🔒 Mensaje cuando está bloqueado después de evaluar (no mostrar si ya entregó) */}
@@ -1060,12 +1062,23 @@ const ResumenAcademico = ({ theme }) => {
           <LockedMessage theme={theme}>
             <LockIcon>🔒</LockIcon>
             <LockText>
-              <strong>Resumen enviado a evaluación</strong>
-              <span>Revisa el feedback abajo. Si deseas mejorar tu trabajo, haz clic en "Seguir Editando".</span>
+              {attemptsExhausted ? (
+                <>
+                  <strong>Has agotado tus intentos de evaluación</strong>
+                  <span>Revisa el feedback abajo y entrega tu trabajo con el botón "Entregar Tarea".</span>
+                </>
+              ) : (
+                <>
+                  <strong>Resumen enviado a evaluación</strong>
+                  <span>Revisa el feedback abajo. Si deseas mejorar tu trabajo, haz clic en "Seguir Editando".</span>
+                </>
+              )}
             </LockText>
-            <UnlockButton onClick={handleSeguirEditando} theme={theme}>
-              ✏️ Seguir Editando
-            </UnlockButton>
+            {!attemptsExhausted && (
+              <UnlockButton onClick={handleSeguirEditando} theme={theme}>
+                ✏️ Seguir Editando
+              </UnlockButton>
+            )}
           </LockedMessage>
         )}
 

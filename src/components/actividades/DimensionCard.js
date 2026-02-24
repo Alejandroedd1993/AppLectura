@@ -164,11 +164,11 @@ const ContentArea = styled.div`
 // ─── Component ──────────────────────────────────────────────────────
 
 const DIMENSIONS = [
-  { id: 'comprension_analitica', rubricId: 'rubrica1', icon: '📚', name: 'Comprensión Analítica', desc: 'Identifica ideas centrales, evidencias y estructura argumentativa del texto.' },
-  { id: 'acd', rubricId: 'rubrica2', icon: '🔍', name: 'Análisis Crítico del Discurso', desc: 'Examina marcos ideológicos, estrategias retóricas y voces presentes/silenciadas.' },
-  { id: 'contextualizacion', rubricId: 'rubrica3', icon: '🗺️', name: 'Contextualización', desc: 'Sitúa el texto en su contexto socio-histórico, identifica actores y consecuencias.' },
-  { id: 'argumentacion', rubricId: 'rubrica4', icon: '💭', name: 'Argumentación', desc: 'Construye postura fundamentada con tesis, evidencias y contraargumentos.' },
-  { id: 'metacognicion_etica_ia', rubricId: 'rubrica5', icon: '🤖', name: 'Ética IA y Metacognición', desc: 'Reflexiona sobre el uso ético y responsable de IA en tu aprendizaje.' }
+  { id: 'comprension_analitica', rubricId: 'rubrica1', artifactKey: 'resumenAcademico', icon: '📚', name: 'Comprensión Analítica', desc: 'Identifica ideas centrales, evidencias y estructura argumentativa del texto.' },
+  { id: 'acd', rubricId: 'rubrica2', artifactKey: 'tablaACD', icon: '🔍', name: 'Análisis Crítico del Discurso', desc: 'Examina marcos ideológicos, estrategias retóricas y voces presentes/silenciadas.' },
+  { id: 'contextualizacion', rubricId: 'rubrica3', artifactKey: 'mapaActores', icon: '🗺️', name: 'Contextualización', desc: 'Sitúa el texto en su contexto socio-histórico, identifica actores y consecuencias.' },
+  { id: 'argumentacion', rubricId: 'rubrica4', artifactKey: 'respuestaArgumentativa', icon: '💭', name: 'Argumentación', desc: 'Construye postura fundamentada con tesis, evidencias y contraargumentos.' },
+  { id: 'metacognicion_etica_ia', rubricId: 'rubrica5', artifactKey: 'bitacoraEticaIA', icon: '🤖', name: 'Ética IA y Metacognición', desc: 'Reflexiona sobre el uso ético y responsable de IA en tu aprendizaje.' }
 ];
 
 export { DIMENSIONS };
@@ -176,7 +176,7 @@ export { DIMENSIONS };
 /**
  * Score badge helper
  */
-function getScoreInfo(rubricProgress, rubricId) {
+function getScoreInfo(rubricProgress, rubricId, isArtifactSubmitted) {
   const data = rubricProgress?.[rubricId];
   if (!data?.scores?.length) return null;
 
@@ -187,6 +187,13 @@ function getScoreInfo(rubricProgress, rubricId) {
   if (!artifactScores.length) return null;
 
   const last = artifactScores[artifactScores.length - 1].score;
+
+  // 🆕 FIX: Si el artefacto fue entregado, mostrar "Entregado" independientemente del score
+  if (isArtifactSubmitted) {
+    const color = last >= 8.6 ? '#10b981' : last >= 5.6 ? '#4CAF50' : '#2196F3';
+    return { value: last.toFixed(1), color, label: 'Entregado' };
+  }
+
   if (last >= 8.6) return { value: last.toFixed(1), color: '#10b981', label: 'Excelente' };
   if (last >= 5.6) return { value: last.toFixed(1), color: '#4CAF50', label: 'Bueno' };
   return { value: last.toFixed(1), color: '#FF9800', label: 'En progreso' };
@@ -196,6 +203,8 @@ export default function DimensionCard({
   dimension,
   theme,
   rubricProgress,
+  activitiesProgress,
+  lectureId,
   isRecommended,
   renderPractice,
   renderArtifact,
@@ -206,9 +215,13 @@ export default function DimensionCard({
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [view, setView] = useState('artefacto'); // 'practica' | 'artefacto'
 
+  // 🆕 FIX: Verificar si el artefacto fue entregado para mostrar "Entregado" en el badge
+  const isArtifactSubmitted = !!(lectureId && dimension.artifactKey &&
+    activitiesProgress?.[lectureId]?.artifacts?.[dimension.artifactKey]?.submitted);
+
   const score = useMemo(
-    () => getScoreInfo(rubricProgress, dimension.rubricId),
-    [rubricProgress, dimension.rubricId]
+    () => getScoreInfo(rubricProgress, dimension.rubricId, isArtifactSubmitted),
+    [rubricProgress, dimension.rubricId, isArtifactSubmitted]
   );
 
   const handleToggle = useCallback(() => setExpanded(v => !v), []);

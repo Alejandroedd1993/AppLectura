@@ -218,7 +218,9 @@ export default function BitacoraEticaIA({ theme }) {
     return feedbackCriterial;
   }, [viewingVersion, feedbackCriterial]);
 
-  const isReadOnly = !!viewingVersion || isSubmitted;
+  // 🆕 FIX: También deshabilitar campos cuando se agotaron los intentos (solo queda entregar)
+  const attemptsExhausted = evaluationAttempts >= MAX_ATTEMPTS && !isSubmitted;
+  const isReadOnly = !!viewingVersion || isSubmitted || attemptsExhausted;
 
   // 🆕 Función para desbloquear y seguir editando después de recibir feedback
   const handleSeguirEditando = useCallback(() => {
@@ -986,12 +988,23 @@ export default function BitacoraEticaIA({ theme }) {
         <LockedMessage theme={effectiveTheme}>
           <LockIcon>🔒</LockIcon>
           <LockText>
-            <strong>Bitácora enviada a evaluación</strong>
-            <span>Revisa el feedback abajo. Si deseas mejorar tu trabajo, haz clic en "Seguir Editando".</span>
+            {attemptsExhausted ? (
+              <>
+                <strong>Has agotado tus intentos de evaluación</strong>
+                <span>Revisa el feedback abajo y entrega tu trabajo con el botón "Entregar Tarea".</span>
+              </>
+            ) : (
+              <>
+                <strong>Bitácora enviada a evaluación</strong>
+                <span>Revisa el feedback abajo. Si deseas mejorar tu trabajo, haz clic en "Seguir Editando".</span>
+              </>
+            )}
           </LockText>
-          <UnlockButton onClick={handleSeguirEditando} theme={effectiveTheme}>
-            ✏️ Seguir Editando
-          </UnlockButton>
+          {!attemptsExhausted && (
+            <UnlockButton onClick={handleSeguirEditando} theme={effectiveTheme}>
+              ✏️ Seguir Editando
+            </UnlockButton>
+          )}
         </LockedMessage>
       )}
 

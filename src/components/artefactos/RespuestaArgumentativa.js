@@ -239,7 +239,9 @@ export default function RespuestaArgumentativa({ theme }) {
     };
   }, [viewingVersion, tesis, evidencias, contraargumento, refutacion, feedback]);
 
-  const isReadOnly = viewingVersion !== null || isSubmitted;
+  // 🆕 FIX: También deshabilitar campos cuando se agotaron los intentos (solo queda entregar)
+  const attemptsExhausted = evaluationAttempts >= MAX_ATTEMPTS && !isSubmitted;
+  const isReadOnly = viewingVersion !== null || isSubmitted || attemptsExhausted;
 
   // 🆕 Función para desbloquear y seguir editando después de recibir feedback
   const handleSeguirEditando = useCallback(() => {
@@ -1041,12 +1043,23 @@ export default function RespuestaArgumentativa({ theme }) {
         <LockedMessage theme={theme}>
           <LockIcon>🔒</LockIcon>
           <LockText>
-            <strong>Argumento enviado a evaluación</strong>
-            <span>Revisa el feedback abajo. Si deseas mejorar tu trabajo, haz clic en "Seguir Editando".</span>
+            {attemptsExhausted ? (
+              <>
+                <strong>Has agotado tus intentos de evaluación</strong>
+                <span>Revisa el feedback abajo y entrega tu trabajo con el botón "Entregar Tarea".</span>
+              </>
+            ) : (
+              <>
+                <strong>Argumento enviado a evaluación</strong>
+                <span>Revisa el feedback abajo. Si deseas mejorar tu trabajo, haz clic en "Seguir Editando".</span>
+              </>
+            )}
           </LockText>
-          <UnlockButton onClick={handleSeguirEditando} theme={theme}>
-            ✏️ Seguir Editando
-          </UnlockButton>
+          {!attemptsExhausted && (
+            <UnlockButton onClick={handleSeguirEditando} theme={theme}>
+              ✏️ Seguir Editando
+            </UnlockButton>
+          )}
         </LockedMessage>
       )}
 
