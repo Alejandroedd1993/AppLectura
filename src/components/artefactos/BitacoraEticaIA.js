@@ -749,8 +749,8 @@ export default function BitacoraEticaIA({ theme }) {
           resourceId: rewardsResourceId
         });
 
-        // Reflexión metacognitiva (este artefacto es metacognición ética)
-        if (reflexionEtica.length > 80) {
+        // Reflexión metacognitiva: solo si nivel >= 3 (competente)
+        if (result.nivel_global >= 3 && reflexionEtica.length > 80) {
           rewards.recordEvent('METACOGNITIVE_REFLECTION', {
             length: reflexionEtica.length,
             artefacto: 'BitacoraEticaIA',

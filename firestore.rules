@@ -168,10 +168,12 @@ service cloud.firestore {
                 isCourseTeacherForProgress(resource.data.sourceCourseId, studentId))
               );
       
-      // 🔓 Crear: Solo el propio estudiante, y DEBE incluir sourceCourseId (excepto global_progress)
-      // Esto previene que clientes viejos/alternativos creen docs ambiguos sin scope de curso
-      allow create: if isAuthenticated() && request.auth.uid == studentId
-              && (
+      // 🔓 Crear: El propio estudiante (DEBE incluir sourceCourseId excepto global_progress)
+      //           o el docente dueño del curso (al asignar lecturas vía syncCourseAssignments)
+      allow create: if isAuthenticated() && (
+              // ── Ruta 1: Estudiante creando su propio progreso ──
+              (request.auth.uid == studentId
+               && (
                 (textoId == 'global_progress' &&
                  (request.resource.data.sourceCourseId == null ||
                   request.resource.data.sourceCourseId == '') &&
@@ -186,7 +188,16 @@ service cloud.firestore {
                     isStudentActiveInCourse(request.resource.data.sourceCourseId, studentId)
                   )
                 )
-              );
+              )) ||
+              // ── Ruta 2: Docente dueño del curso pre-creando docs de progreso ──
+              // Se usa al asignar lecturas a un curso (syncCourseAssignments)
+              (
+                request.resource.data.sourceCourseId != null &&
+                request.resource.data.sourceCourseId != '' &&
+                isCanonicalProgressDocId(textoId, request.resource.data.sourceCourseId, request.resource.data.textoId) &&
+                isCourseTeacherForProgress(request.resource.data.sourceCourseId, studentId)
+              )
+            );
       
       // Actualizar: 
       // - El propio estudiante: DEBE incluir sourceCourseId (excepto global_progress).

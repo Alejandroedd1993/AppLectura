@@ -2681,6 +2681,37 @@ export async function getCourseMetrics(courseId, options = {}) {
         relevantes = [...relevantes, ...fallbackDocs];
       }
 
+      // 🔧 FIX: Deduplicar relevantes por textoId.
+      // Tras backfill de sourceCourseId, pueden coexistir un doc legacy (progress/{textoId})
+      // y un doc compuesto (progress/{courseId}_{textoId}) para el mismo texto/curso.
+      // Sin deduplicación, las métricas agregadas se duplican y lecturaDetails se sobreescribe.
+      if (relevantes.length > lecturasIds.length) {
+        const deduped = new Map();
+        relevantes.forEach(docSnap => {
+          const data = docSnap.data() || {};
+          const tid = resolveLecturaTextoId(docSnap, data);
+          if (!tid) return;
+          const existing = deduped.get(tid);
+          if (!existing) { deduped.set(tid, docSnap); return; }
+
+          // Preferir doc con más artefactos entregados en activitiesProgress
+          const countArt = (snap) => {
+            const d = snap.data() || {};
+            const ap = d.activitiesProgress || {};
+            let c = 0;
+            Object.values(ap).forEach(entry => {
+              if (entry?.artifacts) Object.values(entry.artifacts).forEach(a => { if (a?.submitted) c++; });
+            });
+            return c;
+          };
+          if (countArt(docSnap) > countArt(existing)) {
+            deduped.set(tid, docSnap);
+          }
+        });
+        relevantes = Array.from(deduped.values());
+        logger.log(`🔧 [getCourseMetrics] Deduplicados ${relevantes.length} docs de progreso para ${estudiante.estudianteUid}`);
+      }
+
       if (relevantes.length) {
         // 🔧 FIX Bug #3: Calcular avance REAL desde rubricProgress (no desde porcentaje que nunca se actualiza)
         const totalAvance = relevantes.reduce((acc, docSnap) => {
@@ -2753,6 +2784,7 @@ export async function getCourseMetrics(courseId, options = {}) {
         stats.entregasRecientes = entregasRecientes; // 🆕 Nuevas entregas sin revisar
 
         // 🆕 DETALLE POR LECTURA: Construir objeto con progreso específico por lectura
+        // (relevantes ya está deduplicado por textoId desde arriba)
         const lecturaDetails = {};
         relevantes.forEach(docSnap => {
           const data = docSnap.data();

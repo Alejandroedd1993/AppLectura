@@ -809,22 +809,25 @@ export default function MapaActores({ theme }) {
           resourceId: rewardsResourceId
         });
 
-        // Bonificación por contextualización histórica profunda (>150 caracteres)
-        if (contextoHistorico.length > 150) {
-          rewards.recordEvent('CONTEXTUALIZATION_HISTORICAL', {
-            length: contextoHistorico.length,
-            artefacto: 'MapaActores',
-            resourceId: rewardsResourceId
-          });
-        }
+        // Bonos de contenido: solo si el nivel es >= 3 (competente)
+        if (result.nivel_global >= 3) {
+          // Bonificación por contextualización histórica profunda (>150 caracteres)
+          if (contextoHistorico.length > 150) {
+            rewards.recordEvent('CONTEXTUALIZATION_HISTORICAL', {
+              length: contextoHistorico.length,
+              artefacto: 'MapaActores',
+              resourceId: rewardsResourceId
+            });
+          }
 
-        // Bonificación por análisis de conexiones (>100 caracteres)
-        if (conexiones.length > 100) {
-          rewards.recordEvent('SOCIAL_CONNECTIONS_MAPPED', {
-            length: conexiones.length,
-            artefacto: 'MapaActores',
-            resourceId: rewardsResourceId
-          });
+          // Bonificación por análisis de conexiones (>100 caracteres)
+          if (conexiones.length > 100) {
+            rewards.recordEvent('SOCIAL_CONNECTIONS_MAPPED', {
+              length: conexiones.length,
+              artefacto: 'MapaActores',
+              resourceId: rewardsResourceId
+            });
+          }
         }
 
         // Puntuación perfecta

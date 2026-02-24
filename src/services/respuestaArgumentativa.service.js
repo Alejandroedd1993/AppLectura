@@ -219,7 +219,7 @@ async function evaluateWithDeepSeek(text, tesis, evidencias, contraargumento, re
         manejo_contraargumento: { nivel: 3, contraargumento_valido: true, refutacion_solida: true }
       },
       fortalezas_estructurales: ['Análisis en proceso'],
-      mejoras_argumentativas: ['Error en evaluación automática'],
+      mejoras_estructura: ['Error en evaluación automática'],
       _error: error.message
     };
   }
@@ -261,7 +261,7 @@ async function evaluateWithOpenAI(text, tesis, evidencias, contraargumento, refu
         uso_evidencia: { integra_evidencia_estrategicamente: true, explica_implicaciones: true, comentario: 'Análisis básico' },
         manejo_contraargumento: { reconoce_validez_parcial: true, refutacion_matizada: true, comentario: 'Análisis básico' }
       },
-      fortalezas_profundidad: ['Análisis en proceso'],
+      fortalezas_dialogicas: ['Análisis en proceso'],
       oportunidades_profundizacion: ['Error en evaluación automática'],
       nivel_pensamiento_critico: 3,
       _error: error.message
@@ -324,14 +324,14 @@ function mergeFeedback(deepseek, openai) {
   }
 
   // Añadir fortalezas/mejoras estructurales (DeepSeek)
-  deepseek.fortalezas_estructurales.forEach(f => {
+  (deepseek.fortalezas_estructurales || []).forEach(f => {
     const criterioKey = detectCriterioKey(f);
     if (criterioKey && criterios[criterioKey]) {
       criterios[criterioKey].fortalezas.push(f);
     }
   });
 
-  deepseek.mejoras_estructura.forEach(m => {
+  (deepseek.mejoras_estructura || []).forEach(m => {
     const criterioKey = detectCriterioKey(m);
     if (criterioKey && criterios[criterioKey]) {
       criterios[criterioKey].mejoras.push(m);
@@ -339,8 +339,8 @@ function mergeFeedback(deepseek, openai) {
   });
 
   // Añadir insights dialógicos (OpenAI)
-  openai.fortalezas_dialogicas.forEach(f => criterios.solidez_tesis.fortalezas.push(f));
-  openai.oportunidades_profundizacion.forEach(m => criterios.solidez_tesis.mejoras.push(m));
+  (openai.fortalezas_dialogicas || []).forEach(f => criterios.solidez_tesis.fortalezas.push(f));
+  (openai.oportunidades_profundizacion || []).forEach(m => criterios.solidez_tesis.mejoras.push(m));
 
   // Calcular nivel global (promedio + ajuste por profundidad crítica)
   const nivelPromedio = (

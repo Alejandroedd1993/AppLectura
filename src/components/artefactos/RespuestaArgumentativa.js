@@ -798,31 +798,34 @@ export default function RespuestaArgumentativa({ theme }) {
           resourceId: rewardsResourceId
         });
 
-        // Bonificación por tesis crítica sólida (>100 caracteres)
-        if (tesis.length > 100) {
-          rewards.recordEvent('CRITICAL_THESIS_DEVELOPED', {
-            length: tesis.length,
-            artefacto: 'RespuestaArgumentativa',
-            resourceId: rewardsResourceId
-          });
-        }
+        // Bonos de contenido: solo si el nivel es >= 3 (competente)
+        if (result.nivel_global >= 3) {
+          // Bonificación por tesis crítica sólida (>100 caracteres)
+          if (tesis.length > 100) {
+            rewards.recordEvent('CRITICAL_THESIS_DEVELOPED', {
+              length: tesis.length,
+              artefacto: 'RespuestaArgumentativa',
+              resourceId: rewardsResourceId
+            });
+          }
 
-        // Bonificación por contraargumento anticipado (>80 caracteres)
-        if (contraargumento.length > 80) {
-          rewards.recordEvent('COUNTERARGUMENT_ANTICIPATED', {
-            length: contraargumento.length,
-            artefacto: 'RespuestaArgumentativa',
-            resourceId: rewardsResourceId
-          });
-        }
+          // Bonificación por contraargumento anticipado (>80 caracteres)
+          if (contraargumento.length > 80) {
+            rewards.recordEvent('COUNTERARGUMENT_ANTICIPATED', {
+              length: contraargumento.length,
+              artefacto: 'RespuestaArgumentativa',
+              resourceId: rewardsResourceId
+            });
+          }
 
-        // Bonificación por refutación elaborada (>80 caracteres)
-        if (refutacion.length > 80) {
-          rewards.recordEvent('REFUTATION_ELABORATED', {
-            length: refutacion.length,
-            artefacto: 'RespuestaArgumentativa',
-            resourceId: rewardsResourceId
-          });
+          // Bonificación por refutación elaborada (>80 caracteres)
+          if (refutacion.length > 80) {
+            rewards.recordEvent('REFUTATION_ELABORATED', {
+              length: refutacion.length,
+              artefacto: 'RespuestaArgumentativa',
+              resourceId: rewardsResourceId
+            });
+          }
         }
 
         // Puntuación perfecta

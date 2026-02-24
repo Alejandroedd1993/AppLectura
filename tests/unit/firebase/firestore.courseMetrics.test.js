@@ -275,4 +275,98 @@ describe('getCourseMetrics - claves compuestas courseId_textoId', () => {
     expect(result?.estudiantes).toHaveLength(1);
     expect(result.estudiantes[0]).toBeDefined();
   });
+
+  test('deduplica docs legacy y compuesto para el mismo textoId, prefiriendo el que tiene más artefactos entregados', async () => {
+    const courseId = 'course-1';
+    const studentUid = 'student-1';
+    const textoId = 'texto-1';
+    const compositeDocId = `${courseId}_${textoId}`;
+
+    firestoreFns.getDoc
+      .mockImplementationOnce(async () => makeDocSnap(courseId, {
+        lecturasAsignadas: [{ textoId }]
+      }))
+      .mockImplementation(async () => ({
+        exists: () => false,
+        data: () => ({})
+      }));
+
+    let getDocsCall = 0;
+    firestoreFns.getDocs.mockImplementation(async () => {
+      getDocsCall += 1;
+      if (getDocsCall === 1) {
+        return {
+          docs: [makeDocSnap(studentUid, { estado: 'active', estudianteUid: studentUid })]
+        };
+      }
+      if (getDocsCall === 2) {
+        // Devuelve AMBOS: doc legacy + doc compuesto con sourceCourseId
+        return {
+          docs: [
+            // Doc legacy con activitiesProgress completos (3 artefactos entregados)
+            makeDocSnap(textoId, {
+              textoId,
+              sourceCourseId: courseId,
+              porcentaje: 60,
+              activitiesProgress: {
+                [textoId]: {
+                  artifacts: {
+                    resumenAcademico: { submitted: true, score: 9, attempts: 3 },
+                    tablaACD: { submitted: true, score: 7.5, attempts: 2 },
+                    mapaActores: { submitted: false, score: 5, attempts: 1 },
+                    respuestaArgumentativa: { submitted: false, attempts: 0 },
+                    bitacoraEticaIA: { submitted: true, score: 7.5, attempts: 2 }
+                  }
+                }
+              },
+              rubricProgress: {
+                rubrica1: { scores: [{ score: 9, timestamp: 1000 }], average: 9 },
+                rubrica2: { scores: [{ score: 7.5, timestamp: 1000 }], average: 7.5 },
+                rubrica3: { scores: [{ score: 5, timestamp: 1000 }], average: 5 },
+                rubrica5: { scores: [{ score: 7.5, timestamp: 1000 }], average: 7.5 }
+              }
+            }),
+            // Doc compuesto con solo rubricProgress (sin activitiesProgress)
+            // — creado por syncRubricProgressToFirestore
+            makeDocSnap(compositeDocId, {
+              textoId,
+              sourceCourseId: courseId,
+              porcentaje: 0,
+              rubricProgress: {
+                rubrica1: { scores: [{ score: 9, timestamp: 2000 }], average: 9 },
+                rubrica2: { scores: [{ score: 7.5, timestamp: 2000 }], average: 7.5 },
+                rubrica3: { scores: [{ score: 5, timestamp: 2000 }], average: 5 },
+                rubrica5: { scores: [{ score: 7.5, timestamp: 2000 }], average: 7.5 }
+              }
+              // ¡Sin activitiesProgress! Este es el caso que causa la inversión.
+            })
+          ]
+        };
+      }
+      return { docs: [] };
+    });
+
+    const result = await getCourseMetrics(courseId);
+    expect(result?.estudiantes).toHaveLength(1);
+    const student = result.estudiantes[0];
+
+    // Debe existir lecturaDetails para textoId
+    expect(student.lecturaDetails[textoId]).toBeDefined();
+
+    const artifacts = student.lecturaDetails[textoId].artifacts;
+
+    // 🔑 CRÍTICO: Los artefactos deben tener el estado correcto del doc con más entregas
+    // (el doc legacy que tiene 3 artefactos submitted: true)
+    expect(artifacts.resumenAcademico.submitted).toBe(true);
+    expect(artifacts.tablaACD.submitted).toBe(true);
+    expect(artifacts.bitacoraEticaIA.submitted).toBe(true);
+
+    // Los que NO están entregados deben seguir sin entregar
+    expect(artifacts.mapaActores.submitted).toBe(false);
+    expect(artifacts.respuestaArgumentativa.submitted).toBe(false);
+
+    // Los scores deben estar presentes (del rubricProgress)
+    expect(artifacts.resumenAcademico.rubricScore).toBeGreaterThan(0);
+    expect(artifacts.tablaACD.rubricScore).toBeGreaterThan(0);
+  });
 });

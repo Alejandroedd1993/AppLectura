@@ -62,7 +62,7 @@ describe('RewardsEngine anti-farming', () => {
     engine.recordEvent('QUOTE_USED', { count: 1 });
 
     const state = engine.getState();
-    expect(state.totalPoints).toBeGreaterThanOrEqual(10);
+    expect(state.totalPoints).toBeGreaterThanOrEqual(4); // QUOTE_USED = 2 pts × 2 calls = 4
   });
 
   test('WEB_SEARCH_USED usa dailyLimit en lugar de dedupe (permite hasta 10/día)', () => {

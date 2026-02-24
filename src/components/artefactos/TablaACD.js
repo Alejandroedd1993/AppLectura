@@ -851,28 +851,31 @@ export default function TablaACD({ theme }) {
           resourceId: rewardsResourceId
         });
 
-        // Puntos por identificar marco ideológico
-        if (marcoIdeologico && marcoIdeologico.trim().length > 50) {
-          rewards.recordEvent('ACD_FRAME_IDENTIFIED', {
-            frame: marcoIdeologico.substring(0, 100),
-            resourceId: `${rewardsResourceId}:acd_frame`
-          });
-        }
+        // Bonos de contenido ACD: solo si el nivel es >= 3 (competente)
+        if (result.nivel_global >= 3) {
+          // Puntos por identificar marco ideológico
+          if (marcoIdeologico && marcoIdeologico.trim().length > 50) {
+            rewards.recordEvent('ACD_FRAME_IDENTIFIED', {
+              frame: marcoIdeologico.substring(0, 100),
+              resourceId: `${rewardsResourceId}:acd_frame`
+            });
+          }
 
-        // Puntos por identificar estrategias retóricas
-        if (estrategiasRetoricas && estrategiasRetoricas.trim().length > 50) {
-          rewards.recordEvent('ACD_STRATEGY_IDENTIFIED', {
-            strategies: estrategiasRetoricas.substring(0, 100),
-            resourceId: `${rewardsResourceId}:acd_strategy`
-          });
-        }
+          // Puntos por identificar estrategias retóricas
+          if (estrategiasRetoricas && estrategiasRetoricas.trim().length > 50) {
+            rewards.recordEvent('ACD_STRATEGY_IDENTIFIED', {
+              strategies: estrategiasRetoricas.substring(0, 100),
+              resourceId: `${rewardsResourceId}:acd_strategy`
+            });
+          }
 
-        // Puntos por análisis de poder (voces silenciadas)
-        if (vocesSilenciadas && vocesSilenciadas.trim().length > 50) {
-          rewards.recordEvent('ACD_POWER_ANALYSIS', {
-            analysis: vocesSilenciadas.substring(0, 100),
-            resourceId: `${rewardsResourceId}:acd_power`
-          });
+          // Puntos por análisis de poder (voces silenciadas)
+          if (vocesSilenciadas && vocesSilenciadas.trim().length > 50) {
+            rewards.recordEvent('ACD_POWER_ANALYSIS', {
+              analysis: vocesSilenciadas.substring(0, 100),
+              resourceId: `${rewardsResourceId}:acd_power`
+            });
+          }
         }
 
         // Achievement: Score perfecto

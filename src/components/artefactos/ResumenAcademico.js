@@ -522,21 +522,24 @@ const ResumenAcademico = ({ theme }) => {
 
         // Puntos por citas textuales usadas
         const citasCount = (resumen.match(/"/g) || []).length / 2; // Contar pares de comillas
-        if (citasCount > 0) {
-          rewards.recordEvent('QUOTE_USED', {
-            count: Math.floor(citasCount),
-            artefacto: 'ResumenAcademico',
-            resourceId: rewardsResourceId
-          });
-        }
+        // Bonos de citas: solo si nivel >= 3 (competente)
+        if (result.nivel >= 3) {
+          if (citasCount > 0) {
+            rewards.recordEvent('QUOTE_USED', {
+              count: Math.floor(citasCount),
+              artefacto: 'ResumenAcademico',
+              resourceId: rewardsResourceId
+            });
+          }
 
-        // Bonus si el anclaje textual es sólido (3+ citas)
-        if (citasCount >= 3) {
-          rewards.recordEvent('STRONG_TEXTUAL_ANCHORING', {
-            citasCount: Math.floor(citasCount),
-            artefacto: 'ResumenAcademico',
-            resourceId: rewardsResourceId
-          });
+          // Bonus si el anclaje textual es sólido (3+ citas)
+          if (citasCount >= 3) {
+            rewards.recordEvent('STRONG_TEXTUAL_ANCHORING', {
+              citasCount: Math.floor(citasCount),
+              artefacto: 'ResumenAcademico',
+              resourceId: rewardsResourceId
+            });
+          }
         }
 
 

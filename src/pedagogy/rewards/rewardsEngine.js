@@ -21,69 +21,66 @@ import logger from '../../utils/logger.js';
  */
 const REWARD_EVENTS = {
   // Lectura Guiada - Basado en niveles Bloom
-  // 🆕 FIX Pass 11: Reducir puntos Bloom (eran farmeables sin resourceId)
-  // Ahora se aplica cooldown por sesión para evitar abuso
-  QUESTION_BLOOM_1: { points: 2, label: '📖 Pregunta Literal', dailyLimit: 20 },
-  QUESTION_BLOOM_2: { points: 4, label: '💡 Pregunta Inferencial', dailyLimit: 15 },
-  QUESTION_BLOOM_3: { points: 8, label: '🌍 Pregunta Aplicativa', dailyLimit: 10 },
-  QUESTION_BLOOM_4: { points: 15, label: '🔍 Pregunta Analítica', dailyLimit: 8, dedupe: true },
-  QUESTION_BLOOM_5: { points: 25, label: '⚖️ Pregunta Crítica (ACD)', dailyLimit: 5, dedupe: true },
-  QUESTION_BLOOM_6: { points: 40, label: '✨ Pregunta Propositiva', dailyLimit: 3, dedupe: true },
+  // 🆕 FIX Pass 12: Rebalanceo general — los valores anteriores generaban ~100 pts/artefacto
+  // incluso con puntajes bajos. Objetivo: ~20-30 pts nivel 2, ~60-80 pts nivel 4.
+  QUESTION_BLOOM_1: { points: 1, label: '📖 Pregunta Literal', dailyLimit: 20 },
+  QUESTION_BLOOM_2: { points: 2, label: '💡 Pregunta Inferencial', dailyLimit: 15 },
+  QUESTION_BLOOM_3: { points: 4, label: '🌍 Pregunta Aplicativa', dailyLimit: 10 },
+  QUESTION_BLOOM_4: { points: 8, label: '🔍 Pregunta Analítica', dailyLimit: 8, dedupe: true },
+  QUESTION_BLOOM_5: { points: 12, label: '⚖️ Pregunta Crítica (ACD)', dailyLimit: 5, dedupe: true },
+  QUESTION_BLOOM_6: { points: 20, label: '✨ Pregunta Propositiva', dailyLimit: 3, dedupe: true },
 
   // Análisis Crítico del Discurso
-  // 🆕 FIX Pass 11: Reducir puntos ACD (se duplicaban entre TablaACD y ACDAnalysisPanel)
-  ACD_FRAME_IDENTIFIED: { points: 15, label: '🎭 Marco Ideológico Identificado', dedupe: true },
-  ACD_STRATEGY_IDENTIFIED: { points: 10, label: '🗣️ Estrategia Retórica Identificada', dedupe: true },
-  ACD_POWER_ANALYSIS: { points: 20, label: '⚡ Análisis de Relaciones de Poder', dedupe: true },
+  ACD_FRAME_IDENTIFIED: { points: 5, label: '🎭 Marco Ideológico Identificado', dedupe: true },
+  ACD_STRATEGY_IDENTIFIED: { points: 3, label: '🗣️ Estrategia Retórica Identificada', dedupe: true },
+  ACD_POWER_ANALYSIS: { points: 8, label: '⚡ Análisis de Relaciones de Poder', dedupe: true },
 
   // Evaluación (calidad de respuesta)
-  // 🆕 FIX Pass 11: Ajustar puntos de evaluación (eran excesivos en conjunto)
-  EVALUATION_SUBMITTED: { points: 10, label: '📝 Evaluación Enviada', dedupe: true },
-  EVALUATION_LEVEL_1: { points: 5, label: '🥉 Nivel 1 - Inicial', dedupe: true },
-  EVALUATION_LEVEL_2: { points: 15, label: '🥈 Nivel 2 - Básico', dedupe: true },
-  EVALUATION_LEVEL_3: { points: 30, label: '🥇 Nivel 3 - Competente', dedupe: true },
-  EVALUATION_LEVEL_4: { points: 50, label: '💎 Nivel 4 - Avanzado', dedupe: true },
+  EVALUATION_SUBMITTED: { points: 5, label: '📝 Evaluación Enviada', dedupe: true },
+  EVALUATION_LEVEL_1: { points: 2, label: '🥉 Nivel 1 - Inicial', dedupe: true },
+  EVALUATION_LEVEL_2: { points: 5, label: '🥈 Nivel 2 - Básico', dedupe: true },
+  EVALUATION_LEVEL_3: { points: 15, label: '🥇 Nivel 3 - Competente', dedupe: true },
+  EVALUATION_LEVEL_4: { points: 25, label: '💎 Nivel 4 - Avanzado', dedupe: true },
   // Nota: dedupe explícito para evitar farming por re-evaluación.
   // Se activará solo si el caller provee metadata.resourceId.
-  QUOTE_USED: { points: 5, label: '📎 Cita Textual Usada', dedupe: true },
+  QUOTE_USED: { points: 2, label: '📎 Cita Textual Usada', dedupe: true },
 
   // Evidencia textual (anclaje)
-  STRONG_TEXTUAL_ANCHORING: { points: 15, label: '🔗 Anclaje Textual Sólido', dedupe: true },
-  METACOGNITIVE_INTEGRATION: { points: 10, label: '🧠 Integración Fluida de Evidencia', dedupe: true },
+  STRONG_TEXTUAL_ANCHORING: { points: 5, label: '🔗 Anclaje Textual Sólido', dedupe: true },
+  METACOGNITIVE_INTEGRATION: { points: 4, label: '🧠 Integración Fluida de Evidencia', dedupe: true },
 
   // Progresión
-  DIMENSION_UNLOCKED: { points: 40, label: '🔓 Dimensión Desbloqueada', dedupe: true },
-  DIMENSION_COMPLETED: { points: 75, label: '✅ Dimensión Completada', dedupe: true },
+  DIMENSION_UNLOCKED: { points: 15, label: '🔓 Dimensión Desbloqueada', dedupe: true },
+  DIMENSION_COMPLETED: { points: 25, label: '✅ Dimensión Completada', dedupe: true },
 
   // Anotaciones y estudio
-  // 🆕 FIX Pass 11: Reducir puntos y añadir límite diario para evitar farming
-  ANNOTATION_CREATED: { points: 2, label: '📝 Anotación Creada', dailyLimit: 30 },
-  NOTE_CREATED: { points: 5, label: '💭 Nota de Estudio Creada', dailyLimit: 15 },
+  ANNOTATION_CREATED: { points: 1, label: '📝 Anotación Creada', dailyLimit: 30 },
+  NOTE_CREATED: { points: 3, label: '💭 Nota de Estudio Creada', dailyLimit: 15 },
 
   // Uso de herramientas avanzadas
-  WEB_SEARCH_USED: { points: 5, label: '🌐 Enriquecimiento Web', dailyLimit: 10 },
-  CONTEXTUALIZATION_HISTORICAL: { points: 20, label: '🕰️ Contextualización Socio-Histórica', dedupe: true },
-  SOCIAL_CONNECTIONS_MAPPED: { points: 15, label: '🔗 Conexiones Sociales Mapeadas', dedupe: true },
-  CRITICAL_THESIS_DEVELOPED: { points: 20, label: '💭 Tesis Crítica Desarrollada', dedupe: true },
-  COUNTERARGUMENT_ANTICIPATED: { points: 15, label: '⚔️ Contraargumento Anticipado', dedupe: true },
-  REFUTATION_ELABORATED: { points: 15, label: '🛡️ Refutación Elaborada', dedupe: true },
-  PERFECT_SCORE: { points: 100, label: '⭐ Puntuación Perfecta', dedupe: true },
+  WEB_SEARCH_USED: { points: 3, label: '🌐 Enriquecimiento Web', dailyLimit: 10 },
+  CONTEXTUALIZATION_HISTORICAL: { points: 8, label: '🕰️ Contextualización Socio-Histórica', dedupe: true },
+  SOCIAL_CONNECTIONS_MAPPED: { points: 5, label: '🔗 Conexiones Sociales Mapeadas', dedupe: true },
+  CRITICAL_THESIS_DEVELOPED: { points: 8, label: '💭 Tesis Crítica Desarrollada', dedupe: true },
+  COUNTERARGUMENT_ANTICIPATED: { points: 5, label: '⚔️ Contraargumento Anticipado', dedupe: true },
+  REFUTATION_ELABORATED: { points: 5, label: '🛡️ Refutación Elaborada', dedupe: true },
+  PERFECT_SCORE: { points: 25, label: '⭐ Puntuación Perfecta', dedupe: true },
 
   // Metacognición
-  METACOGNITIVE_REFLECTION: { points: 15, label: '🤔 Reflexión Metacognitiva', dedupe: true },
-  SELF_ASSESSMENT: { points: 10, label: '📊 Autoevaluación', dailyLimit: 3 },
+  METACOGNITIVE_REFLECTION: { points: 5, label: '🤔 Reflexión Metacognitiva', dedupe: true },
+  SELF_ASSESSMENT: { points: 4, label: '📊 Autoevaluación', dailyLimit: 3 },
 
   // Actividades
-  ACTIVITY_COMPLETED: { points: 25, label: '🎯 Actividad Completada', dedupe: true },
-  TABLA_ACD_COMPLETED: { points: 40, label: '📊 Tabla ACD Completada', dedupe: true },
+  ACTIVITY_COMPLETED: { points: 10, label: '🎯 Actividad Completada', dedupe: true },
+  TABLA_ACD_COMPLETED: { points: 10, label: '📊 Tabla ACD Completada', dedupe: true },
 
   // Entrega de artefactos
-  ARTIFACT_SUBMITTED: { points: 20, label: '📦 Artefacto Entregado', dedupe: true },
+  ARTIFACT_SUBMITTED: { points: 5, label: '📦 Artefacto Entregado', dedupe: true },
 
   // Práctica opcional (andamiaje)
-  PRACTICE_QUESTION_ANSWERED: { points: 8, label: '🎮 Pregunta de Práctica', dedupe: true },
-  PRACTICE_DIMENSION_COMPLETED: { points: 30, label: '🏅 Dimensión Practicada', dedupe: true },
-  CROSS_CHALLENGE_COMPLETED: { points: 50, label: '⚡ Desafío Cruzado Superado', dedupe: true },
+  PRACTICE_QUESTION_ANSWERED: { points: 3, label: '🎮 Pregunta de Práctica', dedupe: true },
+  PRACTICE_DIMENSION_COMPLETED: { points: 12, label: '🏅 Dimensión Practicada', dedupe: true },
+  CROSS_CHALLENGE_COMPLETED: { points: 20, label: '⚡ Desafío Cruzado Superado', dedupe: true },
 
   // 🆕 Evento sintético para recuperación de puntos legacy
   LEGACY_POINTS_RECOVERED: { points: 0, label: '📜 Puntos Recuperados (Historial Previo)', dedupe: false }
@@ -118,63 +115,63 @@ const ACHIEVEMENTS = {
     id: 'critical_thinker',
     name: '🧠 Pensador Crítico',
     description: 'Primera pregunta de nivel 5 (ACD)',
-    points: 50,
+    points: 20,
     icon: '🧠'
   },
   ACD_MASTER: {
     id: 'acd_master',
     name: '🎭 Maestro del ACD',
     description: 'Identificó 3 marcos ideológicos diferentes',
-    points: 75,
+    points: 30,
     icon: '🎭'
   },
   EVIDENCE_CHAMPION: {
     id: 'evidence_champion',
     name: '🔗 Campeón de Evidencia',
     description: 'Usó 10+ citas textuales en evaluaciones',
-    points: 40,
+    points: 15,
     icon: '🔗'
   },
   TEN_EVALUATIONS: {
     id: 'ten_evals',
     name: '📚 Evaluador Dedicado',
     description: '10 evaluaciones completadas',
-    points: 50,
+    points: 20,
     icon: '📚'
   },
   PERFECT_SCORE: {
     id: 'perfect',
     name: '⭐ Excelencia Crítica',
     description: 'Puntuación 10/10 en evaluación',
-    points: 100,
+    points: 40,
     icon: '⭐'
   },
   ALL_DIMENSIONS: {
     id: 'all_dims',
     name: '🎓 Literato Crítico',
     description: 'Todas las 4 dimensiones completadas',
-    points: 200,
+    points: 80,
     icon: '🎓'
   },
   WEEK_STREAK: {
     id: 'week_streak',
     name: '🔥 Racha Semanal',
     description: '7 días consecutivos de estudio',
-    points: 50,
+    points: 20,
     icon: '🔥'
   },
   MONTH_STREAK: {
     id: 'month_streak',
     name: '💪 Dedicación Mensual',
     description: '30 días consecutivos de estudio',
-    points: 200,
+    points: 80,
     icon: '💪'
   },
   METACOGNITIVE_MASTER: {
     id: 'metacog_master',
     name: '🪞 Maestro Metacognitivo',
     description: '5 reflexiones metacognitivas completadas',
-    points: 75,
+    points: 30,
     icon: '🪞'
   }
 };
