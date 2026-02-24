@@ -2906,19 +2906,37 @@ export async function getCourseMetrics(courseId, options = {}) {
           const summativeEssays = [];
           ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach(rubricKey => {
             const rubric = rubricProgress[rubricKey] || {};
-            const summativeScore = rubric.summative?.teacherOverrideScore ?? rubric.summative?.score;
-            const essayStatus = rubric.summative?.status;
-            // Incluir ensayos evaluados ('evaluated') y entregados ('graded')
-            if ((essayStatus === 'graded' || essayStatus === 'evaluated') && summativeScore > 0) {
+            const summative = rubric.summative || null;
+            if (!summative) return;
+
+            const rawScore = summative.teacherOverrideScore ?? summative.score;
+            const parsedScore = Number(
+              typeof rawScore === 'string'
+                ? rawScore.replace(',', '.').replace('/10', '').trim()
+                : rawScore
+            );
+            const summativeScore = Number.isFinite(parsedScore) ? parsedScore : 0;
+            const essayStatus = String(summative.status || '').toLowerCase();
+
+            const hasEssayEvidence = Boolean(
+              summativeScore > 0 ||
+              (typeof summative.essayContent === 'string' && summative.essayContent.trim().length > 0) ||
+              summative.feedback ||
+              Number(summative.submittedAt || 0) > 0 ||
+              Number(summative.gradedAt || 0) > 0
+            );
+
+            // Robusto ante estados legacy/inconsistentes: mostrar si existe evidencia real de evaluación.
+            if (hasEssayEvidence && summativeScore > 0) {
               summativeEssays.push({
                 rubricId: rubricKey,
                 score: Number(summativeScore) || 0,
-                submitted: essayStatus === 'graded',
-                status: essayStatus,
-                teacherOverrideScore: rubric.summative?.teacherOverrideScore ?? null,
-                scoreOverrideReason: rubric.summative?.scoreOverrideReason ?? null,
-                scoreOverriddenAt: rubric.summative?.scoreOverriddenAt ?? null,
-                docenteNombre: rubric.summative?.docenteNombre ?? null
+                submitted: essayStatus === 'graded' || essayStatus === 'submitted',
+                status: essayStatus || 'evaluated',
+                teacherOverrideScore: summative.teacherOverrideScore ?? null,
+                scoreOverrideReason: summative.scoreOverrideReason ?? null,
+                scoreOverriddenAt: summative.scoreOverriddenAt ?? null,
+                docenteNombre: summative.docenteNombre ?? null
               });
             }
           });
@@ -4113,15 +4131,19 @@ export async function getStudentArtifactDetails(studentUid, textoId, courseId = 
       ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach((rubricId) => {
         const r = rubricProgress?.[rubricId];
         const s = r?.summative;
-        // Incluir ensayos evaluados ('evaluated') y entregados ('graded')
-        if (!s || (s.status !== 'graded' && s.status !== 'evaluated') || (s.score == null && s.teacherOverrideScore == null)) return;
+        if (!s || (s.score == null && s.teacherOverrideScore == null)) return;
 
-        const scoreNum = Number(s.teacherOverrideScore ?? s.score);
+        const scoreNum = Number(
+          typeof (s.teacherOverrideScore ?? s.score) === 'string'
+            ? String(s.teacherOverrideScore ?? s.score).replace(',', '.').replace('/10', '').trim()
+            : (s.teacherOverrideScore ?? s.score)
+        );
         if (!Number.isFinite(scoreNum) || scoreNum <= 0) return;
 
         essays.push({
           rubricId,
           score: scoreNum,
+          status: String(s.status || '').toLowerCase() || 'evaluated',
           teacherOverrideScore: s.teacherOverrideScore ?? null,
           scoreOverrideReason: s.scoreOverrideReason ?? null,
           scoreOverriddenAt: s.scoreOverriddenAt ?? null,
