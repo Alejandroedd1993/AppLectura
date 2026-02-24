@@ -3981,7 +3981,43 @@ export async function resetStudentArtifact(studentUid, textoId, artifactName, co
       };
     });
 
-    logger.log('📝 [Reset] Actualizando con:', { artifactsPaths: Array.from(artifactsPaths), artifactName, rubricKey });
+    // 🔧 FIX: Recalcular porcentaje, estado y entregaFinal tras el reset
+    // para que la barra de progreso del estudiante refleje el cambio inmediatamente.
+    const ARTIFACT_NAMES = ['resumenAcademico', 'tablaACD', 'mapaActores', 'respuestaArgumentativa', 'bitacoraEticaIA'];
+    const rubricas = Object.keys(rubricProgress).filter(k => k.startsWith('rubrica'));
+    const rubricasCompletadas = rubricas.filter(k => {
+      const r = rubricProgress[k];
+      return r && r.scores && r.scores.length > 0;
+    }).length;
+    const porcentaje = Math.round((rubricasCompletadas / 5) * 100);
+    const estado = porcentaje >= 100 ? 'completed' : (porcentaje > 0 ? 'in-progress' : 'pending');
+
+    // Recalcular entregaFinal con el artefacto reseteado
+    const allArtifacts = {};
+    Object.values(activitiesProgress).forEach(docProgress => {
+      if (docProgress?.artifacts) {
+        Object.entries(docProgress.artifacts).forEach(([artName, artData]) => {
+          if (artName === artifactName) return; // Excluir el artefacto reseteado
+          if (artData?.submitted && !allArtifacts[artName]) {
+            allArtifacts[artName] = { submitted: true, submittedAt: artData.submittedAt || 0, score: artData.score || 0 };
+          }
+        });
+      }
+    });
+    const entregados = ARTIFACT_NAMES.filter(n => allArtifacts[n]?.submitted).length;
+    updateData.porcentaje = porcentaje;
+    updateData.progress = porcentaje;
+    updateData.avancePorcentaje = porcentaje;
+    updateData.estado = estado;
+    updateData.entregaFinal = {
+      completa: entregados === 5,
+      entregados,
+      total: 5,
+      artifacts: allArtifacts,
+      fechaEntrega: null
+    };
+
+    logger.log('📝 [Reset] Actualizando con:', { artifactsPaths: Array.from(artifactsPaths), artifactName, rubricKey, porcentaje, entregados });
     await updateDoc(progressRef, updateData);
 
     logger.log(`✅ [Reset] Artefacto ${artifactName} reseteado para estudiante ${studentUid} en texto ${textoId}`);

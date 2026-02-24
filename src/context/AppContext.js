@@ -2987,8 +2987,12 @@ export const AppContextProvider = ({ children }) => {
     }
 
     // 🛡️ Evitar bucle: si este cambio viene de Firestore, no re-escribir inmediatamente
+    // PERO: si el cambio fue LOCAL (dirty), siempre sincronizar sin importar el cooldown.
+    // Caso crítico: al entregar un artefacto, el save de rubricProgress dispara un listener
+    // que actualiza lastActivitiesProgressFromCloudAt, y el debounce de activitiesProgress
+    // se salta si el cooldown es < 5s, perdiendo la entrega.
     const cloudTimeDiff = Date.now() - (lastActivitiesProgressFromCloudAtRef.current || 0);
-    if (cloudTimeDiff < 5000) {
+    if (cloudTimeDiff < 5000 && !activitiesProgressLocalDirtyRef.current) {
       logger.log('⏭️ [AppContext] Sync skip: update reciente de cloud hace', cloudTimeDiff, 'ms');
       return;
     }
