@@ -225,7 +225,7 @@ describe('ResumenAcademico Integration Tests', () => {
   });
 
   describe('Anti-plagio: límite de pegado', () => {
-    it('debe permitir pegar hasta 40 palabras', () => {
+    it('debe bloquear todo pegado por defecto (incluso texto corto)', async () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
       const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
@@ -238,11 +238,13 @@ describe('ResumenAcademico Integration Tests', () => {
 
       fireEvent.paste(textarea, pasteEvent);
 
-      // No debe mostrar error
-      expect(screen.queryByText(/Solo puedes pegar hasta 40 palabras/i)).not.toBeInTheDocument();
+      // Debe mostrar error de pegado deshabilitado
+      await waitFor(() => {
+        expect(screen.getByText(/El pegado está deshabilitado/i)).toBeInTheDocument();
+      });
     });
 
-    it('debe bloquear pegado de más de 40 palabras', async () => {
+    it('debe bloquear pegado de texto largo', async () => {
       renderWithProviders(<ResumenAcademico theme={lightTheme} />);
 
       const textarea = screen.getByPlaceholderText(/Escribe tu resumen acad[ée]mico aqu[íi]\.{0,3}/i);
@@ -257,7 +259,7 @@ describe('ResumenAcademico Integration Tests', () => {
 
       // Debe mostrar error
       await waitFor(() => {
-        expect(screen.getByText(/Solo puedes pegar hasta 40 palabras/i)).toBeInTheDocument();
+        expect(screen.getByText(/El pegado está deshabilitado/i)).toBeInTheDocument();
       });
     });
   });

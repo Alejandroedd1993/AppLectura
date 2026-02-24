@@ -8,6 +8,7 @@ import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
 import useTeacherArtifactReset from '../../hooks/useTeacherArtifactReset';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
+import usePasteUnlock from '../../hooks/usePasteUnlock';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import HistoryRibbon from '../ui/HistoryRibbon';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
@@ -170,6 +171,9 @@ export default function TablaACD({ theme }) {
     maxPerHour: 10,
     maxAttempts: 3
   });
+
+  // 🔑 Toggle de pegado para QA/testing (Ctrl+Alt+U)
+  const pasteUnlocked = usePasteUnlock();
 
   // 🆕 Keyboard shortcuts para productividad
   const [showSaveHint, setShowSaveHint] = useState(false);
@@ -695,18 +699,16 @@ export default function TablaACD({ theme }) {
 
   // 🆕 Prevención de pegado
   const handlePaste = useCallback((e) => {
+    // 🔑 Si el pegado está desbloqueado (QA mode), permitir todo sin límite
+    if (pasteUnlocked) return;
+
     e.preventDefault();
     const pastedText = e.clipboardData.getData('text');
     const wordCount = pastedText.trim().split(/\s+/).filter(word => word.length > 0).length;
 
-    if (wordCount <= 40) {
-      // Permitir paste de hasta 40 palabras
-      document.execCommand('insertText', false, pastedText);
-    } else {
-      setPasteError(`⚠️ Solo puedes pegar hasta 40 palabras (intentaste pegar ${wordCount}). Escribe con tus propias palabras o usa citas guardadas.`);
-      timersRef.current.push(setTimeout(() => setPasteError(null), 5000));
-    }
-  }, []);
+    setPasteError(`🚫 El pegado está deshabilitado. Escribe con tus propias palabras o usa citas guardadas del Cuaderno de Lectura. (Intentaste pegar ${wordCount} palabras)`);
+    timersRef.current.push(setTimeout(() => setPasteError(null), 5000));
+  }, [pasteUnlocked]);
 
   // Rúbrica
   const rubricDimension = useMemo(() => getDimension('acd'), []);

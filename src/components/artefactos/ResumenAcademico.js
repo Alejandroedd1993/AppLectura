@@ -16,6 +16,7 @@ import useActivityPersistence from '../../hooks/useActivityPersistence';
 import useArtifactEvaluationPolicy from '../../hooks/useArtifactEvaluationPolicy';
 import useTeacherArtifactReset from '../../hooks/useTeacherArtifactReset';
 import useKeyboardShortcuts from '../../hooks/useKeyboardShortcuts';
+import usePasteUnlock from '../../hooks/usePasteUnlock';
 import EvaluationProgressBar from '../ui/EvaluationProgressBar';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import HistoryRibbon from '../ui/HistoryRibbon';
@@ -132,6 +133,9 @@ const ResumenAcademico = ({ theme }) => {
     maxPerHour: 10,
     maxAttempts: 3
   });
+
+  // 🔑 Toggle de pegado para QA/testing (Ctrl+Alt+U)
+  const pasteUnlocked = usePasteUnlock();
 
   // 🆕 Keyboard shortcuts para productividad
   const [showShortcutsHint, setShowShortcutsHint] = useState(false);
@@ -703,40 +707,20 @@ const ResumenAcademico = ({ theme }) => {
     }
   }, [lectureId, deleteCitation]);
 
-  // 🆕 Prevención de pegado externo (anti-plagio) mejorada
+  // 🆕 Prevención de pegado externo (anti-plagio)
   const handlePaste = useCallback((e) => {
+    // 🔑 Si el pegado está desbloqueado (QA mode), permitir todo sin límite
+    if (pasteUnlocked) return; // Dejar que el navegador maneje el paste normalmente
+
     e.preventDefault();
     const pastedText = e.clipboardData.getData('text');
     const wordCount = pastedText.trim().split(/\s+/).filter(word => word.length > 0).length;
 
-    // Si intenta pegar mucho texto (>40 palabras), bloquear
-    if (wordCount > 40) {
-      const message = `⚠️ Solo puedes pegar hasta 40 palabras (intentaste pegar ${wordCount}). Escribe con tus propias palabras o usa citas guardadas.`;
-      setPasteError(message);
-      setTimeout(() => setPasteError(null), 5000);
-      logger.warn('🚫 Intento de pegado bloqueado (excede 40 palabras)');
-      return;
-    }
-
-    // ✅ Lógica correcta para insertar en textarea controlado
-    const textarea = e.target;
-    const { selectionStart, selectionEnd } = textarea;
-    const currentText = resumen || '';
-
-    // Insertar texto en la posición del cursor o reemplazar selección
-    const newText =
-      currentText.substring(0, selectionStart) +
-      pastedText +
-      currentText.substring(selectionEnd);
-
-    // Actualizar estado y luego restaurar cursor (necesita useEffect o setTimeout, 
-    // pero React input normal suele moverlo al final. Para mejor UX, podríamos gestionarlo, 
-    // pero lo básico es que inserte el texto.)
-    setResumen(newText);
-
-    logger.log(`✅ Paste permitido: ${wordCount} palabras`);
-    setPasteError(null); // Limpiar error si lo hubiera
-  }, [resumen]);
+    const message = `🚫 El pegado está deshabilitado. Escribe con tus propias palabras o usa citas guardadas del Cuaderno de Lectura. (Intentaste pegar ${wordCount} palabras)`;
+    setPasteError(message);
+    setTimeout(() => setPasteError(null), 5000);
+    logger.warn(`🚫 Intento de pegado bloqueado: ${wordCount} palabras`);
+  }, [pasteUnlocked]);
 
   // 🆕 Helper para obtener color por nivel
   const getNivelColor = useCallback((nivel) => {
