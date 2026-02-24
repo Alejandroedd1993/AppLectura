@@ -3600,8 +3600,9 @@ export async function deleteCourse(courseId) {
     const studentsSnap = await getDocs(collection(db, 'courses', courseId, 'students'));
     const studentUids = studentsSnap.docs.map((d) => d.id).filter(Boolean);
 
-    // 2.1 Fail-fast: validar enqueue owner-only ANTES de borrar matrícula/curso.
-    const ownerCleanupFailures = [];
+    // 2.1 Best-effort: intentar enqueue owner-only para sesiones/draftBackups (Admin SDK).
+    // Si el backend no responde o falla, NO bloquear la eliminación del curso.
+    // La purga de progreso/notificaciones con Client SDK sigue funcionando.
     for (const studentUid of studentUids) {
       try {
         const ownerCleanup = await __enqueueOwnedCloudCleanupJob({
@@ -3610,19 +3611,14 @@ export async function deleteCourse(courseId) {
           reason: 'teacher_delete_course'
         });
         if (!ownerCleanup?.ok) {
-          ownerCleanupFailures.push({ studentUid, ...ownerCleanup });
+          logger.warn('⚠️ [deleteCourse] Cleanup owner-only no encolado (best-effort):', { studentUid, ...ownerCleanup });
         }
       } catch (ownerCleanupError) {
-        ownerCleanupFailures.push({
+        logger.warn('⚠️ [deleteCourse] Error en enqueue owner-only (best-effort):', {
           studentUid,
-          reason: 'enqueue_exception',
-          details: ownerCleanupError?.message
+          error: ownerCleanupError?.message
         });
       }
-    }
-
-    if (ownerCleanupFailures.length > 0) {
-      throw new Error(`No se pudo encolar cleanup owner-only para ${ownerCleanupFailures.length} estudiante(s). Operación abortada.`);
     }
 
     // 2.2 Limpiar datos de todos los estudiantes (fase fail-fast)
@@ -3718,15 +3714,20 @@ export async function deleteStudentFromCourse(courseId, studentUid) {
     const actorUid = auth?.currentUser?.uid || null;
     const includeOwnedCloudData = actorUid === studentUid;
 
-    // 2) Si el actor es docente (no owner), exigir enqueue owner-only antes de continuar.
+    // 2) Si el actor es docente (no owner), intentar enqueue owner-only (sesiones/draftBackups via Admin SDK).
+    // Best-effort: si el backend no responde, NO bloquear la baja del estudiante.
     if (!includeOwnedCloudData) {
-      const ownerCleanup = await __enqueueOwnedCloudCleanupJob({
-        courseId,
-        studentUid,
-        reason: 'teacher_remove_student'
-      });
-      if (!ownerCleanup?.ok) {
-        throw new Error('No se pudo encolar cleanup owner-only; baja abortada para evitar residuos.');
+      try {
+        const ownerCleanup = await __enqueueOwnedCloudCleanupJob({
+          courseId,
+          studentUid,
+          reason: 'teacher_remove_student'
+        });
+        if (!ownerCleanup?.ok) {
+          logger.warn('⚠️ [deleteStudentFromCourse] Cleanup owner-only no encolado (best-effort):', ownerCleanup);
+        }
+      } catch (enqueueErr) {
+        logger.warn('⚠️ [deleteStudentFromCourse] Error en enqueue owner-only (best-effort):', enqueueErr?.message);
       }
     }
 
