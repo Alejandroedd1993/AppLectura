@@ -2884,11 +2884,14 @@ export async function getCourseMetrics(courseId, options = {}) {
           ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach(rubricKey => {
             const rubric = rubricProgress[rubricKey] || {};
             const summativeScore = rubric.summative?.teacherOverrideScore ?? rubric.summative?.score;
-            if (rubric.summative?.status === 'graded' && summativeScore > 0) {
+            const essayStatus = rubric.summative?.status;
+            // Incluir ensayos evaluados ('evaluated') y entregados ('graded')
+            if ((essayStatus === 'graded' || essayStatus === 'evaluated') && summativeScore > 0) {
               summativeEssays.push({
                 rubricId: rubricKey,
                 score: Number(summativeScore) || 0,
-                submitted: true,
+                submitted: essayStatus === 'graded',
+                status: essayStatus,
                 teacherOverrideScore: rubric.summative?.teacherOverrideScore ?? null,
                 scoreOverrideReason: rubric.summative?.scoreOverrideReason ?? null,
                 scoreOverriddenAt: rubric.summative?.scoreOverriddenAt ?? null,
@@ -4087,7 +4090,8 @@ export async function getStudentArtifactDetails(studentUid, textoId, courseId = 
       ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach((rubricId) => {
         const r = rubricProgress?.[rubricId];
         const s = r?.summative;
-        if (!s || s.status !== 'graded' || (s.score == null && s.teacherOverrideScore == null)) return;
+        // Incluir ensayos evaluados ('evaluated') y entregados ('graded')
+        if (!s || (s.status !== 'graded' && s.status !== 'evaluated') || (s.score == null && s.teacherOverrideScore == null)) return;
 
         const scoreNum = Number(s.teacherOverrideScore ?? s.score);
         if (!Number.isFinite(scoreNum) || scoreNum <= 0) return;

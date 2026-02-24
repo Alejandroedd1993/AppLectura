@@ -2284,11 +2284,11 @@ function TeacherDashboard() {
                                           {(lecturaProgress.summativeEssays || []).map((essay, idx) => (
                                             <ArtifactMiniCard
                                               key={`ensayo-${idx}`}
-                                              $status="submitted"
-                                              title={`Ensayo Integrador - ${essay.score}/10`}
+                                              $status={essay.status === 'graded' ? 'submitted' : 'evaluated'}
+                                              title={`Ensayo Integrador - ${essay.score}/10${essay.status === 'evaluated' ? ' (Evaluado, sin entregar)' : ''}`}
                                             >
                                               <span className="icon">✍️</span>
-                                              <span className="status">✅</span>
+                                              <span className="status">{essay.status === 'graded' ? '✅' : '🔍'}</span>
                                               {essay.score > 0 && (
                                                 <span className="score">{essay.score}</span>
                                               )}
