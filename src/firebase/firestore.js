@@ -2754,6 +2754,19 @@ export async function getCourseMetrics(courseId, options = {}) {
       }
 
       if (relevantes.length) {
+        let globalRubricProgressFallback = null;
+        if (relevantes.length === 1) {
+          try {
+            const globalRef = doc(db, 'students', estudiante.estudianteUid, 'progress', 'global_progress');
+            const globalSnap = await getDoc(globalRef);
+            if (globalSnap.exists()) {
+              globalRubricProgressFallback = globalSnap.data()?.rubricProgress || null;
+            }
+          } catch (e) {
+            // best-effort
+          }
+        }
+
         // 🔧 FIX Bug #3: Calcular avance REAL desde rubricProgress (no desde porcentaje que nunca se actualiza)
         const totalAvance = relevantes.reduce((acc, docSnap) => {
           const data = docSnap.data();
@@ -2827,6 +2840,47 @@ export async function getCourseMetrics(courseId, options = {}) {
         // 🆕 DETALLE POR LECTURA: Construir objeto con progreso específico por lectura
         // (relevantes ya está deduplicado por textoId desde arriba)
         const lecturaDetails = {};
+
+        const buildSummativeEssaysFromRubricProgress = (rubricProgressSource = {}) => {
+          const essays = [];
+          ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach(rubricKey => {
+            const rubric = rubricProgressSource?.[rubricKey] || {};
+            const summative = rubric.summative || null;
+            if (!summative) return;
+
+            const rawScore = summative.teacherOverrideScore ?? summative.score;
+            const parsedScore = Number(
+              typeof rawScore === 'string'
+                ? rawScore.replace(',', '.').replace('/10', '').trim()
+                : rawScore
+            );
+            const summativeScore = Number.isFinite(parsedScore) ? parsedScore : 0;
+            const essayStatus = String(summative.status || '').toLowerCase();
+
+            const hasEssayEvidence = Boolean(
+              summativeScore > 0 ||
+              (typeof summative.essayContent === 'string' && summative.essayContent.trim().length > 0) ||
+              summative.feedback ||
+              Number(summative.submittedAt || 0) > 0 ||
+              Number(summative.gradedAt || 0) > 0
+            );
+
+            if (hasEssayEvidence && summativeScore > 0) {
+              essays.push({
+                rubricId: rubricKey,
+                score: Number(summativeScore) || 0,
+                submitted: essayStatus === 'graded' || essayStatus === 'submitted',
+                status: essayStatus || 'evaluated',
+                teacherOverrideScore: summative.teacherOverrideScore ?? null,
+                scoreOverrideReason: summative.scoreOverrideReason ?? null,
+                scoreOverriddenAt: summative.scoreOverriddenAt ?? null,
+                docenteNombre: summative.docenteNombre ?? null
+              });
+            }
+          });
+          return essays;
+        };
+
         relevantes.forEach(docSnap => {
           const data = docSnap.data();
           const textoId = resolveLecturaTextoId(docSnap, data);
@@ -2903,43 +2957,16 @@ export async function getCourseMetrics(courseId, options = {}) {
           });
 
           // 🆕 Incluir ensayo sumativo en lecturaDetails para la vista overview
-          const summativeEssays = [];
-          ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4'].forEach(rubricKey => {
-            const rubric = rubricProgress[rubricKey] || {};
-            const summative = rubric.summative || null;
-            if (!summative) return;
+          let summativeEssays = buildSummativeEssaysFromRubricProgress(rubricProgress);
 
-            const rawScore = summative.teacherOverrideScore ?? summative.score;
-            const parsedScore = Number(
-              typeof rawScore === 'string'
-                ? rawScore.replace(',', '.').replace('/10', '').trim()
-                : rawScore
-            );
-            const summativeScore = Number.isFinite(parsedScore) ? parsedScore : 0;
-            const essayStatus = String(summative.status || '').toLowerCase();
-
-            const hasEssayEvidence = Boolean(
-              summativeScore > 0 ||
-              (typeof summative.essayContent === 'string' && summative.essayContent.trim().length > 0) ||
-              summative.feedback ||
-              Number(summative.submittedAt || 0) > 0 ||
-              Number(summative.gradedAt || 0) > 0
-            );
-
-            // Robusto ante estados legacy/inconsistentes: mostrar si existe evidencia real de evaluación.
-            if (hasEssayEvidence && summativeScore > 0) {
-              summativeEssays.push({
-                rubricId: rubricKey,
-                score: Number(summativeScore) || 0,
-                submitted: essayStatus === 'graded' || essayStatus === 'submitted',
-                status: essayStatus || 'evaluated',
-                teacherOverrideScore: summative.teacherOverrideScore ?? null,
-                scoreOverrideReason: summative.scoreOverrideReason ?? null,
-                scoreOverriddenAt: summative.scoreOverriddenAt ?? null,
-                docenteNombre: summative.docenteNombre ?? null
-              });
+          // Fallback conservador para datos legacy: si solo hay 1 lectura y este doc no trae ensayo,
+          // intentar recuperar desde global_progress (escrituras antiguas sin textoId específico).
+          if (summativeEssays.length === 0 && relevantes.length === 1 && globalRubricProgressFallback) {
+            const globalSummative = buildSummativeEssaysFromRubricProgress(globalRubricProgressFallback);
+            if (globalSummative.length > 0) {
+              summativeEssays = globalSummative;
             }
-          });
+          }
 
           lecturaDetails[textoId] = {
             avance: data.porcentaje || data.progress || data.avancePorcentaje || 0,
