@@ -32,35 +32,34 @@ function Wrapper({ children }) {
 }
 
 describe('ReadingWorkspace smoke', () => {
-  test('flujo básico: crear nota, enviar prompt y enriquecer', async () => {
+  // Nota de mantenimiento:
+  // ReadingWorkspace ya no expone botones legacy como "abrir-notas"
+  // ni una prompt-bar propia en la top bar. El flujo vigente es:
+  // - Notas vía evento reader-action { action: 'notes' }
+  // - Prompt libre vía TutorDock (input "Haz una pregunta...")
+  // Si cambia la UX de acciones del lector, actualizar este smoke test.
+  test('flujo básico: crear nota y enviar prompt en tutor', async () => {
     render(<ReadingWorkspace />, { wrapper: Wrapper });
 
-    // Abrir panel de notas y crear una
-    fireEvent.click(screen.getByLabelText(/abrir-notas/i));
-    const textarea = await screen.findByPlaceholderText(/Escribe una nota/i);
-    fireEvent.change(textarea, { target: { value: 'Primera nota pedagógica' } });
-    const saveButtons = screen.getAllByText(/Guardar/i);
-    // El botón de guardar nota suele ser el último o estar dentro del formulario de notas
-    // Buscamos el que está dentro del formulario de notas
-    const noteSaveButton = saveButtons.find(btn => btn.closest('form'));
-    fireEvent.click(noteSaveButton);
+    // Crear nota vía evento del lector (flujo real actual)
+    window.dispatchEvent(new CustomEvent('reader-action', {
+      detail: {
+        action: 'notes',
+        text: 'Primera nota pedagógica'
+      }
+    }));
+
+    // Se abre panel y la nota aparece listada
+    expect(await screen.findByText(/📝 Notas/i)).toBeInTheDocument();
     expect(await screen.findByText(/Primera nota pedagógica/)).toBeInTheDocument();
 
-    // Escribir prompt base y enviarlo
-    const input = screen.getByPlaceholderText(/Pregunta algo sobre el texto/i);
+    // Escribir prompt base y enviarlo en el tutor dock
+    const input = screen.getByPlaceholderText(/Haz una pregunta/i);
     fireEvent.change(input, { target: { value: 'Resume el texto' } });
-    const enviarButtons = screen.getAllByText(/^Enviar$/);
-    // Primer botón pertenece al TutorDock interno; segundo al PromptBar del Workspace
-    fireEvent.click(enviarButtons[1]);
-    // Enriquecer (usar boton web) con prompt no vacio
-    fireEvent.change(input, { target: { value: 'Impacto IA' } });
-    const btnWeb = screen.getByTestId('btn-con-web');
-    expect(btnWeb).toBeEnabled();
-    fireEvent.click(btnWeb);
+    fireEvent.submit(input.closest('form'));
 
     await waitFor(() => {
-      // El boton permanece disponible mientras haya prompt y disponibilidad web.
-      expect(btnWeb).toBeEnabled();
+      expect(screen.getByText(/Resume el texto/i)).toBeInTheDocument();
     });
   });
 });

@@ -1,33 +1,107 @@
 {
   "indexes": [
     {
-      "collectionId": "textos",
+      "collectionGroup": "courses",
+      "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "asignadoA", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "visible", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "docenteUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
-      "collectionId": "textos",
+      "collectionGroup": "textos",
+      "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "docenteUid", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "asignadoA",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
-      "collectionId": "textos",
+      "collectionGroup": "textos",
+      "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "asignadoA", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "asignadoA",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "visible",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
-      "collectionId": "courses",
+      "collectionGroup": "textos",
+      "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "docenteUid", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "docenteUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "tutorThreads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "textHash",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "courseScope",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     }
   ],
   "fieldOverrides": []

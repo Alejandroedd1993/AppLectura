@@ -1,4 +1,69 @@
-import { useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { db, isConfigValid } from '../firebase/config';
+import logger from '../utils/logger';
+
+const EMPTY_MESSAGES = [];
+
+function normalizeMessages(raw, max = 40) {
+  if (!Array.isArray(raw)) return EMPTY_MESSAGES;
+  const normalized = raw
+    .map((o) => ({
+      role: o?.r || o?.role,
+      content: o?.c || o?.content
+    }))
+    .filter((m) => m.content)
+    .slice(-max);
+  return normalized.length ? normalized : EMPTY_MESSAGES;
+}
+
+function toCompact(msgs, max = 40) {
+  return (Array.isArray(msgs) ? msgs : [])
+    .map((m) => ({ r: m.role, c: m.content }))
+    .filter((m) => m.c)
+    .slice(-max);
+}
+
+function readStorage(storageKey, max) {
+  try {
+    return normalizeMessages(JSON.parse(localStorage.getItem(storageKey) || '[]'), max);
+  } catch {
+    return EMPTY_MESSAGES;
+  }
+}
+
+function readMeta(metaKey) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(metaKey) || '{}');
+    return Number(parsed?.updatedAtMs) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeMeta(metaKey, updatedAtMs) {
+  try {
+    localStorage.setItem(metaKey, JSON.stringify({ updatedAtMs: Number(updatedAtMs) || Date.now() }));
+  } catch { /* noop */ }
+}
+
+function deriveTitle(compact) {
+  const userMessage = compact.find((m) => m.r === 'user');
+  const text = String(userMessage?.c || 'Nuevo hilo').replace(/\s+/g, ' ').trim();
+  if (!text) return 'Nuevo hilo';
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text;
+}
+
+function toMillis(value) {
+  try {
+    if (!value) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value.toMillis === 'function') return value.toMillis();
+    return new Date(value).getTime() || 0;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Hook de persistencia ligera para TutorCore.
@@ -8,33 +73,235 @@ import { useMemo, useCallback } from 'react';
  *   <TutorCore initialMessages={initialMessages} onMessagesChange={handleMessagesChange}>...
  */
 export default function useTutorPersistence(options = {}) {
-  const { storageKey = 'tutorHistorial', max = 40 } = options;
+  const {
+    storageKey = 'tutorHistorial',
+    max = 40,
+    syncEnabled = false,
+    userId = null,
+    courseScope = 'free',
+    textHash = 'tutor_empty',
+    threadId = null,
+    debounceMs = 2000,
+  } = options;
 
-  const initialMessages = useMemo(() => {
+  const metaKey = useMemo(() => `tutorMeta:${storageKey}`, [storageKey]);
+  const fsEnabled = Boolean(syncEnabled && userId && userId !== 'guest' && threadId && isConfigValid);
+  const localInitialMessages = useMemo(() => readStorage(storageKey, max), [storageKey, max]);
+
+  const [initialMessages, setInitialMessages] = useState(localInitialMessages);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const [synced, setSynced] = useState(false);
+  const [lastSynced, setLastSynced] = useState(0);
+  const [conflictCount, setConflictCount] = useState(0);
+  const [lastConflictAt, setLastConflictAt] = useState(0);
+
+  const timerRef = useRef(null);
+  const latestCompactRef = useRef(toCompact(localInitialMessages, max));
+  const pendingRemoteRef = useRef(false);
+  const lastLocalUpdatedAtRef = useRef(readMeta(metaKey) || Date.now());
+
+  useEffect(() => {
+    setInitialMessages(localInitialMessages);
+    latestCompactRef.current = toCompact(localInitialMessages, max);
+    lastLocalUpdatedAtRef.current = readMeta(metaKey) || Date.now();
+    setQuotaExceeded(false);
+    setSynced(false);
+  }, [localInitialMessages, max, metaKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const telemetryKey = `tutorConflictTelemetry:${userId || 'guest'}:${courseScope}:${textHash}`;
+
+    const recordConflict = () => {
+      const now = Date.now();
+      setConflictCount((prev) => prev + 1);
+      setLastConflictAt(now);
+      try {
+        const previous = Number(sessionStorage.getItem(telemetryKey) || 0);
+        sessionStorage.setItem(telemetryKey, String(previous + 1));
+      } catch { /* noop */ }
+      try {
+        window.dispatchEvent(new CustomEvent('tutor-storage-conflict', {
+          detail: { storageKey, userId, courseScope, textHash, at: now }
+        }));
+      } catch { /* noop */ }
+    };
+
+    const onStorage = (event) => {
+      if (!event || event.storageArea !== localStorage) return;
+      if (event.key !== storageKey) return;
+      if (event.newValue == null) {
+        latestCompactRef.current = [];
+        setInitialMessages(EMPTY_MESSAGES);
+        recordConflict();
+        return;
+      }
+
+      try {
+        const incoming = normalizeMessages(JSON.parse(event.newValue || '[]'), max);
+        const incomingCompact = toCompact(incoming, max);
+        const currentSignature = JSON.stringify(latestCompactRef.current || []);
+        const incomingSignature = JSON.stringify(incomingCompact || []);
+        if (incomingSignature === currentSignature) return;
+
+        latestCompactRef.current = incomingCompact;
+        setInitialMessages(incoming);
+        const now = Date.now();
+        lastLocalUpdatedAtRef.current = Math.max(lastLocalUpdatedAtRef.current || 0, now);
+        writeMeta(metaKey, now);
+        recordConflict();
+      } catch (e) {
+        logger.warn('[useTutorPersistence] Error procesando cambio cross-tab:', e);
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [storageKey, metaKey, max, userId, courseScope, textHash]);
+
+  const flushRemote = useCallback(async (compact) => {
+    if (!fsEnabled) return;
+    pendingRemoteRef.current = true;
     try {
-      const raw = JSON.parse(localStorage.getItem(storageKey) || '[]');
-      if (!Array.isArray(raw)) return [];
-      return raw
-        .map((o) => ({
-          role: o?.r || o?.role,
-          content: o?.c || o?.content
-        }))
-        .filter(m => m.content);
-    } catch { return []; }
-  }, [storageKey]);
+      const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
+      await setDoc(threadRef, {
+        textHash,
+        courseScope,
+        title: deriveTitle(compact),
+        messageCount: compact.length,
+        messages: compact,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      const now = Date.now();
+      setSynced(true);
+      setLastSynced(now);
+      writeMeta(metaKey, now);
+    } catch (e) {
+      logger.warn('[useTutorPersistence] Error sincronizando hilo a Firestore:', e);
+      setSynced(false);
+    } finally {
+      pendingRemoteRef.current = false;
+    }
+  }, [fsEnabled, userId, threadId, textHash, courseScope, metaKey]);
+
+  useEffect(() => {
+    return () => {
+      const hadPending = Boolean(timerRef.current);
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (hadPending && fsEnabled) {
+        flushRemote(latestCompactRef.current);
+      }
+    };
+  }, [fsEnabled, flushRemote]);
+
+  const scheduleRemoteFlush = useCallback((compact) => {
+    if (!fsEnabled) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      flushRemote(compact);
+    }, debounceMs);
+  }, [fsEnabled, debounceMs, flushRemote]);
 
   const handleMessagesChange = useCallback((msgs) => {
+    const compact = toCompact(msgs, max);
+    latestCompactRef.current = compact;
     try {
-      const compact = msgs.map(m => ({ r: m.role, c: m.content })).slice(-max);
+      const now = Date.now();
+      writeMeta(metaKey, now);
       localStorage.setItem(storageKey, JSON.stringify(compact));
-    } catch { /* noop */ }
-  }, [storageKey, max]);
+      lastLocalUpdatedAtRef.current = now;
+      setQuotaExceeded(false);
+    } catch (e) {
+      setQuotaExceeded(true);
+      logger.warn('[useTutorPersistence] No se pudo guardar en localStorage (cuota o acceso):', e);
+    }
+    scheduleRemoteFlush(compact);
+  }, [max, storageKey, metaKey, scheduleRemoteFlush]);
+
+  useEffect(() => {
+    if (!fsEnabled) return undefined;
+
+    const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
+
+    let isMounted = true;
+    getDoc(threadRef).then((snapshot) => {
+      if (!isMounted || !snapshot.exists()) {
+        if (latestCompactRef.current.length > 0) flushRemote(latestCompactRef.current);
+        return;
+      }
+
+      const remote = snapshot.data() || {};
+      const remoteUpdatedAt = toMillis(remote.updatedAt);
+      const localUpdatedAt = lastLocalUpdatedAtRef.current || 0;
+      const remoteMessages = normalizeMessages(remote.messages, max);
+
+      if (remoteUpdatedAt > localUpdatedAt && remoteMessages !== EMPTY_MESSAGES) {
+        setInitialMessages(remoteMessages);
+        latestCompactRef.current = toCompact(remoteMessages, max);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(latestCompactRef.current));
+          writeMeta(metaKey, remoteUpdatedAt || Date.now());
+        } catch { /* noop */ }
+      } else if (latestCompactRef.current.length > 0) {
+        flushRemote(latestCompactRef.current);
+      }
+    }).catch((e) => {
+      logger.warn('[useTutorPersistence] Error cargando hilo remoto:', e);
+    });
+
+    const unsub = onSnapshot(threadRef, (snapshot) => {
+      if (!snapshot.exists()) return;
+      if (pendingRemoteRef.current) return;
+
+      const remote = snapshot.data() || {};
+      const remoteUpdatedAt = toMillis(remote.updatedAt);
+      const localUpdatedAt = lastLocalUpdatedAtRef.current || 0;
+      if (remoteUpdatedAt <= localUpdatedAt) return;
+
+      const remoteMessages = normalizeMessages(remote.messages, max);
+      if (remoteMessages === EMPTY_MESSAGES && latestCompactRef.current.length > 0) return;
+
+      setInitialMessages(remoteMessages);
+      latestCompactRef.current = toCompact(remoteMessages, max);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(latestCompactRef.current));
+        writeMeta(metaKey, remoteUpdatedAt || Date.now());
+      } catch { /* noop */ }
+      setSynced(true);
+      setLastSynced(remoteUpdatedAt || Date.now());
+    }, (e) => {
+      logger.warn('[useTutorPersistence] Error en onSnapshot de hilo:', e);
+    });
+
+    return () => {
+      isMounted = false;
+      try { unsub(); } catch { /* noop */ }
+    };
+  }, [fsEnabled, userId, threadId, max, storageKey, metaKey, flushRemote]);
 
   const clearHistory = useCallback(() => {
     try {
       localStorage.removeItem(storageKey);
+      localStorage.removeItem(metaKey);
+      latestCompactRef.current = [];
+      setInitialMessages(EMPTY_MESSAGES);
     } catch { /* noop */ }
-  }, [storageKey]);
+  }, [storageKey, metaKey]);
 
-  return { initialMessages, handleMessagesChange, clearHistory };
+  return {
+    initialMessages,
+    handleMessagesChange,
+    clearHistory,
+    quotaExceeded,
+    synced,
+    lastSynced,
+    conflictCount,
+    lastConflictAt,
+    flushNow: () => flushRemote(latestCompactRef.current)
+  };
 }

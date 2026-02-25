@@ -125,6 +125,22 @@ service cloud.firestore {
         allow create, update: if isOwner(userId);
         allow delete: if isOwner(userId);
       }
+
+      // ========================================
+      // SUBCOLECCIÓN: TUTOR_THREADS (hilos del tutor IA)
+      // ========================================
+
+      match /tutorThreads/{threadId} {
+        allow read: if isOwner(userId);
+
+        allow create, update: if isOwner(userId)
+          && request.resource.data.textHash is string
+          && request.resource.data.courseScope is string
+          && request.resource.data.messages is list
+          && request.resource.data.messages.size() <= 40;
+
+        allow delete: if isOwner(userId);
+      }
     }
     
     // ========================================

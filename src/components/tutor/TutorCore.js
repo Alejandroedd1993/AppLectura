@@ -40,6 +40,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   const abortRef = useRef(null);
   const webSearchAbortRef = useRef(null);
   const requestIdRef = useRef(0);
+  const lastStreamPersistRef = useRef(0);
   const lastUserHashRef = useRef(null);
   const lastUserTsRef = useRef(0);
   const lastActionInfoRef = useRef(null); // { action, fragment, fullText }
@@ -52,6 +53,21 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   messagesRef.current = messages;
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
+
+  useEffect(() => {
+    const flushOnUnload = () => {
+      try {
+        if (!onMessagesChange) return;
+        onMessagesChange(messagesRef.current || []);
+      } catch { /* noop */ }
+    };
+
+    window.addEventListener('beforeunload', flushOnUnload);
+    return () => {
+      window.removeEventListener('beforeunload', flushOnUnload);
+      flushOnUnload();
+    };
+  }, [onMessagesChange]);
 
   // H2 FIX: Cancelar peticiones en vuelo al desmontar para evitar setState sobre componente desmontado
   useEffect(() => {
@@ -90,13 +106,18 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
   // 🌊 Streaming: actualizar contenido de un mensaje existente
   const updateMessage = useCallback((msgId, newContent, notify = false, updateLastRef = true) => {
+    const now = Date.now();
+    const periodicNotify = !notify && (now - lastStreamPersistRef.current >= 3000);
+    const shouldNotify = notify || periodicNotify;
+
     setMessages(prev => {
       const idx = prev.findIndex(m => m.id === msgId);
       if (idx === -1) return prev;
       const next = [...prev];
       next[idx] = { ...next[idx], content: newContent };
-      if (notify) {
+      if (shouldNotify) {
         try { onMessagesChange?.(next); } catch (e) { /* noop */ }
+        lastStreamPersistRef.current = now;
       }
       return next;
     });

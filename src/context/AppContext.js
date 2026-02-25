@@ -3903,6 +3903,9 @@ export const AppContextProvider = ({ children }) => {
       // 🆕 PATRONES EXPANDIDOS - Limpieza más agresiva
       const patternsToRemove = [
         /^tutorHistorial/,           // Historial del tutor (tutorHistorial:hash)
+        /^tutorMeta:/,               // Metadatos locales del historial del tutor
+        /^tutorThreadIndex:/,        // Índice de hilos del tutor por lectura
+        /^tutorActiveThread:/,       // Hilo activo por lectura
         /^activity_results_/,        // Resultados de actividades
         /^analysis_cache_/,          // Caché de análisis
         /^visor_highlights_/,        // Resaltados del visor
@@ -3932,6 +3935,8 @@ export const AppContextProvider = ({ children }) => {
         'tutorConvos',
         'annotations_migrated_v1',
         'tutorHistorial',
+        'tutorThreadIndex',
+        'tutorActiveThread',
         'analysis_cache_stats',
         'analysis_cache_metrics',
         // 🆕 Nuevas claves críticas para el problema de persistencia entre cursos

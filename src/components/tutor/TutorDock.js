@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useContext, useMemo } from 're
 import styled from 'styled-components';
 import TutorCore from './TutorCore';
 import useTutorPersistence from '../../hooks/useTutorPersistence';
+import useTutorThreads from '../../hooks/useTutorThreads';
 import useLocalStorageState from '../../hooks/useLocalStorageState';
 import useFollowUpQuestion from '../../hooks/useFollowUpQuestion';
 import useReaderActions from '../../hooks/useReaderActions';
@@ -103,6 +104,22 @@ function parseMarkdown(text) {
   return html;
 }
 
+function readLegacyTutorMessages(storageKey, max = 40) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((entry) => ({
+        role: entry?.r || entry?.role,
+        content: entry?.c || entry?.content
+      }))
+      .filter((m) => m.content)
+      .slice(-max);
+  } catch {
+    return [];
+  }
+}
+
 function TutorDockEffects({
   api,
   texto,
@@ -113,6 +130,7 @@ function TutorDockEffects({
   webEnrichmentEnabled,
   userId,
   textHash,
+  activeThreadId,
   initialMessages,
   messagesRef,
   setPendingExternal,
@@ -156,7 +174,7 @@ function TutorDockEffects({
       // Si no hay historial para este texto, limpiar mensajes
       currentApi.clear();
     } catch { /* noop */ }
-  }, [textHash, userId, initialMessages]);
+  }, [textHash, userId, activeThreadId, initialMessages]);
 
   // Suscribir acciones del visor SOLO cuando está montado el dock
   useReaderActions({
@@ -544,6 +562,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   const { texto, currentTextoId, sourceCourseId } = appCtx;
   const { currentUser } = useAuth();
   const userId = currentUser?.uid || 'guest';
+  const canSyncThreads = Boolean(currentUser?.uid);
   const [open, setOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   // 🚀 PERF: headerHidden nunca cambia (siempre false), usar constante
@@ -568,8 +587,59 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     try { return texto ? generateTextHash(texto, 'tutor') : 'tutor_empty'; } catch { return 'tutor_empty'; }
   }, [texto]);
   const courseScope = sourceCourseId || 'free';
+  const baseStorageKey = `tutorHistorial:${userId}:${courseScope}:${textHash}`;
 
-  const { initialMessages, handleMessagesChange, clearHistory } = useTutorPersistence({ storageKey: `tutorHistorial:${userId}:${courseScope}:${textHash}`, max: 40 });
+  const {
+    threads,
+    activeThreadId,
+    loading: threadsLoading,
+    selectThread,
+    createThread,
+    deleteThread,
+  } = useTutorThreads({
+    userId,
+    courseScope,
+    textHash,
+    enabled: canSyncThreads,
+    maxThreads: 5,
+  });
+
+  const bootstrapThreadRef = React.useRef(false);
+
+  useEffect(() => {
+    if (!canSyncThreads || threadsLoading) return;
+    if (threads.length > 0) {
+      bootstrapThreadRef.current = false;
+    }
+    if (threads.length > 0) {
+      if (!activeThreadId) {
+        try { selectThread(threads[0].id); } catch { /* noop */ }
+      }
+      return;
+    }
+    if (bootstrapThreadRef.current) return;
+    bootstrapThreadRef.current = true;
+    const legacyMessages = readLegacyTutorMessages(baseStorageKey, 40);
+    createThread(legacyMessages).catch(() => { /* noop */ });
+  }, [canSyncThreads, threadsLoading, threads, activeThreadId, selectThread, createThread, baseStorageKey]);
+
+  const {
+    initialMessages,
+    handleMessagesChange,
+    clearHistory,
+    quotaExceeded,
+    synced,
+    conflictCount,
+  } = useTutorPersistence({
+    storageKey: baseStorageKey,
+    max: 40,
+    syncEnabled: canSyncThreads,
+    userId,
+    courseScope,
+    textHash,
+    threadId: canSyncThreads ? activeThreadId : null,
+    debounceMs: 2000,
+  });
   // Preferencia de follow-ups: si no viene prop, leer de localStorage (apagado por defecto - user scoped)
   const [followUpsEnabled, setFollowUpsEnabled] = useLocalStorageState(`tutorFollowUpsEnabled:${userId}`, false, {
     legacyKeys: ['tutorFollowUpsEnabled']
@@ -717,6 +787,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
               webEnrichmentEnabled={webEnrichmentEnabled}
               userId={userId}
               textHash={textHash}
+              activeThreadId={activeThreadId}
               initialMessages={initialMessages}
               messagesRef={messagesRef}
               setPendingExternal={setPendingExternal}
@@ -774,6 +845,70 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                   <SettingsPanel>
                     {/* ── Fila 1: Ajustes de respuesta ── */}
                     <SettingsRow>
+                      {canSyncThreads && (
+                        <>
+                          <label title="Selecciona el hilo activo de esta lectura">
+                            🧵 Hilo:
+                            <select
+                              value={activeThreadId || ''}
+                              onChange={(e) => {
+                                const nextId = e.target.value;
+                                if (!nextId) return;
+                                selectThread(nextId);
+                              }}
+                              disabled={threadsLoading || !threads.length}
+                            >
+                              {threads.map((thread, index) => (
+                                <option key={thread.id} value={thread.id}>
+                                  {`${index + 1}. ${thread.title || 'Nuevo hilo'}`}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <ActionButton
+                            onClick={async () => {
+                              try {
+                                await createThread([]);
+                              } catch (err) {
+                                logger.error('[TutorDock] Error creando hilo:', err);
+                              }
+                            }}
+                            disabled={threadsLoading || api.loading}
+                            style={{ background: '#2563eb', color: 'white' }}
+                            title="Crear un nuevo hilo de conversación"
+                          >
+                            ➕ Nuevo hilo
+                          </ActionButton>
+
+                          <ActionButton
+                            onClick={async () => {
+                              try {
+                                if (!activeThreadId) return;
+                                if (threads.length <= 1) {
+                                  api.clear();
+                                  clearHistory();
+                                  return;
+                                }
+                                if (!window.confirm('¿Eliminar este hilo?')) return;
+                                await deleteThread(activeThreadId);
+                              } catch (err) {
+                                logger.error('[TutorDock] Error eliminando hilo:', err);
+                              }
+                            }}
+                            disabled={!activeThreadId || threadsLoading || api.loading}
+                            style={{ background: '#dc2626', color: 'white' }}
+                            title="Eliminar hilo activo"
+                          >
+                            🗑️ Eliminar hilo
+                          </ActionButton>
+
+                          <span style={{ fontSize: '.75rem', opacity: .85 }}>
+                            {synced ? '☁️ Sincronizado' : '💾 Local'}{conflictCount > 0 ? ` · ⚠️ Conflictos: ${conflictCount}` : ''}
+                          </span>
+                        </>
+                      )}
+
                       <label title="Controla qué tan extensas son las respuestas">
                         📏 Longitud:
                         <select
@@ -930,17 +1065,30 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
 
                       <ActionButton
                         onClick={() => {
-                          if (window.confirm('¿Seguro que quieres borrar todo el historial?')) {
+                          if (window.confirm('¿Seguro que quieres limpiar el hilo actual?')) {
                             try { api.clear(); clearHistory(); } catch { }
                           }
                         }}
                         style={{ background: '#ef4444', color: 'white' }}
-                        title="Borrar historial"
+                        title="Limpiar hilo activo"
                       >
-                        🧹 Limpiar
+                        🧹 Limpiar hilo
                       </ActionButton>
                     </SettingsRow>
                   </SettingsPanel>
+                )}
+
+                {quotaExceeded && (
+                  <div style={{
+                    margin: '0 .8rem .4rem',
+                    padding: '.45rem .55rem',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    color: '#b91c1c',
+                    fontSize: '.8rem'
+                  }}>
+                    ⚠️ No se pudo guardar en almacenamiento local. Libera espacio del navegador.
+                  </div>
                 )}
 
                 <Messages ref={messagesRef}>
