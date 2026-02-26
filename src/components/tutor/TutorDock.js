@@ -131,11 +131,17 @@ function TutorDockEffects({
   userId,
   textHash,
   activeThreadId,
+  historyScopeKey,
   initialMessages,
   messagesRef,
   setPendingExternal,
   followUpsEnabled,
 }) {
+    const initialMessagesRef = React.useRef(initialMessages);
+    useEffect(() => {
+      initialMessagesRef.current = initialMessages;
+    }, [initialMessages]);
+
   // api cambia de identidad con frecuencia (se construye en TutorCore).
   // Guardamos una referencia estable para usarla dentro de effects sin depender de `api`.
   const apiRef = React.useRef(api);
@@ -159,22 +165,24 @@ function TutorDockEffects({
     } catch { /* noop */ }
   }, [texto, lengthMode, temperature, webEnrichmentEnabled, currentTextoId, sourceCourseId]);
 
-  // Reiniciar/rehidratar historial al cambiar de texto
+  // Reiniciar/rehidratar historial SOLO cuando cambia el scope lógico
+  // (texto/usuario/hilo). Evita cancelar streaming por snapshots remotos.
   useEffect(() => {
     try {
       const currentApi = apiRef.current;
       // Invalida peticiones del texto anterior sin sobrescribir historial del nuevo texto.
       try { currentApi.cancelPending?.(); } catch { /* noop */ }
 
-      if (Array.isArray(initialMessages) && initialMessages.length > 0) {
-        currentApi.loadMessages(initialMessages);
+      const scopedMessages = initialMessagesRef.current;
+      if (Array.isArray(scopedMessages) && scopedMessages.length > 0) {
+        currentApi.loadMessages(scopedMessages);
         return;
       }
 
       // Si no hay historial para este texto, limpiar mensajes
       currentApi.clear();
     } catch { /* noop */ }
-  }, [textHash, userId, activeThreadId, initialMessages]);
+  }, [historyScopeKey]);
 
   // Suscribir acciones del visor SOLO cuando está montado el dock
   useReaderActions({
@@ -562,7 +570,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   const { texto, currentTextoId, sourceCourseId } = appCtx;
   const { currentUser } = useAuth();
   const userId = currentUser?.uid || 'guest';
-  const canSyncThreads = Boolean(currentUser?.uid);
+  const hasCloudUser = Boolean(currentUser?.uid);
   const [open, setOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   // 🚀 PERF: headerHidden nunca cambia (siempre false), usar constante
@@ -588,6 +596,12 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   }, [texto]);
   const courseScope = sourceCourseId || 'free';
   const baseStorageKey = `tutorHistorial:${userId}:${courseScope}:${textHash}`;
+  const [cloudSyncEnabled, setCloudSyncEnabled] = useLocalStorageState(`tutorCloudSyncEnabled:${userId}`, false, {
+    serialize: (v) => String(v === true),
+    deserialize: (raw) => raw === 'true',
+    legacyKeys: ['tutorCloudSyncEnabled']
+  });
+  const canSyncThreads = hasCloudUser && cloudSyncEnabled;
 
   const {
     threads,
@@ -603,6 +617,8 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     enabled: canSyncThreads,
     maxThreads: 5,
   });
+
+  const historyScopeKey = useMemo(() => `${userId}:${textHash}:${activeThreadId || 'no-thread'}`, [userId, textHash, activeThreadId]);
 
   const bootstrapThreadRef = React.useRef(false);
 
@@ -788,6 +804,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
               userId={userId}
               textHash={textHash}
               activeThreadId={activeThreadId}
+              historyScopeKey={historyScopeKey}
               initialMessages={initialMessages}
               messagesRef={messagesRef}
               setPendingExternal={setPendingExternal}
@@ -845,6 +862,23 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                   <SettingsPanel>
                     {/* ── Fila 1: Ajustes de respuesta ── */}
                     <SettingsRow>
+                      {hasCloudUser && (
+                        <label title="Guardar conversaciones en nube para recuperarlas en otros dispositivos">
+                          <input
+                            type="checkbox"
+                            checked={cloudSyncEnabled}
+                            onChange={(e) => setCloudSyncEnabled(e.target.checked)}
+                          />
+                          Sincronizar nube
+                        </label>
+                      )}
+
+                      {!canSyncThreads && hasCloudUser && (
+                        <span style={{ fontSize: '.75rem', opacity: .85 }}>
+                          💾 Solo local
+                        </span>
+                      )}
+
                       {canSyncThreads && (
                         <>
                           <label title="Selecciona el hilo activo de esta lectura">

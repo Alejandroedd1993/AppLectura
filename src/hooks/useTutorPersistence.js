@@ -88,12 +88,14 @@ export default function useTutorPersistence(options = {}) {
   const fsEnabled = Boolean(syncEnabled && userId && userId !== 'guest' && threadId && isConfigValid);
   const localInitialMessages = useMemo(() => readStorage(storageKey, max), [storageKey, max]);
 
-  const [initialMessages, setInitialMessages] = useState(localInitialMessages);
+  const [remoteMessages, setRemoteMessages] = useState(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [synced, setSynced] = useState(false);
   const [lastSynced, setLastSynced] = useState(0);
   const [conflictCount, setConflictCount] = useState(0);
   const [lastConflictAt, setLastConflictAt] = useState(0);
+
+  const initialMessages = remoteMessages || localInitialMessages;
 
   const timerRef = useRef(null);
   const latestCompactRef = useRef(toCompact(localInitialMessages, max));
@@ -101,7 +103,7 @@ export default function useTutorPersistence(options = {}) {
   const lastLocalUpdatedAtRef = useRef(readMeta(metaKey) || Date.now());
 
   useEffect(() => {
-    setInitialMessages(localInitialMessages);
+    setRemoteMessages(null);
     latestCompactRef.current = toCompact(localInitialMessages, max);
     lastLocalUpdatedAtRef.current = readMeta(metaKey) || Date.now();
     setQuotaExceeded(false);
@@ -133,7 +135,7 @@ export default function useTutorPersistence(options = {}) {
       if (event.key !== storageKey) return;
       if (event.newValue == null) {
         latestCompactRef.current = [];
-        setInitialMessages(EMPTY_MESSAGES);
+        setRemoteMessages(EMPTY_MESSAGES);
         recordConflict();
         return;
       }
@@ -146,7 +148,7 @@ export default function useTutorPersistence(options = {}) {
         if (incomingSignature === currentSignature) return;
 
         latestCompactRef.current = incomingCompact;
-        setInitialMessages(incoming);
+        setRemoteMessages(incoming);
         const now = Date.now();
         lastLocalUpdatedAtRef.current = Math.max(lastLocalUpdatedAtRef.current || 0, now);
         writeMeta(metaKey, now);
@@ -241,7 +243,7 @@ export default function useTutorPersistence(options = {}) {
       const remoteMessages = normalizeMessages(remote.messages, max);
 
       if (remoteUpdatedAt > localUpdatedAt && remoteMessages !== EMPTY_MESSAGES) {
-        setInitialMessages(remoteMessages);
+        setRemoteMessages(remoteMessages);
         latestCompactRef.current = toCompact(remoteMessages, max);
         try {
           localStorage.setItem(storageKey, JSON.stringify(latestCompactRef.current));
@@ -266,7 +268,7 @@ export default function useTutorPersistence(options = {}) {
       const remoteMessages = normalizeMessages(remote.messages, max);
       if (remoteMessages === EMPTY_MESSAGES && latestCompactRef.current.length > 0) return;
 
-      setInitialMessages(remoteMessages);
+      setRemoteMessages(remoteMessages);
       latestCompactRef.current = toCompact(remoteMessages, max);
       try {
         localStorage.setItem(storageKey, JSON.stringify(latestCompactRef.current));
@@ -289,7 +291,7 @@ export default function useTutorPersistence(options = {}) {
       localStorage.removeItem(storageKey);
       localStorage.removeItem(metaKey);
       latestCompactRef.current = [];
-      setInitialMessages(EMPTY_MESSAGES);
+      setRemoteMessages(EMPTY_MESSAGES);
     } catch { /* noop */ }
   }, [storageKey, metaKey]);
 
