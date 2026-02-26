@@ -32,4 +32,10 @@ describe('generateFollowUp heurística', () => {
     const res = generateFollowUp(base);
     expect(res).toMatch(/resulta más relevante/);
   });
+
+  test('contextualiza enumeración con tema relevante', () => {
+    const txt = 'Texto extenso que enumera primero causas estructurales, segundo efectos sociales y tercero respuestas pedagógicas para una lectura crítica sostenida. Además, incorpora matices históricos y culturales que obligan a comparar perspectivas y priorizar argumentos dentro de un mismo marco de análisis.';
+    const res = generateFollowUp(txt, { lastUserMessage: 'Quiero entender mejor los efectos sociales de este argumento.' });
+    expect(res).toMatch(/Entre los puntos mencionados sobre/);
+  });
 });

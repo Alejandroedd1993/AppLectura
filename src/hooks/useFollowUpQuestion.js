@@ -1,5 +1,34 @@
 import { useRef } from 'react';
 
+function extractKeywords(text, max = 5) {
+  try {
+    const stop = new Set([
+      'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'lo', 'al', 'del', 'de', 'en', 'con', 'por', 'para', 'que', 'es', 'son', 'se', 'su', 'sus', 'como', 'más', 'muy', 'todo', 'toda', 'todos', 'todas', 'este', 'esta', 'estos', 'estas', 'eso', 'esa', 'ese', 'aqui', 'aquí', 'alli', 'allí', 'hacia', 'desde', 'entre', 'sobre', 'tambien', 'también', 'pero', 'aunque', 'sin', 'embargo', 'no', 'si', 'sí', 'ya', 'porque', 'cuando', 'donde', 'dónde', 'quien', 'quién', 'cual', 'cuál', 'cuales', 'cuáles', 'cuanto', 'cuánto', 'cuantos', 'cuántos', 'pues', 'entonces', 'ademas', 'además', 'igual', 'mismo', 'misma', 'mismas', 'mismos', 'cada', 'otros', 'otras', 'otro', 'otra', 'ser', 'estar', 'haber', 'tener', 'hacer', 'poder', 'decir', 'ver', 'ir'
+    ]);
+    const raw = (text || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[^a-z\sáéíóúñ]/gi, ' ');
+    const tokens = raw.split(/\s+/).filter((w) => w.length > 3 && !stop.has(w));
+    const freq = {};
+    for (const token of tokens) freq[token] = (freq[token] || 0) + 1;
+    const entries = Object.entries(freq).filter(([, c]) => c >= (tokens.length > 20 ? 2 : 1));
+    return entries.sort((a, b) => b[1] - a[1]).slice(0, max).map(([w]) => w);
+  } catch {
+    return [];
+  }
+}
+
+function hasQuestionNearEnd(text) {
+  const normalized = String(text || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return false;
+  const tail = normalized.slice(-280);
+  return /\?\s*['"”’)\]»….!,:;\s]*$/u.test(tail) || /¿[^?]{6,}\?/u.test(tail);
+}
+
 /**
  * Genera preguntas de seguimiento heurísticas para fomentar metacognición.
  * Heurística inicial minimalista (sin llamada a modelo):
@@ -8,8 +37,12 @@ import { useRef } from 'react';
  *  - Detectar enumeraciones -> pedir relación/priorización
  *  - Extraer términos capitalizados para relaciones conceptuales
  */
-function generateFollowUp(responseText) {
+function generateFollowUp(responseText, context = {}) {
   if (!responseText || responseText.length < 150) return null;
+  const convoContext = `${responseText}\n${context?.lastUserMessage || ''}\n${context?.fragment || ''}`;
+  const keywords = extractKeywords(convoContext, 4);
+  const topic = keywords[0] || '';
+
   // Contexto literario simple: evita preguntas genéricas de "implicaciones prácticas"
   const literary = /(poema|poético|verso|estrofa|rima|metáfora|símbolo|imaginería|voz lírica)/i.test(responseText);
   if (literary) {
@@ -20,7 +53,10 @@ function generateFollowUp(responseText) {
   if (contrast) return '¿Qué factores podrían explicar el contraste que se menciona?';
 
   const enumeracion = /(\b1\b|•|-\s)/.test(responseText) || /\b(primero|segundo|tercero)\b/i.test(responseText);
-  if (enumeracion) return 'Entre los puntos mencionados, ¿cuál consideras más relevante y por qué?';
+  if (enumeracion) {
+    if (topic) return `Entre los puntos mencionados sobre ${topic}, ¿cuál consideras más relevante y por qué?`;
+    return 'Entre los puntos mencionados, ¿cuál consideras más relevante y por qué?';
+  }
 
   // Extraer posibles conceptos (evitar verbos/adjetivos comunes y palabras banales)
   const rawCaps = responseText.match(/\b[A-ZÁÉÍÓÚ][a-záéíóú]{3,}\b/g) || [];
@@ -34,6 +70,7 @@ function generateFollowUp(responseText) {
     }
   }
   // H12 FIX: Fallback contextualizado en lugar de pregunta genérica
+  if (topic) return `¿Qué parte de esta explicación sobre ${topic} te resulta más relevante para entender el texto?`;
   return '¿Qué parte de esta explicación te resulta más relevante para entender el texto?';
 }
 
@@ -51,8 +88,9 @@ export default function useFollowUpQuestion(options = {}) {
   const handler = (assistantMsg, api) => {
     if (!enabled || !assistantMsg || assistantMsg.role !== 'assistant') return;
     const content = assistantMsg.content || '';
-    // No reaccionar a nuestros propios follow-ups ni a mensajes ya interrogativos
-    if (content.startsWith(STOP_PREFIX) || /\?$/.test(content.trim())) return;
+    // No reaccionar a nuestros propios follow-ups ni a respuestas que ya cierran
+    // con pregunta natural del tutor (evita duplicados como "Tu turno").
+    if (content.startsWith(STOP_PREFIX) || hasQuestionNearEnd(content)) return;
     // Evitar generar follow-up para mensajes de error
     if (/⚠️/u.test(content)) return;
     // Evitar spam si llegan múltiples en ráfaga (stream futuro)
@@ -63,27 +101,18 @@ export default function useFollowUpQuestion(options = {}) {
     if (now - lastInjectedAtRef.current < COOLDOWN_MS) return;
 
     // Contexto del último action/fragment para personalizar la pregunta
-    let follow = generateFollowUp(content);
+    let follow = null;
     try {
       const ctx = api?.getContext?.();
       const frag = ctx?.lastAction?.fragment?.trim();
       const full = ctx?.lastAction?.fullText || '';
+      const messages = Array.isArray(api?.messages) ? api.messages : [];
+      const lastUserMessage = [...messages].reverse().find((m) => m?.role === 'user')?.content || '';
+
+      follow = generateFollowUp(content, { lastUserMessage, fragment: frag, fullText: full });
+
       // Extraer 3-5 palabras clave simples del contexto (muy barato)
-      const pickKeywords = (txt) => {
-        try {
-          const stop = new Set([
-            'el','la','los','las','un','una','unos','unas','lo','al','del','de','en','con','por','para','que','es','son','se','su','sus','como','más','muy','todo','toda','todos','todas','este','esta','estos','estas','eso','esa','ese','aqui','aquí','alli','allí','hacia','desde','entre','sobre','tambien','también','pero','aunque','sin','embargo','no','si','sí','ya','porque','cuando','donde','dónde','quien','quién','cual','cuál','cuales','cuáles','cuanto','cuánto','cuantos','cuántos','pues','entonces','ademas','además','igual','mismo','misma','mismas','mismos','cada','otros','otras','otro','otra','ser','estar','haber','tener','hacer','poder','decir','ver','ir'
-          ]);
-          const raw = (txt || '').toLowerCase().normalize('NFD').replace(/[^a-z\sáéíóúñ]/gi,' ');
-          const tokens = raw.split(/\s+/).filter(w => w.length > 3 && !stop.has(w));
-          const freq = {};
-          for (const t of tokens) freq[t] = (freq[t]||0) + 1;
-          // Aplicar umbral mínimo de frecuencia (>=2 si el texto es algo largo)
-          const entries = Object.entries(freq).filter(([_w, c]) => c >= (tokens.length > 20 ? 2 : 1));
-          return entries.sort((a,b)=>b[1]-a[1]).slice(0,5).map(([w])=>w);
-        } catch { return []; }
-      };
-      const kws = pickKeywords(frag || full);
+      const kws = extractKeywords(frag || full, 5);
       if (follow && (frag || kws.length)) {
         const foco = frag ? 'este fragmento' : 'el texto';
         const tag = kws.length ? ` (pista: ${kws.slice(0,3).join(', ')})` : '';
