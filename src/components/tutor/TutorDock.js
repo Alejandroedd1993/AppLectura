@@ -573,6 +573,8 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   const hasCloudUser = Boolean(currentUser?.uid);
   const [open, setOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [pendingCloudSync, setPendingCloudSync] = useState(false);
+  const [cloudSyncBusy, setCloudSyncBusy] = useState(false);
   // 🚀 PERF: headerHidden nunca cambia (siempre false), usar constante
   const headerHidden = false;
   // 🚀 PERF: _pendingExternal solo se escribe, nunca se lee para render → usar ref
@@ -646,6 +648,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     quotaExceeded,
     synced,
     conflictCount,
+    flushNow,
   } = useTutorPersistence({
     storageKey: baseStorageKey,
     max: 40,
@@ -656,6 +659,32 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     threadId: canSyncThreads ? activeThreadId : null,
     debounceMs: 2000,
   });
+
+  useEffect(() => {
+    if (!pendingCloudSync || !hasCloudUser || !cloudSyncEnabled) return;
+    let cancelled = false;
+
+    const runSync = async () => {
+      setCloudSyncBusy(true);
+      try {
+        if (!activeThreadId) {
+          const legacyMessages = readLegacyTutorMessages(baseStorageKey, 40);
+          await createThread(legacyMessages);
+        }
+        await Promise.resolve(flushNow?.());
+      } catch (err) {
+        logger.warn('[TutorDock] Error en sincronización manual:', err);
+      } finally {
+        if (!cancelled) {
+          setCloudSyncBusy(false);
+          setPendingCloudSync(false);
+        }
+      }
+    };
+
+    runSync();
+    return () => { cancelled = true; };
+  }, [pendingCloudSync, hasCloudUser, cloudSyncEnabled, activeThreadId, baseStorageKey, createThread, flushNow]);
   // Preferencia de follow-ups: si no viene prop, leer de localStorage (apagado por defecto - user scoped)
   const [followUpsEnabled, setFollowUpsEnabled] = useLocalStorageState(`tutorFollowUpsEnabled:${userId}`, false, {
     legacyKeys: ['tutorFollowUpsEnabled']
@@ -863,19 +892,22 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                     {/* ── Fila 1: Ajustes de respuesta ── */}
                     <SettingsRow>
                       {hasCloudUser && (
-                        <label title="Guardar conversaciones en nube para recuperarlas en otros dispositivos">
-                          <input
-                            type="checkbox"
-                            checked={cloudSyncEnabled}
-                            onChange={(e) => setCloudSyncEnabled(e.target.checked)}
-                          />
-                          Sincronizar nube
-                        </label>
+                        <ActionButton
+                          onClick={() => {
+                            if (!cloudSyncEnabled) setCloudSyncEnabled(true);
+                            setPendingCloudSync(true);
+                          }}
+                          disabled={cloudSyncBusy || api.loading}
+                          style={{ background: '#1d4ed8', color: 'white' }}
+                          title="Sincronizar conversación con la nube para recuperarla en otros dispositivos"
+                        >
+                          {cloudSyncBusy ? '⏳ Sincronizando...' : '☁️ Sincronizar'}
+                        </ActionButton>
                       )}
 
-                      {!canSyncThreads && hasCloudUser && (
+                      {hasCloudUser && (
                         <span style={{ fontSize: '.75rem', opacity: .85 }}>
-                          💾 Solo local
+                          {cloudSyncEnabled ? (synced ? '☁️ Sincronizado' : '☁️ Modo nube activo') : '💾 Solo local'}
                         </span>
                       )}
 
@@ -1038,36 +1070,6 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                         title="Exportar conversación como PDF (vista imprimible)"
                       >
                         🖨️ Exportar PDF
-                      </ActionButton>
-
-                      <ActionButton
-                        onClick={() => {
-                          try {
-                            const msgs = api.messages;
-                            if (!msgs || msgs.length === 0) return;
-                            const header = `=== Conversación con Tutor Inteligente ===\nFecha: ${new Date().toLocaleString('es-ES')}\nMensajes: ${msgs.length}\n${'='.repeat(44)}\n\n`;
-                            const body = msgs.map(m => {
-                              const role = m.role === 'user' ? '🧑 Estudiante' : '🧑‍🏫 Tutor';
-                              return `${role}:\n${m.content}\n`;
-                            }).join('\n---\n\n');
-                            const blob = new Blob([header + body], { type: 'text/plain;charset=utf-8' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `tutor_conversacion_${new Date().toISOString().slice(0, 10)}.txt`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                          } catch (err) {
-                            logger.error('[TutorDock] Error al guardar:', err);
-                          }
-                        }}
-                        disabled={!api.messages || api.messages.length === 0}
-                        style={{ background: '#2563eb', color: 'white' }}
-                        title="Descargar conversación como archivo de texto"
-                      >
-                        💾 Guardar
                       </ActionButton>
 
                       <ActionButton
