@@ -607,6 +607,13 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
   }, [localSessionsMap]);
 
   const loadDashboard = async () => {
+    let loadingReleased = false;
+    const releaseLoading = () => {
+      if (loadingReleased) return;
+      loadingReleased = true;
+      setLoading(false);
+    };
+
     try {
       setLoading(true);
       // 1. Cargar cursos
@@ -621,11 +628,8 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
       // 1.1 Limpieza de datos huérfanos (curso eliminado / baja por docente)
       try {
         const inferredCourseIds = inferCourseIdsFromBrowserData(currentUser.uid);
-        const cloudCleanupStats = await cleanupOrphanedStudentOwnedCourseData(currentUser.uid, activeCourseIds);
-
         const orphanCourseIds = Array.from(new Set([
-          ...(inferredCourseIds || []),
-          ...((cloudCleanupStats?.orphanCourseIds || []).filter(Boolean))
+          ...(inferredCourseIds || [])
         ])).filter((courseId) => !activeCourseIds.includes(courseId));
 
         if (orphanCourseIds.length > 0) {
@@ -637,10 +641,30 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
           logger.log('🧹 [TextoSelector] Limpieza de cursos huérfanos aplicada:', {
             uid: currentUser.uid,
             orphanCourseIds,
-            cloudCleanupStats,
             localCleanupStats
           });
         }
+
+        // No bloquear render por limpieza cloud (puede tardar o fallar por permisos)
+        cleanupOrphanedStudentOwnedCourseData(currentUser.uid, activeCourseIds)
+          .then((cloudCleanupStats) => {
+            const cloudOrphans = (cloudCleanupStats?.orphanCourseIds || []).filter(Boolean);
+            const finalOrphans = cloudOrphans.filter((courseId) => !activeCourseIds.includes(courseId));
+            if (!finalOrphans.length) return;
+            const localCleanupStats = cleanupMultipleCoursesBrowserData({
+              courseIds: finalOrphans,
+              userId: currentUser.uid
+            });
+            logger.log('🧹 [TextoSelector] Limpieza cloud huérfana aplicada (async):', {
+              uid: currentUser.uid,
+              orphanCourseIds: finalOrphans,
+              cloudCleanupStats,
+              localCleanupStats
+            });
+          })
+          .catch((cleanupError) => {
+            logger.warn('⚠️ [TextoSelector] Limpieza cloud huérfana async falló:', cleanupError);
+          });
       } catch (cleanupError) {
         logger.warn('⚠️ [TextoSelector] Error limpiando datos huérfanos por curso:', cleanupError);
       }
@@ -689,6 +713,8 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
 
       setCourses(enrichedCourses);
       setProgressMap(pMap);
+      // Liberar UI tan pronto estén los cursos y progreso principal
+      releaseLoading();
 
       // 4. 🆕 Cargar mapa de sesiones locales CON CLAVE COMPUESTA courseId_textoId
       const mergedSessions = await getAllSessionsMerged();
@@ -854,7 +880,7 @@ export default function TextoSelector({ onSelectText, onFreeAnalysis }) {
     } catch (error) {
       logger.error('Error loading dashboard:', error);
     } finally {
-      setLoading(false);
+      releaseLoading();
     }
   };
 
