@@ -128,9 +128,9 @@ function TutorDockEffects({
   lengthMode,
   temperature,
   webEnrichmentEnabled,
-  userId,
-  textHash,
-  activeThreadId,
+  userId: _userId,
+  textHash: _textHash,
+  activeThreadId: _activeThreadId,
   historyScopeKey,
   initialMessages,
   messagesRef,
@@ -624,6 +624,20 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
 
   const bootstrapThreadRef = React.useRef(false);
 
+  const runWithTimeout = useCallback(async (promiseFactory, timeoutMs = 12000) => {
+    let timeoutId;
+    try {
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('SYNC_TIMEOUT'));
+        }, timeoutMs);
+      });
+      return await Promise.race([Promise.resolve().then(promiseFactory), timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }, []);
+
   useEffect(() => {
     if (!canSyncThreads || threadsLoading) return;
     if (threads.length > 0) {
@@ -669,11 +683,15 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
       try {
         if (!activeThreadId) {
           const legacyMessages = readLegacyTutorMessages(baseStorageKey, 40);
-          await createThread(legacyMessages);
+          await runWithTimeout(() => createThread(legacyMessages), 12000);
         }
-        await Promise.resolve(flushNow?.());
+        await runWithTimeout(() => Promise.resolve(flushNow?.()), 12000);
       } catch (err) {
-        logger.warn('[TutorDock] Error en sincronización manual:', err);
+        if (err?.message === 'SYNC_TIMEOUT') {
+          logger.warn('[TutorDock] Timeout en sincronización manual');
+        } else {
+          logger.warn('[TutorDock] Error en sincronización manual:', err);
+        }
       } finally {
         if (!cancelled) {
           setCloudSyncBusy(false);
@@ -684,7 +702,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
 
     runSync();
     return () => { cancelled = true; };
-  }, [pendingCloudSync, hasCloudUser, cloudSyncEnabled, activeThreadId, baseStorageKey, createThread, flushNow]);
+  }, [pendingCloudSync, hasCloudUser, cloudSyncEnabled, activeThreadId, baseStorageKey, createThread, flushNow, runWithTimeout]);
   // Preferencia de follow-ups: si no viene prop, leer de localStorage (apagado por defecto - user scoped)
   const [followUpsEnabled, setFollowUpsEnabled] = useLocalStorageState(`tutorFollowUpsEnabled:${userId}`, false, {
     legacyKeys: ['tutorFollowUpsEnabled']
