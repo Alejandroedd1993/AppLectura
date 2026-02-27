@@ -623,6 +623,15 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   const historyScopeKey = useMemo(() => `${userId}:${textHash}:${activeThreadId || 'no-thread'}`, [userId, textHash, activeThreadId]);
 
   const bootstrapThreadRef = React.useRef(false);
+  const mountedRef = React.useRef(true);
+  const syncRunIdRef = React.useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const runWithTimeout = useCallback(async (promiseFactory, timeoutMs = 12000) => {
     let timeoutId;
@@ -674,18 +683,26 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     debounceMs: 2000,
   });
 
+  const createThreadRef = React.useRef(createThread);
+  const flushNowRef = React.useRef(flushNow);
+  const activeThreadIdRef = React.useRef(activeThreadId);
+
+  useEffect(() => { createThreadRef.current = createThread; }, [createThread]);
+  useEffect(() => { flushNowRef.current = flushNow; }, [flushNow]);
+  useEffect(() => { activeThreadIdRef.current = activeThreadId; }, [activeThreadId]);
+
   useEffect(() => {
     if (!pendingCloudSync || !hasCloudUser || !cloudSyncEnabled) return;
-    let cancelled = false;
+    const runId = ++syncRunIdRef.current;
 
     const runSync = async () => {
-      setCloudSyncBusy(true);
+      if (mountedRef.current) setCloudSyncBusy(true);
       try {
-        if (!activeThreadId) {
+        if (!activeThreadIdRef.current) {
           const legacyMessages = readLegacyTutorMessages(baseStorageKey, 40);
-          await runWithTimeout(() => createThread(legacyMessages), 12000);
+          await runWithTimeout(() => createThreadRef.current(legacyMessages), 12000);
         }
-        await runWithTimeout(() => Promise.resolve(flushNow?.()), 12000);
+        await runWithTimeout(() => Promise.resolve(flushNowRef.current?.()), 12000);
       } catch (err) {
         if (err?.message === 'SYNC_TIMEOUT') {
           logger.warn('[TutorDock] Timeout en sincronización manual');
@@ -693,7 +710,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
           logger.warn('[TutorDock] Error en sincronización manual:', err);
         }
       } finally {
-        if (!cancelled) {
+        if (mountedRef.current && syncRunIdRef.current === runId) {
           setCloudSyncBusy(false);
           setPendingCloudSync(false);
         }
@@ -701,8 +718,8 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     };
 
     runSync();
-    return () => { cancelled = true; };
-  }, [pendingCloudSync, hasCloudUser, cloudSyncEnabled, activeThreadId, baseStorageKey, createThread, flushNow, runWithTimeout]);
+    return undefined;
+  }, [pendingCloudSync, hasCloudUser, cloudSyncEnabled, baseStorageKey, runWithTimeout]);
   // Preferencia de follow-ups: si no viene prop, leer de localStorage (apagado por defecto - user scoped)
   const [followUpsEnabled, setFollowUpsEnabled] = useLocalStorageState(`tutorFollowUpsEnabled:${userId}`, false, {
     legacyKeys: ['tutorFollowUpsEnabled']
