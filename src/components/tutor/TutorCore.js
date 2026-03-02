@@ -139,6 +139,33 @@ function sanitizeExternalWebContext(raw, maxLen = 2800) {
   ].join('\n');
 }
 
+function normalizeOutboundMessages(messages, maxMessageChars = 9000) {
+  const allowedRoles = new Set(['system', 'user', 'assistant']);
+  if (!Array.isArray(messages)) return [];
+
+  return messages
+    .map((item) => {
+      const role = allowedRoles.has(String(item?.role || '').toLowerCase())
+        ? String(item.role).toLowerCase()
+        : 'user';
+      const rawContent = typeof item?.content === 'string' ? item.content : '';
+      const trimmed = rawContent.trim();
+      if (!trimmed) return null;
+
+      if (trimmed.length <= maxMessageChars) {
+        return { role, content: trimmed };
+      }
+
+      const suffix = '\n\n[contenido truncado automáticamente por límite técnico]';
+      const headLen = Math.max(0, maxMessageChars - suffix.length);
+      return {
+        role,
+        content: `${trimmed.slice(0, headLen)}${suffix}`
+      };
+    })
+    .filter(Boolean);
+}
+
 /**
  * Construye el system content unificado para callBackend y sendAction.
  * Recibe messagesRef como parámetro para no depender del scope del componente.
@@ -381,6 +408,11 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
   const callBackendWith = useCallback(async (messagesArr, retries = 0, isRegen = false) => {
     const myRequestId = ++requestIdRef.current;
+    const outboundMessages = normalizeOutboundMessages(messagesArr, 9000);
+
+    if (!outboundMessages.length) {
+      throw new Error('No hay contenido válido para enviar al tutor.');
+    }
 
     let authHeader = {};
     try {
@@ -427,7 +459,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           const client = new OpenAIClass();
           const completion = await client.chat.completions.create({
             model: 'gpt-4o-mini',
-            messages: messagesArr
+            messages: outboundMessages
           });
           clearTimeout(timeoutId);
 
@@ -487,7 +519,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           ...authHeader
         },
         body: JSON.stringify({
-          messages: messagesArr,
+          messages: outboundMessages,
           temperature: temperature,
           max_tokens: maxTokens,
           stream: true
