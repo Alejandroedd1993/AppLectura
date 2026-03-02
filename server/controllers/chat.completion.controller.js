@@ -55,6 +55,12 @@ function summarizeMessages(messages) {
   return { count: messages.length, totalChars, maxMessageChars };
 }
 
+function buildRequestId(req) {
+  const headerId = String(req.get('x-request-id') || req.get('x-correlation-id') || '').trim();
+  if (headerId) return headerId;
+  return `chat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function parseAllowedModels(envValue, fallbackCsv) {
   const raw = String(envValue || '').trim();
   const csv = raw || fallbackCsv;
@@ -108,6 +114,14 @@ function validateAndNormalizeMessages(messages) {
 
 export async function createChatCompletion(req, res) {
   try {
+    const requestId = buildRequestId(req);
+    res.setHeader('x-request-id', requestId);
+
+    const reject400 = (error, context = {}) => {
+      console.warn('⚠️ [chat/completion] 400', { requestId, error, ...context });
+      return res.status(400).json({ error, requestId });
+    };
+
     const {
       provider = 'deepseek',
       model,
@@ -120,12 +134,22 @@ export async function createChatCompletion(req, res) {
 
     const validatedMessages = validateAndNormalizeMessages(messages);
     if (!validatedMessages.ok) {
-      return res.status(400).json({ error: validatedMessages.error });
+      return reject400(validatedMessages.error, {
+        provider,
+        model: model || null,
+        ...summarizeMessages(messages)
+      });
     }
     const safeMessages = validatedMessages.messages;
 
     const cfg = getProviderConfig(provider);
-    if (!cfg) return res.status(400).json({ error: `Proveedor no soportado: ${provider}` });
+    if (!cfg) {
+      return reject400(`Proveedor no soportado: ${provider}`, {
+        provider,
+        model: model || null,
+        ...summarizeMessages(safeMessages)
+      });
+    }
 
     const configuredCap = safeNumber(process.env.CHAT_MAX_TOKENS_CAP, 4096);
     const resolvedMaxTokens = Math.min(Number(max_tokens || DEFAULT_MAX_TOKENS), configuredCap);
@@ -138,7 +162,8 @@ export async function createChatCompletion(req, res) {
     }
     if (!cfg.apiKey) {
       return res.status(503).json({
-        error: `Proveedor ${provider} no configurado en servidor`
+        error: `Proveedor ${provider} no configurado en servidor`,
+        requestId
       });
     }
 
@@ -148,9 +173,11 @@ export async function createChatCompletion(req, res) {
     if (provider === 'openai') {
       const allowed = parseAllowedModels(process.env.OPENAI_ALLOWED_MODELS, 'gpt-4o-mini');
       if (!allowed.has(selectedModel)) {
+        console.warn('⚠️ [chat/completion] 400', { requestId, error: `Modelo OpenAI no permitido: ${selectedModel}`, provider, selectedModel });
         return res.status(400).json({
           error: `Modelo OpenAI no permitido: ${selectedModel}`,
-          allowed_models: Array.from(allowed)
+          allowed_models: Array.from(allowed),
+          requestId
         });
       }
     }
@@ -159,9 +186,11 @@ export async function createChatCompletion(req, res) {
     if (provider === 'deepseek') {
       const allowed = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
       if (!allowed.has(selectedModel)) {
+        console.warn('⚠️ [chat/completion] 400', { requestId, error: `Modelo DeepSeek no permitido: ${selectedModel}`, provider, selectedModel });
         return res.status(400).json({
           error: `Modelo DeepSeek no permitido: ${selectedModel}`,
-          allowed_models: Array.from(allowed)
+          allowed_models: Array.from(allowed),
+          requestId
         });
       }
     }
@@ -169,9 +198,11 @@ export async function createChatCompletion(req, res) {
     if (provider === 'gemini') {
       const allowed = parseAllowedModels(process.env.GEMINI_ALLOWED_MODELS, 'gemini-1.5-flash');
       if (!allowed.has(selectedModel)) {
+        console.warn('⚠️ [chat/completion] 400', { requestId, error: `Modelo Gemini no permitido: ${selectedModel}`, provider, selectedModel });
         return res.status(400).json({
           error: `Modelo Gemini no permitido: ${selectedModel}`,
-          allowed_models: Array.from(allowed)
+          allowed_models: Array.from(allowed),
+          requestId
         });
       }
     }
@@ -321,9 +352,13 @@ export async function createChatCompletion(req, res) {
       latencyMs
     });
   } catch (error) {
-    console.error('❌ Error en createChatCompletion:', error);
+    const requestId = String(res.getHeader('x-request-id') || '').trim() || 'unknown';
+    console.error('❌ Error en createChatCompletion:', { requestId, error });
     const status = error.status || 500;
-    res.status(status).json({ error: error.message || 'Error interno generando completion' });
+    res.status(status).json({
+      error: error.message || 'Error interno generando completion',
+      requestId
+    });
   }
 }
 
