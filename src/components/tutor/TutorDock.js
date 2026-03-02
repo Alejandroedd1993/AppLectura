@@ -150,6 +150,7 @@ function TutorDockEffects({
   messagesRef,
   setPendingExternal,
   followUpsEnabled,
+  persistenceHydrating,
 }) {
     const initialMessagesRef = useRef(initialMessages);
 
@@ -202,10 +203,14 @@ function TutorDockEffects({
         return;
       }
 
+      // Evitar limpiar mientras el hilo remoto aún se está hidratando.
+      // Si limpiamos aquí, onMessagesChange puede persistir [] y pisar el hilo en Firestore.
+      if (persistenceHydrating) return;
+
       // Si no hay historial para este texto, limpiar mensajes
       currentApi.clear();
     } catch { /* noop */ }
-  }, [historyScopeKey]);
+  }, [historyScopeKey, persistenceHydrating]);
 
   // B5 FIX: Cuando los mensajes remotos llegan de forma asíncrona (Firestore getDoc/onSnapshot
   // respondiendo después del cambio de scope), cargarlos en TutorCore si:
@@ -661,6 +666,17 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     deserialize: (raw) => raw === 'true',
     legacyKeys: ['tutorCloudSyncEnabled']
   });
+
+  // UX: para usuarios autenticados, activar sync nube por defecto si no existe preferencia guardada.
+  useEffect(() => {
+    if (!hasCloudUser) return;
+    const prefKey = `tutorCloudSyncEnabled:${userId}`;
+    try {
+      const existing = localStorage.getItem(prefKey);
+      if (existing == null) setCloudSyncEnabled(true);
+    } catch { /* noop */ }
+  }, [hasCloudUser, userId, setCloudSyncEnabled]);
+
   const canSyncThreads = hasCloudUser && cloudSyncEnabled;
 
   const {
@@ -679,6 +695,10 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   });
 
   const historyScopeKey = useMemo(() => `${userId}:${textHash}:${activeThreadId || 'no-thread'}`, [userId, textHash, activeThreadId]);
+  const scopedStorageKey = useMemo(
+    () => (canSyncThreads && activeThreadId ? `${baseStorageKey}:${activeThreadId}` : baseStorageKey),
+    [canSyncThreads, activeThreadId, baseStorageKey]
+  );
 
   const bootstrapThreadRef = useRef(false);
   const mountedRef = useRef(true);
@@ -730,8 +750,9 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     synced,
     conflictCount,
     flushNow,
+    hydrating: persistenceHydrating,
   } = useTutorPersistence({
-    storageKey: baseStorageKey,
+    storageKey: scopedStorageKey,
     max: 40,
     syncEnabled: canSyncThreads,
     userId,
@@ -948,6 +969,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
               messagesRef={messagesRef}
               setPendingExternal={setPendingExternal}
               followUpsEnabled={followUpsEnabled}
+              persistenceHydrating={persistenceHydrating}
             />
             {!open && !expanded && (
               <ToggleFab onClick={handleToggle} title="Mostrar tutor">

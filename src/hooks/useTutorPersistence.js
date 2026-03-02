@@ -94,6 +94,7 @@ export default function useTutorPersistence(options = {}) {
   const [lastSynced, setLastSynced] = useState(0);
   const [conflictCount, setConflictCount] = useState(0);
   const [lastConflictAt, setLastConflictAt] = useState(0);
+  const [hydrating, setHydrating] = useState(Boolean(fsEnabled));
 
   const initialMessages = remoteMessages || localInitialMessages;
 
@@ -241,6 +242,8 @@ export default function useTutorPersistence(options = {}) {
   useEffect(() => {
     if (!fsEnabled) return undefined;
 
+    setHydrating(true);
+
     const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
 
     let isMounted = true;
@@ -249,6 +252,7 @@ export default function useTutorPersistence(options = {}) {
         // Q3 FIX: Usar flushRemoteRef.current en vez de flushRemote (closure)
         // para evitar dep faltante y garantizar que se usa la versión más reciente.
         if (latestCompactRef.current.length > 0) flushRemoteRef.current(latestCompactRef.current);
+        setHydrating(false);
         return;
       }
 
@@ -271,8 +275,10 @@ export default function useTutorPersistence(options = {}) {
       } else if (latestCompactRef.current.length > 0) {
         flushRemoteRef.current(latestCompactRef.current);
       }
+      setHydrating(false);
     }).catch((e) => {
       logger.warn('[useTutorPersistence] Error cargando hilo remoto:', e);
+      setHydrating(false);
     });
 
     const unsub = onSnapshot(threadRef, (snapshot) => {
@@ -329,6 +335,7 @@ export default function useTutorPersistence(options = {}) {
     clearHistory,
     quotaExceeded,
     synced,
+    hydrating,
     lastSynced,
     conflictCount,
     lastConflictAt,
