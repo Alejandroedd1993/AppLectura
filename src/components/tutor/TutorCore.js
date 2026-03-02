@@ -503,7 +503,16 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       if (!res.ok) {
         clearTimeout(timeoutId);
         const errorText = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${errorText || 'Respuesta no OK'}`);
+        let backendDetail = errorText || '';
+        try {
+          const parsed = JSON.parse(errorText || '{}');
+          backendDetail = String(parsed?.error || parsed?.message || backendDetail || '').trim();
+        } catch { /* noop */ }
+
+        const err = new Error(`HTTP ${res.status}: ${backendDetail || 'Respuesta no OK'}`);
+        err.httpStatus = res.status;
+        err.backendDetail = backendDetail;
+        throw err;
       }
 
       // 🌊 Crear mensaje placeholder y actualizarlo mientras llega el stream
@@ -655,6 +664,10 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
       // Si llegamos aquí, es un error no recuperable o se agotaron los reintentos
       const httpStatus = parseInt(e.message?.match(/HTTP (\d+)/)?.[1] || '0');
+      const backendDetail = String(e?.backendDetail || '').trim();
+      const shortBackendDetail = backendDetail.length > 220
+        ? `${backendDetail.slice(0, 220)}…`
+        : backendDetail;
       const errorMessage = isRetryableError && retries >= MAX_RETRIES
         ? '⚠️ El servidor tardó demasiado en responder. Por favor, intenta nuevamente.'
         : e.message?.includes('timeout') || e.name === 'TimeoutError'
@@ -662,11 +675,11 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           : httpStatus === 402
             ? '⚠️ El proveedor de IA rechazó la solicitud por saldo/crédito insuficiente (HTTP 402). Revisa tu API key o el saldo del proveedor.'
             : (httpStatus === 401 || httpStatus === 403)
-              ? '⚠️ No autorizado (HTTP 401/403). Revisa tu API key/permisos del proveedor de IA en ⚙️.'
+              ? `⚠️ No autorizado (HTTP 401/403). ${shortBackendDetail || 'Verifica tu sesión y permisos.'}`
               : e.message?.includes('HTTP 5')
                 ? '⚠️ Error del servidor. Por favor, intenta más tarde.'
                 : e.message?.includes('HTTP 4')
-                  ? '⚠️ Error en la solicitud. Por favor, verifica tu conexión.'
+                  ? `⚠️ Error en la solicitud (HTTP ${httpStatus || 400}). ${shortBackendDetail || 'Revisa los datos enviados.'}`
                   : '⚠️ Error obteniendo respuesta del tutor. Por favor, intenta nuevamente.';
 
       const errMsg = { id: Date.now() + '-error', role: 'assistant', content: errorMessage };
