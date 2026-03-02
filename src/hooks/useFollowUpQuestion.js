@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 
 function extractKeywords(text, max = 5) {
   try {
@@ -78,14 +78,27 @@ function generateFollowUp(responseText, context = {}) {
  * Hook que se integra con TutorCore vía prop onAssistantMessage.
  * Devuelve callback para pasar como onAssistantMessage y autoinyectar follow-up.
  */
+// P3 FIX: Constantes fuera del hook para evitar recreación
+const STOP_PREFIX = '🤔 Pregunta para profundizar:';
+const COOLDOWN_MS = 30000; // máx 1 follow-up cada 30s
+
 export default function useFollowUpQuestion(options = {}) {
   const { enabled = true, injectDelayMs = 250 } = options;
   const lastMessageRef = useRef(0);
   const lastInjectedAtRef = useRef(0);
-  const STOP_PREFIX = '🤔 Pregunta para profundizar:';
-  const COOLDOWN_MS = 30000; // máx 1 follow-up cada 30s
+  const timeoutRef = useRef(null);
 
-  const handler = (assistantMsg, api) => {
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  // P3 FIX: Memoizar handler para estabilizar onAssistantMessage pasado a TutorCore
+  const handler = useCallback((assistantMsg, api) => {
     if (!enabled || !assistantMsg || assistantMsg.role !== 'assistant') return;
     const content = assistantMsg.content || '';
     // No reaccionar a nuestros propios follow-ups ni a respuestas que ya cierran
@@ -124,13 +137,15 @@ export default function useFollowUpQuestion(options = {}) {
       }
     } catch { /* noop */ }
     if (!follow) return;
-    setTimeout(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
       try {
         api?.injectAssistant(STOP_PREFIX + ' ' + follow);
         lastInjectedAtRef.current = Date.now();
       } catch { /* noop */ }
+      timeoutRef.current = null;
     }, injectDelayMs);
-  };
+  }, [enabled, injectDelayMs]);
 
   return { onAssistantMessage: handler };
 }

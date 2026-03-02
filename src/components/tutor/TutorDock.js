@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useEffect, useContext, useMemo } from 'react';
-import styled from 'styled-components';
-import TutorCore from './TutorCore';
+import React, { useState, useCallback, useEffect, useContext, useMemo, useRef } from 'react'; // eslint-disable-line no-unused-vars -- React needed for JSX; used in <TutorCore> render-prop
+import styled, { keyframes } from 'styled-components';
+import TutorCore from './TutorCore'; // eslint-disable-line no-unused-vars -- used in JSX: <TutorCore>
 import useTutorPersistence from '../../hooks/useTutorPersistence';
 import useTutorThreads from '../../hooks/useTutorThreads';
 import useLocalStorageState from '../../hooks/useLocalStorageState';
@@ -11,6 +11,20 @@ import { generateTextHash } from '../../utils/cache';
 import { useAuth } from '../../context/AuthContext';
 
 import logger from '../../utils/logger';
+
+// P2 FIX: Constante estable fuera del componente — evita invalidar callbacks de TutorCore
+const NOOP_CB = () => {};
+
+// P6 FIX: Regex precompiladas para parseMarkdown — evitan recompilación en cada llamada
+const RE_BOLD = /\*\*(.+?)\*\*/g;
+const RE_ITALIC = /\*(.+?)\*/g;
+const RE_CODE = /`([^`]+)`/g;
+const RE_LISTS = /((?:^\d+\.\s+.+$\n?)+|(?:^[-*]\s+.+$\n?)+)/gm;
+const RE_OL_ITEMS = /^\d+\.\s+(.+)$/gm;
+const RE_UL_ITEMS = /^[-*]\s+(.+)$/gm;
+const RE_LINKS = /\[([^\]]+)\]\(([^)]+)\)/g;
+const RE_SOCRATIC = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)(<\/p>)?\s*$/;
+
 /**
  * Función simple para convertir markdown básico a HTML
  * Soporta: **negrita**, *cursiva*, `código`, listas, links
@@ -50,38 +64,39 @@ function parseMarkdown(text) {
   let html = escapeHtml(text);
 
   // **negrita**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(RE_BOLD, '<strong>$1</strong>');
 
   // *cursiva*
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  html = html.replace(RE_ITALIC, '<em>$1</em>');
 
   // `código`
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(RE_CODE, '<code>$1</code>');
 
   // H9 FIX: Procesar listas en una sola pasada para evitar doble-envolvimiento
-  html = html.replace(/((?:^\d+\.\s+.+$\n?)+|(?:^[-*]\s+.+$\n?)+)/gm, (block) => {
+  html = html.replace(RE_LISTS, (block) => {
     const isOrdered = /^\d+\./.test(block);
     const tag = isOrdered ? 'ol' : 'ul';
     const items = block.replace(
-      isOrdered ? /^\d+\.\s+(.+)$/gm : /^[-*]\s+(.+)$/gm,
+      isOrdered ? RE_OL_ITEMS : RE_UL_ITEMS,
       '<li>$1</li>'
     );
     return `<${tag}>${items}</${tag}>`;
   });
 
   // Links [texto](url) - sanitizar protocolo y escapar href
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, linkText, linkUrl) => {
+  html = html.replace(RE_LINKS, (_m, linkText, linkUrl) => {
     const href = sanitizeHref(linkUrl);
     if (!href) return `${linkText} (${linkUrl})`;
     return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${linkText}</a>`;
   });
 
   // Párrafos (doble salto de línea)
-  // F4 FIX: No envolver bloques que ya contienen elementos de bloque (ol, ul, div)
+  // F4+H4 FIX: No envolver bloques que contienen elementos de bloque en cualquier posición
+  // (no solo al inicio). Detectar <ol|ul|div|blockquote|li|table> en cualquier parte.
   html = html.split('\n\n').map(p => {
     const trimmed = p.trim();
     if (!trimmed) return '';
-    if (/^<(?:ol|ul|div|blockquote)/i.test(trimmed)) return trimmed;
+    if (/<(?:ol|ul|div|blockquote|li|table)[\s>]/i.test(trimmed)) return trimmed;
     return `<p>${trimmed}</p>`;
   }).join('\n');
 
@@ -89,10 +104,8 @@ function parseMarkdown(text) {
   // Buscamos si el final del mensaje (o el último párrafo) contiene una pregunta.
   // Seleccionamos desde el inicio de la oración socrática hasta el cierre ?.
   // Modificado: Buscamos por final de texto o final de <p>
-  const socraticRegex = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)(<\/p>)?\s*$/;
-
-  if (socraticRegex.test(html)) {
-    html = html.replace(socraticRegex, (match, pregunta, cierreP) => {
+  if (RE_SOCRATIC.test(html)) {
+    html = html.replace(RE_SOCRATIC, (match, pregunta, cierreP) => {
       // Envolver la pregunta en un div con una clase específica para estilizarla
       const box = `<div class="socratic-question" style="background: rgba(37, 99, 235, 0.1); border-left: 3px solid #2563eb; padding: 0.5rem 0.75rem; margin-top: 0.5rem; border-radius: 4px; font-style: italic;">
         💡 <strong>Tu turno:</strong><br/>${pregunta}
@@ -120,6 +133,7 @@ function readLegacyTutorMessages(storageKey, max = 40) {
   }
 }
 
+// eslint-disable-next-line no-unused-vars -- used in render-prop JSX: <TutorDockEffects />
 function TutorDockEffects({
   api,
   texto,
@@ -137,17 +151,22 @@ function TutorDockEffects({
   setPendingExternal,
   followUpsEnabled,
 }) {
-    const initialMessagesRef = React.useRef(initialMessages);
-    useEffect(() => {
-      initialMessagesRef.current = initialMessages;
-    }, [initialMessages]);
+    const initialMessagesRef = useRef(initialMessages);
 
   // api cambia de identidad con frecuencia (se construye en TutorCore).
   // Guardamos una referencia estable para usarla dentro de effects sin depender de `api`.
-  const apiRef = React.useRef(api);
+  const apiRef = useRef(api);
+
+  // B5 FIX: Rastrear el scope y la firma del último loadMessages para detectar
+  // mensajes remotos (Firestore) que llegan de forma asíncrona en un render posterior.
+  const lastLoadedScopeRef = useRef(null);
+  const lastLoadedSignatureRef = useRef(null);
+
+  // Q3 FIX: Consolidar sincronización de refs de TutorDockEffects en 1 efecto
   useEffect(() => {
+    initialMessagesRef.current = initialMessages;
     apiRef.current = api;
-  }, [api]);
+  }, [initialMessages, api]);
 
   // Establecer contexto base con el texto completo y lectureId cuando cambie
   // H3 FIX: Usar apiRef.current dentro del effect en lugar de api en deps
@@ -174,6 +193,10 @@ function TutorDockEffects({
       try { currentApi.cancelPending?.(); } catch { /* noop */ }
 
       const scopedMessages = initialMessagesRef.current;
+      const sig = JSON.stringify(scopedMessages || []);
+      lastLoadedScopeRef.current = historyScopeKey;
+      lastLoadedSignatureRef.current = sig;
+
       if (Array.isArray(scopedMessages) && scopedMessages.length > 0) {
         currentApi.loadMessages(scopedMessages);
         return;
@@ -183,6 +206,24 @@ function TutorDockEffects({
       currentApi.clear();
     } catch { /* noop */ }
   }, [historyScopeKey]);
+
+  // B5 FIX: Cuando los mensajes remotos llegan de forma asíncrona (Firestore getDoc/onSnapshot
+  // respondiendo después del cambio de scope), cargarlos en TutorCore si:
+  //   1. El scope actual sigue siendo el mismo (no hubo otro cambio de hilo/texto)
+  //   2. El contenido realmente cambió (evitar bucles)
+  useEffect(() => {
+    if (!Array.isArray(initialMessages) || !initialMessages.length) return;
+    if (lastLoadedScopeRef.current !== historyScopeKey) return;
+    const sig = JSON.stringify(initialMessages);
+    if (sig === lastLoadedSignatureRef.current) return;
+    lastLoadedSignatureRef.current = sig;
+    try {
+      // R14 FIX: Si hay una petición/stream en curso, cancelarla antes de hidratar
+      // mensajes remotos tardíos del mismo scope para evitar mezcla de estados.
+      try { apiRef.current?.cancelPending?.(); } catch { /* noop */ }
+      apiRef.current?.loadMessages?.(initialMessages);
+    } catch { /* noop */ }
+  }, [initialMessages, historyScopeKey]);
 
   // Suscribir acciones del visor SOLO cuando está montado el dock
   useReaderActions({
@@ -270,6 +311,7 @@ function TutorDockEffects({
   return null;
 }
 
+/* eslint-disable no-unused-vars -- styled-components used in render-prop JSX below; ESLint can't trace render-prop usage */
 const DockWrapper = styled.div`
   position: fixed;
   right: ${p => p.$expanded ? '0' : '1.25rem'};
@@ -422,6 +464,21 @@ const LoadingIndicator = styled(Msg)`
   }
 `;
 
+// P6 FIX: Animación de spinner como keyframes de styled-components (evita inyectar <style> en cada render)
+const spinAnim = keyframes`
+  to { transform: rotate(360deg); }
+`;
+
+const SpinnerIcon = styled.span`
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: ${spinAnim} 0.8s linear infinite;
+`;
+
 const Footer = styled.form`
   padding: .4rem .55rem .55rem;
   border-top: 1px solid ${p => p.theme?.border || '#ddd'};
@@ -564,6 +621,7 @@ const ToggleFab = styled.button`
   justify-content: center;
 `;
 
+/* eslint-enable no-unused-vars */
 // VERSION MARKER: v3.0.1-performance-fix-jan26
 export default function TutorDock({ followUps, expanded = false, onToggleExpand, onClose }) {
   const appCtx = useContext(AppContext) || {};
@@ -578,7 +636,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   // 🚀 PERF: headerHidden nunca cambia (siempre false), usar constante
   const headerHidden = false;
   // 🚀 PERF: _pendingExternal solo se escribe, nunca se lee para render → usar ref
-  const pendingExternalRef = React.useRef(null);
+  const pendingExternalRef = useRef(null);
   const setPendingExternal = useCallback((v) => { pendingExternalRef.current = v; }, []);
   // isSaving eliminado: la persistencia única es useTutorPersistence (localStorage, sincrónico)
 
@@ -622,9 +680,9 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
 
   const historyScopeKey = useMemo(() => `${userId}:${textHash}:${activeThreadId || 'no-thread'}`, [userId, textHash, activeThreadId]);
 
-  const bootstrapThreadRef = React.useRef(false);
-  const mountedRef = React.useRef(true);
-  const syncRunIdRef = React.useRef(0);
+  const bootstrapThreadRef = useRef(false);
+  const mountedRef = useRef(true);
+  const syncRunIdRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -683,13 +741,16 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     debounceMs: 2000,
   });
 
-  const createThreadRef = React.useRef(createThread);
-  const flushNowRef = React.useRef(flushNow);
-  const activeThreadIdRef = React.useRef(activeThreadId);
+  const createThreadRef = useRef(createThread);
+  const flushNowRef = useRef(flushNow);
+  const activeThreadIdRef = useRef(activeThreadId);
 
-  useEffect(() => { createThreadRef.current = createThread; }, [createThread]);
-  useEffect(() => { flushNowRef.current = flushNow; }, [flushNow]);
-  useEffect(() => { activeThreadIdRef.current = activeThreadId; }, [activeThreadId]);
+  // P5 FIX: Consolidar 3 efectos de sincronización de refs en 1
+  useEffect(() => {
+    createThreadRef.current = createThread;
+    flushNowRef.current = flushNow;
+    activeThreadIdRef.current = activeThreadId;
+  }, [createThread, flushNow, activeThreadId]);
 
   useEffect(() => {
     if (!pendingCloudSync || !hasCloudUser || !cloudSyncEnabled) return;
@@ -728,7 +789,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     if (typeof followUps === 'boolean') {
       setFollowUpsEnabled(followUps);
     }
-  }, [followUps]);
+  }, [followUps, setFollowUpsEnabled]);
   const { onAssistantMessage } = useFollowUpQuestion({ enabled: followUpsEnabled });
   const [lengthMode, setLengthMode] = useLocalStorageState(`tutorLengthMode:${userId}`, 'auto', {
     serialize: (v) => String(v),
@@ -750,11 +811,23 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
   });
 
   // Ref para el textarea autoexpandible del chat
-  const chatInputRef = React.useRef(null);
+  const chatInputRef = useRef(null);
   // Ref para el contenedor de mensajes (para auto-scroll)
-  const messagesRef = React.useRef(null);
+  const messagesRef = useRef(null);
 
   const handleToggle = () => setOpen(o => !o);
+
+  // P5 FIX: widthRef para que handleMouseDown no dependa de width (evita recrear en cada frame del drag)
+  const widthRef = useRef(width);
+  useEffect(() => { widthRef.current = width; }, [width]);
+
+  // P5 FIX: resizeCleanupRef para limpiar listeners si el componente se desmonta durante drag
+  const resizeCleanupRef = useRef(null);
+  useEffect(() => {
+    return () => {
+      if (resizeCleanupRef.current) resizeCleanupRef.current();
+    };
+  }, []);
 
   // Redimensionamiento con mouse
   const handleMouseDown = useCallback((e) => {
@@ -763,7 +836,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     setIsResizing(true);
 
     const startX = e.clientX;
-    const startWidth = width;
+    const startWidth = widthRef.current;
     let rafId = null;
     let latestWidth = startWidth;
 
@@ -786,11 +859,13 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
       setIsResizing(false);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      resizeCleanupRef.current = null;
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [expanded, width]);
+    resizeCleanupRef.current = handleMouseUp;
+  }, [expanded]);
 
   // 🚀 PERF: Debounce la notificación de cambio de ancho al workspace
   useEffect(() => {
@@ -804,7 +879,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
 
   return (
     <TutorCore
-      onBusyChange={() => { }}
+      onBusyChange={NOOP_CB}
       initialMessages={initialMessages}
       onMessagesChange={handleMessagesChange}
       onAssistantMessage={onAssistantMessage}
@@ -993,6 +1068,13 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                                 }
                                 if (!window.confirm('¿Eliminar este hilo?')) return;
                                 await deleteThread(activeThreadId);
+                                // B16 FIX: NO eliminar baseStorageKey de localStorage.
+                                // La clave de almacenamiento es compartida entre todos los
+                                // hilos del mismo texto (no incluye threadId). Eliminarla
+                                // borra el caché del hilo recién activado por deleteThread.
+                                // El cambio de activeThreadId dispara useTutorPersistence
+                                // que sobrescribirá el localStorage con los datos correctos
+                                // del nuevo hilo activo (vía Firestore o caché existente).
                               } catch (err) {
                                 logger.error('[TutorDock] Error eliminando hilo:', err);
                               }
@@ -1178,23 +1260,9 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                   {api.loading && (
                     <LoadingIndicator $user={false}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          width: '12px',
-                          height: '12px',
-                          border: '2px solid',
-                          borderColor: 'transparent',
-                          borderTopColor: 'currentColor',
-                          borderRadius: '50%',
-                          animation: 'spin 0.8s linear infinite'
-                        }} />
+                        <SpinnerIcon />
                         Pensando...
                       </span>
-                      <style>{`
-                        @keyframes spin {
-                          to { transform: rotate(360deg); }
-                        }
-                      `}</style>
                     </LoadingIndicator>
                   )}
                 </Messages>
@@ -1243,15 +1311,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                   <Btn type="submit" disabled={api.loading}>
                     {api.loading ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          width: '10px',
-                          height: '10px',
-                          border: '2px solid rgba(255,255,255,0.5)',
-                          borderTopColor: 'rgba(255,255,255,1)',
-                          borderRadius: '50%',
-                          animation: 'spin 0.6s linear infinite'
-                        }} />
+                        <SpinnerIcon style={{ width: '10px', height: '10px', borderWidth: '2px', borderColor: 'rgba(255,255,255,0.5)', borderTopColor: 'rgba(255,255,255,1)' }} />
                         Enviando...
                       </span>
                     ) : 'Enviar'}

@@ -187,6 +187,16 @@ export default function useTutorPersistence(options = {}) {
     }
   }, [fsEnabled, userId, threadId, textHash, courseScope, metaKey]);
 
+  // P1 FIX: Ref estable para flushRemote — evita re-suscripciones de onSnapshot
+  // y permite que el cleanup del timer siempre use la versión más reciente.
+  const flushRemoteRef = useRef(flushRemote);
+  flushRemoteRef.current = flushRemote;
+
+  // Q2 FIX: Capturar snapshot de flushRemote en una ref local al efecto para
+  // evitar que el cleanup use la versión nueva (con fsEnabled=false) cuando se desactiva sync.
+  const cleanupFlushRef = useRef(flushRemote);
+  useEffect(() => { cleanupFlushRef.current = flushRemote; }, [flushRemote]);
+
   useEffect(() => {
     return () => {
       const hadPending = Boolean(timerRef.current);
@@ -195,19 +205,22 @@ export default function useTutorPersistence(options = {}) {
         timerRef.current = null;
       }
       if (hadPending && fsEnabled) {
-        flushRemote(latestCompactRef.current);
+        cleanupFlushRef.current(latestCompactRef.current);
       }
     };
-  }, [fsEnabled, flushRemote]);
+  }, [fsEnabled]);
 
+  // B1 FIX: Usar flushRemoteRef.current en el timer callback para evitar que un
+  // cambio de userId/threadId (que recrea flushRemote) deje un timer pendiente
+  // apuntando a la versión vieja y escriba en el path de Firestore equivocado.
   const scheduleRemoteFlush = useCallback((compact) => {
     if (!fsEnabled) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      flushRemote(compact);
+      flushRemoteRef.current(compact);
     }, debounceMs);
-  }, [fsEnabled, debounceMs, flushRemote]);
+  }, [fsEnabled, debounceMs]);
 
   const handleMessagesChange = useCallback((msgs) => {
     const compact = toCompact(msgs, max);
@@ -233,7 +246,9 @@ export default function useTutorPersistence(options = {}) {
     let isMounted = true;
     getDoc(threadRef).then((snapshot) => {
       if (!isMounted || !snapshot.exists()) {
-        if (latestCompactRef.current.length > 0) flushRemote(latestCompactRef.current);
+        // Q3 FIX: Usar flushRemoteRef.current en vez de flushRemote (closure)
+        // para evitar dep faltante y garantizar que se usa la versión más reciente.
+        if (latestCompactRef.current.length > 0) flushRemoteRef.current(latestCompactRef.current);
         return;
       }
 
@@ -249,8 +264,12 @@ export default function useTutorPersistence(options = {}) {
           localStorage.setItem(storageKey, JSON.stringify(latestCompactRef.current));
           writeMeta(metaKey, remoteUpdatedAt || Date.now());
         } catch { /* noop */ }
+        // R13 FIX: Mantener el reloj local en sync con el remoto adoptado.
+        // Sin esto, onSnapshot puede reaplicar el mismo estado remoto varias veces
+        // porque lastLocalUpdatedAtRef queda atrasado.
+        lastLocalUpdatedAtRef.current = remoteUpdatedAt || Date.now();
       } else if (latestCompactRef.current.length > 0) {
-        flushRemote(latestCompactRef.current);
+        flushRemoteRef.current(latestCompactRef.current);
       }
     }).catch((e) => {
       logger.warn('[useTutorPersistence] Error cargando hilo remoto:', e);
@@ -274,6 +293,8 @@ export default function useTutorPersistence(options = {}) {
         localStorage.setItem(storageKey, JSON.stringify(latestCompactRef.current));
         writeMeta(metaKey, remoteUpdatedAt || Date.now());
       } catch { /* noop */ }
+      // R13 FIX: Refrescar ref de tiempo local tras aceptar estado remoto.
+      lastLocalUpdatedAtRef.current = remoteUpdatedAt || Date.now();
       setSynced(true);
       setLastSynced(remoteUpdatedAt || Date.now());
     }, (e) => {
@@ -284,7 +305,7 @@ export default function useTutorPersistence(options = {}) {
       isMounted = false;
       try { unsub(); } catch { /* noop */ }
     };
-  }, [fsEnabled, userId, threadId, max, storageKey, metaKey, flushRemote]);
+  }, [fsEnabled, userId, threadId, max, storageKey, metaKey]);
 
   const clearHistory = useCallback(() => {
     try {
@@ -293,7 +314,14 @@ export default function useTutorPersistence(options = {}) {
       latestCompactRef.current = [];
       setRemoteMessages(EMPTY_MESSAGES);
     } catch { /* noop */ }
-  }, [storageKey, metaKey]);
+    // P1/R1 FIX: También limpiar el hilo remoto en Firestore
+    if (fsEnabled) {
+      flushRemoteRef.current([]).catch(() => { /* noop */ });
+    }
+  }, [storageKey, metaKey, fsEnabled]);
+
+  // P1 FIX: flushNow estable via useCallback (evita nueva referencia cada render)
+  const flushNow = useCallback(() => flushRemoteRef.current(latestCompactRef.current), []);
 
   return {
     initialMessages,
@@ -304,6 +332,6 @@ export default function useTutorPersistence(options = {}) {
     lastSynced,
     conflictCount,
     lastConflictAt,
-    flushNow: () => flushRemote(latestCompactRef.current)
+    flushNow,
   };
 }

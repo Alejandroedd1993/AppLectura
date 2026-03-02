@@ -1,0 +1,18 @@
+{
+  "_comment": "Baseline histórica de métricas del fuzz test determinista. Generada automáticamente. No editar manualmente.",
+  "_generatedAt": "2026-03-01",
+  "_seeds": [20260301, 20260302, 20260303, 20260304, 20260305, 20260306, 20260307, 20260308, 20260309, 20260310],
+  "_eventsPerSeed": 600,
+  "_totalEvents": 6000,
+  "eventStats": {
+    "externalPrompt": { "mean": 147.1, "stddev": 7.409 },
+    "storage": { "mean": 150.5, "stddev": 7.966 },
+    "rerender": { "mean": 151.5, "stddev": 9.447 },
+    "readerAction": { "mean": 150.9, "stddev": 8.467 }
+  },
+  "thresholds": {
+    "maxMeanDriftPercent": 15,
+    "maxStddevDriftPercent": 50,
+    "maxZScore": 4.5
+  }
+}

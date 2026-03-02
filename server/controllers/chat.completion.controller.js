@@ -36,6 +36,7 @@ function getProviderConfig(provider) {
 }
 
 const DEFAULT_MAX_TOKENS = 1200;
+const ALLOWED_CHAT_ROLES = new Set(['system', 'user', 'assistant']);
 
 function safeNumber(value, fallback) {
   const n = Number(value);
@@ -65,6 +66,46 @@ function parseAllowedModels(envValue, fallbackCsv) {
   );
 }
 
+function validateAndNormalizeMessages(messages) {
+  const maxMessages = safeNumber(process.env.CHAT_MAX_MESSAGES, 50);
+  const maxMessageChars = safeNumber(process.env.CHAT_MAX_MESSAGE_CHARS, 10000);
+  const maxTotalChars = safeNumber(process.env.CHAT_MAX_TOTAL_CHARS, 50000);
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { ok: false, error: 'messages es requerido' };
+  }
+  if (messages.length > maxMessages) {
+    return { ok: false, error: `Demasiados mensajes (máx ${maxMessages})` };
+  }
+
+  const normalized = [];
+  let totalChars = 0;
+
+  for (const item of messages) {
+    const role = String(item?.role || '').trim().toLowerCase();
+    const content = typeof item?.content === 'string' ? item.content : '';
+
+    if (!ALLOWED_CHAT_ROLES.has(role)) {
+      return { ok: false, error: `role inválido: ${item?.role ?? ''}` };
+    }
+    if (!content.trim()) {
+      return { ok: false, error: 'content vacío no permitido' };
+    }
+    if (content.length > maxMessageChars) {
+      return { ok: false, error: `Mensaje demasiado largo (máx ${maxMessageChars} chars)` };
+    }
+
+    totalChars += content.length;
+    if (totalChars > maxTotalChars) {
+      return { ok: false, error: `Payload demasiado grande (máx ${maxTotalChars} chars)` };
+    }
+
+    normalized.push({ role, content });
+  }
+
+  return { ok: true, messages: normalized };
+}
+
 export async function createChatCompletion(req, res) {
   try {
     const {
@@ -77,15 +118,19 @@ export async function createChatCompletion(req, res) {
       response_format,
     } = req.body || {};
 
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'messages es requerido' });
+    const validatedMessages = validateAndNormalizeMessages(messages);
+    if (!validatedMessages.ok) {
+      return res.status(400).json({ error: validatedMessages.error });
     }
+    const safeMessages = validatedMessages.messages;
 
     const cfg = getProviderConfig(provider);
     if (!cfg) return res.status(400).json({ error: `Proveedor no soportado: ${provider}` });
 
     const configuredCap = safeNumber(process.env.CHAT_MAX_TOKENS_CAP, 4096);
     const resolvedMaxTokens = Math.min(Number(max_tokens || DEFAULT_MAX_TOKENS), configuredCap);
+    const resolvedTemperature = Math.max(0, Math.min(2, safeNumber(temperature, 0.7)));
+    const resolvedStream = stream === true;
 
     // Seguridad: usar SIEMPRE API key del servidor (Render), nunca desde cliente
     if (req.body && req.body.apiKey) {
@@ -132,12 +177,12 @@ export async function createChatCompletion(req, res) {
     }
 
     const logUsage = String(process.env.CHAT_USAGE_LOG || '').trim().toLowerCase() === 'true';
-    const messageStats = summarizeMessages(messages);
+    const messageStats = summarizeMessages(safeMessages);
     const requestTag = {
       provider,
       model: selectedModel,
-      stream: !!stream,
-      temperature,
+      stream: resolvedStream,
+      temperature: resolvedTemperature,
       max_tokens: resolvedMaxTokens,
       msg_count: messageStats.count,
       msg_total_chars: messageStats.totalChars,
@@ -147,12 +192,12 @@ export async function createChatCompletion(req, res) {
     };
 
     // 🚀 CACHE CHECK: buscar respuesta cacheada antes de llamar a la API
-    const cachedContent = getCachedResponse(messages, temperature, provider, selectedModel);
+    const cachedContent = getCachedResponse(safeMessages, resolvedTemperature, provider, selectedModel);
     if (cachedContent) {
       if (logUsage) {
-        console.log('⚡ [chat/completion] CACHE HIT', { ...requestTag, cached: true, stream: !!stream });
+        console.log('⚡ [chat/completion] CACHE HIT', { ...requestTag, cached: true, stream: resolvedStream });
       }
-      if (stream) {
+      if (resolvedStream) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
@@ -179,46 +224,72 @@ export async function createChatCompletion(req, res) {
 
     const startTime = Date.now();
 
-    if (stream) {
+    if (resolvedStream) {
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache, no-transform');
       res.setHeader('Connection', 'keep-alive');
       res.flushHeaders?.();
 
+      let clientClosed = false;
+      const onClientClose = () => { clientClosed = true; };
+      req.on('close', onClientClose);
+
       let streamedContent = '';
-      const streamResp = await client.chat.completions.create({
-        model: selectedModel,
-        messages,
-        temperature,
-        max_tokens: resolvedMaxTokens,
-        stream: true,
-      });
+      try {
+        const streamResp = await client.chat.completions.create({
+          model: selectedModel,
+          messages: safeMessages,
+          temperature: resolvedTemperature,
+          max_tokens: resolvedMaxTokens,
+          stream: true,
+        });
 
-      if (logUsage) {
-        console.log('📊 [chat/completion] stream start', requestTag);
-      }
-
-      for await (const part of streamResp) {
-        const delta = part.choices?.[0]?.delta?.content || '';
-        if (delta) {
-          streamedContent += delta;
-          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        if (logUsage) {
+          console.log('📊 [chat/completion] stream start', requestTag);
         }
-        const reason = part.choices?.[0]?.finish_reason;
-        if (reason) res.write(`event: done\ndata: ${JSON.stringify({ reason })}\n\n`);
-      }
 
-      const latencyMs = Date.now() - startTime;
-      if (streamedContent.length > 10) {
-        setCachedResponse(messages, temperature, streamedContent, latencyMs, provider, selectedModel);
+        for await (const part of streamResp) {
+          if (clientClosed || res.writableEnded || res.destroyed) break;
+
+          const delta = part.choices?.[0]?.delta?.content || '';
+          if (delta) {
+            streamedContent += delta;
+            try {
+              res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+            } catch {
+              clientClosed = true;
+              break;
+            }
+          }
+          const reason = part.choices?.[0]?.finish_reason;
+          if (reason) {
+            try {
+              res.write(`event: done\ndata: ${JSON.stringify({ reason })}\n\n`);
+            } catch {
+              clientClosed = true;
+              break;
+            }
+          }
+        }
+
+        const latencyMs = Date.now() - startTime;
+        if (!clientClosed && streamedContent.length > 10) {
+          setCachedResponse(safeMessages, resolvedTemperature, streamedContent, latencyMs, provider, selectedModel);
+        }
+
+        if (!res.writableEnded && !res.destroyed) {
+          return res.end();
+        }
+        return;
+      } finally {
+        req.off('close', onClientClose);
       }
-      return res.end();
     }
 
     const completion = await client.chat.completions.create({
       model: selectedModel,
-      messages,
-      temperature,
+      messages: safeMessages,
+      temperature: resolvedTemperature,
       max_tokens: resolvedMaxTokens,
       stream: false,
       ...(response_format?.type === 'json_object' ? { response_format: { type: 'json_object' } } : {}),
@@ -238,7 +309,7 @@ export async function createChatCompletion(req, res) {
     const content = choice?.message?.content || '';
 
     if (content.length > 10) {
-      setCachedResponse(messages, temperature, content, latencyMs, provider, selectedModel);
+      setCachedResponse(safeMessages, resolvedTemperature, content, latencyMs, provider, selectedModel);
     }
     return res.json({
       provider,

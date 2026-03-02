@@ -807,7 +807,11 @@ export const AppContextProvider = ({ children }) => {
 
       setGlobalTutorInteractions(prev => {
         const updated = [...prev, interaction].slice(-150);
-        localStorage.setItem(storageKey, JSON.stringify(updated));
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(updated));
+        } catch (e) {
+          logger.warn('⚠️ [AppContext] No se pudo persistir tutorInteractionsLog en localStorage:', e);
+        }
         return updated;
       });
     };
