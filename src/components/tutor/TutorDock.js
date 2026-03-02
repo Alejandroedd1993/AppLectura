@@ -221,14 +221,15 @@ function TutorDockEffects({
     if (lastLoadedScopeRef.current !== historyScopeKey) return;
     const sig = JSON.stringify(initialMessages);
     if (sig === lastLoadedSignatureRef.current) return;
+
+    // No interrumpir un stream activo: esperar a que termine para hidratar.
+    if (api.loading) return;
+
     lastLoadedSignatureRef.current = sig;
     try {
-      // R14 FIX: Si hay una petición/stream en curso, cancelarla antes de hidratar
-      // mensajes remotos tardíos del mismo scope para evitar mezcla de estados.
-      try { apiRef.current?.cancelPending?.(); } catch { /* noop */ }
       apiRef.current?.loadMessages?.(initialMessages);
     } catch { /* noop */ }
-  }, [initialMessages, historyScopeKey]);
+  }, [initialMessages, historyScopeKey, api.loading]);
 
   // Suscribir acciones del visor SOLO cuando está montado el dock
   useReaderActions({

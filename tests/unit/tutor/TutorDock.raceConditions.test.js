@@ -54,7 +54,7 @@ describe('TutorDock race conditions', () => {
     localStorage.clear();
   });
 
-  test('cancela petición activa antes de hidratar mensajes remotos tardíos del mismo scope (R14)', async () => {
+  test('hidrata mensajes remotos tardíos del mismo scope sin cancelar stream activo', async () => {
     const texto = 'Texto carrera A';
     renderDock(texto);
 
@@ -72,15 +72,11 @@ describe('TutorDock race conditions', () => {
     dispatchStorageLikeEvent({ key: storageKey, newValue: JSON.stringify(remoteCompact) });
 
     await waitFor(() => {
-      expect(mockApi.cancelPending).toHaveBeenCalledTimes(1);
+      expect(mockApi.cancelPending).not.toHaveBeenCalled();
       expect(mockApi.loadMessages).toHaveBeenCalledWith([
         { role: 'assistant', content: 'Mensaje remoto tardío' }
       ]);
     });
-
-    const cancelOrder = mockApi.cancelPending.mock.invocationCallOrder[0];
-    const loadOrder = mockApi.loadMessages.mock.invocationCallOrder[0];
-    expect(cancelOrder).toBeLessThan(loadOrder);
   });
 
   test('evita rehidratar de nuevo cuando llega el mismo payload remoto (B5)', async () => {

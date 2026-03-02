@@ -570,7 +570,18 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         }
         if (myRequestId !== requestIdRef.current) {
           clearTimeout(timeoutId); // B18 FIX: Limpiar timeout antes de salir
-          reader.cancel();
+          try { reader.cancel(); } catch { /* noop */ }
+
+          // Evitar dejar placeholder colgado (▌) cuando una invalidez de requestId
+          // ocurre sin que exista un nuevo callBackendWith que limpie por nosotros.
+          if (streamingMsgIdRef.current === streamingMsgId) {
+            streamingMsgIdRef.current = null;
+            setMessages(prev => {
+              const next = prev.filter(m => m.id !== streamingMsgId);
+              try { onMessagesChangeRef.current?.(next); } catch { /* noop */ }
+              return next;
+            });
+          }
           return;
         }
 
