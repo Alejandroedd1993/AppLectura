@@ -509,7 +509,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
       // Adaptar max_tokens según modo de longitud para dar espacio a respuestas detalladas
       const lm = (ctx.lengthMode || 'auto').toLowerCase();
-      const maxTokens = lm === 'breve' ? 400 : lm === 'detallada' ? 1200 : 800;
+      const maxTokens = lm === 'breve' ? 600 : lm === 'detallada' ? 4096 : 2048;
 
       const res = await fetch(`${backendBaseUrlRef.current}/api/chat/completion`, {
         method: 'POST',
@@ -557,6 +557,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
       let content = '';
       let receivedSseChunk = false;
+      let streamFinishReason = null; // Rastrear si el modelo terminó por límite de tokens
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -598,6 +599,28 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
                 content += json.content;
                 updateMessage(streamingMsgId, content + '▌', false, false);
               }
+              // Detectar fin del stream y razón (stop vs length)
+              if (json.reason) {
+                streamFinishReason = json.reason;
+              }
+            } catch { /* noop */ }
+          }
+        }
+      }
+
+      // Flush del decoder y procesar buffer residual tras fin de stream
+      const remainder = decoder.decode() + buffer;
+      if (remainder.trim()) {
+        const tailLines = remainder.split('\n');
+        for (const line of tailLines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const json = JSON.parse(line.slice(6));
+              if (json.content) {
+                receivedSseChunk = true;
+                content += json.content;
+              }
+              if (json.reason) streamFinishReason = json.reason;
             } catch { /* noop */ }
           }
         }
@@ -653,6 +676,87 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           ], retries, true);
         } else {
           logger.warn('⚠️ [TutorCore] Alucinación persistente en stream tras regenerar.');
+        }
+      }
+
+      // 🔄 AUTO-CONTINUACIÓN INLINE: si el modelo se detuvo por límite de tokens,
+      // enviar petición de continuación y seguir actualizando EL MISMO mensaje.
+      let continuationAttempts = 0;
+      const MAX_CONTINUATIONS = 2;
+
+      while (streamFinishReason === 'length' && content.trim() && continuationAttempts < MAX_CONTINUATIONS) {
+        continuationAttempts++;
+        logger.log(`📏 [TutorCore] Respuesta truncada por max_tokens (${continuationAttempts}/${MAX_CONTINUATIONS}), solicitando continuación inline...`);
+        updateMessage(streamingMsgId, content + '\n\n⏳ _Continuando…_', false, false);
+
+        if (myRequestId !== requestIdRef.current) break;
+
+        let contRes;
+        try {
+          contRes = await fetch(`${backendBaseUrlRef.current}/api/chat/completion`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
+              ...authHeader
+            },
+            body: JSON.stringify({
+              messages: normalizeOutboundMessages([
+                ...outboundMessages,
+                { role: 'assistant', content: content.trim() },
+                { role: 'user', content: 'Continúa tu respuesta exactamente donde la dejaste. No repitas lo que ya dijiste, solo continúa.' }
+              ]),
+              temperature,
+              max_tokens: maxTokens,
+              stream: true
+            }),
+            signal: abortRef.current.signal
+          });
+        } catch { break; }
+
+        if (!contRes?.ok) break;
+
+        streamFinishReason = null;
+        const contReader = contRes.body.getReader();
+        const contDecoder = new TextDecoder();
+        let contBuffer = '';
+        let contActive = true;
+
+        while (contActive) {
+          const { done: cDone, value: cValue } = await contReader.read();
+          if (cDone) { contActive = false; break; }
+          if (myRequestId !== requestIdRef.current) {
+            try { contReader.cancel(); } catch { /* noop */ }
+            return;
+          }
+          contBuffer += contDecoder.decode(cValue, { stream: true });
+          const contLines = contBuffer.split('\n');
+          contBuffer = contLines.pop() || '';
+          for (const cLine of contLines) {
+            if (cLine.startsWith('data: ')) {
+              try {
+                const cJson = JSON.parse(cLine.slice(6));
+                if (cJson.content) {
+                  content += cJson.content;
+                  updateMessage(streamingMsgId, content + '▌', false, false);
+                }
+                if (cJson.reason) streamFinishReason = cJson.reason;
+              } catch { /* noop */ }
+            }
+          }
+        }
+        // Flush continuation decoder
+        const contRemainder = contDecoder.decode() + contBuffer;
+        if (contRemainder.trim()) {
+          for (const cLine of contRemainder.split('\n')) {
+            if (cLine.startsWith('data: ')) {
+              try {
+                const cJson = JSON.parse(cLine.slice(6));
+                if (cJson.content) content += cJson.content;
+                if (cJson.reason) streamFinishReason = cJson.reason;
+              } catch { /* noop */ }
+            }
+          }
         }
       }
 
