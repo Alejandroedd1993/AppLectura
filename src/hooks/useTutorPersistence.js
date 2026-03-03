@@ -102,6 +102,9 @@ export default function useTutorPersistence(options = {}) {
   const latestCompactRef = useRef(toCompact(localInitialMessages, max));
   const pendingRemoteRef = useRef(false);
   const lastLocalUpdatedAtRef = useRef(readMeta(metaKey) || Date.now());
+  // FIX: Monotonic write counter — each local write increments this.
+  // onSnapshot ignores snapshots whose signature matches our last written data.
+  const lastWrittenSignatureRef = useRef(null);
 
   useEffect(() => {
     setRemoteMessages(null);
@@ -166,6 +169,10 @@ export default function useTutorPersistence(options = {}) {
   const flushRemote = useCallback(async (compact) => {
     if (!fsEnabled) return;
     pendingRemoteRef.current = true;
+    // FIX: Save signature of what we're about to write so onSnapshot can
+    // detect echoes reliably (independent of client/server clock skew).
+    const sig = JSON.stringify(compact);
+    lastWrittenSignatureRef.current = sig;
     try {
       const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
       await setDoc(threadRef, {
@@ -180,16 +187,13 @@ export default function useTutorPersistence(options = {}) {
       setSynced(true);
       setLastSynced(now);
       writeMeta(metaKey, now);
-      // FIX: Actualizar ref de tiempo local para que onSnapshot rechace el eco
-      // de nuestra propia escritura (cuyo remoteUpdatedAt ≤ now).
       lastLocalUpdatedAtRef.current = now;
     } catch (e) {
       logger.warn('[useTutorPersistence] Error sincronizando hilo a Firestore:', e);
       setSynced(false);
     } finally {
-      // FIX: Retrasar el reset de pendingRemoteRef para que el eco del servidor
-      // (que llega fracciones de segundo después del resolve de setDoc) siga
-      // siendo bloqueado por la guarda `if (pendingRemoteRef.current) return`.
+      // FIX: Delay reset so the server echo (arriving shortly after setDoc
+      // resolves) is still blocked by `pendingRemoteRef.current === true`.
       setTimeout(() => { pendingRemoteRef.current = false; }, 3000);
     }
   }, [fsEnabled, userId, threadId, textHash, courseScope, metaKey]);
@@ -232,6 +236,9 @@ export default function useTutorPersistence(options = {}) {
   const handleMessagesChange = useCallback((msgs) => {
     const compact = toCompact(msgs, max);
     latestCompactRef.current = compact;
+    // FIX: Pre-update written signature so onSnapshot rejects echoes even
+    // if it fires between handleMessagesChange and flushRemote completing.
+    lastWrittenSignatureRef.current = JSON.stringify(compact);
     try {
       const now = Date.now();
       writeMeta(metaKey, now);
@@ -298,6 +305,18 @@ export default function useTutorPersistence(options = {}) {
 
       const remoteMessages = normalizeMessages(remote.messages, max);
       if (remoteMessages === EMPTY_MESSAGES && latestCompactRef.current.length > 0) return;
+
+      // FIX: Detect echo — if the incoming data matches what we just wrote,
+      // skip setRemoteMessages to prevent overwriting TutorCore's live state.
+      const incomingSig = JSON.stringify(toCompact(remoteMessages, max));
+      if (incomingSig === lastWrittenSignatureRef.current) {
+        // Still update bookkeeping so next genuine remote change gets through.
+        lastLocalUpdatedAtRef.current = remoteUpdatedAt || Date.now();
+        writeMeta(metaKey, remoteUpdatedAt || Date.now());
+        setSynced(true);
+        setLastSynced(remoteUpdatedAt || Date.now());
+        return;
+      }
 
       setRemoteMessages(remoteMessages);
       latestCompactRef.current = toCompact(remoteMessages, max);

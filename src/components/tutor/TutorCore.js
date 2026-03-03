@@ -1018,6 +1018,13 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   const stableLoadMessages = useCallback((arr) => {
     try {
       if (!Array.isArray(arr)) return;
+      // FIX: NEVER overwrite messages while a stream is active. The stream
+      // holds a local `content` variable that would diverge from the state,
+      // and when the stream finishes its updateMessage call would conflict.
+      if (streamingMsgIdRef.current) {
+        logger.log('ℹ️ [TutorCore] loadMessages ignorado: stream activo');
+        return;
+      }
       const mapped = arr.map((m, i) => ({ id: Date.now() + '-load-' + i, role: m.role || m.r || 'assistant', content: m.content || m.c || '' })).filter(m => m.content);
       // B12 FIX: Resetear ref anti-eco al contenido del último assistant cargado
       // para evitar que el filtro compare contra un hilo/texto anterior.
