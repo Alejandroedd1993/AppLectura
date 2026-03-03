@@ -511,7 +511,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
       // Adaptar max_tokens según modo de longitud para dar espacio a respuestas detalladas
       const lm = (ctx.lengthMode || 'auto').toLowerCase();
-      const maxTokens = lm === 'breve' ? 600 : lm === 'detallada' ? 4096 : 2048;
+      const maxTokens = lm === 'breve' ? 800 : 4096;
 
       const res = await fetch(`${backendBaseUrlRef.current}/api/chat/completion`, {
         method: 'POST',
@@ -564,6 +564,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       const decoder = new TextDecoder();
       let buffer = '';
       let streamActive = true;
+      let doneSignalReceived = false;
 
       while (streamActive) {
         const readResult = await Promise.race([
@@ -625,8 +626,19 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
               if (json.reason) {
                 streamFinishReason = json.reason;
               }
+              if (json.done === true) {
+                doneSignalReceived = true;
+              }
             } catch { /* noop */ }
           }
+        }
+
+        // Si el backend ya notificó finalización explícita, cerrar lectura sin
+        // esperar a que reader.read() devuelva done (algunos proxies lo retrasan).
+        if (doneSignalReceived) {
+          streamActive = false;
+          try { reader.cancel(); } catch { /* noop */ }
+          break;
         }
       }
 
@@ -727,9 +739,11 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         return false;
       };
 
+      logger.log(`📏 [TutorCore] Stream finalizado`, { streamFinishReason, contentLen: content.length, lastChars: content.slice(-30), shouldCont: shouldContinue() });
+
       while (shouldContinue() && content.trim() && continuationAttempts < MAX_CONTINUATIONS) {
         continuationAttempts++;
-        logger.log(`📏 [TutorCore] Respuesta truncada por max_tokens (${continuationAttempts}/${MAX_CONTINUATIONS}), solicitando continuación inline...`);
+        logger.log(`📏 [TutorCore] Auto-continuación ${continuationAttempts}/${MAX_CONTINUATIONS}`, { streamFinishReason, contentLen: content.length });
         updateMessage(streamingMsgId, content + '\n\n⏳ _Continuando…_', false, false);
 
         if (myRequestId !== requestIdRef.current) break;
@@ -764,6 +778,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         const contDecoder = new TextDecoder();
         let contBuffer = '';
         let contActive = true;
+        let contDoneSignalReceived = false;
 
         while (contActive) {
           const contReadResult = await Promise.race([
@@ -796,8 +811,15 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
                   updateMessage(streamingMsgId, content + '▌', false, false);
                 }
                 if (cJson.reason) streamFinishReason = cJson.reason;
+                if (cJson.done === true) contDoneSignalReceived = true;
               } catch { /* noop */ }
             }
+          }
+
+          if (contDoneSignalReceived) {
+            contActive = false;
+            try { contReader.cancel(); } catch { /* noop */ }
+            break;
           }
         }
         // Flush continuation decoder

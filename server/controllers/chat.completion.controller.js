@@ -35,7 +35,7 @@ function getProviderConfig(provider) {
   return null;
 }
 
-const DEFAULT_MAX_TOKENS = 1200;
+const DEFAULT_MAX_TOKENS = 4096;
 const ALLOWED_CHAT_ROLES = new Set(['system', 'user', 'assistant']);
 
 function safeNumber(value, fallback) {
@@ -275,18 +275,26 @@ export async function createChatCompletion(req, res) {
           stream: true,
         });
 
-        if (logUsage) {
-          console.log('📊 [chat/completion] stream start', requestTag);
-        }
+        console.log('📊 [chat/completion] stream start', { ...requestTag, resolvedMaxTokens });
 
         let lastFinishReason = null;
+        let lastPingTime = Date.now();
+        const KEEPALIVE_INTERVAL_MS = 10000; // Ping cada 10s para evitar que proxies corten SSE
 
         for await (const part of streamResp) {
           if (clientClosed || res.writableEnded || res.destroyed) break;
 
+          // SSE keepalive: enviar comentario periódico para evitar timeouts de proxy
+          const now = Date.now();
+          if (now - lastPingTime > KEEPALIVE_INTERVAL_MS) {
+            lastPingTime = now;
+            try { res.write(': keepalive\n\n'); } catch { clientClosed = true; break; }
+          }
+
           const delta = part.choices?.[0]?.delta?.content || '';
           if (delta) {
             streamedContent += delta;
+            lastPingTime = Date.now(); // Reset ping timer on real data
             try {
               res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
             } catch {
@@ -315,13 +323,13 @@ export async function createChatCompletion(req, res) {
           } catch { /* noop */ }
         }
 
-        if (logUsage || lastFinishReason === 'length') {
-          console.log('📊 [chat/completion] stream end', {
-            ...requestTag,
-            finish_reason: lastFinishReason || 'none',
-            streamedChars: streamedContent.length
-          });
-        }
+        console.log('📊 [chat/completion] stream end', {
+          ...requestTag,
+          finish_reason: lastFinishReason || 'none',
+          streamedChars: streamedContent.length,
+          clientClosed,
+          durationMs: Date.now() - startTime
+        });
 
         const latencyMs = Date.now() - startTime;
         if (!clientClosed && streamedContent.length > 10) {
