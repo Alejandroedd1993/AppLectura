@@ -101,10 +101,17 @@ export default function useTutorPersistence(options = {}) {
   const timerRef = useRef(null);
   const latestCompactRef = useRef(toCompact(localInitialMessages, max));
   const pendingRemoteRef = useRef(false);
-  const lastLocalUpdatedAtRef = useRef(readMeta(metaKey) || Date.now());
+  // FIX: NO usar || Date.now(). En un dispositivo nuevo readMeta() retorna 0.
+  // Con el fallback a Date.now(), el dispositivo nuevo cree que está "al día"
+  // y rechaza los datos remotos reales (remoteUpdatedAt < Date.now()),
+  // causando que el estado vacío local sobreescriba el hilo remoto.
+  const lastLocalUpdatedAtRef = useRef(readMeta(metaKey));
   // FIX: Monotonic write counter — each local write increments this.
   // onSnapshot ignores snapshots whose signature matches our last written data.
   const lastWrittenSignatureRef = useRef(null);
+  // FIX: Ref espejo de `hydrating` para usar en callbacks (handleMessagesChange)
+  // sin crear dependencias que recreen el callback en cada render.
+  const hydratingRef = useRef(Boolean(fsEnabled));
 
   useEffect(() => {
     // FIX: Cancelar flush pendiente del scope/hilo anterior.
@@ -116,7 +123,9 @@ export default function useTutorPersistence(options = {}) {
     }
     setRemoteMessages(null);
     latestCompactRef.current = toCompact(localInitialMessages, max);
-    lastLocalUpdatedAtRef.current = readMeta(metaKey) || Date.now();
+    // FIX: Sin || Date.now() — un dispositivo nuevo debe tener timestamp 0
+    // para que los datos remotos (con timestamp real) sean adoptados.
+    lastLocalUpdatedAtRef.current = readMeta(metaKey);
     setQuotaExceeded(false);
     setSynced(false);
   }, [localInitialMessages, max, metaKey]);
@@ -242,6 +251,16 @@ export default function useTutorPersistence(options = {}) {
 
   const handleMessagesChange = useCallback((msgs) => {
     const compact = toCompact(msgs, max);
+    // FIX: No persistir estado vacío mientras se hidrata desde remoto.
+    // En un dispositivo nuevo, TutorCore puede disparar onMessagesChange([])
+    // antes de que getDoc resuelva. Sin esta guarda:
+    //   1. Se escribe [] a localStorage con timestamp Date.now()
+    //   2. lastLocalUpdatedAtRef se actualiza a Date.now()
+    //   3. getDoc resuelve pero remoteUpdatedAt < Date.now() → datos remotos rechazados
+    //   4. scheduleRemoteFlush([]) sobreescribe el hilo en Firestore con {title:'Nuevo hilo', messages:[]}
+    if (hydratingRef.current && compact.length === 0) {
+      return;
+    }
     latestCompactRef.current = compact;
     // FIX: Pre-update written signature so onSnapshot rejects echoes even
     // if it fires between handleMessagesChange and flushRemote completing.
@@ -271,6 +290,7 @@ export default function useTutorPersistence(options = {}) {
     if (!fsEnabled) return undefined;
 
     setHydrating(true);
+    hydratingRef.current = true;
 
     const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
 
@@ -281,6 +301,7 @@ export default function useTutorPersistence(options = {}) {
         // para evitar dep faltante y garantizar que se usa la versión más reciente.
         if (latestCompactRef.current.length > 0) flushRemoteRef.current(latestCompactRef.current);
         setHydrating(false);
+        hydratingRef.current = false;
         return;
       }
 
@@ -304,9 +325,11 @@ export default function useTutorPersistence(options = {}) {
         flushRemoteRef.current(latestCompactRef.current);
       }
       setHydrating(false);
+      hydratingRef.current = false;
     }).catch((e) => {
       logger.warn('[useTutorPersistence] Error cargando hilo remoto:', e);
       setHydrating(false);
+      hydratingRef.current = false;
     });
 
     const unsub = onSnapshot(threadRef, (snapshot) => {
