@@ -403,7 +403,8 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   }, [generateConversationSummary]);
 
   // 🕐 TIMEOUT Y RETRY: Lógica mejorada para llamadas al backend
-  const TIMEOUT_MS = 45000; // 45 segundos para dar margen a respuestas largas o lentas
+  const TIMEOUT_MS = 120000; // 120s para conexión inicial (antes de recibir primer chunk)
+  const STREAM_IDLE_MS = 30000; // 30s máx sin recibir ningún chunk durante streaming
   const MAX_RETRIES = 2;
 
   const callBackendWith = useCallback(async (messagesArr, retries = 0, isRegen = false) => {
@@ -445,7 +446,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       });
     }
 
-    const timeoutId = setTimeout(() => {
+    let timeoutId = setTimeout(() => {
       if (abortRef.current) {
         abortRef.current.abort();
       }
@@ -569,6 +570,14 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           streamActive = false;
           break;
         }
+
+        // ⏱️ Resetear timeout: una vez llegan chunks, usar idle timeout más corto
+        // en lugar del timeout de conexión total (evita abortar streams largos)
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          if (abortRef.current) abortRef.current.abort();
+        }, STREAM_IDLE_MS);
+
         if (myRequestId !== requestIdRef.current) {
           clearTimeout(timeoutId); // B18 FIX: Limpiar timeout antes de salir
           try { reader.cancel(); } catch { /* noop */ }
@@ -697,9 +706,13 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         return true;
       };
 
-      const shouldContinue = () =>
-        streamFinishReason === 'length' ||
-        (streamFinishReason !== 'stop' && looksIncomplete(content));
+      const shouldContinue = () => {
+        if (streamFinishReason === 'length') return true;
+        // Heurística: incluso si finish_reason es 'stop' o ausente,
+        // si el texto termina a mitad de palabra (sin espacio/puntuación) → truncado
+        if (looksIncomplete(content)) return true;
+        return false;
+      };
 
       while (shouldContinue() && content.trim() && continuationAttempts < MAX_CONTINUATIONS) {
         continuationAttempts++;
