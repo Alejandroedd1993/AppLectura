@@ -405,6 +405,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   // 🕐 TIMEOUT Y RETRY: Lógica mejorada para llamadas al backend
   const TIMEOUT_MS = 120000; // 120s para conexión inicial (antes de recibir primer chunk)
   const STREAM_IDLE_MS = 30000; // 30s máx sin recibir ningún chunk durante streaming
+  const STREAM_READ_TIMEOUT_MS = 20000; // 20s: si reader.read() no devuelve nada, tratar como stream estancado
   const MAX_RETRIES = 2;
 
   const callBackendWith = useCallback(async (messagesArr, retries = 0, isRegen = false) => {
@@ -565,7 +566,19 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       let streamActive = true;
 
       while (streamActive) {
-        const { done, value } = await reader.read();
+        const readResult = await Promise.race([
+          reader.read(),
+          new Promise(resolve => setTimeout(() => resolve({ __stalled: true }), STREAM_READ_TIMEOUT_MS))
+        ]);
+
+        if (readResult?.__stalled) {
+          logger.warn('⚠️ [TutorCore] Stream estancado (sin chunks), cerrando lectura para intentar continuación');
+          streamFinishReason = streamFinishReason || 'stalled';
+          streamActive = false;
+          break;
+        }
+
+        const { done, value } = readResult;
         if (done) {
           streamActive = false;
           break;
@@ -753,7 +766,19 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         let contActive = true;
 
         while (contActive) {
-          const { done: cDone, value: cValue } = await contReader.read();
+          const contReadResult = await Promise.race([
+            contReader.read(),
+            new Promise(resolve => setTimeout(() => resolve({ __stalled: true }), STREAM_READ_TIMEOUT_MS))
+          ]);
+
+          if (contReadResult?.__stalled) {
+            logger.warn('⚠️ [TutorCore] Continuación estancada (sin chunks), cerrando lectura');
+            streamFinishReason = streamFinishReason || 'stalled';
+            contActive = false;
+            break;
+          }
+
+          const { done: cDone, value: cValue } = contReadResult;
           if (cDone) { contActive = false; break; }
           if (myRequestId !== requestIdRef.current) {
             try { contReader.cancel(); } catch { /* noop */ }
