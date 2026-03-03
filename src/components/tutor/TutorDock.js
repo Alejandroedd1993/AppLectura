@@ -689,6 +689,7 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
     threads,
     activeThreadId,
     loading: threadsLoading,
+    error: threadsError,
     selectThread,
     createThread,
     deleteThread,
@@ -1089,20 +1090,19 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                             onClick={async () => {
                               try {
                                 if (!activeThreadId) return;
-                                if (threads.length <= 1) {
-                                  api.clear();
-                                  clearHistory();
-                                  return;
-                                }
                                 if (!window.confirm('¿Eliminar este hilo?')) return;
+                                // FIX: Limpiar UI inmediatamente
+                                api.clear();
+                                // FIX: Siempre eliminar de Firestore, incluso si es el único hilo.
+                                // Antes, con threads.length <= 1 solo se llamaba clearHistory()
+                                // que escribía mensajes vacíos al doc sin eliminarlo, dejando
+                                // un documento zombie visible en otros dispositivos.
                                 await deleteThread(activeThreadId);
-                                // B16 FIX: NO eliminar baseStorageKey de localStorage.
-                                // La clave de almacenamiento es compartida entre todos los
-                                // hilos del mismo texto (no incluye threadId). Eliminarla
-                                // borra el caché del hilo recién activado por deleteThread.
-                                // El cambio de activeThreadId dispara useTutorPersistence
-                                // que sobrescribirá el localStorage con los datos correctos
-                                // del nuevo hilo activo (vía Firestore o caché existente).
+                                // Limpiar localStorage del hilo eliminado
+                                try {
+                                  localStorage.removeItem(scopedStorageKey);
+                                  localStorage.removeItem(`tutorMeta:${scopedStorageKey}`);
+                                } catch { /* noop */ }
                               } catch (err) {
                                 logger.error('[TutorDock] Error eliminando hilo:', err);
                               }
@@ -1117,6 +1117,11 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                           <span style={{ fontSize: '.75rem', opacity: .85 }}>
                             {synced ? '☁️ Sincronizado' : '💾 Local'}{conflictCount > 0 ? ` · ⚠️ Conflictos: ${conflictCount}` : ''}
                           </span>
+                          {threadsError && (
+                            <span style={{ fontSize: '.75rem', color: '#dc2626', display: 'block', marginTop: 4 }}>
+                              ⚠️ Error sincronizando hilos: {threadsError.code === 'failed-precondition' ? 'Índice de Firestore pendiente. Despliegue con firebase deploy --only firestore:indexes' : threadsError.message || 'Error desconocido'}
+                            </span>
+                          )}
                         </>
                       )}
 

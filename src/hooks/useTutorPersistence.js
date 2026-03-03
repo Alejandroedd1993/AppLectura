@@ -107,6 +107,13 @@ export default function useTutorPersistence(options = {}) {
   const lastWrittenSignatureRef = useRef(null);
 
   useEffect(() => {
+    // FIX: Cancelar flush pendiente del scope/hilo anterior.
+    // Sin esto, al cambiar de hilo, el timer pendiente puede escribir datos
+    // del hilo anterior al nuevo hilo (porque flushRemoteRef ya apunta al nuevo).
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
     setRemoteMessages(null);
     latestCompactRef.current = toCompact(localInitialMessages, max);
     lastLocalUpdatedAtRef.current = readMeta(metaKey) || Date.now();
@@ -253,6 +260,14 @@ export default function useTutorPersistence(options = {}) {
   }, [max, storageKey, metaKey, scheduleRemoteFlush]);
 
   useEffect(() => {
+    // FIX: Cancelar flush pendiente al cambiar de hilo/scope.
+    // Si el timer del hilo anterior sigue activo cuando se monta un nuevo listener,
+    // podría escribir datos cruzados entre hilos.
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
     if (!fsEnabled) return undefined;
 
     setHydrating(true);
