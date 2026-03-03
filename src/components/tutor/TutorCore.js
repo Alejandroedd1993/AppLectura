@@ -679,12 +679,29 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         }
       }
 
-      // 🔄 AUTO-CONTINUACIÓN INLINE: si el modelo se detuvo por límite de tokens,
-      // enviar petición de continuación y seguir actualizando EL MISMO mensaje.
+      // 🔄 AUTO-CONTINUACIÓN INLINE: si el modelo se detuvo por límite de tokens
+      // O si la respuesta termina a mitad de frase (heurística).
       let continuationAttempts = 0;
-      const MAX_CONTINUATIONS = 2;
+      const MAX_CONTINUATIONS = 3;
 
-      while (streamFinishReason === 'length' && content.trim() && continuationAttempts < MAX_CONTINUATIONS) {
+      // Heurística: detectar si la respuesta parece truncada a mitad de palabra/frase
+      const looksIncomplete = (text) => {
+        const trimmed = (text || '').trim();
+        if (!trimmed || trimmed.length < 80) return false; // Respuestas muy cortas no se continúan
+        const lastChar = trimmed.slice(-1);
+        // Termina en puntuación de cierre → probablemente completa
+        if (/[.!?;)\]"»]/.test(lastChar)) return false;
+        // Termina en emoji → probablemente completa
+        if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(lastChar)) return false;
+        // Si termina en medio de una palabra o con coma/dos puntos → truncado
+        return true;
+      };
+
+      const shouldContinue = () =>
+        streamFinishReason === 'length' ||
+        (streamFinishReason !== 'stop' && looksIncomplete(content));
+
+      while (shouldContinue() && content.trim() && continuationAttempts < MAX_CONTINUATIONS) {
         continuationAttempts++;
         logger.log(`📏 [TutorCore] Respuesta truncada por max_tokens (${continuationAttempts}/${MAX_CONTINUATIONS}), solicitando continuación inline...`);
         updateMessage(streamingMsgId, content + '\n\n⏳ _Continuando…_', false, false);

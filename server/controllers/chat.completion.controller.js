@@ -151,7 +151,7 @@ export async function createChatCompletion(req, res) {
       });
     }
 
-    const configuredCap = safeNumber(process.env.CHAT_MAX_TOKENS_CAP, 4096);
+    const configuredCap = safeNumber(process.env.CHAT_MAX_TOKENS_CAP, 8192);
     const resolvedMaxTokens = Math.min(Number(max_tokens || DEFAULT_MAX_TOKENS), configuredCap);
     const resolvedTemperature = Math.max(0, Math.min(2, safeNumber(temperature, 0.7)));
     const resolvedStream = stream === true;
@@ -239,7 +239,7 @@ export async function createChatCompletion(req, res) {
           const chunk = cachedContent.slice(i, i + chunkSize);
           res.write(`data: ${JSON.stringify({ content: chunk, cached: true })}\n\n`);
         }
-        res.write(`event: done\ndata: ${JSON.stringify({ reason: 'stop', cached: true })}\n\n`);
+        res.write(`data: ${JSON.stringify({ reason: 'stop', cached: true, done: true })}\n\n`);
         return res.end();
       }
       return res.json({
@@ -279,6 +279,8 @@ export async function createChatCompletion(req, res) {
           console.log('📊 [chat/completion] stream start', requestTag);
         }
 
+        let lastFinishReason = null;
+
         for await (const part of streamResp) {
           if (clientClosed || res.writableEnded || res.destroyed) break;
 
@@ -294,13 +296,31 @@ export async function createChatCompletion(req, res) {
           }
           const reason = part.choices?.[0]?.finish_reason;
           if (reason) {
+            lastFinishReason = reason;
             try {
-              res.write(`event: done\ndata: ${JSON.stringify({ reason })}\n\n`);
+              res.write(`data: ${JSON.stringify({ reason })}\n\n`);
             } catch {
               clientClosed = true;
               break;
             }
           }
+        }
+
+        // Garantizar que SIEMPRE se envíe un evento de fin con la razón real.
+        // Si el proveedor no envió finish_reason explícito, reportar 'unknown'.
+        if (!clientClosed && !res.writableEnded && !res.destroyed) {
+          const finalReason = lastFinishReason || 'unknown';
+          try {
+            res.write(`data: ${JSON.stringify({ done: true, reason: finalReason })}\n\n`);
+          } catch { /* noop */ }
+        }
+
+        if (logUsage || lastFinishReason === 'length') {
+          console.log('📊 [chat/completion] stream end', {
+            ...requestTag,
+            finish_reason: lastFinishReason || 'none',
+            streamedChars: streamedContent.length
+          });
         }
 
         const latencyMs = Date.now() - startTime;
