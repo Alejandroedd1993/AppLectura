@@ -718,16 +718,20 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       let continuationAttempts = 0;
       const MAX_CONTINUATIONS = 3;
 
-      // Heurística: detectar si la respuesta parece truncada a mitad de palabra/frase
+      // Heurística: detectar si la respuesta parece truncada a mitad de palabra/frase.
+      // CONSERVADORA: solo activar cuando hay evidencia clara de corte abrupto.
+      // Antes se activaba con cualquier texto que no terminara en '.!?', causando
+      // continuaciones innecesarias que degradaban la respuesta.
       const looksIncomplete = (text) => {
         const trimmed = (text || '').trim();
-        if (!trimmed || trimmed.length < 80) return false; // Respuestas muy cortas no se continúan
+        if (!trimmed || trimmed.length < 80) return false;
+        // Solo considerar truncado si finish_reason fue 'length' o 'stalled'
+        // (el modelo se quedó sin tokens o la conexión se estancó).
+        // Si fue 'stop' o desconocido, el modelo terminó deliberadamente.
+        if (streamFinishReason === 'stop' || !streamFinishReason) return false;
         const lastChar = trimmed.slice(-1);
-        // Termina en puntuación de cierre → probablemente completa
-        if (/[.!?;)\]"»]/.test(lastChar)) return false;
-        // Termina en emoji → probablemente completa
+        if (/[.!?;)\]"»\n]/.test(lastChar)) return false;
         if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(lastChar)) return false;
-        // Si termina en medio de una palabra o con coma/dos puntos → truncado
         return true;
       };
 

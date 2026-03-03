@@ -229,7 +229,12 @@ function TutorDockEffects({
     try {
       apiRef.current?.loadMessages?.(initialMessages);
     } catch { /* noop */ }
-  }, [initialMessages, historyScopeKey, api.loading]);
+  // FIX: api.loading NO debe ser dependencia. Si lo es, al pasar de true→false
+  // el efecto se re-ejecuta con initialMessages obsoletos (eco mid-stream de
+  // Firestore) y sobreescribe los mensajes completos del stream recién terminado.
+  // Sin loading en deps, el efecto sólo re-corre cuando initialMessages cambia,
+  // momento en que api.loading ya refleja el valor correcto vía closure.
+  }, [initialMessages, historyScopeKey]);
 
   // Suscribir acciones del visor SOLO cuando está montado el dock
   useReaderActions({

@@ -180,11 +180,17 @@ export default function useTutorPersistence(options = {}) {
       setSynced(true);
       setLastSynced(now);
       writeMeta(metaKey, now);
+      // FIX: Actualizar ref de tiempo local para que onSnapshot rechace el eco
+      // de nuestra propia escritura (cuyo remoteUpdatedAt ≤ now).
+      lastLocalUpdatedAtRef.current = now;
     } catch (e) {
       logger.warn('[useTutorPersistence] Error sincronizando hilo a Firestore:', e);
       setSynced(false);
     } finally {
-      pendingRemoteRef.current = false;
+      // FIX: Retrasar el reset de pendingRemoteRef para que el eco del servidor
+      // (que llega fracciones de segundo después del resolve de setDoc) siga
+      // siendo bloqueado por la guarda `if (pendingRemoteRef.current) return`.
+      setTimeout(() => { pendingRemoteRef.current = false; }, 3000);
     }
   }, [fsEnabled, userId, threadId, textHash, courseScope, metaKey]);
 
