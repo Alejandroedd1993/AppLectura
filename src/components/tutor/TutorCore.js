@@ -494,11 +494,26 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
           // Filtro anti-eco: evitar repetir lo mismo que el último assistant
           content = filterEchoIfNeeded(lastAssistantContentRef.current, content);
+
+          // Extraer pregunta socrática en mensaje separado (misma lógica que flujo SSE)
+          let extractedQ = null;
+          const RE_TQ = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)\s*$/;
+          const qM = content.match(RE_TQ);
+          if (qM && content.length > qM[0].length + 80) {
+            extractedQ = qM[1].trim();
+            content = content.slice(0, content.length - qM[0].length).trim();
+          }
+
           const msg = { id: Date.now() + '-assistant', role: 'assistant', content };
 
           if (myRequestId !== requestIdRef.current) return;
           addMessage(msg);
-          try { onAssistantMessageRef.current?.(msg, apiRef.current); } catch { /* noop */ }
+          if (extractedQ) {
+            addMessage({ id: Date.now() + '-socratic-fup', role: 'assistant', content: '🤔 **Pregunta para profundizar:** ' + extractedQ });
+          }
+          if (!extractedQ) {
+            try { onAssistantMessageRef.current?.(msg, apiRef.current); } catch { /* noop */ }
+          }
           return; // Evitar continuar al fetch backend
         } catch (e) {
           logger.warn('[TutorCore] Fallback a backend tras error OpenAI global:', e?.message);
@@ -843,11 +858,35 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
       // Filtro anti-eco y actualización final
       content = filterEchoIfNeeded(prevAssistantContent, content);
+
+      // FIX: Extraer pregunta socrática del final de la respuesta del modelo
+      // e inyectarla como mensaje separado (burbuja propia).
+      // Sin esto, la pregunta queda inline en el mismo mensaje y el usuario
+      // pierde el "espacio aparte" que proporcionaba useFollowUpQuestion.
+      let extractedSocraticQ = null;
+      const RE_TRAILING_Q = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)\s*$/;
+      const qMatch = content.match(RE_TRAILING_Q);
+      // Solo extraer si la pregunta no es la totalidad del mensaje (dejar al menos 80 chars de cuerpo)
+      if (qMatch && content.length > qMatch[0].length + 80) {
+        extractedSocraticQ = qMatch[1].trim();
+        content = content.slice(0, content.length - qMatch[0].length).trim();
+      }
+
       streamingMsgIdRef.current = null; // R12: placeholder finalizado correctamente
       updateMessage(streamingMsgId, content, true, true);
 
+      if (extractedSocraticQ) {
+        const fupMsg = { id: Date.now() + '-socratic-fup', role: 'assistant', content: '🤔 **Pregunta para profundizar:** ' + extractedSocraticQ };
+        addMessage(fupMsg);
+      }
+
       if (myRequestId !== requestIdRef.current) return;
-      try { onAssistantMessageRef.current?.({ id: streamingMsgId, role: 'assistant', content }, apiRef.current); } catch { /* noop */ }
+      // Si ya extrajimos una pregunta, no disparar onAssistantMessage para evitar
+      // que useFollowUpQuestion genere un follow-up duplicado (el contenido
+      // principal ya no termina en pregunta → hasQuestionNearEnd=false → hook se activa).
+      if (!extractedSocraticQ) {
+        try { onAssistantMessageRef.current?.({ id: streamingMsgId, role: 'assistant', content }, apiRef.current); } catch { /* noop */ }
+      }
 
     } catch (e) {
       clearTimeout(timeoutId);
