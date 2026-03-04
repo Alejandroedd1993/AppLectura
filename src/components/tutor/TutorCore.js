@@ -859,17 +859,29 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       // Filtro anti-eco y actualización final
       content = filterEchoIfNeeded(prevAssistantContent, content);
 
-      // FIX: Extraer pregunta socrática del final de la respuesta del modelo
-      // e inyectarla como mensaje separado (burbuja propia).
-      // Sin esto, la pregunta queda inline en el mismo mensaje y el usuario
-      // pierde el "espacio aparte" que proporcionaba useFollowUpQuestion.
+      // FIX: Extraer bloque de pregunta socrática del final de la respuesta.
+      // El modelo suele generar secciones como "Tu turno:", "🎯 Tu turno:",
+      // "Pregunta para profundizar:", etc. con una o más preguntas.
+      // Extraemos TODO el bloque (etiqueta + preguntas) para inyectarlo
+      // como burbuja separada, evitando que queden preguntas duplicadas.
       let extractedSocraticQ = null;
-      const RE_TRAILING_Q = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)\s*$/;
-      const qMatch = content.match(RE_TRAILING_Q);
-      // Solo extraer si la pregunta no es la totalidad del mensaje (dejar al menos 80 chars de cuerpo)
-      if (qMatch && content.length > qMatch[0].length + 80) {
-        extractedSocraticQ = qMatch[1].trim();
-        content = content.slice(0, content.length - qMatch[0].length).trim();
+      // Patrón 1: Bloque con etiqueta explícita (Tu turno, Pregunta, Reflexiona, etc.)
+      // Requiere \n antes de la etiqueta para no matchear la palabra "pregunta" en prosa.
+      // Emoji opcionales como prefijo (🎯 Tu turno, 🤔 Pregunta, etc.)
+      const RE_LABELED_BLOCK = /\n+(?:(?:[\u2728\u2753]|🎯|🤔|💡)\s*)?\*{0,2}(?:Tu turno|Pregunta[s]?(?: para profundizar)?|Para (?:reflexionar|pensar)|Reflexi[oó]n(?:a)?)[:\s]*\*{0,2}\s*([\s\S]{10,})$/i;
+      const labelMatch = content.match(RE_LABELED_BLOCK);
+      if (labelMatch && content.length > labelMatch[0].length + 60) {
+        // Extraer el contenido de preguntas (puede ser múltiple)
+        extractedSocraticQ = labelMatch[1].trim();
+        content = content.slice(0, content.length - labelMatch[0].length).trim();
+      } else {
+        // Patrón 2: Pregunta suelta al final (sin etiqueta)
+        const RE_TRAILING_Q = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)\s*$/;
+        const qMatch = content.match(RE_TRAILING_Q);
+        if (qMatch && content.length > qMatch[0].length + 80) {
+          extractedSocraticQ = qMatch[1].trim();
+          content = content.slice(0, content.length - qMatch[0].length).trim();
+        }
       }
 
       streamingMsgIdRef.current = null; // R12: placeholder finalizado correctamente

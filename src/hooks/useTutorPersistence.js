@@ -191,14 +191,22 @@ export default function useTutorPersistence(options = {}) {
     lastWrittenSignatureRef.current = sig;
     try {
       const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
-      await setDoc(threadRef, {
+      // FIX: Solo incluir title si hay un mensaje del usuario del cual derivar.
+      // Sin esto, flushRemote con messages=[] sobreescribe el título real con
+      // "Nuevo hilo" durante transiciones, clears, o unmounts.
+      // merge:true preserva el title existente cuando lo omitimos.
+      const derivedTitle = deriveTitle(compact);
+      const payload = {
         textHash,
         courseScope,
-        title: deriveTitle(compact),
         messageCount: compact.length,
         messages: compact,
         updatedAt: serverTimestamp(),
-      }, { merge: true });
+      };
+      if (derivedTitle !== 'Nuevo hilo') {
+        payload.title = derivedTitle;
+      }
+      await setDoc(threadRef, payload, { merge: true });
       const now = Date.now();
       setSynced(true);
       setLastSynced(now);
