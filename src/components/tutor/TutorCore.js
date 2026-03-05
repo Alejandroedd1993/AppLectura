@@ -152,7 +152,10 @@ function normalizeOutboundMessages(messages, maxMessageChars = 9000) {
       const trimmed = rawContent.trim();
       if (!trimmed) return null;
 
-      if (trimmed.length <= maxMessageChars) {
+      // FIX #1: System messages carry the developer-controlled pedagogy prompt
+      // and must NOT be truncated. The base guards alone exceed 12k chars.
+      // Only user/assistant messages (which may contain pasted text) are capped.
+      if (role === 'system' || trimmed.length <= maxMessageChars) {
         return { role, content: trimmed };
       }
 
@@ -205,7 +208,7 @@ function buildSystemContent({ baseGuards, summary, lengthInstruction, creativity
  * - Genera andamiaje ZDP+1 con preguntas socráticas
  * 
  * Props:
- *  - initialMessages: [{role, content}] para hidratar historial previo (no IDs externos)
+ *  - initialMessages: [{id?, role, content}] para hidratar historial previo
  *  - onMessagesChange: callback(messages) para persistencia externa (se invoca tras cada mutación)
  *  - maxMessages: límite FIFO de mensajes retenidos (default 40, alineado con persistencia en LecturaInteractiva)
  *  - backendUrl: URL del backend (default: http://localhost:3001)
@@ -218,7 +221,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   const [messages, setMessages] = useState(() => {
     if (!Array.isArray(initialMessages)) return [];
     return initialMessages.map((m, i) => ({
-      id: Date.now() + '-init-' + i,
+      id: m.id || (Date.now() + '-init-' + i),
       role: m.role || 'assistant',
       content: m.content || ''
     })).filter(m => m.content);
@@ -1037,7 +1040,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         logger.log('ℹ️ [TutorCore] loadMessages ignorado: stream activo');
         return;
       }
-      const mapped = arr.map((m, i) => ({ id: Date.now() + '-load-' + i, role: m.role || m.r || 'assistant', content: m.content || m.c || '' })).filter(m => m.content);
+      const mapped = arr.map((m, i) => ({ id: m.id || m.mid || (Date.now() + '-load-' + i), role: m.role || m.r || 'assistant', content: m.content || m.c || '' })).filter(m => m.content);
       // B12 FIX: Resetear ref anti-eco al contenido del último assistant cargado
       // para evitar que el filtro compare contra un hilo/texto anterior.
       const lastAssistant = [...mapped].reverse().find(m => m.role === 'assistant');
@@ -1151,14 +1154,21 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
       // Construir instrucción contextual según necesidades
       let contextualGuidance = '';
+
+      // ✨ FASE 2: Inyectar nivel cognitivo detectado (ZDP) en el guidance para el LLM
+      if (bloomDetection?.current && bloomDetection?.zdp) {
+        const conf = Math.round((bloomDetection.confidence || 0) * 100);
+        contextualGuidance += `\n\n🧠 NIVEL COGNITIVO DETECTADO: ${bloomDetection.current.label} (confianza ${conf}%). Objetivo ZDP: ${bloomDetection.zdp.label} — ${bloomDetection.zdp.description}. Adapta tu respuesta para andamiar hacia ese nivel sin saltar etapas.`;
+      }
+
       if (studentNeeds.confusion) {
-        contextualGuidance = '\n\n🆘 AJUSTE: El estudiante muestra confusión. Responde con explicación simple y concreta (2-3 frases), sin jerga. Usa ejemplos si ayuda. Termina con pregunta de verificación: "¿Esto te ayuda a entenderlo mejor?"';
+        contextualGuidance += '\n\n🆘 AJUSTE: El estudiante muestra confusión. Responde con explicación simple y concreta (2-3 frases), sin jerga. Usa ejemplos si ayuda. Termina con pregunta de verificación: "¿Esto te ayuda a entenderlo mejor?"';
       } else if (studentNeeds.frustration) {
-        contextualGuidance = '\n\n💪 AJUSTE: El estudiante muestra frustración. PRIMERO valida emocionalmente: "Entiendo que puede ser complejo...". LUEGO desglosa en pasos pequeños. Termina con ánimo: "Vamos paso a paso, lo estás haciendo bien."';
+        contextualGuidance += '\n\n💪 AJUSTE: El estudiante muestra frustración. PRIMERO valida emocionalmente: "Entiendo que puede ser complejo...". LUEGO desglosa en pasos pequeños. Termina con ánimo: "Vamos paso a paso, lo estás haciendo bien."';
       } else if (studentNeeds.curiosity) {
-        contextualGuidance = '\n\n✨ AJUSTE: El estudiante muestra curiosidad genuina. Reconócelo: "Interesante pregunta..." o "Me gusta tu curiosidad...". Da pistas en lugar de respuesta completa. Invita a explorar con pregunta abierta.';
+        contextualGuidance += '\n\n✨ AJUSTE: El estudiante muestra curiosidad genuina. Reconócelo: "Interesante pregunta..." o "Me gusta tu curiosidad...". Da pistas en lugar de respuesta completa. Invita a explorar con pregunta abierta.';
       } else if (studentNeeds.insight) {
-        contextualGuidance = '\n\n🎯 AJUSTE: El estudiante mostró un insight valioso. CELEBRA su descubrimiento: "¡Exacto!" o "Has captado algo importante...". Expande la idea conectándola con conceptos más profundos. Pregunta de nivel superior (síntesis/evaluación).';
+        contextualGuidance += '\n\n🎯 AJUSTE: El estudiante mostró un insight valioso. CELEBRA su descubrimiento: "¡Exacto!" o "Has captado algo importante...". Expande la idea conectándola con conceptos más profundos. Pregunta de nivel superior (síntesis/evaluación).';
       }
 
       if (containsSlur) {
@@ -1239,8 +1249,11 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       const containsSlurInFrag = detectHateOrSlur(frag);
       const safeFragForModel = containsSlurInFrag ? redactHateOrSlur(frag) : frag;
 
-      // No mostramos un prompt-instrucción al usuario; opcionalmente podríamos registrar una marca mínima.
-      // addMessage({ id: now + '-user-action', role: 'user', content: `(${action}) ${preview}` });
+      // FIX #5: Registrar la acción como turno de usuario para que buildSystemContent
+      // cuente la interacción en la progresión de fase (inicial/intermedia/avanzada).
+      const ACTION_LABELS = { explain: 'Explicar', summarize: 'Resumir', deep: 'Profundizar', question: 'Preguntar' };
+      const actionPreview = frag.length > 80 ? frag.slice(0, 80) + '…' : frag;
+      addMessage({ id: Date.now() + '-user-action', role: 'user', content: `📖 ${ACTION_LABELS[action] || action}: "${actionPreview}"` });
 
       // Instrucciones específicas por acción (mejoradas con enfoque pedagógico natural)
       let actionDirectives = '';
@@ -1256,7 +1269,9 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           actionDirectives = 'USAR MODO EXPLICATIVO PROFUNDO: Analiza implicaciones y conecta conceptos. Usa un tono conversacional experto pero accesible. Cierra con pregunta de síntesis. ⚠️ Escribe como un párrafo continuo, sin etiquetas explícitas.';
           break;
         case 'question':
-          actionDirectives = 'USAR MODO SOCRÁTICO: Genera 2-3 preguntas abiertas que guíen al descubrimiento de forma natural. Evita parecer un examen. Intégralas en una conversación.';
+          // FIX #3: Explicitar que esta acción anula la regla global de "una sola pregunta"
+          // porque el usuario pidió preguntas explícitamente.
+          actionDirectives = 'EXCEPCIÓN A REGLA DE PREGUNTA ÚNICA (el usuario solicitó preguntas explícitamente). USAR MODO SOCRÁTICO: Genera 2-3 preguntas abiertas que guíen al descubrimiento de forma natural. Evita parecer un examen. Intégralas en una conversación.';
           break;
         default:
           actionDirectives = 'Ayuda pedagógica empática. Responde de manera natural y fluida, sin usar etiquetas en tu respuesta.';

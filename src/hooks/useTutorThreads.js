@@ -4,6 +4,8 @@ import { db, isConfigValid } from '../firebase/config';
 import logger from '../utils/logger';
 
 const MAX_THREADS_PER_TEXT_DEFAULT = 5;
+const MAX_SEED_MESSAGES = 40;
+const REMOTE_MESSAGE_BATCH = 120;
 const EMPTY = [];
 
 function toMillis(value) {
@@ -21,6 +23,33 @@ function truncateTitle(raw) {
   const text = String(raw || '').replace(/\s+/g, ' ').trim();
   if (!text) return 'Nuevo hilo';
   return text.length > 60 ? `${text.slice(0, 60)}…` : text;
+}
+
+function normalizeSeedMessages(raw, max = MAX_SEED_MESSAGES) {
+  const seen = new Set();
+  const baseClock = Date.now();
+  return (Array.isArray(raw) ? raw : [])
+    .map((m, index) => {
+      const role = m?.r || m?.role || 'assistant';
+      const content = String(m?.c || m?.content || '');
+      const explicitId = String(m?.id || m?.mid || '').trim();
+      const baseId = explicitId || `seed_${baseClock}_${index}`;
+      let id = baseId;
+      let suffix = 1;
+      while (seen.has(id)) {
+        id = `${baseId}_${suffix}`;
+        suffix += 1;
+      }
+      seen.add(id);
+      return {
+        id,
+        r: role,
+        c: content,
+        clientCreatedAtMs: baseClock + index
+      };
+    })
+    .filter((m) => m.c)
+    .slice(-max);
 }
 
 function buildIndexKey(userId, courseScope, textHash) {
@@ -119,10 +148,10 @@ export default function useTutorThreads(options = {}) {
       writeJson(indexKey, next);
 
       setActiveThreadId((prev) => {
-        const existsPrev = prev && next.some(t => t.id === prev);
+        const existsPrev = prev && next.some((t) => t.id === prev);
         if (existsPrev) return prev;
         const cached = readJson(activeKey, null);
-        if (cached && next.some(t => t.id === cached)) return cached;
+        if (cached && next.some((t) => t.id === cached)) return cached;
         const fallback = next[0]?.id || null;
         writeJson(activeKey, fallback);
         return fallback;
@@ -152,32 +181,75 @@ export default function useTutorThreads(options = {}) {
     persistActiveSelection(threadId);
   }, [persistActiveSelection]);
 
+  const clearThreadMessagesRemote = useCallback(async (threadIdToClear) => {
+    if (!syncEnabled || !threadIdToClear) return;
+    const messagesRef = collection(db, 'users', userId, 'tutorThreads', threadIdToClear, 'messages');
+    let hasMore = true;
+    while (hasMore) {
+      const snap = await getDocs(query(messagesRef, limit(REMOTE_MESSAGE_BATCH)));
+      if (!snap.docs.length) return;
+      await Promise.all(snap.docs.map((row) => deleteDoc(row.ref)));
+      hasMore = snap.docs.length >= REMOTE_MESSAGE_BATCH;
+    }
+  }, [syncEnabled, userId]);
+
   const createThread = useCallback(async (initialMessages = []) => {
     const now = Date.now();
-    const threadId = `${courseScope}_${textHash}_${now}`;
+    const nonce = Math.random().toString(36).slice(2, 7);
+    const threadId = `${courseScope}_${textHash}_${now}_${nonce}`;
+    const seedMessages = normalizeSeedMessages(initialMessages, MAX_SEED_MESSAGES);
 
-    const userPrompt = Array.isArray(initialMessages)
-      ? initialMessages.find((m) => (m?.role || m?.r) === 'user')
-      : null;
-
-    const title = truncateTitle(userPrompt?.content || userPrompt?.c || 'Nuevo hilo');
+    const userPrompt = seedMessages.find((m) => m.r === 'user') || null;
+    const title = truncateTitle(userPrompt?.c || 'Nuevo hilo');
 
     const payload = {
       title,
       textHash,
       courseScope,
-      messageCount: Array.isArray(initialMessages) ? initialMessages.length : 0,
-      messages: Array.isArray(initialMessages)
-        ? initialMessages.map((m) => ({ r: m?.r || m?.role || 'assistant', c: String(m?.c || m?.content || '') })).filter((m) => m.c)
-        : [],
+      messageCount: seedMessages.length,
+      storageModel: 'append_v1',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
+
+    const nowThread = {
+      id: threadId,
+      title,
+      textHash,
+      courseScope,
+      updatedAtMs: now,
+      createdAtMs: now,
+      messageCount: seedMessages.length
+    };
+
+    // Activar hilo localmente de inmediato para evitar escribir en "no-thread"
+    // mientras Firestore responde (latencia/red lenta).
+    setThreads((prev) => {
+      const deduped = [nowThread, ...prev.filter((t) => t.id !== threadId)].slice(0, maxThreads);
+      writeJson(indexKey, deduped);
+      return deduped;
+    });
+    persistActiveSelection(threadId);
 
     if (syncEnabled) {
       try {
         const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
         await setDoc(threadRef, payload, { merge: true });
+
+        if (seedMessages.length > 0) {
+          const seedWrites = seedMessages.map((msg) => {
+            const messageRef = doc(db, 'users', userId, 'tutorThreads', threadId, 'messages', msg.id);
+            return setDoc(messageRef, {
+              id: msg.id,
+              r: msg.r,
+              c: msg.c,
+              clientCreatedAtMs: msg.clientCreatedAtMs,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            }, { merge: true });
+          });
+          await Promise.all(seedWrites);
+        }
 
         const ref = collection(db, 'users', userId, 'tutorThreads');
         const cleanupQuery = query(
@@ -189,7 +261,11 @@ export default function useTutorThreads(options = {}) {
         const all = await getDocs(cleanupQuery);
         if (all.size > maxThreads) {
           const toDelete = all.docs.slice(maxThreads);
-          await Promise.all(toDelete.map((d) => deleteDoc(d.ref)));
+          await Promise.all(toDelete.map(async (d) => {
+            const staleId = d.id || d.ref?.id;
+            await clearThreadMessagesRemote(staleId);
+            await deleteDoc(d.ref);
+          }));
         }
       } catch (err) {
         logger.warn('[useTutorThreads] No se pudo crear hilo en Firestore:', err);
@@ -197,30 +273,15 @@ export default function useTutorThreads(options = {}) {
       }
     }
 
-    setThreads((prev) => {
-      const nowThread = {
-        id: threadId,
-        title,
-        textHash,
-        courseScope,
-        updatedAtMs: now,
-        createdAtMs: now,
-        messageCount: Array.isArray(initialMessages) ? initialMessages.length : 0
-      };
-      const deduped = [nowThread, ...prev.filter(t => t.id !== threadId)].slice(0, maxThreads);
-      writeJson(indexKey, deduped);
-      return deduped;
-    });
-
-    persistActiveSelection(threadId);
     return threadId;
-  }, [syncEnabled, courseScope, textHash, userId, maxThreads, indexKey, persistActiveSelection]);
+  }, [syncEnabled, courseScope, textHash, userId, maxThreads, indexKey, persistActiveSelection, clearThreadMessagesRemote]);
 
   const deleteThread = useCallback(async (threadId) => {
     if (!threadId) return;
 
     if (syncEnabled) {
       try {
+        await clearThreadMessagesRemote(threadId);
         await deleteDoc(doc(db, 'users', userId, 'tutorThreads', threadId));
       } catch (err) {
         logger.warn('[useTutorThreads] No se pudo eliminar hilo:', err);
@@ -229,7 +290,7 @@ export default function useTutorThreads(options = {}) {
     }
 
     setThreads((prev) => {
-      const next = prev.filter(t => t.id !== threadId);
+      const next = prev.filter((t) => t.id !== threadId);
       writeJson(indexKey, next);
       setActiveThreadId((prevActive) => {
         if (prevActive !== threadId) return prevActive;
@@ -239,7 +300,7 @@ export default function useTutorThreads(options = {}) {
       });
       return next;
     });
-  }, [syncEnabled, userId, indexKey, activeKey]);
+  }, [syncEnabled, userId, indexKey, activeKey, clearThreadMessagesRemote]);
 
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) || null,

@@ -136,10 +136,28 @@ service cloud.firestore {
         allow create, update: if isOwner(userId)
           && request.resource.data.textHash is string
           && request.resource.data.courseScope is string
-          && request.resource.data.messages is list
-          && request.resource.data.messages.size() <= 40;
+          && (
+            !request.resource.data.keys().hasAny(['messages']) ||
+            (
+              request.resource.data.messages is list &&
+              request.resource.data.messages.size() <= 40
+            )
+          );
 
         allow delete: if isOwner(userId);
+
+        match /messages/{messageId} {
+          allow read: if isOwner(userId);
+
+          allow create, update: if isOwner(userId)
+            && request.resource.data.id is string
+            && request.resource.data.id == messageId
+            && request.resource.data.r is string
+            && request.resource.data.c is string
+            && request.resource.data.clientCreatedAtMs is number;
+
+          allow delete: if isOwner(userId);
+        }
       }
     }
     

@@ -104,7 +104,9 @@ function parseMarkdown(text) {
   // Buscamos si el final del mensaje (o el último párrafo) contiene una pregunta.
   // Seleccionamos desde el inicio de la oración socrática hasta el cierre ?.
   // Modificado: Buscamos por final de texto o final de <p>
-  if (RE_SOCRATIC.test(html)) {
+  // FIX: No aplicar a mensajes ya extraídos por TutorCore (prefijo 🤔) para evitar doble decoración.
+  const isPreExtracted = /^(?:🤔|&#x1f914;|\uD83E\uDD14)/.test(text);
+  if (!isPreExtracted && RE_SOCRATIC.test(html)) {
     html = html.replace(RE_SOCRATIC, (match, pregunta, cierreP) => {
       // Envolver la pregunta en un div con una clase específica para estilizarla
       const box = `<div class="socratic-question" style="background: rgba(37, 99, 235, 0.1); border-left: 3px solid #2563eb; padding: 0.5rem 0.75rem; margin-top: 0.5rem; border-radius: 4px; font-style: italic;">

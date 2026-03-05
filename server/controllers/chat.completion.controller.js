@@ -75,6 +75,9 @@ function parseAllowedModels(envValue, fallbackCsv) {
 function validateAndNormalizeMessages(messages) {
   const maxMessages = safeNumber(process.env.CHAT_MAX_MESSAGES, 50);
   const maxMessageChars = safeNumber(process.env.CHAT_MAX_MESSAGE_CHARS, 10000);
+  // FIX #1b: System messages carry the pedagogy prompt (>12k chars).
+  // They need a higher cap than user/assistant messages.
+  const maxSystemChars = safeNumber(process.env.CHAT_MAX_SYSTEM_CHARS, 30000);
   const maxTotalChars = safeNumber(process.env.CHAT_MAX_TOTAL_CHARS, 50000);
 
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -97,8 +100,9 @@ function validateAndNormalizeMessages(messages) {
     if (!content.trim()) {
       return { ok: false, error: 'content vacío no permitido' };
     }
-    if (content.length > maxMessageChars) {
-      return { ok: false, error: `Mensaje demasiado largo (máx ${maxMessageChars} chars)` };
+    const effectiveMaxChars = role === 'system' ? maxSystemChars : maxMessageChars;
+    if (content.length > effectiveMaxChars) {
+      return { ok: false, error: `Mensaje demasiado largo (máx ${effectiveMaxChars} chars)` };
     }
 
     totalChars += content.length;

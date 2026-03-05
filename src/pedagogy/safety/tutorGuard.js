@@ -45,11 +45,13 @@ export function slurAppearsInContext(contextText) {
  * 1. No inventa metadatos (autor, título, fecha) que no están en el texto
  * 2. No pregunta sobre palabras de sus propios mensajes anteriores
  * @param {string} response - Respuesta del asistente
- * @param {Object} context - { fragment, fullText, previousAssistantMessages }
+ * @param {Object} context - { fragment, fullText }
  * @returns {Object} { isValid, errors, correctedResponse }
  */
 export function validateResponse(response, context = {}) {
-  const { fragment = '', fullText = '', previousAssistantMessages: _previousAssistantMessages = [] } = context;
+  // FIX #6: previousAssistantMessages se declaraba pero nunca se usaba.
+  // Eliminado de la desestructuración para no dar falsa sensación de cobertura.
+  const { fragment = '', fullText = '' } = context;
   const errors = [];
 
   if (!response || typeof response !== 'string') {
@@ -72,8 +74,8 @@ export function validateResponse(response, context = {}) {
       /(?:libro|obra|texto|poema) (?:titulado|llamado)\s+["']([^"']+?)["']/i
     ],
     fecha: [
-      /\b(?:en|de|del año|año)\s+(\d{4})\b/i,
-      /\b(?:escrito|publicado|publicada)\s+(?:en|el año|año)\s+(\d{4})\b/i
+      /\b(?:escrito|publicado|publicada|data de|fechado|redactado)\s+(?:en\s+)?(?:el\s+año\s+)?(\d{4})\b/i,
+      /\b(?:del|el)\s+año\s+(\d{4})\b/i
     ]
   };
 

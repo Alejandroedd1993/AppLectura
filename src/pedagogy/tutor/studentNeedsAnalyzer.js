@@ -32,7 +32,7 @@ export const FRUSTRATION_PATTERNS = [
 export const CURIOSITY_PATTERNS = [
     /me pregunto/i, /me estoy preguntando/i,
     /ser[aá] que/i, /será que/i,
-    /por qu[eé]/i, /porque/i, /por qué razón/i,
+    /por qu[eé]/i, /por qué razón/i,
     /c[oó]mo/i, /de qué manera/i, /de qué forma/i,
     /qu[eé] pasa si/i, /y si/i, /cu[aá]l ser[ií]a/i,
     /interesante/i, /es interesante/i, /muy interesante/i,

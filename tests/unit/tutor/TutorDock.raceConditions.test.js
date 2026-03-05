@@ -73,8 +73,10 @@ describe('TutorDock race conditions', () => {
 
     await waitFor(() => {
       expect(mockApi.cancelPending).not.toHaveBeenCalled();
-      expect(mockApi.loadMessages).toHaveBeenCalledWith([
-        { role: 'assistant', content: 'Mensaje remoto tardío' }
+      expect(mockApi.loadMessages).toHaveBeenCalled();
+      const firstArg = mockApi.loadMessages.mock.calls[0]?.[0] || [];
+      expect(firstArg).toEqual([
+        expect.objectContaining({ role: 'assistant', content: 'Mensaje remoto tardío' })
       ]);
     });
   });

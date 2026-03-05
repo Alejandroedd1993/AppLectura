@@ -260,74 +260,48 @@ export default function ReadingWorkspace({ enableWeb: _enableWeb = true, followU
         return; // Salir completamente del handler
       }
 
+      // FIX #4: Cuando el tutor ya está visible, TutorDock escucha 'reader-action'
+      // directamente via su propio useReaderActions. Reenviar aquí como
+      // 'tutor-external-prompt' causaba doble ejecución de sendAction.
+      if (showTutor) {
+        devLog('ℹ️ [ReadingWorkspace] Tutor visible, delegando a TutorDock useReaderActions (sin re-dispatch)');
+        return;
+      }
+
+      // Tutor cerrado: guardar acción pendiente y abrir tutor.
+      // Cuando el tutor se monte, el efecto tutor-ready despachará la acción.
       switch (action) {
         case 'explain':
-          if (showTutor) {
-            devLog('✅ [ReadingWorkspace] Tutor ya abierto, enviando evento inmediatamente');
-            window.dispatchEvent(new CustomEvent('tutor-external-prompt', {
-              detail: {
-                prompt: `Actúa como profesor experto. Explica de forma clara y didáctica el significado, contexto e importancia de este fragmento: "${text}". Incluye ejemplos si es pertinente.`,
-                action: 'explain',
-                fragment: text,
-                fullText: texto
-              }
-            }));
-          } else {
-            devLog('⏳ [ReadingWorkspace] Tutor cerrado, guardando acción pendiente');
-            pendingPromptRef.current = {
-              prompt: `Actúa como profesor experto. Explica de forma clara y didáctica el significado, contexto e importancia de este fragmento: "${text}". Incluye ejemplos si es pertinente.`,
-              action: 'explain',
-              fragment: text
-            };
-            setShowTutor(true);
-            setTutorExpanded(true);
-          }
+          devLog('⏳ [ReadingWorkspace] Tutor cerrado, guardando acción pendiente');
+          pendingPromptRef.current = {
+            prompt: `Actúa como profesor experto. Explica de forma clara y didáctica el significado, contexto e importancia de este fragmento: "${text}". Incluye ejemplos si es pertinente.`,
+            action: 'explain',
+            fragment: text
+          };
+          setShowTutor(true);
+          setTutorExpanded(true);
           break;
 
         case 'summarize':
-          if (showTutor) {
-            devLog('✅ Tutor ya abierto, enviando evento inmediatamente');
-            window.dispatchEvent(new CustomEvent('tutor-external-prompt', {
-              detail: {
-                prompt: `Resume en máximo 3 puntos las ideas PRINCIPALES y CLAVE de este fragmento. Sé conciso y directo: "${text}"`,
-                action: 'summarize',
-                fragment: text,
-                fullText: texto
-              }
-            }));
-          } else {
-            devLog('⏳ Tutor cerrado, guardando acción pendiente');
-            pendingPromptRef.current = {
-              prompt: `Resume en máximo 3 puntos las ideas PRINCIPALES y CLAVE de este fragmento. Sé conciso y directo: "${text}"`,
-              action: 'summarize',
-              fragment: text
-            };
-            setShowTutor(true);
-            setTutorExpanded(true);
-          }
+          devLog('⏳ Tutor cerrado, guardando acción pendiente');
+          pendingPromptRef.current = {
+            prompt: `Resume en máximo 3 puntos las ideas PRINCIPALES y CLAVE de este fragmento. Sé conciso y directo: "${text}"`,
+            action: 'summarize',
+            fragment: text
+          };
+          setShowTutor(true);
+          setTutorExpanded(true);
           break;
 
         case 'question':
-          if (showTutor) {
-            devLog('✅ Tutor ya abierto, enviando evento inmediatamente');
-            window.dispatchEvent(new CustomEvent('tutor-external-prompt', {
-              detail: {
-                prompt: `Genera 3 preguntas de comprensión profunda (nivel análisis/evaluación según Bloom) sobre este fragmento: "${text}"`,
-                action: 'question',
-                fragment: text,
-                fullText: texto
-              }
-            }));
-          } else {
-            devLog('⏳ Tutor cerrado, guardando prompt pendiente');
-            pendingPromptRef.current = {
-              prompt: `Genera 3 preguntas de comprensión profunda (nivel análisis/evaluación según Bloom) sobre este fragmento: "${text}"`,
-              action: 'question',
-              fragment: text
-            };
-            setShowTutor(true);
-            setTutorExpanded(true);
-          }
+          devLog('⏳ Tutor cerrado, guardando prompt pendiente');
+          pendingPromptRef.current = {
+            prompt: `Genera 3 preguntas de comprensión profunda (nivel análisis/evaluación según Bloom) sobre este fragmento: "${text}"`,
+            action: 'question',
+            fragment: text
+          };
+          setShowTutor(true);
+          setTutorExpanded(true);
           break;
       }
     };
