@@ -23,6 +23,19 @@ const defaultModels = {
  * @param {Number} [opts.timeoutMs=30000]
  * @returns {Promise<Object>} JSON de respuesta del backend (estilo OpenAI)
  */
+// Límite defensivo por mensaje (debe estar por debajo del backend maxMessageChars=20000)
+const MAX_MSG_CHARS = 18000;
+const TRUNCATION_SUFFIX = '\n\n[contenido truncado automáticamente por límite técnico]';
+
+function capMessages(msgs) {
+  if (!Array.isArray(msgs)) return msgs;
+  return msgs.map(m => {
+    if (!m?.content || typeof m.content !== 'string') return m;
+    if (m.role === 'system' || m.content.length <= MAX_MSG_CHARS) return m;
+    return { ...m, content: m.content.slice(0, MAX_MSG_CHARS - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX };
+  });
+}
+
 export async function chatCompletion({
   messages,
   provider = 'deepseek',
@@ -37,7 +50,7 @@ export async function chatCompletion({
   const payload = {
     provider,
     model: model || defaultModels[provider] || defaultModels.openai,
-    messages,
+    messages: capMessages(messages),
     temperature,
     max_tokens,
     ...(response_format ? { response_format } : {})

@@ -20,7 +20,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001'
  */
 export async function analyzeTextStructure(text, options = {}) {
   const {
-    maxLength = 15000, // REDUCIDO: Limitar a 15K para análisis rápido
+    maxLength = 12000, // FIX: Reducido a 12K para que el prompt total (texto + instrucciones ~2K) no exceda el límite backend de 20K
     detectSections: _detectSections = true,
     detectEmphasis: _detectEmphasis = true,
     detectLists: _detectLists = true,

@@ -74,7 +74,13 @@ function parseAllowedModels(envValue, fallbackCsv) {
 
 function validateAndNormalizeMessages(messages) {
   const maxMessages = safeNumber(process.env.CHAT_MAX_MESSAGES, 50);
-  const maxMessageChars = safeNumber(process.env.CHAT_MAX_MESSAGE_CHARS, 10000);
+  // FIX #2: Raised from 10000 → 20000. Multiple frontend services (evaluación
+  // integral, ensayo integrador, respuesta argumentativa, etc.) build user
+  // prompts that embed text excerpts + student responses + prior AI feedback,
+  // routinely reaching 10-15k chars.  The per-payload cap (maxTotalChars)
+  // already guards against abuse; the per-message cap only needs to prevent
+  // a single enormous field, not legitimate multi-field prompts.
+  const maxMessageChars = safeNumber(process.env.CHAT_MAX_MESSAGE_CHARS, 20000);
   // FIX #1b: System messages carry the pedagogy prompt (>12k chars).
   // They need a higher cap than user/assistant messages.
   const maxSystemChars = safeNumber(process.env.CHAT_MAX_SYSTEM_CHARS, 30000);
