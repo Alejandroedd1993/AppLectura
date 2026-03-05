@@ -98,14 +98,17 @@ function buildContextSnippet(ctx = {}) {
 function buildLengthInstruction(mode, prompt) {
   try {
     const m = (mode || 'auto').toLowerCase();
-    if (m === 'breve') return 'Responde de forma MUY concisa y directa (máximo 2-3 frases). Evita adornos innecesarios.';
-    if (m === 'media') return 'Responde con una extensión equilibrada (4-6 frases). Explica lo necesario sin extenderte demasiado.';
-    if (m === 'detallada') return 'Responde de forma detallada y rica en contenido (hasta 8-10 frases). USA VIÑETAS o listas numeradas para estructurar tu respuesta si es útil. Incluye EJEMPLOS concretos del texto para ilustrar tus puntos.';
+    if (m === 'breve') return 'EXTENSIÓN BREVE: Responde de forma concisa y directa (máximo 3-5 frases). Ve al grano sin adornos innecesarios.';
+    if (m === 'detallada') return 'EXTENSIÓN DETALLADA: Responde de forma completa y rica en contenido (hasta 15 frases o más si el tema lo requiere). USA VIÑETAS o listas numeradas para estructurar tu respuesta. Incluye EJEMPLOS concretos del texto, citas textuales y análisis en profundidad.';
+    // 'media' y 'auto' comparten la misma instrucción equilibrada
+    if (m === 'media') return 'EXTENSIÓN MEDIA: Responde con la extensión que el tema requiera (generalmente 6-10 frases). Desarrolla tus explicaciones con claridad, cita el texto cuando sea relevante, y no te cortes si necesitas más espacio para una buena explicación.';
+    // auto: detectar por contenido del prompt
     const p = (prompt || '').toLowerCase();
-    if (/lista|enumera|cuáles son|ejemplos/.test(p)) return 'Usa listas o viñetas para mayor claridad.';
-    if (/resume|resumen|de qué trata|idea principal/.test(p)) return 'Responde de forma concisa y directa.';
-    if (/explica|por qué|cómo|analiza|relación/.test(p)) return 'Responde con detalle explicativo, usando el texto como soporte.';
-    return '';
+    if (/lista|enumera|cuáles son|ejemplos/.test(p)) return 'Usa listas o viñetas para mayor claridad. Desarrolla cada punto brevemente.';
+    if (/resume|resumen|de qué trata|idea principal/.test(p)) return 'Responde de forma concisa pero completa.';
+    if (/explica|por qué|cómo|analiza|relación|profundiz/.test(p)) return 'Responde con detalle explicativo, usando el texto como soporte. No te limites si la explicación lo requiere.';
+    // Default auto sin match: extensión media
+    return 'Responde con la extensión que el tema requiera. No te cortes si necesitas desarrollar más para una buena explicación.';
   } catch { return ''; }
 }
 
@@ -529,7 +532,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
       // Adaptar max_tokens según modo de longitud para dar espacio a respuestas detalladas
       const lm = (ctx.lengthMode || 'auto').toLowerCase();
-      const maxTokens = lm === 'breve' ? 800 : 4096;
+      const maxTokens = lm === 'breve' ? 1024 : lm === 'media' ? 2048 : lm === 'detallada' ? 4096 : 2048;
 
       const res = await fetch(`${backendBaseUrlRef.current}/api/chat/completion`, {
         method: 'POST',

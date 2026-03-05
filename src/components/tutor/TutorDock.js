@@ -243,12 +243,14 @@ function TutorDockEffects({
     onPrompt: ({ prompt, action, fragment }) => {
       setPendingExternal(action);
       if (action && fragment) {
-        // Ajustar lengthMode recomendado por acción
+        // Solo ajustar lengthMode si el usuario tiene 'auto' (no sobrescribir su preferencia)
         try {
-          if (action === 'summarize') apiRef.current.setContext({ lengthMode: 'breve' });
-          else if (action === 'explain') apiRef.current.setContext({ lengthMode: 'media' });
-          else if (action === 'deep') apiRef.current.setContext({ lengthMode: 'detallada' });
-          else if (action === 'question') apiRef.current.setContext({ lengthMode: 'breve' });
+          if (lengthMode === 'auto') {
+            if (action === 'summarize') apiRef.current.setContext({ lengthMode: 'breve' });
+            else if (action === 'explain') apiRef.current.setContext({ lengthMode: 'media' });
+            else if (action === 'deep') apiRef.current.setContext({ lengthMode: 'detallada' });
+            else if (action === 'question') apiRef.current.setContext({ lengthMode: 'breve' });
+          }
         } catch { /* noop */ }
         apiRef.current.sendAction(action, fragment, {});
       } else if (prompt) {
@@ -265,12 +267,14 @@ function TutorDockEffects({
         const detail = e?.detail || {};
         const { action, fragment, fullText, prompt, webContext } = detail;
         if (action && fragment) {
-          // Ajustar lengthMode por acción antes de enviar
+          // Solo ajustar lengthMode si el usuario tiene 'auto' (respetar preferencia explícita)
           try {
-            if (action === 'summarize') apiRef.current.setContext({ lengthMode: 'breve' });
-            else if (action === 'explain') apiRef.current.setContext({ lengthMode: 'media' });
-            else if (action === 'deep') apiRef.current.setContext({ lengthMode: 'detallada' });
-            else if (action === 'question') apiRef.current.setContext({ lengthMode: 'breve' });
+            if (lengthMode === 'auto') {
+              if (action === 'summarize') apiRef.current.setContext({ lengthMode: 'breve' });
+              else if (action === 'explain') apiRef.current.setContext({ lengthMode: 'media' });
+              else if (action === 'deep') apiRef.current.setContext({ lengthMode: 'detallada' });
+              else if (action === 'question') apiRef.current.setContext({ lengthMode: 'breve' });
+            }
           } catch { /* noop */ }
           apiRef.current.sendAction(action, fragment, { fullText });
         } else if (prompt && typeof prompt === 'string') {
