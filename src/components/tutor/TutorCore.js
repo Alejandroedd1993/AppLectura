@@ -517,7 +517,9 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           if (extractedQ) {
             addMessage({ id: Date.now() + '-socratic-fup', role: 'assistant', content: '🤔 **Pregunta para profundizar:** ' + extractedQ });
           }
-          if (!extractedQ) {
+          // Suprimir follow-up si ya se extrajo pregunta o el contenido termina con pregunta natural
+          const tailQ = /\?\s*['“”„‟‘’)\]\u00bb\u2026.!,:;\s]*$/u.test(content.slice(-280));
+          if (!extractedQ && !tailQ) {
             try { onAssistantMessageRef.current?.(msg, apiRef.current); } catch { /* noop */ }
           }
           return; // Evitar continuar al fetch backend
@@ -899,10 +901,11 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       }
 
       if (myRequestId !== requestIdRef.current) return;
-      // Si ya extrajimos una pregunta, no disparar onAssistantMessage para evitar
-      // que useFollowUpQuestion genere un follow-up duplicado (el contenido
-      // principal ya no termina en pregunta → hasQuestionNearEnd=false → hook se activa).
-      if (!extractedSocraticQ) {
+      // Suprimir onAssistantMessage si ya extrajimos pregunta socrática O si el
+      // contenido aún termina con pregunta (el decorador visual la mostrará como
+      // "Tu turno"). Esto evita que useFollowUpQuestion genere un follow-up duplicado.
+      const tailHasQ = /\?\s*['“”„‟‘’)\]\u00bb\u2026.!,:;\s]*$/u.test(content.slice(-280));
+      if (!extractedSocraticQ && !tailHasQ) {
         try { onAssistantMessageRef.current?.({ id: streamingMsgId, role: 'assistant', content }, apiRef.current); } catch { /* noop */ }
       }
 
