@@ -503,7 +503,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
           // Extraer pregunta socrática en mensaje separado (misma lógica que flujo SSE)
           let extractedQ = null;
-          const RE_TQ = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)\s*$/;
+          const RE_TQ = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)[*_]{0,2}\s*$/;
           const qM = content.match(RE_TQ);
           if (qM && content.length > qM[0].length + 80) {
             extractedQ = qM[1].trim();
@@ -876,15 +876,15 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       // Patrón 1: Bloque con etiqueta explícita (Tu turno, Pregunta, Reflexiona, etc.)
       // Requiere \n antes de la etiqueta para no matchear la palabra "pregunta" en prosa.
       // Emoji opcionales como prefijo (🎯 Tu turno, 🤔 Pregunta, etc.)
-      const RE_LABELED_BLOCK = /\n+(?:(?:[\u2728\u2753]|🎯|🤔|💡)\s*)?\*{0,2}(?:Tu turno|Pregunta[s]?(?: para profundizar)?|Para (?:reflexionar|pensar)|Reflexi[oó]n(?:a)?)[:\s]*\*{0,2}\s*([\s\S]{10,})$/i;
+      const RE_LABELED_BLOCK = /\n+(?:(?:[\u2728\u2753]|🎯|🤔|💡)\s*)?\*{0,2}(?:Tu turno|Pregunta[s]?(?: para profundizar)?|Para (?:reflexionar|pensar|profundizar)|Reflexi[oó]n(?:a)?)[:\s]*\*{0,2}\s*([\s\S]{10,})$/i;
       const labelMatch = content.match(RE_LABELED_BLOCK);
       if (labelMatch && content.length > labelMatch[0].length + 60) {
         // Extraer el contenido de preguntas (puede ser múltiple)
         extractedSocraticQ = labelMatch[1].trim();
         content = content.slice(0, content.length - labelMatch[0].length).trim();
       } else {
-        // Patrón 2: Pregunta suelta al final (sin etiqueta)
-        const RE_TRAILING_Q = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)\s*$/;
+        // Patrón 2: Pregunta suelta al final (sin etiqueta). Tolera trailing markdown (**, _, etc.)
+        const RE_TRAILING_Q = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)[*_]{0,2}\s*$/;
         const qMatch = content.match(RE_TRAILING_Q);
         if (qMatch && content.length > qMatch[0].length + 80) {
           extractedSocraticQ = qMatch[1].trim();
