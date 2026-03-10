@@ -1,5 +1,48 @@
 import { generarNotasConOpenAI, generarNotasConDeepSeek, generarNotasConGemini } from '../services/notes.service.js';
 import { notesSchema } from '../validators/schemas.js';
+import { sendValidationError } from '../utils/validationError.js';
+
+function isProviderConfigured(provider) {
+  if (provider === 'openai') return Boolean(process.env.OPENAI_API_KEY);
+  if (provider === 'deepseek') return Boolean(process.env.DEEPSEEK_API_KEY);
+  if (provider === 'gemini') return Boolean(process.env.GEMINI_API_KEY);
+  return true;
+}
+
+function getNotesErrorResponse(error) {
+  const message = String(error?.message || '');
+
+  if (message.includes('Timeout')) {
+    return {
+      status: 504,
+      body: {
+        error: 'Tiempo de espera agotado',
+        mensaje: 'La generacion de notas tardo demasiado. Intenta nuevamente.',
+        codigo: 'NOTES_TIMEOUT'
+      }
+    };
+  }
+
+  if (message.includes('Rate limit')) {
+    return {
+      status: 429,
+      body: {
+        error: 'Limite de solicitudes excedido',
+        mensaje: 'El proveedor esta temporalmente saturado. Intenta nuevamente en unos minutos.',
+        codigo: 'NOTES_RATE_LIMIT'
+      }
+    };
+  }
+
+  return {
+    status: 500,
+    body: {
+      error: 'Error generando notas',
+      mensaje: 'No se pudieron generar las notas de estudio en este momento.',
+      codigo: 'NOTES_GENERATION_ERROR'
+    }
+  };
+}
 
 /**
  * POST /api/notes/generate
@@ -14,9 +57,14 @@ import { notesSchema } from '../validators/schemas.js';
  */
 export async function generarNotas(req, res) {
   const { texto, api = 'openai', contexto = null, nivelAcademico = 'pregrado', tipoTexto = 'auto', numeroTarjetas = undefined } = req.body || {};
+  const provider = String(api || 'openai').trim().toLowerCase();
 
   if (!texto || typeof texto !== 'string' || texto.trim().length === 0) {
-    return res.status(400).json({ error: 'Texto vacío', mensaje: 'Proporciona texto para generar notas' });
+    return sendValidationError(res, {
+      error: 'Texto vacio',
+      mensaje: 'Proporciona texto para generar notas',
+      codigo: 'EMPTY_NOTES_TEXT'
+    });
   }
 
   // Log del contexto enriquecido y nivel académico
@@ -31,19 +79,25 @@ export async function generarNotas(req, res) {
   }
 
   // Validación por proveedor
-  if (api === 'openai' && !process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: 'API no configurada', mensaje: 'OPENAI_API_KEY no está configurada en el servidor' });
+  if (!['openai', 'deepseek', 'gemini'].includes(provider)) {
+    return res.status(400).json({
+      error: 'API no soportada',
+      mensaje: 'El proveedor solicitado no es valido.',
+      codigo: 'UNSUPPORTED_AI_PROVIDER'
+    });
   }
-  if (api === 'deepseek' && !process.env.DEEPSEEK_API_KEY) {
-    return res.status(500).json({ error: 'API no configurada', mensaje: 'DEEPSEEK_API_KEY no está configurada en el servidor' });
-  }
-  if (api === 'gemini' && !process.env.GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'API no configurada', mensaje: 'GEMINI_API_KEY no está configurada en el servidor' });
+
+  if (!isProviderConfigured(provider)) {
+    return res.status(503).json({
+      error: 'Proveedor no disponible',
+      mensaje: 'El proveedor solicitado no esta configurado en el servidor.',
+      codigo: 'AI_PROVIDER_NOT_CONFIGURED'
+    });
   }
 
   try {
     let result;
-    switch (api) {
+    switch (provider) {
       case 'openai':
         result = await generarNotasConOpenAI(texto, contexto, nivelAcademico, tipoTexto, numeroTarjetas); // 🆕 Pasar nivel
         break;
@@ -53,24 +107,21 @@ export async function generarNotas(req, res) {
       case 'gemini':
         result = await generarNotasConGemini(texto, contexto, nivelAcademico, tipoTexto, numeroTarjetas); // 🆕 Pasar nivel
         break;
-      default:
-        return res.status(400).json({ error: 'API no soportada', mensaje: `Proveedor no soportado: ${api}` });
     }
     const parsed = notesSchema.safeParse(result);
     if (!parsed.success) {
-      return res.status(502).json({ error: 'Formato inválido', detalle: parsed.error.flatten() });
+      console.error('[notes.controller] Formato invalido del proveedor:', parsed.error.flatten());
+      return res.status(502).json({
+        error: 'Respuesta invalida del proveedor',
+        mensaje: 'La respuesta del proveedor no tuvo el formato esperado.',
+        codigo: 'INVALID_NOTES_RESPONSE'
+      });
     }
     return res.json(parsed.data);
   } catch (error) {
     console.error('Error en generarNotas:', error);
-    const msg = error?.message || 'Error interno';
-    if (msg.includes('Timeout')) {
-      return res.status(504).json({ error: 'Timeout', mensaje: msg });
-    }
-    if (msg.includes('Rate limit')) {
-      return res.status(429).json({ error: 'Rate limit', mensaje: msg });
-    }
-    return res.status(500).json({ error: 'Error generando notas', mensaje: msg });
+    const { status, body } = getNotesErrorResponse(error);
+    return res.status(status).json(body);
   }
 }
 
