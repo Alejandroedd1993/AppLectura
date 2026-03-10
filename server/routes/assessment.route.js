@@ -6,8 +6,8 @@ import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 const router = express.Router();
 
 // CORRECCIÓN: Middleware de validación específico para assessment
-const validateAssessmentInput = (req, res, next) => {
-  const { texto, respuesta, dimension } = req.body;
+export const validateAssessmentInput = (req, res, next) => {
+  const { texto, respuesta, dimension } = req.body || {};
   
   if (!texto || typeof texto !== 'string' || texto.trim().length < 50) {
     return res.status(400).json({ 
@@ -40,8 +40,8 @@ const validateAssessmentInput = (req, res, next) => {
 
 
 // Middleware de validación para evaluación comprehensiva
-const validateComprehensiveInput = (req, res, next) => {
-  const { texto, respuesta } = req.body;
+export const validateComprehensiveInput = (req, res, next) => {
+  const { texto, respuesta } = req.body || {};
   
   if (!texto || typeof texto !== 'string' || texto.trim().length < 200) {
     return res.status(400).json({ 

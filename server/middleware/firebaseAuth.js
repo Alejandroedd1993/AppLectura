@@ -1,26 +1,6 @@
-import crypto from 'crypto';
+import { getAdminApp } from '../config/firebaseAdmin.js';
 
-const GOOGLE_SECURETOKEN_CERTS_URL =
-  'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
-
-const FIVE_MIN_MS = 5 * 60 * 1000;
-const ONE_HOUR_MS = 60 * 60 * 1000;
-
-let certsCache = {
-  certs: null,
-  expiresAt: 0
-};
 let authBypassWarningLogged = false;
-
-const toBase64 = (base64Url) => {
-  const padded = base64Url.padEnd(base64Url.length + ((4 - (base64Url.length % 4)) % 4), '=');
-  return padded.replace(/-/g, '+').replace(/_/g, '/');
-};
-
-const decodeJsonPart = (part) => {
-  const raw = Buffer.from(toBase64(part), 'base64').toString('utf8');
-  return JSON.parse(raw);
-};
 
 const parseBearerToken = (req) => {
   const auth = req.get('authorization') || '';
@@ -28,79 +8,37 @@ const parseBearerToken = (req) => {
   return match?.[1]?.trim() || null;
 };
 
-const parseMaxAgeMs = (cacheControlHeader) => {
-  const m = String(cacheControlHeader || '').match(/max-age=(\d+)/i);
-  if (!m) return ONE_HOUR_MS;
-  const seconds = Number(m[1]);
-  if (!Number.isFinite(seconds) || seconds <= 0) return ONE_HOUR_MS;
-  return seconds * 1000;
-};
-
-const getProjectId = () =>
-  String(
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.GCLOUD_PROJECT ||
-    process.env.GOOGLE_CLOUD_PROJECT ||
-    ''
-  ).trim();
-
-async function getGoogleCerts() {
-  const now = Date.now();
-  if (certsCache.certs && now < certsCache.expiresAt) {
-    return certsCache.certs;
-  }
-
-  const response = await fetch(GOOGLE_SECURETOKEN_CERTS_URL);
-  if (!response.ok) {
-    throw new Error(`No se pudieron obtener certificados de Google (${response.status})`);
-  }
-
-  const certs = await response.json();
-  const cacheControl = response.headers.get('cache-control');
-  const maxAgeMs = parseMaxAgeMs(cacheControl);
-  certsCache = {
-    certs,
-    expiresAt: now + Math.max(maxAgeMs - FIVE_MIN_MS, FIVE_MIN_MS)
-  };
-
-  return certs;
+function isTrueLike(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
 }
 
-function verifyJwtSignature(unsignedToken, signaturePart, certPem) {
-  const verifier = crypto.createVerify('RSA-SHA256');
-  verifier.update(unsignedToken);
-  verifier.end();
-  const signature = Buffer.from(toBase64(signaturePart), 'base64');
-  return verifier.verify(certPem, signature);
+function shouldEnforceFirebaseAuth() {
+  const envName = String(process.env.NODE_ENV || '').trim().toLowerCase();
+  const isLocalLikeEnv = envName === 'development' || envName === 'test';
+  return isTrueLike(process.env.ENFORCE_FIREBASE_AUTH ?? (isLocalLikeEnv ? 'false' : 'true'));
 }
 
-function validateTokenClaims(payload, projectId) {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const expectedIss = `https://securetoken.google.com/${projectId}`;
+function shouldCheckRevokedTokens() {
+  return isTrueLike(process.env.FIREBASE_CHECK_REVOKED_TOKENS);
+}
 
-  if (payload.aud !== projectId) throw new Error('Token con aud inválido');
-  if (payload.iss !== expectedIss) throw new Error('Token con iss inválido');
-  if (!payload.sub || typeof payload.sub !== 'string' || payload.sub.length > 128) {
-    throw new Error('Token con sub inválido');
-  }
-  if (!Number.isFinite(payload.exp) || payload.exp <= nowSec) {
-    throw new Error('Token expirado');
-  }
-  if (!Number.isFinite(payload.iat) || payload.iat > nowSec + 60) {
-    throw new Error('Token con iat inválido');
-  }
+function isFirebaseAdminConfigurationError(error) {
+  const code = String(error?.code || '').trim();
+  const message = String(error?.message || '').trim();
+
+  return code === 'app/no-app' ||
+    code === 'app/invalid-credential' ||
+    message.includes('Could not load the default credentials') ||
+    message.includes('Firebase Admin no inicializado') ||
+    message.includes('FIREBASE_SERVICE_ACCOUNT_') ||
+    message.includes('Service account object must contain') ||
+    message.includes('Failed to parse private key');
 }
 
 export async function requireFirebaseAuth(req, res, next) {
   try {
-    const envName = String(process.env.NODE_ENV || '').trim().toLowerCase();
-    const isLocalLikeEnv = envName === 'development' || envName === 'test';
-    const rawEnforce = String(
-      process.env.ENFORCE_FIREBASE_AUTH ?? (isLocalLikeEnv ? 'false' : 'true')
-    ).trim().toLowerCase();
-    const enforce = rawEnforce === 'true' || rawEnforce === '1' || rawEnforce === 'yes' || rawEnforce === 'on';
-
-    if (!enforce) {
+    if (!shouldEnforceFirebaseAuth()) {
       if (!authBypassWarningLogged) {
         authBypassWarningLogged = true;
         console.warn('[auth] Firebase auth deshabilitada por configuración. Verifica ENFORCE_FIREBASE_AUTH en producción.');
@@ -108,52 +46,54 @@ export async function requireFirebaseAuth(req, res, next) {
       return next();
     }
 
-    const projectId = getProjectId();
-    if (!projectId) {
-      return res.status(500).json({
-        error: 'FIREBASE_PROJECT_ID no está configurado en el backend'
+    const token = parseBearerToken(req);
+    if (!token) {
+      return res.status(401).json({
+        error: 'Authorization Bearer token requerido',
+        mensaje: 'Inicia sesion para acceder a este recurso.',
+        codigo: 'AUTH_TOKEN_REQUIRED'
       });
     }
 
-    const token = parseBearerToken(req);
-    if (!token) {
-      return res.status(401).json({ error: 'Authorization Bearer token requerido' });
-    }
-
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      return res.status(401).json({ error: 'Token JWT inválido' });
-    }
-
-    const [encodedHeader, encodedPayload, encodedSignature] = parts;
-    const header = decodeJsonPart(encodedHeader);
-    const payload = decodeJsonPart(encodedPayload);
-
-    if (header.alg !== 'RS256' || !header.kid) {
-      return res.status(401).json({ error: 'Token con encabezado inválido' });
-    }
-
-    validateTokenClaims(payload, projectId);
-
-    const certs = await getGoogleCerts();
-    const certPem = certs[header.kid];
-    if (!certPem) {
-      return res.status(401).json({ error: 'kid de token no reconocido' });
-    }
-
-    const isValidSignature = verifyJwtSignature(`${encodedHeader}.${encodedPayload}`, encodedSignature, certPem);
-    if (!isValidSignature) {
-      return res.status(401).json({ error: 'Firma de token inválida' });
-    }
+    const decodedToken = await getAdminApp().auth().verifyIdToken(token, shouldCheckRevokedTokens());
 
     req.auth = {
-      uid: payload.user_id || payload.sub,
-      token: payload
+      uid: decodedToken.uid,
+      token: decodedToken
     };
 
     return next();
   } catch (error) {
-    return res.status(401).json({ error: 'Token no válido', details: error.message });
+    if (isFirebaseAdminConfigurationError(error)) {
+      console.error('[auth] Firebase Admin no configurado correctamente:', error);
+      return res.status(503).json({
+        error: 'Servicio de autenticacion no disponible',
+        mensaje: 'Firebase Admin no esta configurado correctamente en el servidor.',
+        codigo: 'FIREBASE_ADMIN_NOT_CONFIGURED'
+      });
+    }
+
+    if (String(error?.code || '').trim() === 'auth/id-token-revoked') {
+      return res.status(401).json({
+        error: 'Token revocado',
+        mensaje: 'La sesion fue revocada. Vuelve a iniciar sesion.',
+        codigo: 'AUTH_TOKEN_REVOKED'
+      });
+    }
+
+    if (String(error?.code || '').trim() === 'auth/user-disabled') {
+      return res.status(403).json({
+        error: 'Usuario deshabilitado',
+        mensaje: 'La cuenta asociada a este token esta deshabilitada.',
+        codigo: 'AUTH_USER_DISABLED'
+      });
+    }
+
+    return res.status(401).json({
+      error: 'Token no válido',
+      mensaje: 'El token de autenticacion es invalido o expiro.',
+      codigo: 'INVALID_AUTH_TOKEN'
+    });
   }
 }
 
