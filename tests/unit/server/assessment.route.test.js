@@ -31,6 +31,11 @@ describe('assessment.route validators', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      codigo: 'INVALID_ASSESSMENT_TEXT',
+      mensaje: expect.any(String),
+      field: 'texto'
+    }));
   });
 
   test('validateAssessmentInput sanitiza campos validos', () => {
@@ -59,5 +64,10 @@ describe('assessment.route validators', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      codigo: 'INVALID_COMPREHENSIVE_TEXT',
+      mensaje: expect.any(String),
+      field: 'texto'
+    }));
   });
 });

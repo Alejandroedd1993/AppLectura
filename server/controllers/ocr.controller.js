@@ -1,15 +1,23 @@
 import { ocrImageBuffer } from '../services/ocr.service.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 export async function ocrImageUpload(req, res) {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No se recibió imagen.' });
+      return sendValidationError(res, {
+        error: 'No se recibio imagen.',
+        mensaje: 'Debes adjuntar una imagen antes de ejecutar OCR.',
+        codigo: 'MISSING_OCR_IMAGE'
+      });
     }
     const buffer = req.file.buffer;
     const result = await ocrImageBuffer(buffer, { lang: 'spa' });
     res.json({ text: result.text || '', confidence: result.confidence });
   } catch (err) {
     console.error('Error en OCR de imagen:', err);
-    res.status(500).json({ error: err.message || 'Error realizando OCR.' });
+    res.status(500).json({
+      error: 'Error realizando OCR.',
+      codigo: 'OCR_PROCESSING_ERROR'
+    });
   }
 }

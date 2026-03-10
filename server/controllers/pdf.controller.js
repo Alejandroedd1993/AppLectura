@@ -2,6 +2,7 @@
 import PdfService from '../services/pdf.service.js';
 import OCRService, { ocrPdfBuffer } from '../services/ocr.service.js';
 import TableDetectService, { detectTablesAndThumbnails } from '../services/tableDetect.service.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 /**
  * Controlador para manejar la subida y procesamiento de archivos PDF.
@@ -10,7 +11,11 @@ import TableDetectService, { detectTablesAndThumbnails } from '../services/table
  */
 export async function processPdfUpload(req, res) {
   if (!req.file) {
-    return res.status(400).json({ error: 'No se ha subido ningún archivo PDF.' });
+    return sendValidationError(res, {
+      error: 'No se ha subido ningun archivo PDF.',
+      mensaje: 'Debes adjuntar un archivo PDF antes de procesarlo.',
+      codigo: 'MISSING_PDF_FILE'
+    });
   }
 
   const pdfBuffer = req.file.buffer;
@@ -34,7 +39,7 @@ export async function processPdfUpload(req, res) {
     res.json({ text: extractedText, meta: { ocr: false } });
   } catch (error) {
     console.error('Error en el controlador de procesamiento de PDF:', error);
-    res.status(500).json({ error: error.message || 'Error interno del servidor al procesar el PDF.' });
+    res.status(500).json({ error: 'Error interno del servidor al procesar el PDF.' });
   }
 }
 
@@ -43,7 +48,11 @@ export async function processPdfUpload(req, res) {
  */
 export async function detectPdfTables(req, res) {
   if (!req.file) {
-    return res.status(400).json({ error: 'No se ha subido ningún archivo PDF.' });
+    return sendValidationError(res, {
+      error: 'No se ha subido ningun archivo PDF.',
+      mensaje: 'Debes adjuntar un archivo PDF antes de detectar tablas.',
+      codigo: 'MISSING_PDF_FILE'
+    });
   }
   const pdfBuffer = req.file.buffer;
   try {
@@ -51,6 +60,6 @@ export async function detectPdfTables(req, res) {
     res.json(data);
   } catch (error) {
     console.error('Error en detección de tablas:', error);
-    res.status(500).json({ error: error.message || 'No se pudo detectar tablas.' });
+    res.status(500).json({ error: 'No se pudo detectar tablas.' });
   }
 }

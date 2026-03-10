@@ -266,7 +266,9 @@ export async function analyzePreLecture(req, res) {
 
     if (!text || typeof text !== 'string' || text.trim().length < 100) {
       return res.status(400).json({
-        error: 'Texto inválido o muy corto (mínimo 100 caracteres)'
+        error: 'Texto invalido o muy corto (minimo 100 caracteres)',
+        mensaje: 'Debes enviar un texto mas extenso para el analisis de prelectura.',
+        codigo: 'INVALID_PRELECTURA_TEXT'
       });
     }
 

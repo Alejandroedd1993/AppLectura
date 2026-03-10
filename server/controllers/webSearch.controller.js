@@ -119,6 +119,7 @@ const buscarWeb = async (req, res) => {
     if (!q) {
       return res.status(400).json({
         error: 'Query de búsqueda requerida',
+        mensaje: 'Debes proporcionar una consulta para realizar la busqueda web.',
         codigo: 'QUERY_REQUIRED'
       });
     }
@@ -170,7 +171,7 @@ const buscarWeb = async (req, res) => {
 
     res.status(500).json({
       error: 'Error en búsqueda web',
-      detalle: error.message,
+      codigo: 'WEB_SEARCH_ERROR',
       query: req.body?.query,
       fallback_disponible: true
     });
@@ -188,7 +189,11 @@ const responderBusquedaIA = async (req, res) => {
     const q = sanitizeQuery(query);
     const max = clampInt(maxResults, { min: 1, max: 10, fallback: 5 });
     if (!q) {
-      return res.status(400).json({ error: 'Query requerida', codigo: 'QUERY_REQUIRED' });
+      return res.status(400).json({
+        error: 'Query requerida',
+        mensaje: 'Debes proporcionar una consulta para generar la respuesta con IA.',
+        codigo: 'QUERY_REQUIRED'
+      });
     }
 
     // 1) Obtener resultados (usa las mismas estrategias existentes)
@@ -304,7 +309,10 @@ ${contextLines.join('\n')}`;
     });
   } catch (error) {
     console.error('❌ Error en responderBusquedaIA:', error);
-    return res.status(500).json({ error: 'Error en respuesta con IA', detalle: error.message });
+    return res.status(500).json({
+      error: 'Error en respuesta con IA',
+      codigo: 'WEB_SEARCH_AI_ERROR'
+    });
   }
 };
 

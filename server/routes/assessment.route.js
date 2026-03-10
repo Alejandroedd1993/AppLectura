@@ -2,6 +2,7 @@ import express from 'express';
 import { evaluateAnswer, evaluateComprehensive, bulkEvaluate } from '../controllers/assessment.controller.js';
 import { assessmentLimiter } from '../middleware/rateLimiters.js';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 const router = express.Router();
 
@@ -10,22 +11,28 @@ export const validateAssessmentInput = (req, res, next) => {
   const { texto, respuesta, dimension } = req.body || {};
   
   if (!texto || typeof texto !== 'string' || texto.trim().length < 50) {
-    return res.status(400).json({ 
+    return sendValidationError(res, {
       error: 'Texto es requerido y debe tener al menos 50 caracteres',
+      mensaje: 'Incluye un texto base suficiente para poder evaluar la respuesta.',
+      codigo: 'INVALID_ASSESSMENT_TEXT',
       field: 'texto'
     });
   }
   
   if (!respuesta || typeof respuesta !== 'string' || respuesta.trim().length < 20) {
-    return res.status(400).json({ 
+    return sendValidationError(res, {
       error: 'Respuesta es requerida y debe tener al menos 20 caracteres',
+      mensaje: 'Incluye una respuesta suficiente para poder evaluarla.',
+      codigo: 'INVALID_ASSESSMENT_RESPONSE',
       field: 'respuesta'
     });
   }
   
   if (!dimension || typeof dimension !== 'string') {
-    return res.status(400).json({ 
-      error: 'Dimensión es requerida',
+    return sendValidationError(res, {
+      error: 'Dimension es requerida',
+      mensaje: 'Debes indicar la dimension que deseas evaluar.',
+      codigo: 'MISSING_ASSESSMENT_DIMENSION',
       field: 'dimension'
     });
   }
@@ -44,15 +51,19 @@ export const validateComprehensiveInput = (req, res, next) => {
   const { texto, respuesta } = req.body || {};
   
   if (!texto || typeof texto !== 'string' || texto.trim().length < 200) {
-    return res.status(400).json({ 
-      error: 'Para evaluación comprehensiva, texto debe tener al menos 200 caracteres',
+    return sendValidationError(res, {
+      error: 'Para evaluacion comprehensiva, texto debe tener al menos 200 caracteres',
+      mensaje: 'Incluye un texto mas extenso para la evaluacion comprehensiva.',
+      codigo: 'INVALID_COMPREHENSIVE_TEXT',
       field: 'texto'
     });
   }
   
   if (!respuesta || typeof respuesta !== 'string' || respuesta.trim().length < 100) {
-    return res.status(400).json({ 
-      error: 'Para evaluación comprehensiva, respuesta debe tener al menos 100 caracteres',
+    return sendValidationError(res, {
+      error: 'Para evaluacion comprehensiva, respuesta debe tener al menos 100 caracteres',
+      mensaje: 'Incluye una respuesta mas desarrollada para la evaluacion comprehensiva.',
+      codigo: 'INVALID_COMPREHENSIVE_RESPONSE',
       field: 'respuesta'
     });
   }

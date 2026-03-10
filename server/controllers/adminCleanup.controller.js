@@ -4,6 +4,7 @@ import {
   processOwnedCourseCleanupJob,
   processPendingOwnedCleanupJobs
 } from '../services/ownedCourseCleanup.service.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 function parseBool(value, fallback = false) {
   const raw = String(value ?? '').trim().toLowerCase();
@@ -42,9 +43,11 @@ const enqueueOwnedCleanup = async (req, res) => {
     const processNow = parseBool(req.body?.processNow, true);
 
     if (!requesterUid || !courseId || !studentUid) {
-      return res.status(400).json({
-        ok: false,
-        error: 'courseId, studentUid y auth son requeridos'
+      return sendValidationError(res, {
+        error: 'courseId, studentUid y auth son requeridos',
+        mensaje: 'Debes indicar el curso, el estudiante y autenticar la solicitud.',
+        codigo: 'INVALID_ADMIN_CLEANUP_REQUEST',
+        ok: false
       });
     }
 

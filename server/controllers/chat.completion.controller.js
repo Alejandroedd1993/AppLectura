@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/responseCache.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,10 +88,20 @@ function validateAndNormalizeMessages(messages) {
   const maxTotalChars = safeNumber(process.env.CHAT_MAX_TOTAL_CHARS, 50000);
 
   if (!Array.isArray(messages) || messages.length === 0) {
-    return { ok: false, error: 'messages es requerido' };
+    return {
+      ok: false,
+      error: 'messages es requerido',
+      mensaje: 'Debes enviar al menos un mensaje en la conversacion.',
+      codigo: 'CHAT_MESSAGES_REQUIRED'
+    };
   }
   if (messages.length > maxMessages) {
-    return { ok: false, error: `Demasiados mensajes (máx ${maxMessages})` };
+    return {
+      ok: false,
+      error: `Demasiados mensajes (max ${maxMessages})`,
+      mensaje: `La conversacion excede el maximo permitido de ${maxMessages} mensajes.`,
+      codigo: 'CHAT_MESSAGES_LIMIT_EXCEEDED'
+    };
   }
 
   const normalized = [];
@@ -101,19 +112,39 @@ function validateAndNormalizeMessages(messages) {
     const content = typeof item?.content === 'string' ? item.content : '';
 
     if (!ALLOWED_CHAT_ROLES.has(role)) {
-      return { ok: false, error: `role inválido: ${item?.role ?? ''}` };
+      return {
+        ok: false,
+        error: `role invalido: ${item?.role ?? ''}`,
+        mensaje: 'Cada mensaje debe usar un role permitido.',
+        codigo: 'CHAT_INVALID_MESSAGE_ROLE'
+      };
     }
     if (!content.trim()) {
-      return { ok: false, error: 'content vacío no permitido' };
+      return {
+        ok: false,
+        error: 'content vacio no permitido',
+        mensaje: 'Cada mensaje debe incluir contenido no vacio.',
+        codigo: 'CHAT_EMPTY_MESSAGE_CONTENT'
+      };
     }
     const effectiveMaxChars = role === 'system' ? maxSystemChars : maxMessageChars;
     if (content.length > effectiveMaxChars) {
-      return { ok: false, error: `Mensaje demasiado largo (máx ${effectiveMaxChars} chars)` };
+      return {
+        ok: false,
+        error: `Mensaje demasiado largo (max ${effectiveMaxChars} chars)`,
+        mensaje: 'Uno de los mensajes supera el tamano maximo permitido.',
+        codigo: 'CHAT_MESSAGE_TOO_LONG'
+      };
     }
 
     totalChars += content.length;
     if (totalChars > maxTotalChars) {
-      return { ok: false, error: `Payload demasiado grande (máx ${maxTotalChars} chars)` };
+      return {
+        ok: false,
+        error: `Payload demasiado grande (max ${maxTotalChars} chars)`,
+        mensaje: 'La suma total del contenido enviado excede el limite permitido.',
+        codigo: 'CHAT_PAYLOAD_TOO_LARGE'
+      };
     }
 
     normalized.push({ role, content });
@@ -129,7 +160,13 @@ export async function createChatCompletion(req, res) {
 
     const reject400 = (error, context = {}) => {
       console.warn('⚠️ [chat/completion] 400', { requestId, error, ...context });
-      return res.status(400).json({ error, requestId });
+      return sendValidationError(res, {
+        error,
+        mensaje: context.mensaje || 'Revisa los datos enviados antes de reintentar.',
+        codigo: context.codigo || 'INVALID_CHAT_REQUEST',
+        ...(context.allowed_models ? { allowed_models: context.allowed_models } : {}),
+        requestId
+      });
     };
 
     const {
@@ -145,6 +182,8 @@ export async function createChatCompletion(req, res) {
     const validatedMessages = validateAndNormalizeMessages(messages);
     if (!validatedMessages.ok) {
       return reject400(validatedMessages.error, {
+        mensaje: validatedMessages.mensaje,
+        codigo: validatedMessages.codigo,
         provider,
         model: model || null,
         ...summarizeMessages(messages)
@@ -155,6 +194,8 @@ export async function createChatCompletion(req, res) {
     const cfg = getProviderConfig(provider);
     if (!cfg) {
       return reject400(`Proveedor no soportado: ${provider}`, {
+        mensaje: 'El proveedor solicitado no es valido para chat completion.',
+        codigo: 'UNSUPPORTED_CHAT_PROVIDER',
         provider,
         model: model || null,
         ...summarizeMessages(safeMessages)
@@ -184,8 +225,10 @@ export async function createChatCompletion(req, res) {
       const allowed = parseAllowedModels(process.env.OPENAI_ALLOWED_MODELS, 'gpt-4o-mini');
       if (!allowed.has(selectedModel)) {
         console.warn('⚠️ [chat/completion] 400', { requestId, error: `Modelo OpenAI no permitido: ${selectedModel}`, provider, selectedModel });
-        return res.status(400).json({
+        return sendValidationError(res, {
           error: `Modelo OpenAI no permitido: ${selectedModel}`,
+          mensaje: 'El modelo solicitado no esta habilitado para OpenAI en este servidor.',
+          codigo: 'OPENAI_MODEL_NOT_ALLOWED',
           allowed_models: Array.from(allowed),
           requestId
         });
@@ -197,8 +240,10 @@ export async function createChatCompletion(req, res) {
       const allowed = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
       if (!allowed.has(selectedModel)) {
         console.warn('⚠️ [chat/completion] 400', { requestId, error: `Modelo DeepSeek no permitido: ${selectedModel}`, provider, selectedModel });
-        return res.status(400).json({
+        return sendValidationError(res, {
           error: `Modelo DeepSeek no permitido: ${selectedModel}`,
+          mensaje: 'El modelo solicitado no esta habilitado para DeepSeek en este servidor.',
+          codigo: 'DEEPSEEK_MODEL_NOT_ALLOWED',
           allowed_models: Array.from(allowed),
           requestId
         });
@@ -209,8 +254,10 @@ export async function createChatCompletion(req, res) {
       const allowed = parseAllowedModels(process.env.GEMINI_ALLOWED_MODELS, 'gemini-1.5-flash');
       if (!allowed.has(selectedModel)) {
         console.warn('⚠️ [chat/completion] 400', { requestId, error: `Modelo Gemini no permitido: ${selectedModel}`, provider, selectedModel });
-        return res.status(400).json({
+        return sendValidationError(res, {
           error: `Modelo Gemini no permitido: ${selectedModel}`,
+          mensaje: 'El modelo solicitado no esta habilitado para Gemini en este servidor.',
+          codigo: 'GEMINI_MODEL_NOT_ALLOWED',
           allowed_models: Array.from(allowed),
           requestId
         });
@@ -394,7 +441,8 @@ export async function createChatCompletion(req, res) {
     console.error('❌ Error en createChatCompletion:', { requestId, error });
     const status = error.status || 500;
     res.status(status).json({
-      error: error.message || 'Error interno generando completion',
+      error: 'Error interno generando completion',
+      codigo: 'CHAT_COMPLETION_ERROR',
       requestId
     });
   }

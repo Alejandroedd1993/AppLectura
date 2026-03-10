@@ -1,6 +1,7 @@
 import express from 'express';
 import requireFirebaseAuth from '../middleware/firebaseAuth.js';
 import { storageProxyLimiter } from '../middleware/rateLimiters.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 const router = express.Router();
 
@@ -20,12 +21,20 @@ router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (re
   console.log('📥 [StorageProxy] Solicitud recibida para:', targetUrl?.substring(0, 80));
 
   if (!targetUrl) {
-    return res.status(400).json({ error: 'Missing "url" query parameter' });
+    return sendValidationError(res, {
+      error: 'Missing "url" query parameter',
+      mensaje: 'Debes enviar el parametro url para recuperar el archivo.',
+      codigo: 'MISSING_STORAGE_URL'
+    });
   }
 
   if (!isAllowedStorageUrl(targetUrl)) {
     console.warn('⚠️ [StorageProxy] URL no permitida:', targetUrl);
-    return res.status(400).json({ error: 'Invalid or disallowed storage URL' });
+    return sendValidationError(res, {
+      error: 'Invalid or disallowed storage URL',
+      mensaje: 'La URL solicitada no pertenece a un origen de Storage permitido.',
+      codigo: 'INVALID_STORAGE_URL'
+    });
   }
 
   try {
@@ -39,7 +48,7 @@ router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (re
       console.error('❌ [StorageProxy] Upstream failed:', upstreamResponse.status, errorText.substring(0, 200));
       return res.status(upstreamResponse.status || 502).json({
         error: 'Upstream request failed',
-        details: errorText.substring(0, 500)
+        mensaje: 'No se pudo recuperar el archivo desde el origen remoto.'
       });
     }
 
@@ -61,7 +70,10 @@ router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (re
     res.send(buffer);
   } catch (error) {
     console.error('❌ [StorageProxy] Error fetching file from Storage:', error.message);
-    res.status(500).json({ error: 'Failed to retrieve file from Storage', details: error.message });
+    res.status(500).json({
+      error: 'Failed to retrieve file from Storage',
+      mensaje: 'No se pudo recuperar el archivo solicitado.'
+    });
   }
 });
 

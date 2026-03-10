@@ -2,6 +2,7 @@
 import { analizarTexto as analizarTextoService } from '../services/analisis.service.js';
 import { analizarTextoBasico } from '../services/basic.service.js';
 import { analysisSchema } from '../validators/schemas.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 /**
  * @typedef {import('express').Request} Request
@@ -18,17 +19,19 @@ export async function analizarTexto(req, res) {
   const { texto, api = 'smart' } = req.body || {};
 
   if (!texto || texto.trim().length === 0) {
-    return res.status(400).json({
-      error: 'Texto vacío',
-      mensaje: 'Por favor proporciona un texto para analizar'
+    return sendValidationError(res, {
+      error: 'Texto vacio',
+      mensaje: 'Por favor proporciona un texto para analizar.',
+      codigo: 'EMPTY_ANALYSIS_TEXT'
     });
   }
 
   const validApis = ['openai', 'gemini', 'deepseek', 'smart', 'alternate', 'debate'];
   if (!validApis.includes(api)) {
-    return res.status(400).json({
-      error: 'API no válida',
-      mensaje: `API debe ser una de: ${validApis.join(', ')}`
+    return sendValidationError(res, {
+      error: 'API no valida',
+      mensaje: `API debe ser una de: ${validApis.join(', ')}`,
+      codigo: 'INVALID_ANALYSIS_PROVIDER'
     });
   }
 
@@ -86,7 +89,7 @@ export async function analizarTexto(req, res) {
       return res.status(504).json({
         error: 'Timeout',
         mensaje: 'La solicitud tardó demasiado tiempo en completarse',
-        detalle: error.message
+        codigo: 'AI_TIMEOUT'
       });
     }
 
@@ -94,14 +97,14 @@ export async function analizarTexto(req, res) {
       return res.status(429).json({
         error: 'Límite de tasa excedido',
         mensaje: 'Has excedido el límite de solicitudes a la API',
-        detalle: error.message
+        codigo: 'RATE_LIMITED'
       });
     }
 
     return res.status(500).json({
       error: `Error al comunicarse con ${api}`,
       mensaje: 'Ocurrió un error al procesar tu solicitud',
-      detalle: error.message
+      codigo: 'ANALYSIS_PROVIDER_ERROR'
     });
   }
 }

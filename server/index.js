@@ -19,6 +19,8 @@ import adminCleanupRoutes from './routes/adminCleanup.routes.js';
 import assessmentRoutes from './routes/assessment.route.js';
 
 import performanceMiddleware from './middleware/performance.js';
+import errorHandler from './middleware/errorHandler.js';
+import { sendValidationError } from './utils/validationError.js';
 
 // Configuración básica
 const __filename = fileURLToPath(import.meta.url);
@@ -27,18 +29,10 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
-function maskKey(key) {
-  if (!key || typeof key !== 'string') return 'NO_CONFIG';
-  const trimmed = key.trim();
-  if (!trimmed) return 'NO_CONFIG';
-  const last4 = trimmed.slice(-4);
-  return `${trimmed.length} chars, ****${last4}`;
-}
-
 console.log('🔐 Env check:', {
-  DEEPSEEK_API_KEY: maskKey(process.env.DEEPSEEK_API_KEY),
-  OPENAI_API_KEY: maskKey(process.env.OPENAI_API_KEY),
-  GEMINI_API_KEY: maskKey(process.env.GEMINI_API_KEY)
+  DEEPSEEK_API_KEY: Boolean(String(process.env.DEEPSEEK_API_KEY || '').trim()),
+  OPENAI_API_KEY: Boolean(String(process.env.OPENAI_API_KEY || '').trim()),
+  GEMINI_API_KEY: Boolean(String(process.env.GEMINI_API_KEY || '').trim())
 });
 
 const app = express();
@@ -153,7 +147,11 @@ performanceMiddleware(app);
 // Middleware para manejar errores de JSON inválido
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    return res.status(400).json({ error: 'JSON inválido' });
+    return sendValidationError(res, {
+      error: 'JSON invalido',
+      mensaje: 'El cuerpo JSON de la solicitud no tiene un formato valido.',
+      codigo: 'INVALID_JSON_PAYLOAD'
+    });
   }
   next();
 });
@@ -203,8 +201,7 @@ app.use('/api/admin-cleanup', adminCleanupRoutes);
 // CORRECCIÓN: Montar ruta de assessment criterial
 app.use('/api/assessment', assessmentRoutes);
 
-// Habilita pre-flight para todas las rutas
-app.options('*', cors());
+app.use(errorHandler);
 
 // Puerto flexible: Render usa PORT, desarrollo usa BACKEND_PORT
 const PORT = process.env.PORT || process.env.BACKEND_PORT || 3001;
