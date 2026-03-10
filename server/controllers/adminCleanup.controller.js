@@ -34,7 +34,9 @@ const enqueueOwnedCleanup = async (req, res) => {
     if (!isFirebaseAdminConfigured()) {
       return res.status(503).json({
         ok: false,
-        error: 'Firebase Admin no configurado en backend'
+        error: 'Firebase Admin no configurado en backend',
+        mensaje: 'La limpieza administrativa no esta disponible porque Firebase Admin no esta configurado.',
+        codigo: 'FIREBASE_ADMIN_NOT_CONFIGURED'
       });
     }
 
@@ -70,7 +72,9 @@ const enqueueOwnedCleanup = async (req, res) => {
           jobId,
           processNow,
           processResult,
-          error: processResult?.error || 'El procesamiento owner-only falló en backend'
+          error: processResult?.error || 'El procesamiento owner-only fallo en backend',
+          mensaje: 'La limpieza fue encolada pero el procesamiento inmediato no pudo completarse.',
+          codigo: 'ADMIN_CLEANUP_PROCESS_FAILED'
         });
       }
     }
@@ -86,7 +90,15 @@ const enqueueOwnedCleanup = async (req, res) => {
     const code = Number(error?.statusCode || 500);
     return res.status(code).json({
       ok: false,
-      error: error?.message || 'Error encolando limpieza owner-only'
+      error: error?.message || 'Error encolando limpieza owner-only',
+      mensaje: code >= 500
+        ? 'No se pudo encolar la limpieza administrativa en este momento.'
+        : 'No se pudo completar la solicitud de limpieza administrativa.',
+      codigo: code === 404
+        ? 'COURSE_NOT_FOUND'
+        : code === 403
+          ? 'ADMIN_CLEANUP_FORBIDDEN'
+          : 'ADMIN_CLEANUP_ENQUEUE_ERROR'
     });
   }
 };
@@ -96,7 +108,9 @@ const runPendingOwnedCleanup = async (req, res) => {
     if (!isFirebaseAdminConfigured()) {
       return res.status(503).json({
         ok: false,
-        error: 'Firebase Admin no configurado en backend'
+        error: 'Firebase Admin no configurado en backend',
+        mensaje: 'La limpieza administrativa no esta disponible porque Firebase Admin no esta configurado.',
+        codigo: 'FIREBASE_ADMIN_NOT_CONFIGURED'
       });
     }
 
@@ -105,7 +119,9 @@ const runPendingOwnedCleanup = async (req, res) => {
     if (!workerSecret || providedSecret !== workerSecret) {
       return res.status(403).json({
         ok: false,
-        error: 'No autorizado para ejecutar worker de limpieza'
+        error: 'No autorizado para ejecutar worker de limpieza',
+        mensaje: 'La credencial del worker de limpieza no es valida.',
+        codigo: 'ADMIN_CLEANUP_WORKER_FORBIDDEN'
       });
     }
 
@@ -115,7 +131,9 @@ const runPendingOwnedCleanup = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      error: error?.message || 'Error ejecutando worker de limpieza'
+      error: error?.message || 'Error ejecutando worker de limpieza',
+      mensaje: 'El worker de limpieza administrativa no pudo completarse.',
+      codigo: 'ADMIN_CLEANUP_WORKER_ERROR'
     });
   }
 };

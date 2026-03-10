@@ -454,7 +454,11 @@ export function getChatCacheStats(req, res) {
     return res.json(stats);
   } catch (error) {
     console.error('❌ Error obteniendo cache stats:', error);
-    return res.status(500).json({ error: 'Error obteniendo estadísticas' });
+    return res.status(500).json({
+      error: 'Error obteniendo estadisticas',
+      mensaje: 'No se pudieron obtener las estadisticas del cache de chat.',
+      codigo: 'CHAT_CACHE_STATS_ERROR'
+    });
   }
 }
 

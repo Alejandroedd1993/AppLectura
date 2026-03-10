@@ -41,7 +41,11 @@ describe('adminCleanup.controller', () => {
     await adminCleanupController.enqueueOwnedCleanup(req, res);
 
     expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      ok: false,
+      codigo: 'FIREBASE_ADMIN_NOT_CONFIGURED',
+      mensaje: expect.any(String)
+    }));
   });
 
   test('enqueueOwnedCleanup encola y procesa cuando docente es owner del curso', async () => {
@@ -119,7 +123,41 @@ describe('adminCleanup.controller', () => {
       ok: false,
       queued: true,
       jobId: 'owned_course-1_student-1',
-      processResult: expect.objectContaining({ ok: false })
+      processResult: expect.objectContaining({ ok: false }),
+      codigo: 'ADMIN_CLEANUP_PROCESS_FAILED',
+      mensaje: expect.any(String)
+    }));
+  });
+
+  test('enqueueOwnedCleanup responde 403 semantico si el docente no es owner', async () => {
+    mockIsFirebaseAdminConfigured.mockReturnValue(true);
+    mockGetAdminDb.mockReturnValue({
+      collection: () => ({
+        doc: () => ({
+          get: async () => ({
+            exists: true,
+            data: () => ({ docenteUid: 'other-teacher' })
+          })
+        })
+      })
+    });
+
+    const req = {
+      auth: { uid: 'teacher-1' },
+      body: {
+        courseId: 'course-1',
+        studentUid: 'student-1'
+      }
+    };
+    const res = makeRes();
+
+    await adminCleanupController.enqueueOwnedCleanup(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      ok: false,
+      codigo: 'ADMIN_CLEANUP_FORBIDDEN',
+      mensaje: expect.any(String)
     }));
   });
 });

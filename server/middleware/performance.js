@@ -1,4 +1,5 @@
 import compression from 'compression';
+import { buildValidationErrorPayload } from '../utils/validationError.js';
 
 const performanceMiddleware = (app) => {
   app.use(
@@ -30,7 +31,13 @@ const performanceMiddleware = (app) => {
     // Aumentar timeout global a 120s para permitir análisis de IA
     res.setTimeout(120000, () => {
       console.log('⏰ Timeout:', req.method, req.originalUrl);
-      if (!res.headersSent) res.status(408).json({ error: 'Timeout de servidor' });
+      if (!res.headersSent) {
+        res.status(408).json(buildValidationErrorPayload({
+          error: 'Timeout de servidor',
+          mensaje: 'La solicitud excedio el tiempo maximo de espera del servidor.',
+          codigo: 'REQUEST_TIMEOUT'
+        }));
+      }
     });
     next();
   });

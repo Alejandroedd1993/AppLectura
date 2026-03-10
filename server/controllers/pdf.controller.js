@@ -39,7 +39,11 @@ export async function processPdfUpload(req, res) {
     res.json({ text: extractedText, meta: { ocr: false } });
   } catch (error) {
     console.error('Error en el controlador de procesamiento de PDF:', error);
-    res.status(500).json({ error: 'Error interno del servidor al procesar el PDF.' });
+    res.status(500).json({
+      error: 'Error interno del servidor al procesar el PDF.',
+      mensaje: 'No se pudo procesar el archivo PDF en este momento.',
+      codigo: 'PDF_PROCESSING_ERROR'
+    });
   }
 }
 
@@ -60,6 +64,10 @@ export async function detectPdfTables(req, res) {
     res.json(data);
   } catch (error) {
     console.error('Error en detección de tablas:', error);
-    res.status(500).json({ error: 'No se pudo detectar tablas.' });
+    res.status(500).json({
+      error: 'No se pudo detectar tablas.',
+      mensaje: 'La deteccion de tablas del PDF no pudo completarse.',
+      codigo: 'PDF_TABLE_DETECTION_ERROR'
+    });
   }
 }
