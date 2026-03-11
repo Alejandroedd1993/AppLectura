@@ -2,6 +2,118 @@ import { getAdminApp } from '../config/firebaseAdmin.js';
 
 let authBypassWarningLogged = false;
 
+function normalizeText(value) {
+  return String(value || '').trim();
+}
+
+function normalizeTextLower(value) {
+  return normalizeText(value).toLowerCase();
+}
+
+function getFirebaseErrorCode(error) {
+  return normalizeText(error?.code || error?.errorInfo?.code);
+}
+
+function getFirebaseErrorMessage(error) {
+  return normalizeText(error?.message || error?.errorInfo?.message);
+}
+
+function isRevokedTokenError(error) {
+  const code = getFirebaseErrorCode(error);
+  const message = normalizeTextLower(getFirebaseErrorMessage(error));
+
+  return code === 'auth/id-token-revoked' ||
+    message.includes('id token has been revoked') ||
+    message.includes('token has been revoked') ||
+    message.includes('refresh token has been revoked');
+}
+
+function isDisabledUserError(error) {
+  const code = getFirebaseErrorCode(error);
+  const message = normalizeTextLower(getFirebaseErrorMessage(error));
+
+  return code === 'auth/user-disabled' ||
+    message.includes('user record is disabled') ||
+    message.includes('user account has been disabled');
+}
+
+function isExpiredTokenError(error) {
+  const code = getFirebaseErrorCode(error);
+  const message = normalizeTextLower(getFirebaseErrorMessage(error));
+
+  return code === 'auth/id-token-expired' ||
+    message.includes('token expired') ||
+    message.includes('token has expired');
+}
+
+function decodeJwtPayload(token) {
+  const parts = normalizeText(token).split('.');
+  if (parts.length < 2 || !parts[1]) return null;
+
+  try {
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getTokenIssuedAtSeconds(decodedPayload) {
+  const issuedAt = Number(decodedPayload?.iat);
+  if (Number.isFinite(issuedAt) && issuedAt > 0) {
+    return issuedAt;
+  }
+
+  const authTime = Number(decodedPayload?.auth_time);
+  if (Number.isFinite(authTime) && authTime > 0) {
+    return authTime;
+  }
+
+  return null;
+}
+
+function getTokensValidAfterSeconds(userRecord) {
+  const rawValue = normalizeText(userRecord?.tokensValidAfterTime);
+  if (!rawValue) return null;
+
+  const milliseconds = Date.parse(rawValue);
+  if (!Number.isFinite(milliseconds)) return null;
+
+  return Math.floor(milliseconds / 1000);
+}
+
+async function inferAuthStateFromToken(token, { checkRevokedTokens }) {
+  const decodedPayload = decodeJwtPayload(token);
+  const uid = normalizeText(decodedPayload?.uid || decodedPayload?.user_id || decodedPayload?.sub);
+  if (!uid) return null;
+
+  try {
+    const userRecord = await getAdminApp().auth().getUser(uid);
+
+    if (userRecord?.disabled) {
+      return 'disabled';
+    }
+
+    if (!checkRevokedTokens) {
+      return null;
+    }
+
+    const tokenIssuedAtSeconds = getTokenIssuedAtSeconds(decodedPayload);
+    const tokensValidAfterSeconds = getTokensValidAfterSeconds(userRecord);
+
+    if (
+      Number.isFinite(tokenIssuedAtSeconds) &&
+      Number.isFinite(tokensValidAfterSeconds) &&
+      tokenIssuedAtSeconds < tokensValidAfterSeconds
+    ) {
+      return 'revoked';
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const parseBearerToken = (req) => {
   const auth = req.get('authorization') || '';
   const match = auth.match(/^Bearer\s+(.+)$/i);
@@ -55,7 +167,8 @@ export async function requireFirebaseAuth(req, res, next) {
       });
     }
 
-    const decodedToken = await getAdminApp().auth().verifyIdToken(token, shouldCheckRevokedTokens());
+    const checkRevokedTokens = shouldCheckRevokedTokens();
+    const decodedToken = await getAdminApp().auth().verifyIdToken(token, checkRevokedTokens);
 
     req.auth = {
       uid: decodedToken.uid,
@@ -73,7 +186,7 @@ export async function requireFirebaseAuth(req, res, next) {
       });
     }
 
-    if (String(error?.code || '').trim() === 'auth/id-token-revoked') {
+    if (isRevokedTokenError(error)) {
       return res.status(401).json({
         error: 'Token revocado',
         mensaje: 'La sesion fue revocada. Vuelve a iniciar sesion.',
@@ -81,7 +194,29 @@ export async function requireFirebaseAuth(req, res, next) {
       });
     }
 
-    if (String(error?.code || '').trim() === 'auth/user-disabled') {
+    if (isDisabledUserError(error)) {
+      return res.status(403).json({
+        error: 'Usuario deshabilitado',
+        mensaje: 'La cuenta asociada a este token esta deshabilitada.',
+        codigo: 'AUTH_USER_DISABLED'
+      });
+    }
+
+    const inferredAuthState = isExpiredTokenError(error)
+      ? null
+      : await inferAuthStateFromToken(parseBearerToken(req), {
+          checkRevokedTokens: shouldCheckRevokedTokens()
+        });
+
+    if (inferredAuthState === 'revoked') {
+      return res.status(401).json({
+        error: 'Token revocado',
+        mensaje: 'La sesion fue revocada. Vuelve a iniciar sesion.',
+        codigo: 'AUTH_TOKEN_REVOKED'
+      });
+    }
+
+    if (inferredAuthState === 'disabled') {
       return res.status(403).json({
         error: 'Usuario deshabilitado',
         mensaje: 'La cuenta asociada a este token esta deshabilitada.',
