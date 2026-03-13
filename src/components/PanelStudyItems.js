@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
-import useStudyItems from '../hooks/useStudyItems';
+import { useStudyItems } from '../hooks/useStudyItems';
 
 const Container = styled.div`
   background: ${p => p.theme.surface};

@@ -114,6 +114,9 @@ export const ERROR_MESSAGES = {
  * Detecta el tipo de error basándose en el error original
  */
 export function detectErrorType(error) {
+  const status = Number.isFinite(error?.status) ? error.status : 0;
+  const code = String(error?.code || '').trim();
+
   // Errores de validación
   if (error.message?.includes('al menos 50 caracteres')) {
     return ERROR_TYPES.INPUT_TOO_SHORT;
@@ -145,14 +148,18 @@ export function detectErrorType(error) {
   }
   
   // Rate limiting
-  if (error.message?.includes('429') || 
+  if (status === 429 ||
+      error.message?.includes('429') || 
       error.message?.includes('rate limit') ||
       error.message?.includes('Too Many Requests')) {
     return ERROR_TYPES.RATE_LIMIT;
   }
   
   // Errores de API
-  if (error.message?.includes('500') || 
+  if (status >= 500 ||
+      code === 'AI_PROVIDER_NOT_CONFIGURED' ||
+      code === 'ASSESSMENT_SERVICE_UNAVAILABLE' ||
+      error.message?.includes('500') || 
       error.message?.includes('502') ||
       error.message?.includes('503') ||
       error.message?.includes('API error')) {

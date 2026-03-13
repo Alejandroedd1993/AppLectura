@@ -22,7 +22,9 @@ export async function generateGlossary(req, res) {
     
     if (!text || typeof text !== 'string' || text.trim().length < 200) {
       return res.status(400).json({
-        error: 'Texto inválido o muy corto (mínimo 200 caracteres)'
+        error: 'Texto invalido o muy corto',
+        mensaje: 'Se requieren al menos 200 caracteres para generar glosario.',
+        codigo: 'INVALID_GLOSSARY_INPUT'
       });
     }
 
@@ -63,7 +65,8 @@ export async function generateGlossary(req, res) {
       responseSent = true;
       res.status(500).json({
         error: 'Error generando glosario',
-        message: error.message,
+        mensaje: 'No se pudo generar el glosario en este momento.',
+        codigo: 'GLOSSARY_GENERATION_ERROR',
         terms: []
       });
     }

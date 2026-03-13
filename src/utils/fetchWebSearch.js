@@ -4,7 +4,7 @@ import logger from './logger';
 
 /**
  * Shared utility for web search via backend /api/web-search.
- * Used by both TutorCore (inline enrichment) and useWebSearchTutor hook.
+ * Used by TutorCore for inline enrichment.
  *
  * @param {string} query - Search query
  * @param {Object} [opts]
@@ -67,5 +67,3 @@ export async function fetchWebSearch(query, opts = {}) {
     if (signal) signal.removeEventListener('abort', onExternalAbort);
   }
 }
-
-export default fetchWebSearch;

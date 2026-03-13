@@ -125,5 +125,3 @@ export const procesarArchivo = async (file, options = {}) => {
   // Retornar texto limpio para procesamiento universal
   return extractedText;
 };
-
-export default procesarArchivo;

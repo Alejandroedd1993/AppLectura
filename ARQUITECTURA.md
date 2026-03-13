@@ -48,7 +48,7 @@ src/
 ├── 🌐 services/                   # Servicios de comunicación
 │   ├── 🎯 unifiedAiService.js     # ✅ SERVICIO UNIFICADO - Múltiples proveedores
 │   ├── 📄 PdfService.js           # ✅ Procesamiento de PDFs
-│   └── 🔍 webSearchService.js     # ✅ Búsqueda web (experimental)
+│   └── 🧩 Servicios de dominio IA # Chat, análisis y notas integrados por dominio
 ├── ⚙️ config/                     # Configuraciones
 │   └── 🤖 aiProviders.js          # ✅ Definiciones de proveedores IA
 ├── 🗂️ context/                    # Contexto global

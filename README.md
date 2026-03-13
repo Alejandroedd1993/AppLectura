@@ -129,7 +129,34 @@ REACT_APP_FIREBASE_APP_ID=1:123456789:web:abc123
 
 # Puerto del backend
 BACKEND_PORT=3001
+
+# Backend auth Firebase Admin (A2)
+FIREBASE_PROJECT_ID=tu_proyecto_id
+ENFORCE_FIREBASE_AUTH=true
+FIREBASE_CHECK_REVOKED_TOKENS=false
+
+# Elegir una de estas dos opciones para credenciales del backend
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+# o
+FIREBASE_SERVICE_ACCOUNT_BASE64=base64_del_json_de_service_account
 ```
+
+### Backend auth con Firebase Admin
+- En producción, `ENFORCE_FIREBASE_AUTH=true` debe mantenerse activo.
+- `FIREBASE_CHECK_REVOKED_TOKENS=true` habilita verificación de revocación en cada request protegida; aumenta seguridad pero también añade costo/latencia por validación.
+- El backend acepta credenciales por `FIREBASE_SERVICE_ACCOUNT_JSON` o `FIREBASE_SERVICE_ACCOUNT_BASE64`.
+- Si ninguna credencial está disponible y la autenticación está forzada, las rutas protegidas responderán `503` con `codigo=FIREBASE_ADMIN_NOT_CONFIGURED`.
+- En desarrollo o test puede deshabilitarse temporalmente con `ENFORCE_FIREBASE_AUTH=false`.
+
+### Verificación de estados auth endurecidos
+- Caso base aceptado: `npm run verify:firebase-auth -- -BackendUrl "https://tu-backend.onrender.com" -IdToken "<ID_TOKEN_REAL>"`
+- Caso token revocado: `npm run verify:firebase-auth-state -- -BackendUrl "https://tu-backend.onrender.com" -IdToken "<ID_TOKEN_REVOCADO>" -ExpectedStatus 401 -ExpectedCode AUTH_TOKEN_REVOKED`
+- Caso usuario deshabilitado: `npm run verify:firebase-auth-state -- -BackendUrl "https://tu-backend.onrender.com" -IdToken "<ID_TOKEN_USUARIO_DESHABILITADO>" -ExpectedStatus 403 -ExpectedCode AUTH_USER_DISABLED`
+
+Preparación de los casos negativos:
+- Revocado: inicia sesión, captura el ID token, revoca refresh tokens para ese usuario y prueba ese mismo ID token todavía no expirado.
+- Deshabilitado: inicia sesión, captura el ID token y luego deshabilita ese usuario en Firebase Authentication antes de ejecutar la comprobación.
+- Ambos checks usan una ruta protegida con payload inválido para no consumir llamadas reales de IA.
 
 ## 📖 Cómo Usar
 

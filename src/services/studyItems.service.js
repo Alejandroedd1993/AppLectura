@@ -181,4 +181,3 @@ class StudyItemsServiceImpl {
 }
 
 export const StudyItemsService = new StudyItemsServiceImpl();
-export default StudyItemsService;

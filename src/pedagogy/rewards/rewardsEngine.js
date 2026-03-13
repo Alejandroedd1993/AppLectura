@@ -1091,6 +1091,6 @@ class RewardsEngine {
 // Exportar ES6 para React
 export { RewardsEngine, REWARD_EVENTS, ACHIEVEMENTS, STREAK_MULTIPLIERS, resolveAchievement };
 
-if (typeof window !== 'undefined') {
+if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
   window.RewardsEngine = RewardsEngine;
 }

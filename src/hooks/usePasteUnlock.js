@@ -4,7 +4,7 @@
  * Escucha Ctrl+Alt+U a nivel global. Cada vez que se presiona, alterna
  * entre pegado bloqueado (por defecto) y pegado sin límite.
  *
- * El estado se almacena en window.__PASTE_UNLOCKED para que sea compartido
+ * El estado se almacena en una flag global solo de desarrollo para que sea compartido
  * entre todos los componentes sin necesidad de Context o props.
  *
  * Uso:
@@ -14,12 +14,18 @@
 import { useState, useEffect } from 'react';
 
 const STORAGE_KEY = '__PASTE_UNLOCKED';
+const __DEV__ = process.env.NODE_ENV === 'development';
 
 function getGlobalFlag() {
+  if (!__DEV__ || typeof window === 'undefined') return false;
   return window[STORAGE_KEY] === true;
 }
 
 export default function usePasteUnlock() {
+  if (!__DEV__) {
+    return false;
+  }
+
   const [unlocked, setUnlocked] = useState(getGlobalFlag);
 
   useEffect(() => {

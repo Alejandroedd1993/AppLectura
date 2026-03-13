@@ -78,5 +78,3 @@ export async function copyToClipboard(text) {
   logger.error('❌ No se pudo copiar al portapapeles con ningún método');
   return false;
 }
-
-export default copyToClipboard;

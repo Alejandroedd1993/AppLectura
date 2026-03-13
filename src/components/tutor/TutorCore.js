@@ -515,7 +515,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           if (myRequestId !== requestIdRef.current) return;
           addMessage(msg);
           if (extractedQ) {
-            addMessage({ id: Date.now() + '-socratic-fup', role: 'assistant', content: '🤔 **Pregunta para profundizar:** ' + extractedQ });
+            addMessage({ id: Date.now() + '-socratic-fup', role: 'assistant', content: '💡 **Tu turno:** ' + extractedQ });
           }
           // Suprimir follow-up si ya se extrajo pregunta o el contenido termina con pregunta natural
           const tailQ = /\?\s*['“”„‟‘’)\]\u00bb\u2026.!,:;\s]*$/u.test(content.slice(-280));
@@ -896,7 +896,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       updateMessage(streamingMsgId, content, true, true);
 
       if (extractedSocraticQ) {
-        const fupMsg = { id: Date.now() + '-socratic-fup', role: 'assistant', content: '🤔 **Pregunta para profundizar:** ' + extractedSocraticQ };
+        const fupMsg = { id: Date.now() + '-socratic-fup', role: 'assistant', content: '💡 **Tu turno:** ' + extractedSocraticQ };
         addMessage(fupMsg);
       }
 
@@ -930,12 +930,18 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         return; // No mostrar error al usuario
       }
 
+      const httpStatus = Number.isFinite(e?.status) ? e.status : parseInt(e.message?.match(/HTTP (\d+)/)?.[1] || '0');
+      const isServiceConfigurationError = [
+        'AI_PROVIDER_NOT_CONFIGURED',
+        'ASSESSMENT_SERVICE_UNAVAILABLE'
+      ].includes(String(e?.code || '').trim());
+
       // 🔄 RETRY LOGIC: Reintentar si es error de red/timeout y no hemos alcanzado el máximo
       const isRetryableError =
         e.message?.includes('Failed to fetch') ||
         e.message?.includes('NetworkError') ||
         e.message?.includes('timeout') ||
-        (e.message?.includes('HTTP') && parseInt(e.message.match(/HTTP (\d+)/)?.[1] || '0') >= 500);
+        (httpStatus >= 500 && !isServiceConfigurationError);
 
       if (isRetryableError && retries < MAX_RETRIES) {
         logger.log(`🔄 [TutorCore] Reintentando... (${retries + 1}/${MAX_RETRIES})`);
@@ -951,7 +957,6 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       }
 
       // Si llegamos aquí, es un error no recuperable o se agotaron los reintentos
-      const httpStatus = parseInt(e.message?.match(/HTTP (\d+)/)?.[1] || '0');
       const backendDetail = String(e?.backendDetail || '').trim();
       const shortBackendDetail = backendDetail.length > 220
         ? `${backendDetail.slice(0, 220)}…`
@@ -964,10 +969,16 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
             ? '⚠️ El proveedor de IA rechazó la solicitud por saldo/crédito insuficiente (HTTP 402). Revisa tu API key o el saldo del proveedor.'
             : (httpStatus === 401 || httpStatus === 403)
               ? `⚠️ No autorizado (HTTP 401/403). ${shortBackendDetail || 'Verifica tu sesión y permisos.'}`
+                : isServiceConfigurationError
+                  ? '⚠️ El proveedor solicitado no está disponible en este entorno. Intenta con otro proveedor o revisa la configuración del servidor.'
               : e.message?.includes('HTTP 5')
                 ? '⚠️ Error del servidor. Por favor, intenta más tarde.'
                 : e.message?.includes('HTTP 4')
                   ? `⚠️ Error en la solicitud (HTTP ${httpStatus || 400}). ${shortBackendDetail || 'Revisa los datos enviados.'}`
+                    : httpStatus >= 500
+                      ? '⚠️ Error del servidor. Por favor, intenta más tarde.'
+                      : httpStatus >= 400
+                        ? `⚠️ Error en la solicitud (HTTP ${httpStatus || 400}). ${shortBackendDetail || 'Revisa los datos enviados.'}`
                   : '⚠️ Error obteniendo respuesta del tutor. Por favor, intenta nuevamente.';
 
       const errMsg = { id: Date.now() + '-error', role: 'assistant', content: errorMessage };

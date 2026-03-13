@@ -197,10 +197,53 @@ BACKEND_PORT=3001
 OPENAI_API_KEY=tu_clave_openai_aqui
 DEEPSEEK_API_KEY=tu_clave_deepseek_aqui
 
+# Firebase Admin para verificacion de ID tokens en backend
+FIREBASE_PROJECT_ID=tu_proyecto_id
+ENFORCE_FIREBASE_AUTH=true
+FIREBASE_CHECK_REVOKED_TOKENS=true
+FIREBASE_SERVICE_ACCOUNT_BASE64=base64_del_json_de_service_account
+
 # (Opcional) Otras claves
 GEMINI_API_KEY=
 REACT_APP_TAVILY_API_KEY=
 ```
+
+Notas para A2:
+- Usa `FIREBASE_SERVICE_ACCOUNT_BASE64` en Render para evitar problemas de escape con JSON multilínea.
+- `FIREBASE_SERVICE_ACCOUNT_JSON` también está soportado, pero es más propenso a errores manuales en el dashboard.
+- Si `ENFORCE_FIREBASE_AUTH=true` y falta la credencial, el backend devolverá `503` en rutas protegidas hasta corregir la configuración.
+- Para producción, `FIREBASE_CHECK_REVOKED_TOKENS=true` es la opción más segura si aceptas el costo extra de validación por request.
+
+### Verificación de A2 con un ID token real
+Una vez cargada la credencial en Render o staging, verifica auth sin consumir llamadas de IA reales usando una ruta protegida con body inválido:
+
+```powershell
+npm run verify:firebase-auth -- -BackendUrl "https://tu-backend.onrender.com" -IdToken "<ID_TOKEN_REAL>"
+
+# Smoke transversal de rutas protegidas
+npm run verify:protected-routes -- -BackendUrl "https://tu-backend.onrender.com" -IdToken "<ID_TOKEN_REAL>"
+```
+
+Resultado esperado:
+- `HTTP 400`: la autenticación fue aceptada y la ruta protegida respondió con validación de payload.
+- `HTTP 401`: el ID token es inválido, expiró o corresponde a otro proyecto.
+- `HTTP 503` con `FIREBASE_ADMIN_NOT_CONFIGURED`: la credencial de Firebase Admin no está correctamente cargada en el backend.
+
+### Verificación final de endurecimiento auth
+Para cerrar completamente A2, además del caso aceptado conviene verificar al menos uno de estos estados semánticos:
+
+```powershell
+# Token revocado
+npm run verify:firebase-auth-state -- -BackendUrl "https://tu-backend.onrender.com" -IdToken "<ID_TOKEN_REVOCADO>" -ExpectedStatus 401 -ExpectedCode AUTH_TOKEN_REVOKED
+
+# Usuario deshabilitado
+npm run verify:firebase-auth-state -- -BackendUrl "https://tu-backend.onrender.com" -IdToken "<ID_TOKEN_USUARIO_DESHABILITADO>" -ExpectedStatus 403 -ExpectedCode AUTH_USER_DISABLED
+```
+
+Preparación recomendada:
+- Revocado: genera un ID token válido, luego revoca refresh tokens del usuario y reutiliza ese ID token antes de que expire.
+- Deshabilitado: genera un ID token válido y deshabilita el usuario en Firebase Authentication antes de ejecutar la prueba.
+- Si el backend devuelve el `codigo` y `HTTP status` esperados, el endurecimiento de auth queda verificado extremo a extremo.
 
 ### 2.3 Configurar Variables de Entorno - Frontend
 

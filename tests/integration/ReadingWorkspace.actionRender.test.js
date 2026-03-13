@@ -5,13 +5,6 @@ import { AppContext } from '../../src/context/AppContext';
 import { AuthProvider } from '../../src/context/AuthContext';
 import fetchMock from 'jest-fetch-mock';
 
-// Mock búsqueda web para aislar
-jest.mock('../../src/hooks/useWebSearchTutor', () => () => ({
-  search: async () => ([]),
-  loading: false,
-  error: null
-}));
-
 beforeEach(() => {
   fetchMock.mockResponse((req) => {
     const url = String(req?.url || req || '');

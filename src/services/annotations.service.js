@@ -267,4 +267,3 @@ class AnnotationsServiceImpl {
 }
 
 export const AnnotationsService = new AnnotationsServiceImpl();
-export default AnnotationsService;

@@ -39,10 +39,16 @@ const uploadPdfMiddleware = (req, res, next) => {
     }
 
     if (err.code === 'UNSUPPORTED_MEDIA_TYPE') {
-      return res.status(415).json({ error: err.message });
+      return res.status(415).json({
+        error: 'Formato de archivo no soportado.',
+        codigo: 'UNSUPPORTED_PDF_TYPE'
+      });
     }
 
-    return res.status(400).json({ error: 'Error procesando upload de PDF', details: err.message });
+    return res.status(400).json({
+      error: 'Error procesando upload de PDF',
+      mensaje: 'No se pudo procesar la subida del archivo PDF.'
+    });
   });
 };
 

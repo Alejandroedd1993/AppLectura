@@ -70,5 +70,3 @@ export function useStudyItems(texto, textoId = null, courseId = null) {
     reviewItem
   };
 }
-
-export default useStudyItems;

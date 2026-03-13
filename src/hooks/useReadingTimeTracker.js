@@ -121,5 +121,3 @@ export function useReadingTimeTracker({ textoId, userId, isActive = true, course
 
   return { flush: flushTime, getElapsedSeconds: () => elapsedRef.current };
 }
-
-export default useReadingTimeTracker;

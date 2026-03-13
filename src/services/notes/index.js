@@ -38,5 +38,3 @@ export const initializeNotesServices = () => {
   
   return NotesServices;
 };
-
-export default NotesServices;

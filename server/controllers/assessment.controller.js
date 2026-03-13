@@ -65,6 +65,10 @@ const normalizeComprehensiveEvaluationResponse = (raw) => {
   return normalized;
 };
 
+function sanitizeValidationErrors(errors) {
+  return Array.isArray(errors) ? errors.filter(Boolean).map(String) : [];
+}
+
 /**
  * ✅ EVALUACIÓN CRITERIAL - Evalúa UNA dimensión con feedback estructurado por criterio
  * 
@@ -113,7 +117,9 @@ export async function evaluateAnswer(req, res) {
     if (validationErrors.length > 0) {
       return res.status(400).json({
         error: 'Datos de entrada inválidos',
-        details: validationErrors
+        mensaje: 'Revisa los campos requeridos antes de volver a intentar.',
+        codigo: 'INVALID_ASSESSMENT_INPUT',
+        details: sanitizeValidationErrors(validationErrors)
       });
     }
 
@@ -133,9 +139,10 @@ export async function evaluateAnswer(req, res) {
     // Reutilizar cliente de IA
     const aiClient = req.app.get('aiClient');
     if (!aiClient) {
-      return res.status(501).json({
-        error: 'AI client no configurado',
-        action: 'Inyecta aiClient en app'
+      return res.status(503).json({
+        error: 'Servicio no disponible',
+        mensaje: 'El servicio de evaluacion no esta configurado en el servidor.',
+        codigo: 'ASSESSMENT_SERVICE_UNAVAILABLE'
       });
     }
 
@@ -153,8 +160,9 @@ export async function evaluateAnswer(req, res) {
       return res.status(502).json({
         valid: false,
         degraded: true,
-        error: 'Respuesta de IA no es JSON válido',
-        raw: typeof response === 'string' ? response.slice(0, 500) : String(response).slice(0, 500),
+        error: 'Respuesta invalida del proveedor',
+        mensaje: 'La evaluacion no pudo interpretarse correctamente.',
+        codigo: 'ASSESSMENT_INVALID_PROVIDER_RESPONSE',
         dimension,
         timestamp: new Date().toISOString()
       });
@@ -169,7 +177,9 @@ export async function evaluateAnswer(req, res) {
       return res.status(502).json({
         valid: false,
         degraded: true,
-        message: 'Evaluación parcial: la IA no generó todos los campos requeridos',
+        error: 'Respuesta incompleta del proveedor',
+        mensaje: 'La evaluacion no incluyo todos los campos requeridos.',
+        codigo: 'ASSESSMENT_INCOMPLETE_PROVIDER_RESPONSE',
         ...data,
         timestamp: new Date().toISOString()
       });
@@ -199,7 +209,8 @@ export async function evaluateAnswer(req, res) {
       valid: false,
       degraded: true,
       error: 'Error al evaluar la respuesta',
-      message: err.message,
+      mensaje: 'No se pudo completar la evaluacion de la respuesta.',
+      codigo: 'ASSESSMENT_EVALUATE_ERROR',
       timestamp: new Date().toISOString()
     });
   }
@@ -238,7 +249,9 @@ export async function evaluateComprehensive(req, res) {
     if (validationErrors.length > 0) {
       return res.status(400).json({
         error: 'Datos de entrada inválidos',
-        details: validationErrors
+        mensaje: 'Revisa los campos requeridos antes de volver a intentar.',
+        codigo: 'INVALID_COMPREHENSIVE_ASSESSMENT_INPUT',
+        details: sanitizeValidationErrors(validationErrors)
       });
     }
 
@@ -257,8 +270,10 @@ export async function evaluateComprehensive(req, res) {
     // Reutilizar cliente de IA
     const aiClient = req.app.get('aiClient');
     if (!aiClient) {
-      return res.status(501).json({
-        error: 'AI client no configurado'
+      return res.status(503).json({
+        error: 'Servicio no disponible',
+        mensaje: 'El servicio de evaluacion no esta configurado en el servidor.',
+        codigo: 'ASSESSMENT_SERVICE_UNAVAILABLE'
       });
     }
 
@@ -277,8 +292,9 @@ export async function evaluateComprehensive(req, res) {
       return res.status(502).json({
         valid: false,
         degraded: true,
-        error: 'Respuesta de IA no es JSON válido',
-        raw: typeof response === 'string' ? response.slice(0, 500) : String(response).slice(0, 500),
+        error: 'Respuesta invalida del proveedor',
+        mensaje: 'La evaluacion comprehensiva no pudo interpretarse correctamente.',
+        codigo: 'COMPREHENSIVE_ASSESSMENT_INVALID_PROVIDER_RESPONSE',
         timestamp: new Date().toISOString()
       });
     }
@@ -291,7 +307,9 @@ export async function evaluateComprehensive(req, res) {
       return res.status(502).json({
         valid: false,
         degraded: true,
-        message: 'Evaluación parcial: se requieren al menos 4 dimensiones evaluadas',
+        error: 'Respuesta incompleta del proveedor',
+        mensaje: 'La evaluacion comprehensiva no incluyo todas las dimensiones requeridas.',
+        codigo: 'COMPREHENSIVE_ASSESSMENT_INCOMPLETE_PROVIDER_RESPONSE',
         ...data,
         timestamp: new Date().toISOString()
       });
@@ -312,7 +330,8 @@ export async function evaluateComprehensive(req, res) {
       valid: false,
       degraded: true,
       error: 'Error en evaluación comprehensiva',
-      message: err.message,
+      mensaje: 'No se pudo completar la evaluacion comprehensiva.',
+      codigo: 'ASSESSMENT_COMPREHENSIVE_ERROR',
       timestamp: new Date().toISOString()
     });
   }
@@ -342,13 +361,17 @@ export async function bulkEvaluate(req, res) {
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
-        error: 'items debe ser un array con al menos una evaluación'
+        error: 'items debe ser un array con al menos una evaluacion',
+        mensaje: 'Proporciona al menos una evaluacion para procesar.',
+        codigo: 'INVALID_BULK_ASSESSMENT_INPUT'
       });
     }
 
     if (items.length > 10) {
       return res.status(400).json({
-        error: 'Máximo 10 evaluaciones por lote',
+        error: 'Maximo 10 evaluaciones por lote',
+        mensaje: 'Reduce la cantidad de evaluaciones enviadas en una sola solicitud.',
+        codigo: 'ASSESSMENT_BULK_LIMIT_EXCEEDED',
         details: `Recibidas ${items.length} evaluaciones`
       });
     }
@@ -359,7 +382,11 @@ export async function bulkEvaluate(req, res) {
     const aiClient = req.app.get('aiClient');
 
     if (!aiClient) {
-      return res.status(501).json({ error: 'AI client no configurado' });
+      return res.status(503).json({
+        error: 'Servicio no disponible',
+        mensaje: 'El servicio de evaluacion no esta configurado en el servidor.',
+        codigo: 'ASSESSMENT_SERVICE_UNAVAILABLE'
+      });
     }
 
     // Procesar secuencialmente para evitar rate limits
@@ -426,7 +453,8 @@ export async function bulkEvaluate(req, res) {
         console.error(`[assessment.bulkEvaluate] Error en item ${i + 1}:`, error);
         results.push({
           ok: false,
-          error: `Item ${i + 1}: ${error.message}`
+          error: `Item ${i + 1}: evaluación no completada`,
+          codigo: 'ASSESSMENT_ITEM_ERROR'
         });
       }
     }
@@ -445,7 +473,8 @@ export async function bulkEvaluate(req, res) {
     console.error('[assessment.bulkEvaluate] Error:', err);
     return res.status(500).json({
       error: 'Error en evaluación en lote',
-      message: err.message
+      mensaje: 'No se pudo completar la evaluacion en lote.',
+      codigo: 'ASSESSMENT_BULK_ERROR'
     });
   }
 }

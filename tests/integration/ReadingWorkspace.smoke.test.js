@@ -4,21 +4,6 @@ import ReadingWorkspace from '../../src/components/ReadingWorkspace';
 import { AppContext } from '../../src/context/AppContext';
 import { AuthProvider } from '../../src/context/AuthContext';
 
-// Mock mínimo del servicio de búsqueda web reutilizado por el botón
-jest.mock('../../src/hooks/useWebSearchTutor', () => {
-  return () => ({
-    search: async () => ([
-      { title: 'Resultado 1', url: 'https://r1', snippet: 'S1' }
-    ]),
-    loading: false,
-    error: null
-  });
-});
-
-jest.mock('../../src/hooks/useWebSearchAvailability', () => {
-  return () => true;
-});
-
 function Wrapper({ children }) {
   const value = {
     texto: 'Texto de prueba para workspace.\nSegundo párrafo educativo.',

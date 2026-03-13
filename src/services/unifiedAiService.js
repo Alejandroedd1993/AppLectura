@@ -26,6 +26,7 @@ const defaultModels = {
 // Límite defensivo por mensaje (debe estar por debajo del backend maxMessageChars=20000)
 const MAX_MSG_CHARS = 18000;
 const TRUNCATION_SUFFIX = '\n\n[contenido truncado automáticamente por límite técnico]';
+const DEFAULT_ERROR_MESSAGE = 'No se pudo completar la solicitud.';
 
 function capMessages(msgs) {
   if (!Array.isArray(msgs)) return msgs;
@@ -34,6 +35,62 @@ function capMessages(msgs) {
     if (m.role === 'system' || m.content.length <= MAX_MSG_CHARS) return m;
     return { ...m, content: m.content.slice(0, MAX_MSG_CHARS - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX };
   });
+}
+
+function sanitizeText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+export function normalizeBackendErrorPayload(payload, options = {}) {
+  const { status, fallbackMessage = DEFAULT_ERROR_MESSAGE } = options;
+  const safePayload = payload && typeof payload === 'object' ? payload : {};
+  const backendError = sanitizeText(safePayload.error);
+  const explicitMessage = sanitizeText(safePayload.mensaje);
+  const legacyMessage = sanitizeText(safePayload.message);
+  const responseCode = sanitizeText(safePayload.codigo) || sanitizeText(safePayload.code);
+  const requestId = sanitizeText(safePayload.requestId);
+
+  return {
+    status,
+    code: responseCode || undefined,
+    backendError: backendError || undefined,
+    message: explicitMessage || backendError || legacyMessage || fallbackMessage,
+    requestId: requestId || undefined,
+    payload: safePayload
+  };
+}
+
+export async function buildBackendError(response, options = {}) {
+  const { fallbackMessage = DEFAULT_ERROR_MESSAGE } = options;
+  const rawText = await response.text().catch(() => '');
+  let parsedPayload = null;
+
+  if (rawText) {
+    try {
+      parsedPayload = JSON.parse(rawText);
+    } catch {
+      parsedPayload = null;
+    }
+  }
+
+  const normalized = parsedPayload
+    ? normalizeBackendErrorPayload(parsedPayload, { status: response.status, fallbackMessage })
+    : {
+        status: response.status,
+        code: undefined,
+        backendError: undefined,
+        message: sanitizeText(rawText) || fallbackMessage,
+        requestId: undefined,
+        payload: undefined
+      };
+
+  const error = new Error(normalized.message);
+  error.status = normalized.status;
+  error.code = normalized.code;
+  error.backendError = normalized.backendError;
+  error.requestId = normalized.requestId;
+  error.payload = normalized.payload;
+  return error;
 }
 
 export async function chatCompletion({
@@ -69,8 +126,9 @@ export async function chatCompletion({
   const res = await doRequest(payload);
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || `HTTP ${res.status}`);
+    throw await buildBackendError(res, {
+      fallbackMessage: 'No se pudo completar la solicitud de chat.'
+    });
   }
   return res.json();
 }
@@ -95,8 +153,9 @@ export async function analyzeText({ texto, api = 'deepseek', extra = {}, signal,
     signal
   }, timeoutMs);
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || `HTTP ${res.status}`);
+    throw await buildBackendError(res, {
+      fallbackMessage: 'No se pudo completar el analisis del texto.'
+    });
   }
   return res.json();
 }

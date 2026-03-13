@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import useAnnotations from './useAnnotations';
+import { useAnnotations } from './useAnnotations';
 
 /**
  * useNotesWorkspaceAdapter

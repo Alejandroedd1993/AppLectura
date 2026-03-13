@@ -69,5 +69,3 @@ export function useReadingProgress({ isVirtualized, totalItems, itemRefs }) {
 
   return { progress, onRangeChanged };
 }
-
-export default useReadingProgress;

@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchWithTimeout } from '../../utils/netUtils';
 import { NotesServices } from '../../services/notes';
+import { buildBackendError } from '../../services/unifiedAiService';
 import logger from '../../utils/logger';
 
 // ✅ URL del backend
@@ -347,8 +348,9 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null, courseI
         setOrigenNotas('backend');
         return ajustarTarjetas(notasGeneradas, textoParam, contextoEnriquecido, numeroTarjetas);
       } else {
-        const msg = await res.text();
-        throw new Error(msg || `HTTP ${res.status}`);
+        throw await buildBackendError(res, {
+          fallbackMessage: 'No se pudieron generar las notas de estudio.'
+        });
       }
     } catch (errBackend) {
       logger.warn('[useNotasEstudio] Backend no disponible, evaluando fallback:', errBackend?.message);

@@ -249,7 +249,7 @@ export const NotasSkeletonCard = React.memo(({ theme }) => (
 /**
  * Componente principal de estado de carga
  */
-export const LoadingState = React.memo(({ 
+const LoadingState = React.memo(({ 
   theme, 
   variant = 'spinner', // 'spinner', 'pulse', 'dots', 'skeleton'
   size = 'md',

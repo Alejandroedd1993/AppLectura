@@ -85,5 +85,3 @@ export function useAnnotations(texto, options = {}) {
     shadow
   };
 }
-
-export default useAnnotations;

@@ -79,7 +79,7 @@ function generateFollowUp(responseText, context = {}) {
  * Devuelve callback para pasar como onAssistantMessage y autoinyectar follow-up.
  */
 // P3 FIX: Constantes fuera del hook para evitar recreación
-const STOP_PREFIX = '🤔 Pregunta para profundizar:';
+const STOP_PREFIX = '💡 **Tu turno:**';
 const COOLDOWN_MS = 30000; // máx 1 follow-up cada 30s
 
 export default function useFollowUpQuestion(options = {}) {

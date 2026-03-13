@@ -23,7 +23,7 @@ const RE_LISTS = /((?:^\d+\.\s+.+$\n?)+|(?:^[-*]\s+.+$\n?)+)/gm;
 const RE_OL_ITEMS = /^\d+\.\s+(.+)$/gm;
 const RE_UL_ITEMS = /^[-*]\s+(.+)$/gm;
 const RE_LINKS = /\[([^\]]+)\]\(([^)]+)\)/g;
-const RE_SOCRATIC = /((?:¿|[A-ZÁÉÍÓÚÑ])(?:[^.!?]|(?:\.\.\.))*\?)(<\/p>)?\s*$/;
+const RE_REFLECTION_PROMPT = /^💡\s*\*\*Tu turno:\*\*\s*/;
 
 /**
  * Función simple para convertir markdown básico a HTML
@@ -55,6 +55,15 @@ function sanitizeHref(url) {
 
 function renderPlainText(text) {
   return escapeHtml(text).replace(/\n/g, '<br/>');
+}
+
+function isReflectionPrompt(text) {
+  return RE_REFLECTION_PROMPT.test(String(text || ''));
+}
+
+function renderReflectionPrompt(text) {
+  const prompt = String(text || '').replace(RE_REFLECTION_PROMPT, '').trim();
+  return `<div><strong>💡 Tu turno:</strong></div>${parseMarkdown(prompt)}`;
 }
 
 function parseMarkdown(text) {
@@ -99,22 +108,6 @@ function parseMarkdown(text) {
     if (/<(?:ol|ul|div|blockquote|li|table)[\s>]/i.test(trimmed)) return trimmed;
     return `<p>${trimmed}</p>`;
   }).join('\n');
-
-  // 📝 ALTERNATIVA A2 (Socrática): Identificar y resaltar preguntas al final del mensaje
-  // Buscamos si el final del mensaje (o el último párrafo) contiene una pregunta.
-  // Seleccionamos desde el inicio de la oración socrática hasta el cierre ?.
-  // Modificado: Buscamos por final de texto o final de <p>
-  // FIX: No aplicar a mensajes ya extraídos por TutorCore (prefijo 🤔) para evitar doble decoración.
-  const isPreExtracted = /^(?:🤔|&#x1f914;|\uD83E\uDD14)/.test(text);
-  if (!isPreExtracted && RE_SOCRATIC.test(html)) {
-    html = html.replace(RE_SOCRATIC, (match, pregunta, cierreP) => {
-      // Envolver la pregunta en un div con una clase específica para estilizarla
-      const box = `<div class="socratic-question" style="background: rgba(37, 99, 235, 0.1); border-left: 3px solid #2563eb; padding: 0.5rem 0.75rem; margin-top: 0.5rem; border-radius: 4px; font-style: italic;">
-        💡 <strong>Tu turno:</strong><br/>${pregunta}
-      </div>`;
-      return cierreP ? `${box}</p>` : box;
-    });
-  }
 
   return html;
 }
@@ -415,7 +408,7 @@ const Messages = styled.div`
 
 const Msg = styled.div`
   align-self: ${p => p.$user ? 'flex-end' : 'flex-start'};
-  background: ${p => p.$user ? (p.theme?.primary || '#2563eb') : (p.theme?.surface || '#fff')};
+  background: ${p => p.$user ? (p.theme?.primary || '#2563eb') : (p.$reflection ? 'rgba(37, 99, 235, 0.08)' : (p.theme?.surface || '#fff'))};
   color: ${p => p.$user ? '#fff' : (p.theme?.text || '#222')};
   padding: .6rem .75rem;
   border-radius: 14px;
@@ -423,7 +416,8 @@ const Msg = styled.div`
   line-height: 1.45;
   font-size: .78rem;
   box-shadow: 0 2px 10px rgba(0,0,0,.08);
-  border: ${p => p.$user ? 'none' : `1px solid ${p.theme?.border || '#e5e7eb'}`};
+  border: ${p => p.$user ? 'none' : (p.$reflection ? '1px solid rgba(37, 99, 235, 0.18)' : `1px solid ${p.theme?.border || '#e5e7eb'}`)};
+  border-left: ${p => p.$reflection ? '4px solid #2563eb' : 'none'};
   white-space: pre-wrap;
   
   /* Soporte para markdown renderizado */
@@ -1291,8 +1285,11 @@ export default function TutorDock({ followUps, expanded = false, onToggleExpand,
                     <Msg
                       key={m.id}
                       $user={m.role === 'user'}
+                      $reflection={m.role === 'assistant' && isReflectionPrompt(m.content)}
                       dangerouslySetInnerHTML={{
-                        __html: m.role === 'user' ? renderPlainText(m.content) : parseMarkdown(m.content)
+                        __html: m.role === 'user'
+                          ? renderPlainText(m.content)
+                          : (isReflectionPrompt(m.content) ? renderReflectionPrompt(m.content) : parseMarkdown(m.content))
                       }}
                     />
                   ))}

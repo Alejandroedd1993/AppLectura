@@ -26,5 +26,9 @@ services:
         value: applectura-cb058
       - key: ENFORCE_FIREBASE_AUTH
         value: "true"
+      - key: FIREBASE_CHECK_REVOKED_TOKENS
+        value: "true"
+      - key: FIREBASE_SERVICE_ACCOUNT_BASE64
+        sync: false
     healthCheckPath: /health
     # NOTA: Frontend se desplegará en Firebase Hosting, no aquí

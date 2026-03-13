@@ -5,13 +5,6 @@ import { AppContext } from '../../src/context/AppContext';
 import * as readerPrompts from '../../src/utils/readerActionPrompts';
 import { AuthProvider } from '../../src/context/AuthContext';
 
-// Mock web search hook para aislar prueba
-jest.mock('../../src/hooks/useWebSearchTutor', () => () => ({
-  search: async () => ([]),
-  loading: false,
-  error: null
-}));
-
 // Espía sobre buildPromptFromAction para confirmar uso
 let spyBuild;
 

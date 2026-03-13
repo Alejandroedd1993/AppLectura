@@ -6,7 +6,7 @@ jest.mock('../../../src/hooks/useAnnotations', () => {
   const React = require('react');
   return {
     __esModule: true,
-    default: () => {
+    useAnnotations: () => {
       const [notes, setNotes] = React.useState([]);
       return {
         notes,

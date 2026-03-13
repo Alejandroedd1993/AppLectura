@@ -13,7 +13,7 @@ import ConfiguracionPanel from './ConfiguracionPanel';
 import NotasContenido from './NotasContenido';
 import CronogramaRepaso from './CronogramaRepaso';
 import PanelStudyItems from '../PanelStudyItems';
-import useStudyItems from '../../hooks/useStudyItems';
+import { useStudyItems } from '../../hooks/useStudyItems';
 import DraftWarning from '../common/DraftWarning';
 import * as tokens from '../../styles/designTokens';
 import useMediaQuery from '../../hooks/useMediaQuery';

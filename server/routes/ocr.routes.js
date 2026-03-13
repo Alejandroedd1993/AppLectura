@@ -48,10 +48,16 @@ const uploadImageMiddleware = (req, res, next) => {
     }
 
     if (err.code === 'UNSUPPORTED_MEDIA_TYPE') {
-      return res.status(415).json({ error: err.message });
+      return res.status(415).json({
+        error: 'Formato de imagen no soportado.',
+        codigo: 'UNSUPPORTED_IMAGE_TYPE'
+      });
     }
 
-    return res.status(400).json({ error: 'Error procesando upload de imagen', details: err.message });
+    return res.status(400).json({
+      error: 'Error procesando upload de imagen',
+      mensaje: 'No se pudo procesar la subida de la imagen.'
+    });
   });
 };
 
