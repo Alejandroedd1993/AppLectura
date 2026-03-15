@@ -26,6 +26,7 @@ yarn-error.log*
 /.firebase
 /.firebase/
 /.tmp
+/.tmp-jest-*.json
 deploy.log
 
 # ========== BACKEND ==========
