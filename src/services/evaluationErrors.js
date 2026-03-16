@@ -34,6 +34,7 @@ export const ERROR_TYPES = {
   PREREQUISITE: 'prerequisite',
   INPUT_TOO_SHORT: 'input_too_short',
   INPUT_TOO_LONG: 'input_too_long',
+  SERVICE_CONFIGURATION: 'service_configuration',
   
   // Errores de red/API (reintentar)
   NETWORK: 'network',
@@ -72,6 +73,11 @@ export const ERROR_MESSAGES = {
     title: '📏 Respuesta muy larga',
     message: 'Tu respuesta no debe exceder 2000 caracteres.',
     action: 'Resume tu respuesta manteniendo las ideas principales.'
+  },
+  [ERROR_TYPES.SERVICE_CONFIGURATION]: {
+    title: '🛠️ Servicio no disponible',
+    message: 'La evaluación no está disponible por una configuración pendiente del servidor.',
+    action: 'No es necesario reintentar ahora. Revisa la configuración del backend o intenta con otro proveedor.'
   },
   [ERROR_TYPES.NETWORK]: {
     title: '🌐 Error de conexión',
@@ -154,11 +160,14 @@ export function detectErrorType(error) {
       error.message?.includes('Too Many Requests')) {
     return ERROR_TYPES.RATE_LIMIT;
   }
+
+  if (code === 'AI_PROVIDER_NOT_CONFIGURED' ||
+      code === 'ASSESSMENT_SERVICE_UNAVAILABLE') {
+    return ERROR_TYPES.SERVICE_CONFIGURATION;
+  }
   
   // Errores de API
   if (status >= 500 ||
-      code === 'AI_PROVIDER_NOT_CONFIGURED' ||
-      code === 'ASSESSMENT_SERVICE_UNAVAILABLE' ||
       error.message?.includes('500') || 
       error.message?.includes('502') ||
       error.message?.includes('503') ||

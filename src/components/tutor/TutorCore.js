@@ -563,7 +563,9 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         let backendDetail = errorText || '';
         try {
           const parsed = JSON.parse(errorText || '{}');
-          backendDetail = String(parsed?.error || parsed?.message || backendDetail || '').trim();
+          const backendError = String(parsed?.error || '').trim();
+          const backendMessage = String(parsed?.mensaje || parsed?.message || '').trim();
+          backendDetail = String(backendMessage || backendError || backendDetail || '').trim();
         } catch { /* noop */ }
 
         const err = new Error(`HTTP ${res.status}: ${backendDetail || 'Respuesta no OK'}`);
