@@ -10,6 +10,20 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 
 import logger from '../utils/logger';
+
+function wrapServiceError(error, prefix) {
+  const source = error instanceof Error ? error : new Error(String(error || 'Error desconocido'));
+  const wrapped = new Error(`${prefix}: ${source.message}`);
+
+  if (source.status != null) wrapped.status = source.status;
+  if (source.httpStatus != null) wrapped.httpStatus = source.httpStatus;
+  if (source.code != null) wrapped.code = source.code;
+  if (source.backendError != null) wrapped.backendError = source.backendError;
+  if (source.requestId != null) wrapped.requestId = source.requestId;
+  if (source.payload != null) wrapped.payload = source.payload;
+
+  return wrapped;
+}
 /**
  * Valida que el resumen cumpla requisitos mínimos antes de evaluar
  * @param {string} resumen - Texto del resumen
@@ -253,7 +267,7 @@ Analiza si el estudiante:
     return JSON.parse(cleaned);
   } catch (error) {
     logger.error('[ResumenService] Error OpenAI:', error);
-    throw new Error(`Error en análisis de inferencias: ${error.message}`);
+    throw wrapServiceError(error, 'Error en analisis de inferencias');
   }
 }
 
@@ -423,12 +437,17 @@ export async function evaluarResumenAcademico({ resumen, textoOriginal }) {
   const citas = extraerCitas(resumen);
   
   // Paso 3: Ejecutar evaluaciones en paralelo
+  let deepseekFailure = null;
+  let openaiFailure = null;
+
   const [deepseekResult, openaiResult] = await Promise.all([
     evaluarConDeepSeek({ resumen, textoOriginal, citas }).catch(err => {
+      deepseekFailure = err;
       logger.warn('[ResumenService] DeepSeek falló, continuando solo con OpenAI:', err.message);
       return null;
     }),
     evaluarConOpenAI({ resumen, textoOriginal, citas }).catch(err => {
+      openaiFailure = err;
       logger.warn('[ResumenService] OpenAI falló, continuando solo con DeepSeek:', err.message);
       return null;
     })
@@ -436,6 +455,11 @@ export async function evaluarResumenAcademico({ resumen, textoOriginal }) {
   
   // Paso 4: Validar que al menos uno haya funcionado
   if (!deepseekResult && !openaiResult) {
+    const rootFailure = openaiFailure || deepseekFailure;
+    if (rootFailure) {
+      throw wrapServiceError(rootFailure, 'Ambas IAs fallaron');
+    }
+
     throw new Error('Ambas IAs fallaron. Intenta de nuevo.');
   }
   
