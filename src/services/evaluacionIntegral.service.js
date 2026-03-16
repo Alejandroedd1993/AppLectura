@@ -6,11 +6,39 @@ import logger from '../utils/logger';
 const OPENAI_MODEL = 'gpt-4o-mini';
 
 function isAiAuthOrConfigError(error) {
+  const code = String(error?.code || '').trim();
+  const status = Number.isFinite(error?.status) ? error.status : Number(error?.httpStatus || 0);
   const msg = String(error?.message || error || '').toLowerCase();
+
+  if (
+    code === 'AI_PROVIDER_NOT_CONFIGURED' ||
+    code === 'ASSESSMENT_SERVICE_UNAVAILABLE' ||
+    code === 'OPENAI_MODEL_NOT_ALLOWED' ||
+    status === 401 ||
+    status === 403 ||
+    status === 503
+  ) {
+    return true;
+  }
+
   return msg.includes('401') ||
     msg.includes('incorrect api key') ||
     msg.includes('falta api key') ||
     msg.includes('unauthorized');
+}
+
+function wrapServiceError(error, prefix) {
+  const source = error instanceof Error ? error : new Error(String(error || 'Error desconocido'));
+  const wrapped = new Error(`${prefix}: ${source.message}`);
+
+  if (source.status != null) wrapped.status = source.status;
+  if (source.httpStatus != null) wrapped.httpStatus = source.httpStatus;
+  if (source.code != null) wrapped.code = source.code;
+  if (source.backendError != null) wrapped.backendError = source.backendError;
+  if (source.requestId != null) wrapped.requestId = source.requestId;
+  if (source.payload != null) wrapped.payload = source.payload;
+
+  return wrapped;
 }
 
 function buildFallbackPregunta({ rubricDimension, nivelDificultad, dimension }) {
@@ -216,7 +244,7 @@ Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto d
     }
 
     logger.error('❌ Error generando pregunta:', error);
-    throw new Error(`Error generando pregunta: ${error.message}`);
+    throw wrapServiceError(error, 'Error generando pregunta');
   }
 }
 
@@ -923,7 +951,7 @@ Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto).
     }
 
     logger.error('❌ Error generando desafío cruzado:', error);
-    throw new Error(`Error generando desafío cruzado: ${error.message}`);
+    throw wrapServiceError(error, 'Error generando desafío cruzado');
   }
 }
 
