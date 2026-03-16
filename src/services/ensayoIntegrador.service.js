@@ -266,7 +266,14 @@ async function evaluarConProveedor({ provider, model, texto, essayText, dimensio
       throw new EssayEvaluationError(
         `Error de conexión con ${provider}`,
         'NETWORK_ERROR',
-        { provider, originalError: err.message }
+        {
+          provider,
+          originalError: err.message,
+          ...(err.status != null && { status: err.status }),
+          ...(err.code != null && { backendCode: err.code }),
+          ...(err.requestId != null && { requestId: err.requestId }),
+          ...(err.backendError != null && { backendError: err.backendError })
+        }
       );
     }
     
@@ -274,7 +281,16 @@ async function evaluarConProveedor({ provider, model, texto, essayText, dimensio
     throw new EssayEvaluationError(
       `Error al evaluar con ${provider}: ${err.message}`,
       'PROVIDER_ERROR',
-      { provider, originalError: err.message }
+      {
+        provider,
+        originalError: err.message,
+        ...(err.status != null && { status: err.status }),
+        ...(err.httpStatus != null && { httpStatus: err.httpStatus }),
+        ...(err.code != null && { backendCode: err.code }),
+        ...(err.requestId != null && { requestId: err.requestId }),
+        ...(err.backendError != null && { backendError: err.backendError }),
+        ...(err.payload != null && { payload: err.payload })
+      }
     );
   }
 
@@ -476,7 +492,15 @@ export async function evaluateEssayDual({ texto, essayText, dimension, timeout =
     throw new EssayEvaluationError(
       `Error inesperado: ${err.message}`,
       'UNKNOWN',
-      { originalError: err.message }
+      {
+        originalError: err.message,
+        ...(err.status != null && { status: err.status }),
+        ...(err.httpStatus != null && { httpStatus: err.httpStatus }),
+        ...(err.code != null && { backendCode: err.code }),
+        ...(err.requestId != null && { requestId: err.requestId }),
+        ...(err.backendError != null && { backendError: err.backendError }),
+        ...(err.payload != null && { payload: err.payload })
+      }
     );
   }
 }
