@@ -1,4 +1,4 @@
-import { chatCompletion, extractContent } from './unifiedAiService';
+import { buildBackendError, chatCompletion, extractContent } from './unifiedAiService';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -134,8 +134,9 @@ export async function generateGlossary(fullText, _minComplexity = 5) {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || `HTTP ${response.status}`);
+      throw await buildBackendError(response, {
+        fallbackMessage: 'No se pudo generar el glosario.'
+      });
     }
 
     const data = await response.json();

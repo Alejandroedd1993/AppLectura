@@ -1,5 +1,6 @@
 import logger from '../utils/logger';
 import { auth } from '../firebase/config';
+import { buildBackendError } from './unifiedAiService';
 
 
 /**
@@ -126,8 +127,9 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`Error en análisis estructural: ${response.status} - ${errorData.error || 'Error desconocido'}`);
+      throw await buildBackendError(response, {
+        fallbackMessage: `Error en analisis estructural (HTTP ${response.status})`
+      });
     }
 
     const data = await response.json();
