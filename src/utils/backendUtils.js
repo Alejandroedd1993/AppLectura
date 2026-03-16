@@ -4,6 +4,7 @@
 
 import { fetchWithTimeout } from './netUtils';
 import logger from './logger';
+import { buildBackendError } from '../services/unifiedAiService';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 
 /**
@@ -45,8 +46,9 @@ export const processPdfWithBackend = async (file) => {
   }, 60000);
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error del servidor: ${response.status}`);
+    throw await buildBackendError(response, {
+      fallbackMessage: `Error del servidor: ${response.status}`
+    });
   }
 
   const result = await response.json();

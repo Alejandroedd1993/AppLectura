@@ -31,8 +31,31 @@ describe('backendUtils', () => {
 
   test('processPdfWithBackend lanza error si no ok', async () => {
     const file = new File(['dummy'], 'demo.pdf', { type: 'application/pdf' });
-    fetchWithTimeout.mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: 'boom' }) });
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => JSON.stringify({ error: 'boom' })
+    });
     await expect(processPdfWithBackend(file)).rejects.toThrow('boom');
+  });
+
+  test('processPdfWithBackend prioriza mensaje del backend normalizado', async () => {
+    const file = new File(['dummy'], 'demo.pdf', { type: 'application/pdf' });
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 415,
+      text: async () => JSON.stringify({
+        error: 'Formato de archivo no soportado.',
+        mensaje: 'Debes subir un PDF valido.',
+        codigo: 'UNSUPPORTED_PDF_TYPE'
+      })
+    });
+
+    await expect(processPdfWithBackend(file)).rejects.toMatchObject({
+      message: 'Debes subir un PDF valido.',
+      code: 'UNSUPPORTED_PDF_TYPE',
+      backendError: 'Formato de archivo no soportado.'
+    });
   });
 
   test('getBackendUrl devuelve string', () => {
