@@ -526,7 +526,7 @@ async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgr
     }
 
     logger.error('❌ Error evaluando respuesta:', error);
-    throw error;
+    throw wrapServiceError(error, 'Error evaluando respuesta');
   }
 }
 
