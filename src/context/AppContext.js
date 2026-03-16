@@ -36,6 +36,7 @@ import { auth } from '../firebase/config';
 import { useSessionMaintenance } from '../hooks/useSessionMaintenance';
 import useFirestorePersistence from '../hooks/useFirestorePersistence';
 import { generateBasicAnalysis } from '../services/basicAnalysisService';
+import { normalizeBackendErrorPayload } from '../services/unifiedAiService';
 import { runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
 import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
 import logger from '../utils/logger';
@@ -4430,12 +4431,16 @@ export const AppContextProvider = ({ children }) => {
         if (responseData && typeof responseData === 'object' && responseData.fallback && (responseData.degraded || responseData.error)) {
           logger.warn('⚠️ [AppContext.analyzeDocument] Backend devolvió respuesta degradada con fallback (HTTP OK); usando fallback');
           const fullAnalysis = responseData.fallback;
+          const normalizedBackendError = normalizeBackendErrorPayload(responseData, {
+            status: response.status,
+            fallbackMessage: 'Respuesta degradada'
+          });
 
           if (!fullAnalysis.metadata) fullAnalysis.metadata = {};
           fullAnalysis.metadata.currentTextoId = fullAnalysis.metadata.currentTextoId || (effectiveId || currentTextoId);
           fullAnalysis.metadata._isPreliminary = false;
           fullAnalysis.metadata._serverFallback = true;
-          fullAnalysis.metadata._serverErrorMessage = responseData.message || responseData.error || 'Respuesta degradada'
+          fullAnalysis.metadata._serverErrorMessage = normalizedBackendError.message;
 
           if (fullAnalysis.prelecture?.metadata && !fullAnalysis.prelecture.metadata.currentTextoId) {
             fullAnalysis.prelecture.metadata.currentTextoId = effectiveId || currentTextoId;
@@ -4460,13 +4465,17 @@ export const AppContextProvider = ({ children }) => {
           if (responseData && responseData.fallback) {
             logger.warn('⚠️ [AppContext.analyzeDocument] Backend devolvió error pero incluye fallback; continuando sin bloquear UI');
             const fullAnalysis = responseData.fallback;
+            const normalizedBackendError = normalizeBackendErrorPayload(responseData, {
+              status: response.status,
+              fallbackMessage: `HTTP ${response.status}`
+            });
 
             // Normalización mínima (mismo contrato que en éxito)
             if (!fullAnalysis.metadata) fullAnalysis.metadata = {};
             fullAnalysis.metadata.currentTextoId = fullAnalysis.metadata.currentTextoId || (effectiveId || currentTextoId);
             fullAnalysis.metadata._isPreliminary = false;
             fullAnalysis.metadata._serverFallback = true;
-            fullAnalysis.metadata._serverErrorMessage = responseData.message || responseData.error || `HTTP ${response.status}`;
+            fullAnalysis.metadata._serverErrorMessage = normalizedBackendError.message;
 
             if (fullAnalysis.prelecture?.metadata && !fullAnalysis.prelecture.metadata.currentTextoId) {
               fullAnalysis.prelecture.metadata.currentTextoId = effectiveId || currentTextoId;
@@ -4487,11 +4496,18 @@ export const AppContextProvider = ({ children }) => {
             return;
           }
 
-          const errorMessage = responseData?.message
-            ? `${responseData.error || 'Error'}: ${responseData.message}`
-            : (responseData?.error || `HTTP ${response.status}`);
+          const normalizedBackendError = normalizeBackendErrorPayload(responseData, {
+            status: response.status,
+            fallbackMessage: `HTTP ${response.status}`
+          });
+          const errorMessage = normalizedBackendError.backendError
+            ? `${normalizedBackendError.backendError}: ${normalizedBackendError.message}`
+            : normalizedBackendError.message;
 
           const customError = new Error(errorMessage);
+          customError.status = normalizedBackendError.status;
+          customError.code = normalizedBackendError.code;
+          customError.backendError = normalizedBackendError.backendError;
           customError.response = { data: responseData };
           throw customError;
         }
