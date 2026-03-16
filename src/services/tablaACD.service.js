@@ -7,6 +7,20 @@ const DEEPSEEK_MODEL = 'deepseek-chat';
 const OPENAI_MODEL = 'gpt-4o-mini';
 const DIMENSION_KEY = 'acd'; // Dimensión: Análisis Crítico del Discurso
 
+function wrapServiceError(error, prefix) {
+  const source = error instanceof Error ? error : new Error(String(error || 'Error desconocido'));
+  const wrapped = new Error(`${prefix}: ${source.message}`);
+
+  if (source.status != null) wrapped.status = source.status;
+  if (source.httpStatus != null) wrapped.httpStatus = source.httpStatus;
+  if (source.code != null) wrapped.code = source.code;
+  if (source.backendError != null) wrapped.backendError = source.backendError;
+  if (source.requestId != null) wrapped.requestId = source.requestId;
+  if (source.payload != null) wrapped.payload = source.payload;
+
+  return wrapped;
+}
+
 /**
  * Limpia respuestas JSON que vienen con bloques markdown o texto adicional
  */
@@ -398,7 +412,7 @@ export async function evaluateTablaACD({ text, marcoIdeologico, estrategiasRetor
 
   } catch (error) {
     logger.error('❌ Error en evaluación dual de TablaACD:', error);
-    throw error;
+    throw wrapServiceError(error, 'Error en evaluacion dual de TablaACD');
   }
 }
 
