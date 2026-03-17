@@ -49,3 +49,69 @@ export const fetchWithTimeout = (resource, options = {}, timeoutMs = 45000) => {
       if (extSignal) extSignal.removeEventListener('abort', onAbort);
     });
 };
+
+export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const isRetryableNetworkError = (error) => {
+  if (!error) return false;
+
+  if (error.name === 'AbortError') {
+    return false;
+  }
+
+  const message = String(error.message || '').trim();
+  return (
+    error.name === 'TypeError' ||
+    message.includes('Failed to fetch') ||
+    message.includes('NetworkError') ||
+    message.includes('fetch failed') ||
+    message.includes('ECONNREFUSED')
+  );
+};
+
+export const retryAsync = async (
+  operation,
+  {
+    retries = 0,
+    initialDelayMs = 1000,
+    backoffMultiplier = 1.5,
+    getDelayMs,
+    shouldRetry = isRetryableNetworkError,
+    onRetry
+  } = {}
+) => {
+  let delayMs = initialDelayMs;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= retries || !shouldRetry(error, attempt + 1)) {
+        throw error;
+      }
+
+      const currentDelayMs = typeof getDelayMs === 'function'
+        ? getDelayMs(attempt + 1, delayMs)
+        : delayMs;
+
+      if (typeof onRetry === 'function') {
+        onRetry(error, {
+          attempt: attempt + 1,
+          maxAttempts: retries + 1,
+          delayMs: currentDelayMs
+        });
+      }
+
+      await sleep(currentDelayMs);
+      delayMs = typeof getDelayMs === 'function'
+        ? currentDelayMs
+        : currentDelayMs * backoffMultiplier;
+    }
+  }
+
+  return operation();
+};
+
+export const fetchWithRetry = (resource, options = {}, retryOptions = {}) => {
+  return retryAsync(() => fetch(resource, options), retryOptions);
+};

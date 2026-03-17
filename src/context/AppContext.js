@@ -39,6 +39,7 @@ import { generateBasicAnalysis } from '../services/basicAnalysisService';
 import { normalizeBackendErrorPayload } from '../services/unifiedAiService';
 import { runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
 import { getBackendUrl } from '../utils/backendConfig';
+import { fetchWithRetry } from '../utils/netUtils';
 import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
 import logger from '../utils/logger';
 import {
@@ -4363,29 +4364,6 @@ export const AppContextProvider = ({ children }) => {
     // 🆕 A1 FIX: FASE 2 - Análisis profundo en background (no bloquea UI)
     // 🆕 A1-1 FIX: Pasamos originalDocId para verificar que el texto no cambió
     const enrichInBackground = async (originalDocId) => {
-
-      // 🆕 A4 FIX: Helper function for fetch with automatic retry
-      const fetchWithRetry = async (url, options, retries = 1, delay = 2000) => {
-        for (let attempt = 0; attempt <= retries; attempt++) {
-          try {
-            const res = await fetch(url, options);
-            return res;
-          } catch (fetchError) {
-            const isNetworkError = fetchError.message.includes('Failed to fetch') ||
-              fetchError.message.includes('NetworkError') ||
-              fetchError.name === 'TypeError';
-
-            if (isNetworkError && attempt < retries) {
-              logger.warn(`⚠️ [AppContext] Error de red, reintentando en ${delay}ms... (intento ${attempt + 1}/${retries + 1})`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              delay *= 1.5; // Backoff exponencial
-            } else {
-              throw fetchError;
-            }
-          }
-        }
-      };
-
       try {
         logger.log('🌐 [AppContext.analyzeDocument] Llamando al endpoint /api/analysis/prelecture...');
         logger.log('🔗 [AppContext.analyzeDocument] Backend URL:', BACKEND_URL);
@@ -4415,7 +4393,14 @@ export const AppContextProvider = ({ children }) => {
             metadata: {} // Metadata adicional si es necesario
           }),
           signal: controller.signal
-        }, 1, 3000); // 1 retry con 3 segundos de espera inicial
+        }, {
+          retries: 1,
+          initialDelayMs: 3000,
+          backoffMultiplier: 1.5,
+          onRetry: (_error, meta) => {
+            logger.warn(`⚠️ [AppContext] Error de red, reintentando en ${meta.delayMs}ms... (intento ${meta.attempt}/${meta.maxAttempts})`);
+          }
+        }); // 1 retry con 3 segundos de espera inicial
 
         clearTimeout(timeoutId);
 

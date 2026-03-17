@@ -1,6 +1,6 @@
 // src/services/retryWrapper.js
 import { createEvaluationError } from './evaluationErrors';
-
+import { retryAsync } from '../utils/netUtils';
 import logger from '../utils/logger';
 /**
  * Configuración de reintentos
@@ -26,13 +26,6 @@ function calculateBackoffDelay(attemptNumber) {
 }
 
 /**
- * Espera un tiempo determinado
- */
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
  * Wrapper para ejecutar funciones con retry automático
  * @param {Function} fn - Función asíncrona a ejecutar
  * @param {Object} options - Opciones de configuración
@@ -46,99 +39,100 @@ export async function withRetry(fn, options = {}, onProgress = null) {
   };
 
   let lastError = null;
-  
-  for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
-    try {
-      // Notificar progreso: intento iniciado
-      if (onProgress) {
-        onProgress({
-          type: 'attempt',
-          attempt,
-          maxAttempts: config.maxAttempts,
-          message: attempt === 1 
-            ? 'Procesando solicitud...' 
-            : `Reintentando (${attempt}/${config.maxAttempts})...`
-        });
-      }
+  let attemptStarted = 0;
 
-      // Ejecutar función con timeout
-      const result = await Promise.race([
-        fn(),
-        new Promise((_, reject) => 
-          setTimeout(
-            () => reject(new Error(`Timeout después de ${config.timeoutPerAttempt}ms`)),
-            config.timeoutPerAttempt
+  try {
+    const result = await retryAsync(
+      async () => {
+        attemptStarted += 1;
+
+        if (onProgress) {
+          onProgress({
+            type: 'attempt',
+            attempt: attemptStarted,
+            maxAttempts: config.maxAttempts,
+            message: attemptStarted === 1
+              ? 'Procesando solicitud...'
+              : `Reintentando (${attemptStarted}/${config.maxAttempts})...`
+          });
+        }
+
+        return Promise.race([
+          fn(),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Timeout después de ${config.timeoutPerAttempt}ms`)),
+              config.timeoutPerAttempt
+            )
           )
-        )
-      ]);
+        ]);
+      },
+      {
+        retries: Math.max(0, config.maxAttempts - 1),
+        initialDelayMs: config.baseDelay,
+        backoffMultiplier: config.backoffMultiplier,
+        getDelayMs: (attempt) => Math.min(calculateBackoffDelay(attempt), config.maxDelay),
+        shouldRetry: (error, attempt) => {
+          const evaluationError = createEvaluationError(error);
+          lastError = evaluationError;
 
-      // ✅ Éxito
-      if (onProgress) {
-        onProgress({
-          type: 'success',
-          attempt,
-          message: 'Operación completada exitosamente'
-        });
+          logger.warn(`❌ Intento ${attempt}/${config.maxAttempts} falló:`, {
+            type: evaluationError.type,
+            message: evaluationError.message,
+            retryable: evaluationError.retryable
+          });
+
+          if (!evaluationError.retryable) {
+            if (onProgress) {
+              onProgress({
+                type: 'error',
+                error: evaluationError,
+                message: 'Error no reintentable'
+              });
+            }
+            return false;
+          }
+
+          return attempt < config.maxAttempts;
+        },
+        onRetry: (_error, meta) => {
+          if (onProgress) {
+            onProgress({
+              type: 'retry',
+              attempt: meta.attempt,
+              maxAttempts: config.maxAttempts,
+              delay: meta.delayMs,
+              message: `Reintentando en ${Math.round(meta.delayMs / 1000)}s...`
+            });
+          }
+        }
       }
+    );
 
-      return result;
-
-    } catch (error) {
-      // Convertir a EvaluationError
-      const evaluationError = createEvaluationError(error);
-      lastError = evaluationError;
-
-      logger.warn(`❌ Intento ${attempt}/${config.maxAttempts} falló:`, {
-        type: evaluationError.type,
-        message: evaluationError.message,
-        retryable: evaluationError.retryable
+    if (onProgress) {
+      onProgress({
+        type: 'success',
+        attempt: attemptStarted,
+        message: 'Operación completada exitosamente'
       });
-
-      // Si el error NO es reintentable, lanzar inmediatamente
-      if (!evaluationError.retryable) {
-        if (onProgress) {
-          onProgress({
-            type: 'error',
-            error: evaluationError,
-            message: 'Error no reintentable'
-          });
-        }
-        throw evaluationError;
-      }
-
-      // Si es el último intento, lanzar error
-      if (attempt === config.maxAttempts) {
-        if (onProgress) {
-          onProgress({
-            type: 'error',
-            error: evaluationError,
-            message: `Falló después de ${attempt} intentos`
-          });
-        }
-        throw evaluationError;
-      }
-
-      // Calcular delay para próximo intento
-      const delay = calculateBackoffDelay(attempt);
-      
-      // Notificar progreso: esperando para reintentar
-      if (onProgress) {
-        onProgress({
-          type: 'retry',
-          attempt,
-          maxAttempts: config.maxAttempts,
-          delay,
-          message: `Reintentando en ${Math.round(delay / 1000)}s...`
-        });
-      }
-
-      // Esperar antes de reintentar
-      await sleep(delay);
     }
-  }
 
-  // No debería llegar aquí, pero por seguridad
-  throw lastError;
+    return result;
+  } catch (error) {
+    const evaluationError = error instanceof Error && error.name === 'EvaluationError'
+      ? error
+      : (lastError || createEvaluationError(error));
+
+    if (onProgress && evaluationError.retryable) {
+      onProgress({
+        type: 'error',
+        error: evaluationError,
+        message: `Falló después de ${attemptStarted || config.maxAttempts} intentos`
+      });
+    }
+
+    throw evaluationError;
+  }
 }
 
 /**

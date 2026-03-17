@@ -1,4 +1,4 @@
-import { genId, hashText, fetchWithTimeout } from '../../../src/utils/netUtils';
+import { genId, hashText, fetchWithTimeout, fetchWithRetry, retryAsync } from '../../../src/utils/netUtils';
 
 describe('netUtils', () => {
   test('genId produce un string y fallback cuando no hay crypto', () => {
@@ -37,6 +37,40 @@ describe('netUtils', () => {
     const p = fetchWithTimeout('http://x', { signal: controller.signal }, 1000);
     controller.abort();
     await expect(p).rejects.toHaveProperty('name', 'AbortError');
+    global.fetch = realFetch;
+  });
+
+  test('retryAsync reintenta errores reintentables y luego resuelve', async () => {
+    const operation = jest
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce('ok');
+
+    await expect(retryAsync(operation, { retries: 1, initialDelayMs: 0 })).resolves.toBe('ok');
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  test('fetchWithRetry no reintenta AbortError', async () => {
+    const realFetch = global.fetch;
+    const abortError = new Error('Aborted');
+    abortError.name = 'AbortError';
+    global.fetch = jest.fn().mockRejectedValue(abortError);
+
+    await expect(fetchWithRetry('http://x', {}, { retries: 2, initialDelayMs: 0 })).rejects.toHaveProperty('name', 'AbortError');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    global.fetch = realFetch;
+  });
+
+  test('fetchWithRetry reintenta fallo de red y conserva la respuesta', async () => {
+    const realFetch = global.fetch;
+    const response = { ok: true, json: jest.fn() };
+    global.fetch = jest
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(response);
+
+    await expect(fetchWithRetry('http://x', {}, { retries: 1, initialDelayMs: 0 })).resolves.toBe(response);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
     global.fetch = realFetch;
   });
 });

@@ -28,6 +28,17 @@ describe('evaluationErrors', () => {
     expect(isRetryable(ERROR_TYPES.API_ERROR)).toBe(true);
   });
 
+  test('clasifica Failed to fetch como error de red reintentable', () => {
+    const error = new TypeError('Failed to fetch');
+
+    expect(detectErrorType(error)).toBe(ERROR_TYPES.NETWORK);
+    expect(isRetryable(ERROR_TYPES.NETWORK)).toBe(true);
+
+    const evaluationError = createEvaluationError(error);
+    expect(evaluationError.type).toBe(ERROR_TYPES.NETWORK);
+    expect(evaluationError.retryable).toBe(true);
+  });
+
   test('expone un mensaje amigable especifico para configuracion de servicio', () => {
     const friendly = getUserFriendlyMessage(ERROR_TYPES.SERVICE_CONFIGURATION);
 

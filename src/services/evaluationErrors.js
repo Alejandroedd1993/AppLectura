@@ -122,42 +122,45 @@ export const ERROR_MESSAGES = {
 export function detectErrorType(error) {
   const status = Number.isFinite(error?.status) ? error.status : 0;
   const code = String(error?.code || '').trim();
+  const message = String(error?.message || '');
+  const lowerMessage = message.toLowerCase();
 
   // Errores de validación
-  if (error.message?.includes('al menos 50 caracteres')) {
+  if (message.includes('al menos 50 caracteres')) {
     return ERROR_TYPES.INPUT_TOO_SHORT;
   }
-  if (error.message?.includes('no debe exceder 2000 caracteres')) {
+  if (message.includes('no debe exceder 2000 caracteres')) {
     return ERROR_TYPES.INPUT_TOO_LONG;
   }
-  if (error.message?.includes('Dimensión no encontrada')) {
+  if (message.includes('Dimensión no encontrada')) {
     return ERROR_TYPES.VALIDATION;
   }
   
   // Errores de prerequisitos
-  if (error.message?.includes('prerequisitos') || error.message?.includes('completar')) {
+  if (lowerMessage.includes('prerequisitos') || lowerMessage.includes('completar')) {
     return ERROR_TYPES.PREREQUISITE;
   }
   
   // Errores de red
-  if (error.message?.includes('ECONNREFUSED') || 
-      error.message?.includes('Network') ||
-      error.message?.includes('fetch failed')) {
+  if (message.includes('ECONNREFUSED') ||
+      message.includes('Network') ||
+      lowerMessage.includes('fetch failed') ||
+      lowerMessage.includes('failed to fetch')) {
     return ERROR_TYPES.NETWORK;
   }
   
   // Timeouts
-  if (error.message?.includes('timeout') || 
-      error.message?.includes('timed out') ||
+  if (lowerMessage.includes('timeout') ||
+      lowerMessage.includes('timed out') ||
       error.code === 'ETIMEDOUT') {
     return ERROR_TYPES.TIMEOUT;
   }
   
   // Rate limiting
   if (status === 429 ||
-      error.message?.includes('429') || 
-      error.message?.includes('rate limit') ||
-      error.message?.includes('Too Many Requests')) {
+      message.includes('429') ||
+      lowerMessage.includes('rate limit') ||
+      message.includes('Too Many Requests')) {
     return ERROR_TYPES.RATE_LIMIT;
   }
 
@@ -168,16 +171,16 @@ export function detectErrorType(error) {
   
   // Errores de API
   if (status >= 500 ||
-      error.message?.includes('500') || 
-      error.message?.includes('502') ||
-      error.message?.includes('503') ||
-      error.message?.includes('API error')) {
+      message.includes('500') ||
+      message.includes('502') ||
+      message.includes('503') ||
+      lowerMessage.includes('api error')) {
     return ERROR_TYPES.API_ERROR;
   }
   
   // Errores de parsing
-  if (error.message?.includes('JSON') || 
-      error.message?.includes('parse') ||
+  if (message.includes('JSON') ||
+      lowerMessage.includes('parse') ||
       error instanceof SyntaxError) {
     return ERROR_TYPES.PARSING;
   }
