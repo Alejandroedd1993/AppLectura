@@ -8,7 +8,7 @@ import {
 import { validateEssayFormat } from './essayFormatValidator';
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
 import { DEEPSEEK_CHAT_MODEL, OPENAI_CHAT_MODEL } from '../constants/aiModelDefaults';
-import { CHAT_TIMEOUT_MS } from '../constants/timeoutConstants';
+import { ESSAY_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 import logger from '../utils/logger';
 // 🆕 Logging estructurado para producción
@@ -66,9 +66,6 @@ EQUIDAD Y NO DISCRIMINACIÓN (OBLIGATORIO):
 - Evalúa el razonamiento, evidencias y criterios de rúbrica; no penalices variedades del español.
 - Si el ensayo o el texto incluyen sesgos/discriminación, señálalo críticamente de forma respetuosa y basada en evidencia.
 `;
-
-// 🆕 Timeout específico para evaluación de ensayos (más largo que chat normal)
-const ESSAY_EVALUATION_TIMEOUT_MS = Math.max(CHAT_TIMEOUT_MS, 90000); // Mínimo 90s
 
 const DIMENSION_MAP = {
   comprension_analitica: 'comprensionAnalitica',

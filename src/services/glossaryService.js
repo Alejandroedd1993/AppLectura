@@ -1,6 +1,7 @@
 import { buildBackendError, chatCompletion, extractContent } from './unifiedAiService';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
+import { GLOSSARY_TERM_TIMEOUT_MS } from '../constants/timeoutConstants';
 import { isDevelopmentEnvironment } from '../utils/runtimeEnv';
 
 const isDev = isDevelopmentEnvironment;
@@ -85,7 +86,7 @@ IMPORTANTE:
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 300,
-      timeoutMs: 20000 // 20s por término individual
+      timeoutMs: GLOSSARY_TERM_TIMEOUT_MS
     });
 
     const content = extractContent(data);

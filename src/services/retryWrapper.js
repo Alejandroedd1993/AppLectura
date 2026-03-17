@@ -1,5 +1,6 @@
 // src/services/retryWrapper.js
 import { createEvaluationError } from './evaluationErrors';
+import { AI_DEEP_EVALUATION_TIMEOUT_MS, AI_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
 import { retryAsync } from '../utils/netUtils';
 import logger from '../utils/logger';
 /**
@@ -10,7 +11,7 @@ const RETRY_CONFIG = {
   baseDelay: 1000, // 1 segundo
   maxDelay: 10000, // 10 segundos
   backoffMultiplier: 2, // Exponencial: 1s, 2s, 4s
-  timeoutPerAttempt: 30000 // 30 segundos por intento
+  timeoutPerAttempt: AI_EVALUATION_TIMEOUT_MS
 };
 
 /**
@@ -144,7 +145,7 @@ export async function evaluarConRetry(evaluacionFn, params, onProgress = null) {
     {
       maxAttempts: 3,
       baseDelay: 2000, // Evaluación puede tardar más
-      timeoutPerAttempt: 45000 // 45s por intento (evaluación dual AI)
+      timeoutPerAttempt: AI_DEEP_EVALUATION_TIMEOUT_MS
     },
     onProgress
   );
@@ -159,7 +160,7 @@ export async function generarConRetry(generacionFn, params, onProgress = null) {
     {
       maxAttempts: 3,
       baseDelay: 1000,
-      timeoutPerAttempt: 30000 // 30s por intento
+      timeoutPerAttempt: AI_EVALUATION_TIMEOUT_MS
     },
     onProgress
   );

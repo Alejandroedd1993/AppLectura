@@ -3,6 +3,7 @@ import { auth } from '../../firebase/config';
 import logger from '../../utils/logger';
 import { VALID_INTENTS, SYSTEM_TOPIC_GUARD, SYSTEM_EQUITY_GUARD, SYSTEM_ANTI_REDUNDANCY } from '../../pedagogy/prompts/tutorSystemPrompts';
 import { OPENAI_CHAT_MODEL } from '../../constants/aiModelDefaults';
+import { WEB_SEARCH_TIMEOUT_MS } from '../../constants/timeoutConstants';
 import { detectHateOrSlur, redactHateOrSlur, slurAppearsInContext, validateResponse } from '../../pedagogy/safety/tutorGuard';
 import { fetchWebSearch } from '../../utils/fetchWebSearch';
 import { DEFAULT_BACKEND_URL } from '../../utils/backendConfig';
@@ -1318,7 +1319,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
           // Q1 FIX: Usar ref para evitar closure stale si api se captura desde un render previo
           const results = await fetchWebSearch(
             `${searchQuery} contexto educativo verificado`,
-            { maxResults: 3, timeoutMs: 5000, signal: webSearchAbortRef.current.signal, backendUrl: backendBaseUrlRef.current }
+            { maxResults: 3, timeoutMs: WEB_SEARCH_TIMEOUT_MS, signal: webSearchAbortRef.current.signal, backendUrl: backendBaseUrlRef.current }
           );
           if (results && results.length > 0) {
             logger.log(`✅ [TutorCore] Enriquecido con ${results.length} fuentes`);

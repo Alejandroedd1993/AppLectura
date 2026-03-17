@@ -2,6 +2,7 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
 import { OPENAI_CHAT_MODEL } from '../constants/aiModelDefaults';
+import { AI_DEEP_EVALUATION_TIMEOUT_MS, AI_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 import logger from '../utils/logger';
 const OPENAI_MODEL = OPENAI_CHAT_MODEL;
@@ -205,7 +206,7 @@ Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto d
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
       max_tokens: 300, // ⬆️ Aumentado para preguntas complejas
-      timeoutMs: 30000 // ⬆️ Aumentado para evitar timeouts (30s)
+      timeoutMs: AI_EVALUATION_TIMEOUT_MS
     });
 
     const pregunta = extractContent(response).trim();
@@ -335,7 +336,7 @@ Ejemplo: ["hint 1", "hint 2", "hint 3"]`;
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.4,
       max_tokens: 450,
-      timeoutMs: 30000
+      timeoutMs: AI_EVALUATION_TIMEOUT_MS
     });
 
     const content = extractContent(response).trim();
@@ -611,7 +612,7 @@ Responde SOLO con JSON:
     temperature: 0.2,
     max_tokens: 800,
     response_format: { type: 'json_object' },
-    timeoutMs: 30000
+    timeoutMs: AI_EVALUATION_TIMEOUT_MS
   });
 
   try {
@@ -700,7 +701,7 @@ Responde SOLO con JSON:
     temperature: 0.3,
     max_tokens: 1000,
     response_format: { type: 'json_object' },
-    timeoutMs: 45000
+    timeoutMs: AI_DEEP_EVALUATION_TIMEOUT_MS
   });
 
   try {
@@ -918,7 +919,7 @@ Responde SOLO con la pregunta (sin numeración, sin "Pregunta:", solo el texto).
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.75,
       max_tokens: 300,
-      timeoutMs: 30000
+      timeoutMs: AI_EVALUATION_TIMEOUT_MS
     });
 
     const pregunta = extractContent(response).trim();

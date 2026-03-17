@@ -1,5 +1,6 @@
 import { auth } from '../firebase/config';
 import { getBackendBaseUrl } from './backendConfig';
+import { WEB_SEARCH_TIMEOUT_MS } from '../constants/timeoutConstants';
 import logger from './logger';
 
 /**
@@ -9,13 +10,13 @@ import logger from './logger';
  * @param {string} query - Search query
  * @param {Object} [opts]
  * @param {number} [opts.maxResults=3]
- * @param {number} [opts.timeoutMs=6000]
+ * @param {number} [opts.timeoutMs=WEB_SEARCH_TIMEOUT_MS]
  * @param {AbortSignal} [opts.signal] - External abort signal (e.g., component unmount)
  * @param {string} [opts.backendUrl]
  * @returns {Promise<Array|null>} Array of results or null on error/timeout
  */
 export async function fetchWebSearch(query, opts = {}) {
-  const { maxResults = 3, timeoutMs = 6000, signal, backendUrl } = opts;
+  const { maxResults = 3, timeoutMs = WEB_SEARCH_TIMEOUT_MS, signal, backendUrl } = opts;
   const backendBase = (backendUrl || getBackendBaseUrl()).replace(/\/+$/, '');
 
   // Firebase auth header

@@ -8,6 +8,7 @@
  */
 
 import { chatCompletion, extractContent } from './unifiedAiService';
+import { AI_DEEP_EVALUATION_TIMEOUT_MS, AI_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 import logger from '../utils/logger';
 
@@ -159,7 +160,7 @@ ${citas.map((c, i) => `${i + 1}. "${c.cita}"`).join('\n')}
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.2,
       max_tokens: 1500,
-      timeoutMs: 30000
+      timeoutMs: AI_EVALUATION_TIMEOUT_MS
     });
     
     const rawContent = extractContent(response);
@@ -259,7 +260,7 @@ Analiza si el estudiante:
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 2000,
-      timeoutMs: 45000
+      timeoutMs: AI_DEEP_EVALUATION_TIMEOUT_MS
     });
     
     const content = extractContent(response);

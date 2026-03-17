@@ -2,6 +2,7 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension, scoreToLevelDescriptor } from '../pedagogy/rubrics/criticalLiteracyRubric';
 import { DEEPSEEK_CHAT_MODEL, OPENAI_CHAT_MODEL } from '../constants/aiModelDefaults';
+import { AI_DEEP_EVALUATION_TIMEOUT_MS, AI_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 import logger from '../utils/logger';
 const DEEPSEEK_MODEL = DEEPSEEK_CHAT_MODEL;
@@ -211,7 +212,7 @@ async function evaluateWithDeepSeek(text, tesis, evidencias, contraargumento, re
       temperature: 0.2,
       max_tokens: 1500,
       response_format: { type: 'json_object' },
-      timeoutMs: 30000
+      timeoutMs: AI_EVALUATION_TIMEOUT_MS
     });
 
     const rawContent = extractContent(response);
@@ -254,7 +255,7 @@ async function evaluateWithOpenAI(text, tesis, evidencias, contraargumento, refu
       temperature: 0.3,
       max_tokens: 1800,
       response_format: { type: 'json_object' },
-      timeoutMs: 45000
+      timeoutMs: AI_DEEP_EVALUATION_TIMEOUT_MS
     });
 
     const rawContent = extractContent(response);

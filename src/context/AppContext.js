@@ -39,6 +39,7 @@ import { generateBasicAnalysis } from '../services/basicAnalysisService';
 import { normalizeBackendErrorPayload } from '../services/unifiedAiService';
 import { runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
 import { getBackendUrl } from '../utils/backendConfig';
+import { PRELECTURE_ANALYSIS_TIMEOUT_MS } from '../constants/timeoutConstants';
 import { fetchWithRetry } from '../utils/netUtils';
 import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
 import logger from '../utils/logger';
@@ -4370,7 +4371,7 @@ export const AppContextProvider = ({ children }) => {
 
         // Crear AbortController con timeout de 5 minutos (alineado con backend)
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 segundos
+        const timeoutId = setTimeout(() => controller.abort(), PRELECTURE_ANALYSIS_TIMEOUT_MS);
         let authHeader = {};
         try {
           const idToken = await auth?.currentUser?.getIdToken?.();
