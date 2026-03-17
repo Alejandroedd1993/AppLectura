@@ -32,9 +32,10 @@ import {
   cleanupMultipleCoursesBrowserData,
   inferCourseIdsFromBrowserData
 } from '../../utils/courseDataCleanup';
+import { getBackendBaseUrl } from '../../utils/backendConfig';
 
 import logger from '../../utils/logger';
-const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+const BACKEND_BASE_URL = getBackendBaseUrl();
 
 const Container = styled.div`
   min-height: 100vh;

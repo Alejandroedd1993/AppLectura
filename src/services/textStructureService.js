@@ -1,5 +1,5 @@
 import logger from '../utils/logger';
-import { auth } from '../firebase/config';
+import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 import { buildBackendError } from './unifiedAiService';
 
 
@@ -10,8 +10,6 @@ import { buildBackendError } from './unifiedAiService';
  * Este servicio analiza textos académicos/documentales y detecta su estructura
  * semántica usando IA, identificando encabezados, secciones, listas, énfasis, etc.
  */
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 
 /**
  * Analiza la estructura de un texto usando IA
@@ -91,15 +89,9 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    let authHeader = {};
-    try {
-      const idToken = await auth?.currentUser?.getIdToken?.();
-      if (idToken) {
-        authHeader = { Authorization: `Bearer ${idToken}` };
-      }
-    } catch {}
+    const authHeader = await getFirebaseAuthHeader();
     
-    const response = await fetch(`${BACKEND_URL}/api/chat/completion`, {
+    const response = await fetch(buildBackendEndpoint('/api/chat/completion'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

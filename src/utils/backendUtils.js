@@ -5,17 +5,18 @@
 import { fetchWithTimeout } from './netUtils';
 import logger from './logger';
 import { buildBackendError } from '../services/unifiedAiService';
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+import { buildBackendUrl, getBackendUrl as readBackendUrl } from './backendConfig';
 
 /**
  * Verifica si el servidor backend está disponible
  * @returns {Promise<boolean>} true si el backend está disponible
  */
 export const checkBackendAvailability = async () => {
-  logger.log('🔍 Verificando disponibilidad del backend en:', BACKEND_URL);
+  const backendUrl = readBackendUrl();
+  logger.log('🔍 Verificando disponibilidad del backend en:', backendUrl);
   
   try {
-    const response = await fetchWithTimeout(`${BACKEND_URL}/api/health`, {
+    const response = await fetchWithTimeout(buildBackendUrl('/api/health'), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -40,7 +41,7 @@ export const processPdfWithBackend = async (file) => {
   const formData = new FormData();
   formData.append('pdfFile', file);
 
-  const response = await fetchWithTimeout(`${BACKEND_URL}/api/process-pdf`, {
+  const response = await fetchWithTimeout(buildBackendUrl('/api/process-pdf'), {
     method: 'POST',
     body: formData,
   }, 60000);
@@ -65,4 +66,4 @@ export const processPdfWithBackend = async (file) => {
  * Obtiene la URL base del backend
  * @returns {string} La URL del backend
  */
-export const getBackendUrl = () => BACKEND_URL;
+export const getBackendUrl = () => readBackendUrl();

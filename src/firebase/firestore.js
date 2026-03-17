@@ -28,10 +28,11 @@ import {
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { auth, db, storage } from './config';
 import { getSessionContentHash, compareSessionContent, mergeSessionsWithConflictResolution } from '../utils/sessionHash';
+import { getBackendBaseUrl } from '../utils/backendConfig';
 import logger from '../utils/logger';
 
 const COURSE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const BACKEND_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+const BACKEND_BASE_URL = getBackendBaseUrl();
 
 let __firestoreWritesDisabled = false;
 let __firestoreWritesDisabledLogged = false;

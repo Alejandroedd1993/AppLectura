@@ -1,10 +1,8 @@
 import { auth } from '../firebase/config';
-import { getBackendUrl } from './backendUtils';
+import { buildBackendUrl } from './backendConfig';
 
 export function buildBackendEndpoint(endpointPath = '') {
-  const base = (getBackendUrl() || '').replace(/\/+$/, '');
-  const normalized = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
-  return `${base}${normalized}`;
+  return buildBackendUrl(endpointPath);
 }
 
 export async function getFirebaseAuthHeader() {

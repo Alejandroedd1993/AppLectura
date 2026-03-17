@@ -8,12 +8,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchWithTimeout } from '../../utils/netUtils';
+import { buildBackendUrl } from '../../utils/backendConfig';
 import { NotesServices } from '../../services/notes';
 import { buildBackendError } from '../../services/unifiedAiService';
 import logger from '../../utils/logger';
-
-// ✅ URL del backend
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 
 /**
  * Hook personalizado para gestión completa de notas de estudio
@@ -335,7 +333,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null, courseI
         numeroTarjetas: normalizarNumeroTarjetas(numeroTarjetas)
       };
 
-      const res = await fetchWithTimeout(`${BACKEND_URL}/api/notes/generate`, {
+      const res = await fetchWithTimeout(buildBackendUrl('/api/notes/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify(payload),

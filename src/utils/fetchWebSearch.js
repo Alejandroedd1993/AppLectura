@@ -1,5 +1,5 @@
 import { auth } from '../firebase/config';
-import { BACKEND_URL } from '../context/AppContext';
+import { getBackendBaseUrl } from './backendConfig';
 import logger from './logger';
 
 /**
@@ -16,7 +16,7 @@ import logger from './logger';
  */
 export async function fetchWebSearch(query, opts = {}) {
   const { maxResults = 3, timeoutMs = 6000, signal, backendUrl } = opts;
-  const backendBase = (backendUrl || BACKEND_URL || 'http://localhost:3001').replace(/\/+$/, '');
+  const backendBase = (backendUrl || getBackendBaseUrl()).replace(/\/+$/, '');
 
   // Firebase auth header
   let authHeader = {};

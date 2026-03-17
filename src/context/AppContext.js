@@ -38,6 +38,7 @@ import useFirestorePersistence from '../hooks/useFirestorePersistence';
 import { generateBasicAnalysis } from '../services/basicAnalysisService';
 import { normalizeBackendErrorPayload } from '../services/unifiedAiService';
 import { runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
+import { getBackendUrl } from '../utils/backendConfig';
 import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
 import logger from '../utils/logger';
 import {
@@ -48,7 +49,7 @@ import {
 } from '../services/rubricProgressV2';
 
 // Backend URL configuration
-export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+export const BACKEND_URL = getBackendUrl();
 logger.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
 
 const normalizeTutorInteraction = (entry) => {
