@@ -1,10 +1,11 @@
 // src/services/bitacoraEticaIA.service.js
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension, scoreToLevelDescriptor } from '../pedagogy/rubrics/criticalLiteracyRubric';
+import { DEEPSEEK_CHAT_MODEL, OPENAI_CHAT_MODEL } from '../constants/aiModelDefaults';
 
 import logger from '../utils/logger';
-const DEEPSEEK_MODEL = 'deepseek-chat';
-const OPENAI_MODEL = 'gpt-4o-mini';
+const DEEPSEEK_MODEL = DEEPSEEK_CHAT_MODEL;
+const OPENAI_MODEL = OPENAI_CHAT_MODEL;
 const DIMENSION_KEY = 'metacognicion_etica_ia';
 
 function wrapServiceError(error, prefix) {

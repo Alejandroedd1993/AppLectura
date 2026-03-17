@@ -1,5 +1,6 @@
 import logger from '../utils/logger';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
+import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { buildBackendError } from './unifiedAiService';
 
 
@@ -100,7 +101,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
       signal: controller.signal,
       body: JSON.stringify({
         provider: 'deepseek', // Usar DeepSeek por defecto (más económico y sin necesitar API key)
-        model: 'deepseek-chat',
+        model: DEEPSEEK_CHAT_MODEL,
         messages: [
           {
             role: 'system',

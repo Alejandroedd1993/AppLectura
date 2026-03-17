@@ -1,9 +1,10 @@
 // src/services/evaluacionIntegral.service.js
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
+import { OPENAI_CHAT_MODEL } from '../constants/aiModelDefaults';
 
 import logger from '../utils/logger';
-const OPENAI_MODEL = 'gpt-4o-mini';
+const OPENAI_MODEL = OPENAI_CHAT_MODEL;
 
 function isAiAuthOrConfigError(error) {
   const code = String(error?.code || '').trim();

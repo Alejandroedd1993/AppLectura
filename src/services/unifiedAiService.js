@@ -3,13 +3,8 @@
 
 import { fetchWithTimeout } from '../utils/netUtils';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
+import { DEFAULT_PROVIDER_MODELS } from '../constants/aiModelDefaults';
 import { CHAT_TIMEOUT_MS, NETWORK_TIMEOUT_MS } from '../constants/timeoutConstants';
-
-const defaultModels = {
-  openai: 'gpt-4o-mini',
-  deepseek: 'deepseek-chat',
-  gemini: 'gemini-pro'
-};
 
 /**
  * Llama al endpoint unificado de chat/completion del backend
@@ -106,7 +101,7 @@ export async function chatCompletion({
   const url = buildBackendEndpoint('/api/chat/completion');
   const payload = {
     provider,
-    model: model || defaultModels[provider] || defaultModels.openai,
+    model: model || DEFAULT_PROVIDER_MODELS[provider] || DEFAULT_PROVIDER_MODELS.openai,
     messages: capMessages(messages),
     temperature,
     max_tokens,

@@ -7,6 +7,7 @@ import {
 } from './unifiedAiService';
 import { validateEssayFormat } from './essayFormatValidator';
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
+import { DEEPSEEK_CHAT_MODEL, OPENAI_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { CHAT_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 import logger from '../utils/logger';
@@ -54,8 +55,8 @@ export class EssayEvaluationError extends Error {
   }
 }
 
-const DEEPSEEK_MODEL = 'deepseek-chat';
-const OPENAI_MODEL = 'gpt-4o-mini';
+const DEEPSEEK_MODEL = DEEPSEEK_CHAT_MODEL;
+const OPENAI_MODEL = OPENAI_CHAT_MODEL;
 
 const BIAS_SAFETY_RULES = `
 EQUIDAD Y NO DISCRIMINACIÓN (OBLIGATORIO):

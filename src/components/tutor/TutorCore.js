@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { auth } from '../../firebase/config';
 import logger from '../../utils/logger';
 import { VALID_INTENTS, SYSTEM_TOPIC_GUARD, SYSTEM_EQUITY_GUARD, SYSTEM_ANTI_REDUNDANCY } from '../../pedagogy/prompts/tutorSystemPrompts';
+import { OPENAI_CHAT_MODEL } from '../../constants/aiModelDefaults';
 import { detectHateOrSlur, redactHateOrSlur, slurAppearsInContext, validateResponse } from '../../pedagogy/safety/tutorGuard';
 import { fetchWebSearch } from '../../utils/fetchWebSearch';
 import { DEFAULT_BACKEND_URL } from '../../utils/backendConfig';
@@ -467,7 +468,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         try {
           const client = new OpenAIClass();
           const completion = await client.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: OPENAI_CHAT_MODEL,
             messages: outboundMessages
           });
           clearTimeout(timeoutId);

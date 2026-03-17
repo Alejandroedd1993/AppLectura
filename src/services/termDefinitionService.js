@@ -1,4 +1,5 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
+import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
 
 const isDev = process.env.NODE_ENV === 'development';
 const devLog = (...args) => isDev && console.log(...args);
@@ -52,7 +53,7 @@ IMPORTANTE:
     // Llamar a DeepSeek (rápido y gratis)
     const data = await chatCompletion({
       provider: 'deepseek',
-      model: 'deepseek-chat',
+      model: DEEPSEEK_CHAT_MODEL,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 400
