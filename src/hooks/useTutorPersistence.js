@@ -276,7 +276,8 @@ export default function useTutorPersistence(options = {}) {
   // onSnapshot ignores snapshots whose signature matches our last written data.
   const lastWrittenSignatureRef = useRef(null);
   const remoteReadSeqRef = useRef(0);
-  const flushInFlightRef = useRef(false);
+  const scopeSeqRef = useRef(0);
+  const flushInFlightScopeRef = useRef(null);
   const queuedFlushCompactRef = useRef(null);
   // FIX: Ref espejo de `hydrating` para usar en callbacks (handleMessagesChange)
   // sin crear dependencias que recreen el callback en cada render.
@@ -298,6 +299,9 @@ export default function useTutorPersistence(options = {}) {
     lastRemoteUpdatedAtRef.current = 0;
     messageClockByIdRef.current = new Map();
     remoteReadSeqRef.current += 1;
+    scopeSeqRef.current += 1;
+    flushInFlightScopeRef.current = null;
+    queuedFlushCompactRef.current = null;
     setQuotaExceeded(false);
     setSynced(false);
   }, [localInitialMessages, max, metaKey]);
@@ -356,14 +360,15 @@ export default function useTutorPersistence(options = {}) {
 
   const flushRemote = useCallback(async (compact) => {
     if (!fsEnabled) return;
+    const scopeSeq = scopeSeqRef.current;
 
     // Evita flushes concurrentes sobre el mismo hilo y deja solo el ultimo estado.
-    if (flushInFlightRef.current) {
-      queuedFlushCompactRef.current = sanitizeCompact(compact, max);
+    if (flushInFlightScopeRef.current === scopeSeq) {
+      queuedFlushCompactRef.current = { compact: sanitizeCompact(compact, max), scopeSeq };
       return;
     }
 
-    flushInFlightRef.current = true;
+    flushInFlightScopeRef.current = scopeSeq;
     let compactToPersist = sanitizeCompact(compact, max);
     try {
       const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
@@ -469,6 +474,11 @@ export default function useTutorPersistence(options = {}) {
         payload.title = derivedTitle;
       }
       await setDoc(threadRef, payload, { merge: true });
+
+      if (scopeSeq !== scopeSeqRef.current) {
+        return;
+      }
+
       const now = nextLogicalMs(lastLocalUpdatedAtRef.current || 0);
       setSynced(true);
       setLastSynced(now);
@@ -476,18 +486,25 @@ export default function useTutorPersistence(options = {}) {
       lastLocalUpdatedAtRef.current = now;
     } catch (e) {
       logger.warn('[useTutorPersistence] Error sincronizando hilo a Firestore:', e);
-      setSynced(false);
+      if (scopeSeq === scopeSeqRef.current) {
+        setSynced(false);
+      }
     } finally {
-      flushInFlightRef.current = false;
+      if (flushInFlightScopeRef.current === scopeSeq) {
+        flushInFlightScopeRef.current = null;
+      }
 
-      const queuedCompact = queuedFlushCompactRef.current;
-      queuedFlushCompactRef.current = null;
+      const queuedFlush = queuedFlushCompactRef.current;
+      if (queuedFlush?.scopeSeq === scopeSeq) {
+        queuedFlushCompactRef.current = null;
+      }
 
-      if (queuedCompact && fsEnabled) {
+      if (queuedFlush?.scopeSeq === scopeSeq && scopeSeq === scopeSeqRef.current && fsEnabled) {
         if (timerRef.current) clearTimeout(timerRef.current);
         const compactToFlush = sanitizeCompact(latestCompactRef.current, max);
         timerRef.current = setTimeout(() => {
           timerRef.current = null;
+          if (scopeSeq !== scopeSeqRef.current) return;
           flushRemoteRef.current(compactToFlush);
         }, debounceMs);
       }
