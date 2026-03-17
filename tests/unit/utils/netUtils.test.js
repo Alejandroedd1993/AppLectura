@@ -1,4 +1,11 @@
-import { genId, hashText, fetchWithTimeout, fetchWithRetry, retryAsync } from '../../../src/utils/netUtils';
+import {
+  createAbortControllerWithTimeout,
+  genId,
+  hashText,
+  fetchWithTimeout,
+  fetchWithRetry,
+  retryAsync
+} from '../../../src/utils/netUtils';
 
 describe('netUtils', () => {
   test('genId produce un string y fallback cuando no hay crypto', () => {
@@ -72,5 +79,30 @@ describe('netUtils', () => {
     await expect(fetchWithRetry('http://x', {}, { retries: 1, initialDelayMs: 0 })).resolves.toBe(response);
     expect(global.fetch).toHaveBeenCalledTimes(2);
     global.fetch = realFetch;
+  });
+
+  test('createAbortControllerWithTimeout aborta al vencer el timeout', async () => {
+    jest.useFakeTimers();
+
+    const onTimeout = jest.fn();
+    const abortControl = createAbortControllerWithTimeout({ timeoutMs: 25, onTimeout });
+
+    jest.advanceTimersByTime(30);
+
+    expect(abortControl.signal.aborted).toBe(true);
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+
+    abortControl.cleanup();
+    jest.useRealTimers();
+  });
+
+  test('createAbortControllerWithTimeout propaga abort externo', () => {
+    const externalController = new AbortController();
+    const abortControl = createAbortControllerWithTimeout({ signal: externalController.signal });
+
+    externalController.abort();
+
+    expect(abortControl.signal.aborted).toBe(true);
+    abortControl.cleanup();
   });
 });

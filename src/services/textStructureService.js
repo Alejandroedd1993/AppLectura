@@ -2,6 +2,7 @@ import logger from '../utils/logger';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { buildBackendError } from './unifiedAiService';
+import { createAbortControllerWithTimeout } from '../utils/netUtils';
 
 
 /**
@@ -85,10 +86,10 @@ FORMATO JSON REQUERIDO:
 
 IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones adicionales.`;
 
+  let abortControl;
+
   try {
-    // Crear AbortController para timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    abortControl = createAbortControllerWithTimeout({ timeoutMs: timeout });
 
     const authHeader = await getFirebaseAuthHeader();
     
@@ -98,7 +99,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
         'Content-Type': 'application/json',
         ...authHeader
       },
-      signal: controller.signal,
+      signal: abortControl.signal,
       body: JSON.stringify({
         provider: 'deepseek', // Usar DeepSeek por defecto (más económico y sin necesitar API key)
         model: DEEPSEEK_CHAT_MODEL,
@@ -116,8 +117,6 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
         max_tokens: 1500 // Reducido para respuestas más rápidas
       })
     });
-    
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw await buildBackendError(response, {
@@ -178,6 +177,8 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
       needsStructure: false,
       error: error.name === 'AbortError' ? 'Timeout' : error.message
     };
+  } finally {
+    abortControl?.cleanup?.();
   }
 }
 

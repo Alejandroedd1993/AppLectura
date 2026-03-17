@@ -17,36 +17,68 @@ export const hashText = (str) => {
   return ('0000000' + (h >>> 0).toString(16)).slice(-8);
 };
 
-export const fetchWithTimeout = (resource, options = {}, timeoutMs = 45000) => {
-  const { signal: extSignal, ...rest } = options || {};
+export const createAbortControllerWithTimeout = ({
+  timeoutMs,
+  signal: extSignal,
+  onTimeout
+} = {}) => {
   const controller = new AbortController();
 
-  const onAbort = () => {
+  const abort = () => {
     try { controller.abort(); } catch {}
   };
+
+  const onExternalAbort = () => {
+    abort();
+  };
+
   if (extSignal) {
-    if (extSignal.aborted) onAbort();
-    else extSignal.addEventListener('abort', onAbort, { once: true });
+    if (extSignal.aborted) abort();
+    else extSignal.addEventListener('abort', onExternalAbort, { once: true });
   }
 
-  const timer = setTimeout(() => {
-    try { controller.abort(); } catch {}
-  }, timeoutMs);
+  const timeoutId = Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? setTimeout(() => {
+        if (typeof onTimeout === 'function') {
+          onTimeout();
+        }
+        abort();
+      }, timeoutMs)
+    : null;
 
-  const fetchPromise = fetch(resource, { ...rest, signal: controller.signal });
+  const cleanup = () => {
+    if (timeoutId != null) clearTimeout(timeoutId);
+    if (extSignal) extSignal.removeEventListener('abort', onExternalAbort);
+  };
+
+  return {
+    controller,
+    signal: controller.signal,
+    abort,
+    cleanup
+  };
+};
+
+export const fetchWithTimeout = (resource, options = {}, timeoutMs = 45000) => {
+  const { signal: extSignal, ...rest } = options || {};
+  const abortControl = createAbortControllerWithTimeout({
+    timeoutMs,
+    signal: extSignal
+  });
+
+  const fetchPromise = fetch(resource, { ...rest, signal: abortControl.signal });
   const abortPromise = new Promise((_, reject) => {
     const handler = () => {
       const err = new Error('Aborted');
       err.name = 'AbortError';
       reject(err);
     };
-    controller.signal.addEventListener('abort', handler, { once: true });
+    abortControl.signal.addEventListener('abort', handler, { once: true });
   });
 
   return Promise.race([fetchPromise, abortPromise])
     .finally(() => {
-      clearTimeout(timer);
-      if (extSignal) extSignal.removeEventListener('abort', onAbort);
+      abortControl.cleanup();
     });
 };
 

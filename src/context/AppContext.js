@@ -40,7 +40,7 @@ import { normalizeBackendErrorPayload } from '../services/unifiedAiService';
 import { runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
 import { getBackendUrl } from '../utils/backendConfig';
 import { PRELECTURE_ANALYSIS_TIMEOUT_MS } from '../constants/timeoutConstants';
-import { fetchWithRetry } from '../utils/netUtils';
+import { createAbortControllerWithTimeout, fetchWithRetry } from '../utils/netUtils';
 import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
 import logger from '../utils/logger';
 import {
@@ -4370,8 +4370,9 @@ export const AppContextProvider = ({ children }) => {
         logger.log('🔗 [AppContext.analyzeDocument] Backend URL:', BACKEND_URL);
 
         // Crear AbortController con timeout de 5 minutos (alineado con backend)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), PRELECTURE_ANALYSIS_TIMEOUT_MS);
+        const abortControl = createAbortControllerWithTimeout({
+          timeoutMs: PRELECTURE_ANALYSIS_TIMEOUT_MS
+        });
         let authHeader = {};
         try {
           const idToken = await auth?.currentUser?.getIdToken?.();
@@ -4393,7 +4394,7 @@ export const AppContextProvider = ({ children }) => {
             text: text,
             metadata: {} // Metadata adicional si es necesario
           }),
-          signal: controller.signal
+          signal: abortControl.signal
         }, {
           retries: 1,
           initialDelayMs: 3000,
@@ -4402,8 +4403,6 @@ export const AppContextProvider = ({ children }) => {
             logger.warn(`⚠️ [AppContext] Error de red, reintentando en ${meta.delayMs}ms... (intento ${meta.attempt}/${meta.maxAttempts})`);
           }
         }); // 1 retry con 3 segundos de espera inicial
-
-        clearTimeout(timeoutId);
 
         // PARSEAR LA RESPUESTA (incluso en error) para poder usar fallback
         let responseData = null;
@@ -4712,6 +4711,7 @@ export const AppContextProvider = ({ children }) => {
           }
         }
       } finally {
+        abortControl?.cleanup?.();
         // No setLoading(false) aquí porque ya se hizo en Fase 1
         logger.log('🏁 [AppContext.analyzeDocument] Fase 2 (análisis profundo) finalizada');
       }

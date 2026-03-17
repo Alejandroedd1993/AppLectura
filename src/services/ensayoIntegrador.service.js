@@ -9,6 +9,7 @@ import { validateEssayFormat } from './essayFormatValidator';
 import { getDimension } from '../pedagogy/rubrics/criticalLiteracyRubric';
 import { DEEPSEEK_CHAT_MODEL, OPENAI_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { ESSAY_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
+import { createAbortControllerWithTimeout } from '../utils/netUtils';
 
 import logger from '../utils/logger';
 // 🆕 Logging estructurado para producción
@@ -382,11 +383,12 @@ export async function evaluateEssayDual({ texto, essayText, dimension, timeout =
   }
 
   // 🆕 AbortController para timeout global
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    log('warn', 'Timeout global alcanzado', { timeout });
-    controller.abort();
-  }, timeout);
+  const abortControl = createAbortControllerWithTimeout({
+    timeoutMs: timeout,
+    onTimeout: () => {
+      log('warn', 'Timeout global alcanzado', { timeout });
+    }
+  });
 
   try {
     const results = await Promise.allSettled([
@@ -396,7 +398,7 @@ export async function evaluateEssayDual({ texto, essayText, dimension, timeout =
         texto,
         essayText,
         dimensionKey: dimension,
-        signal: controller.signal
+        signal: abortControl.signal
       }),
       evaluarConProveedor({
         provider: 'openai',
@@ -404,11 +406,9 @@ export async function evaluateEssayDual({ texto, essayText, dimension, timeout =
         texto,
         essayText,
         dimensionKey: dimension,
-        signal: controller.signal
+        signal: abortControl.signal
       })
     ]);
-
-    clearTimeout(timeoutId);
 
     const deepseek = results[0].status === 'fulfilled' ? results[0].value : null;
     const openai = results[1].status === 'fulfilled' ? results[1].value : null;
@@ -479,8 +479,6 @@ export async function evaluateEssayDual({ texto, essayText, dimension, timeout =
     };
 
   } catch (err) {
-    clearTimeout(timeoutId);
-    
     // 🆕 Re-lanzar errores tipados, envolver otros
     if (err instanceof EssayEvaluationError) {
       throw err;
@@ -500,6 +498,8 @@ export async function evaluateEssayDual({ texto, essayText, dimension, timeout =
         ...(err.payload != null && { payload: err.payload })
       }
     );
+  } finally {
+    abortControl.cleanup();
   }
 }
 

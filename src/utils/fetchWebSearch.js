@@ -1,6 +1,7 @@
 import { auth } from '../firebase/config';
 import { getBackendBaseUrl } from './backendConfig';
 import { WEB_SEARCH_TIMEOUT_MS } from '../constants/timeoutConstants';
+import { createAbortControllerWithTimeout } from './netUtils';
 import logger from './logger';
 
 /**
@@ -28,15 +29,11 @@ export async function fetchWebSearch(query, opts = {}) {
     logger.warn('[fetchWebSearch] No se pudo obtener Firebase ID token:', e?.message);
   }
 
-  // Internal controller for timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const abortControl = createAbortControllerWithTimeout({ timeoutMs, signal });
 
-  // If external signal aborts, also abort the internal controller
-  const onExternalAbort = () => controller.abort();
-  if (signal) {
-    if (signal.aborted) { clearTimeout(timeoutId); return null; }
-    signal.addEventListener('abort', onExternalAbort, { once: true });
+  if (signal?.aborted) {
+    abortControl.cleanup();
+    return null;
   }
 
   try {
@@ -44,10 +41,8 @@ export async function fetchWebSearch(query, opts = {}) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader },
       body: JSON.stringify({ query: query.trim(), maxResults }),
-      signal: controller.signal
+      signal: abortControl.signal
     });
-
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       logger.warn(`[fetchWebSearch] HTTP ${response.status}`);
@@ -57,7 +52,6 @@ export async function fetchWebSearch(query, opts = {}) {
     const data = await response.json();
     return data.resultados || [];
   } catch (e) {
-    clearTimeout(timeoutId);
     if (e.name === 'AbortError') {
       logger.warn('[fetchWebSearch] Abortado (timeout o señal externa)');
     } else {
@@ -65,6 +59,6 @@ export async function fetchWebSearch(query, opts = {}) {
     }
     return null;
   } finally {
-    if (signal) signal.removeEventListener('abort', onExternalAbort);
+    abortControl.cleanup();
   }
 }
