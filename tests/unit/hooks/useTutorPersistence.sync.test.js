@@ -109,10 +109,10 @@ describe('useTutorPersistence cross-device sync', () => {
   });
 
   test('aplica snapshot remoto valido aunque haya write local en curso', async () => {
-    let resolveThreadWrite;
+    const pendingThreadResolvers = [];
     mockSetDoc.mockImplementation((_ref, payload) => {
       if (payload?.storageModel === 'append_v1') {
-        return new Promise((resolve) => { resolveThreadWrite = resolve; });
+        return new Promise((resolve) => { pendingThreadResolvers.push(resolve); });
       }
       return Promise.resolve();
     });
@@ -136,7 +136,7 @@ describe('useTutorPersistence cross-device sync', () => {
     await waitFor(() => {
       const hasThreadWrite = mockSetDoc.mock.calls.some(([, payload]) => payload?.storageModel === 'append_v1');
       expect(hasThreadWrite).toBe(true);
-      expect(typeof resolveThreadWrite).toBe('function');
+      expect(pendingThreadResolvers.length).toBeGreaterThan(0);
     });
 
     await act(async () => {
@@ -149,7 +149,10 @@ describe('useTutorPersistence cross-device sync', () => {
     });
 
     await act(async () => {
-      resolveThreadWrite();
+      while (pendingThreadResolvers.length) {
+        const resolve = pendingThreadResolvers.shift();
+        if (typeof resolve === 'function') resolve();
+      }
       await pendingFlush;
     });
   });

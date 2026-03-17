@@ -276,6 +276,8 @@ export default function useTutorPersistence(options = {}) {
   // onSnapshot ignores snapshots whose signature matches our last written data.
   const lastWrittenSignatureRef = useRef(null);
   const remoteReadSeqRef = useRef(0);
+  const flushInFlightRef = useRef(false);
+  const queuedFlushCompactRef = useRef(null);
   // FIX: Ref espejo de `hydrating` para usar en callbacks (handleMessagesChange)
   // sin crear dependencias que recreen el callback en cada render.
   const hydratingRef = useRef(Boolean(fsEnabled));
@@ -354,6 +356,14 @@ export default function useTutorPersistence(options = {}) {
 
   const flushRemote = useCallback(async (compact) => {
     if (!fsEnabled) return;
+
+    // Evita flushes concurrentes sobre el mismo hilo y deja solo el ultimo estado.
+    if (flushInFlightRef.current) {
+      queuedFlushCompactRef.current = sanitizeCompact(compact, max);
+      return;
+    }
+
+    flushInFlightRef.current = true;
     let compactToPersist = sanitizeCompact(compact, max);
     try {
       const threadRef = doc(db, 'users', userId, 'tutorThreads', threadId);
@@ -467,8 +477,22 @@ export default function useTutorPersistence(options = {}) {
     } catch (e) {
       logger.warn('[useTutorPersistence] Error sincronizando hilo a Firestore:', e);
       setSynced(false);
+    } finally {
+      flushInFlightRef.current = false;
+
+      const queuedCompact = queuedFlushCompactRef.current;
+      queuedFlushCompactRef.current = null;
+
+      if (queuedCompact && fsEnabled) {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        const compactToFlush = sanitizeCompact(latestCompactRef.current, max);
+        timerRef.current = setTimeout(() => {
+          timerRef.current = null;
+          flushRemoteRef.current(compactToFlush);
+        }, debounceMs);
+      }
     }
-  }, [fsEnabled, userId, threadId, textHash, courseScope, metaKey, max]);
+  }, [fsEnabled, userId, threadId, textHash, courseScope, metaKey, max, debounceMs]);
 
   // P1 FIX: Ref estable para flushRemote — evita re-suscripciones de onSnapshot
   // y permite que el cleanup del timer siempre use la versión más reciente.
