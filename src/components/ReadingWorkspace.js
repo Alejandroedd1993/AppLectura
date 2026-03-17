@@ -1,8 +1,9 @@
 import React, { useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
+import { isNonProductionEnvironment } from '../utils/runtimeEnv';
 
 // 🚀 PERF: Log silenciado en producción para evitar overhead de serialización
-const __DEV__ = process.env.NODE_ENV !== 'production';
+const __DEV__ = isNonProductionEnvironment;
 const devLog = __DEV__ ? console.log.bind(console) : () => { };
 const devWarn = __DEV__ ? console.warn.bind(console) : () => { };
 import { AppContext } from '../context/AppContext';

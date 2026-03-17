@@ -1,8 +1,9 @@
 import { buildBackendError, chatCompletion, extractContent } from './unifiedAiService';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
+import { isDevelopmentEnvironment } from '../utils/runtimeEnv';
 
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = isDevelopmentEnvironment;
 const devLog = (...args) => isDev && console.log(...args);
 const devWarn = (...args) => isDev && console.warn(...args);
 

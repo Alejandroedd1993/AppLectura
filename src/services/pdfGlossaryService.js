@@ -1,6 +1,8 @@
 /* jsPDF se importa dinámicamente para no cargar ~280KB en el bundle principal */
 
-const isDev = process.env.NODE_ENV === 'development';
+import { isDevelopmentEnvironment } from '../utils/runtimeEnv';
+
+const isDev = isDevelopmentEnvironment;
 const devLog = (...args) => isDev && console.log(...args);
 const devWarn = (...args) => isDev && console.warn(...args);
 

@@ -1,9 +1,10 @@
 import React, { useState, useContext, useCallback, useMemo, lazy, Suspense } from 'react';
 // framer-motion eliminado del rendering principal para mejorar rendimiento de tabs
 import styled, { ThemeProvider } from 'styled-components';
+import { isNonProductionEnvironment } from './utils/runtimeEnv';
 
 // 🚀 PERF: Log silenciado en producción
-const __DEV__ = process.env.NODE_ENV !== 'production';
+const __DEV__ = isNonProductionEnvironment;
 const devLog = __DEV__ ? console.log.bind(console) : () => { };
 
 // Estilos globales de accesibilidad

@@ -12,9 +12,10 @@
  *   // En handlePaste:  if (pasteUnlocked) { permitir todo } else { aplicar restricción }
  */
 import { useState, useEffect } from 'react';
+import { isDevelopmentEnvironment } from '../utils/runtimeEnv';
 
 const STORAGE_KEY = '__PASTE_UNLOCKED';
-const __DEV__ = process.env.NODE_ENV === 'development';
+const __DEV__ = isDevelopmentEnvironment;
 
 function getGlobalFlag() {
   if (!__DEV__ || typeof window === 'undefined') return false;
