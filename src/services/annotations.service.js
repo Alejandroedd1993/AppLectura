@@ -1,4 +1,5 @@
 import logger from '../utils/logger';
+import { simpleTextHash } from '../utils/textHash';
 
 
 /**
@@ -33,12 +34,7 @@ function safeParse(json) {
   try { return JSON.parse(json); } catch { return null; }
 }
 
-// Pequeño hash no criptográfico (coincide con patrón ya usado en segmentTextService si existe)
-export function simpleHash(str) {
-  let h = 0, i = 0, len = str.length;
-  while (i < len) { h = (h << 5) - h + str.charCodeAt(i++) | 0; }
-  return (h >>> 0).toString(36);
-}
+export const simpleHash = simpleTextHash;
 
 function buildStorageKey(textHash) {
   return `annotations:${textHash}:v${SCHEMA_VERSION}`;

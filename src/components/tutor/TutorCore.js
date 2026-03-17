@@ -4,6 +4,7 @@ import logger from '../../utils/logger';
 import { VALID_INTENTS, SYSTEM_TOPIC_GUARD, SYSTEM_EQUITY_GUARD, SYSTEM_ANTI_REDUNDANCY } from '../../pedagogy/prompts/tutorSystemPrompts';
 import { detectHateOrSlur, redactHateOrSlur, slurAppearsInContext, validateResponse } from '../../pedagogy/safety/tutorGuard';
 import { fetchWebSearch } from '../../utils/fetchWebSearch';
+import { DEFAULT_BACKEND_URL } from '../../utils/backendConfig';
 import { detectStudentNeeds } from '../../pedagogy/tutor/studentNeedsAnalyzer';
 import usePedagogyIntegration from '../../hooks/usePedagogyIntegration';
 
@@ -214,10 +215,10 @@ function buildSystemContent({ baseGuards, summary, lengthInstruction, creativity
  *  - initialMessages: [{id?, role, content}] para hidratar historial previo
  *  - onMessagesChange: callback(messages) para persistencia externa (se invoca tras cada mutación)
  *  - maxMessages: límite FIFO de mensajes retenidos (default 40, alineado con persistencia en LecturaInteractiva)
- *  - backendUrl: URL del backend (default: http://localhost:3001)
+ *  - backendUrl: URL del backend (default: DEFAULT_BACKEND_URL)
  */
 
-export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantMessage, initialMessages = [], children, maxMessages = 40, backendUrl = 'http://localhost:3001' }) {
+export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantMessage, initialMessages = [], children, maxMessages = 40, backendUrl = DEFAULT_BACKEND_URL }) {
   const backendBaseUrl = (backendUrl || '').replace(/\/+$/, '');
   // ✨ FASE 2: Integrar hooks pedagógicos
   const { zdp: zdpDetector, rew: rewards } = usePedagogyIntegration();

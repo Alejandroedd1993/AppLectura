@@ -1,4 +1,5 @@
 import logger from '../utils/logger';
+import { simpleTextHash } from '../utils/textHash';
 
 
 /**
@@ -36,12 +37,6 @@ const PERSIST_DEBOUNCE_MS = 150;
 
 function safeParse(json) { try { return JSON.parse(json); } catch { return null; } }
 
-function simpleHash(str) { // pequeño hash no-cripto
-  let h = 0, i = 0, len = str.length;
-  while (i < len) { h = (h << 5) - h + str.charCodeAt(i++) | 0; }
-  return (h >>> 0).toString(36);
-}
-
 function buildStorageKey(textHash) {
   return `studyitems:${textHash}:v${SCHEMA_VERSION}`;
 }
@@ -62,7 +57,7 @@ class StudyItemsServiceImpl {
 
   computeKeyFromText(text) {
     if (!text || !text.trim()) return null;
-    return buildStorageKey(simpleHash(text));
+    return buildStorageKey(simpleTextHash(text));
   }
 
   _ensureEntry(storageKey) {
