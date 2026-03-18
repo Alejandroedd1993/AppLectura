@@ -7,6 +7,7 @@ import { WEB_SEARCH_TIMEOUT_MS } from '../../constants/timeoutConstants';
 import { detectHateOrSlur, redactHateOrSlur, slurAppearsInContext, validateResponse } from '../../pedagogy/safety/tutorGuard';
 import { fetchWebSearch } from '../../utils/fetchWebSearch';
 import { DEFAULT_BACKEND_URL } from '../../utils/backendConfig';
+import { createAbortControllerWithTimeout } from '../../utils/netUtils';
 import { detectStudentNeeds } from '../../pedagogy/tutor/studentNeedsAnalyzer';
 import usePedagogyIntegration from '../../hooks/usePedagogyIntegration';
 
@@ -440,7 +441,8 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
     // Crear AbortController con timeout
     abortRef.current?.abort();
-    abortRef.current = new AbortController();
+    const abortControl = createAbortControllerWithTimeout({ timeoutMs: TIMEOUT_MS });
+    abortRef.current = abortControl.controller;
 
     // R12 FIX: Si hay un placeholder de stream previo sin finalizar (abort/nueva petición),
     // eliminarlo del estado para no dejar mensajes fantasma con cursor ▌.
@@ -456,11 +458,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       });
     }
 
-    let timeoutId = setTimeout(() => {
-      if (abortRef.current) {
-        abortRef.current.abort();
-      }
-    }, TIMEOUT_MS);
+    let timeoutId = null;
 
     try {
       // Intentar usar OpenAI global (tests / entorno con mock) antes de ir al backend
@@ -472,7 +470,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
             model: OPENAI_CHAT_MODEL,
             messages: outboundMessages
           });
-          clearTimeout(timeoutId);
+          abortControl.cleanup();
 
           if (myRequestId !== requestIdRef.current) return;
           let content = completion?.choices?.[0]?.message?.content?.trim() || 'Sin respuesta.';
@@ -615,6 +613,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
         // ⏱️ Resetear timeout: una vez llegan chunks, usar idle timeout más corto
         // en lugar del timeout de conexión total (evita abortar streams largos)
+        abortControl.cleanup();
         clearTimeout(timeoutId);
         timeoutId = setTimeout(() => {
           if (abortRef.current) abortRef.current.abort();
@@ -916,6 +915,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
     } catch (e) {
       clearTimeout(timeoutId);
+      abortControl.cleanup();
 
       // H2 FIX: Si hay un placeholder de stream activo, eliminarlo antes de mostrar error.
       // Sin esto, el mensaje ▌ queda colgado cuando el error NO es AbortError.
@@ -993,6 +993,8 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       try { onAssistantMessageRef.current?.(errMsg, apiRef.current); } catch { /* noop */ }
       logger.warn('[TutorCore] Error:', e);
     } finally {
+      clearTimeout(timeoutId);
+      abortControl.cleanup();
       if (myRequestId === requestIdRef.current) {
         setLoading(false);
         onBusyChangeRef.current?.(false);
