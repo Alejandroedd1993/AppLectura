@@ -3,6 +3,7 @@ import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/re
 import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels } from '../utils/modelUtils.js';
+import { buildRequestId } from '../utils/requestContext.js';
 
 // dotenv ya cargado en server/index.js al arranque
 
@@ -50,12 +51,6 @@ function summarizeMessages(messages) {
     if (c.length > maxMessageChars) maxMessageChars = c.length;
   }
   return { count: messages.length, totalChars, maxMessageChars };
-}
-
-function buildRequestId(req) {
-  const headerId = String(req.get('x-request-id') || req.get('x-correlation-id') || '').trim();
-  if (headerId) return headerId;
-  return `chat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 // parseAllowedModels importado desde ../utils/modelUtils.js

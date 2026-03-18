@@ -22,6 +22,7 @@ import performanceMiddleware from './middleware/performance.js';
 import errorHandler from './middleware/errorHandler.js';
 import { sendValidationError } from './utils/validationError.js';
 import { parseBool } from './utils/envUtils.js';
+import { attachRequestContext } from './utils/requestContext.js';
 
 // Configuración básica
 const __filename = fileURLToPath(import.meta.url);
@@ -140,8 +141,9 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id', 'X-Correlation-Id']
 }));
+app.use(attachRequestContext);
 app.use(express.json({ limit: '4mb' }));
 performanceMiddleware(app);
 

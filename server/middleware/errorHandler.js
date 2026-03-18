@@ -1,3 +1,5 @@
+import { sendError } from '../utils/responseHelpers.js';
+
 export function errorHandler(error, req, res, next) {
   const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
   const code = typeof error?.code === 'string' && error.code ? error.code : 'INTERNAL_ERROR';
@@ -14,7 +16,7 @@ export function errorHandler(error, req, res, next) {
     return next(error);
   }
 
-  return res.status(statusCode).json({
+  return sendError(res, statusCode, {
     error: code,
     mensaje: statusCode >= 500
       ? 'Ocurrió un error interno procesando la solicitud.'

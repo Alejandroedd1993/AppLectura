@@ -6,8 +6,10 @@ import { errorHandler } from '../../../server/middleware/errorHandler.js';
 describe('responseHelpers — sendError', () => {
   function mockRes() {
     const res = { _status: null, _body: null };
+    res.locals = {};
     res.status = (code) => { res._status = code; return res; };
     res.json = (body) => { res._body = body; return res; };
+    res.getHeader = (name) => (name === 'x-request-id' ? res._requestId : undefined);
     return res;
   }
 
@@ -41,6 +43,19 @@ describe('responseHelpers — sendError', () => {
     expect(res._body.error).toBe('No config');
   });
 
+  test('uses requestId from response context when not provided explicitly', () => {
+    const res = mockRes();
+    res.locals.requestId = 'req_auto_1';
+
+    sendError(res, 429, {
+      error: 'Rate limited',
+      mensaje: 'Demasiadas solicitudes.',
+      codigo: 'RATE_LIMIT'
+    });
+
+    expect(res._body.requestId).toBe('req_auto_1');
+  });
+
   test('returns the res object for chaining', () => {
     const res = mockRes();
     const returned = sendError(res, 500, {
@@ -55,8 +70,10 @@ describe('responseHelpers — sendError', () => {
 describe('errorHandler middleware', () => {
   function mockRes() {
     const res = { _status: null, _body: null, headersSent: false };
+    res.locals = { requestId: 'req_middleware_1' };
     res.status = (code) => { res._status = code; return res; };
     res.json = (body) => { res._body = body; return res; };
+    res.getHeader = (name) => (name === 'x-request-id' ? 'req_middleware_1' : undefined);
     return res;
   }
   const req = { originalUrl: '/test', method: 'GET' };
@@ -75,7 +92,8 @@ describe('errorHandler middleware', () => {
     expect(res._body).toMatchObject({
       error: 'INTERNAL_ERROR',
       mensaje: expect.any(String),
-      codigo: 'INTERNAL_ERROR'
+      codigo: 'INTERNAL_ERROR',
+      requestId: 'req_middleware_1'
     });
   });
 

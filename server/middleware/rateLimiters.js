@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { sendError } from '../utils/responseHelpers.js';
 
 // express-rate-limit v6+ no exporta ipKeyGenerator; usamos req.ip directamente
 // (Express normaliza IPv6 cuando trust proxy está activo)
@@ -40,8 +41,10 @@ function createLimiter(envPrefix, { defaultMax, errorMessage, defaultWindowMs = 
     },
     handler: (req, res, next, options) => {
       const retryAfter = Math.ceil((options.windowMs || defaultWindowMs) / 1000);
-      res.status(options.statusCode).json({
+      return sendError(res, options.statusCode, {
         error: errorMessage,
+        mensaje: 'Se superó temporalmente el límite de solicitudes para este recurso.',
+        codigo: `${envPrefix}_RATE_LIMIT_EXCEEDED`,
         retryAfter
       });
     }
