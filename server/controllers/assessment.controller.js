@@ -8,6 +8,7 @@ import {
   validateComprehensiveEvaluationInput
 } from '../prompts/evaluationPrompts.js';
 import { normalizeDimensionInput } from '../../src/pedagogy/rubrics/criticalLiteracyRubric.js';
+import { sendError } from '../utils/responseHelpers.js';
 
 const safeJsonParse = (value) => {
   if (typeof value !== 'string') return { ok: true, data: value };
@@ -157,7 +158,7 @@ export async function evaluateAnswer(req, res) {
     const parsed = safeJsonParse(response);
     if (!parsed.ok) {
       console.error('[assessment.evaluateAnswer] Error parseando JSON:', parsed.error);
-      return res.status(502).json({
+      return sendError(res, 503, {
         valid: false,
         degraded: true,
         error: 'Respuesta invalida del proveedor',
@@ -174,7 +175,7 @@ export async function evaluateAnswer(req, res) {
     const hasCore = !!data.dimension && data.scoreGlobal != null && Array.isArray(data.criteriosEvaluados);
     if (!hasCore) {
       console.warn('[assessment.evaluateAnswer] Respuesta de IA incompleta (degraded):', data);
-      return res.status(502).json({
+      return sendError(res, 503, {
         valid: false,
         degraded: true,
         error: 'Respuesta incompleta del proveedor',
@@ -289,7 +290,7 @@ export async function evaluateComprehensive(req, res) {
     const parsed = safeJsonParse(response);
     if (!parsed.ok) {
       console.error('[assessment.evaluateComprehensive] Error parseando JSON:', parsed.error);
-      return res.status(502).json({
+      return sendError(res, 503, {
         valid: false,
         degraded: true,
         error: 'Respuesta invalida del proveedor',
@@ -304,7 +305,7 @@ export async function evaluateComprehensive(req, res) {
     // Validar estructura de respuesta
     if (!Array.isArray(data.evaluaciones) || data.evaluaciones.length < 4) {
       console.warn('[assessment.evaluateComprehensive] Respuesta incompleta (degraded):', data);
-      return res.status(502).json({
+      return sendError(res, 503, {
         valid: false,
         degraded: true,
         error: 'Respuesta incompleta del proveedor',

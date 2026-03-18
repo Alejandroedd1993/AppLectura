@@ -1,6 +1,7 @@
 import { generarNotasConOpenAI, generarNotasConDeepSeek, generarNotasConGemini } from '../services/notes.service.js';
 import { notesSchema } from '../validators/schemas.js';
 import { sendValidationError } from '../utils/validationError.js';
+import { sendError } from '../utils/responseHelpers.js';
 
 function isProviderConfigured(provider) {
   if (provider === 'openai') return Boolean(process.env.OPENAI_API_KEY);
@@ -111,7 +112,7 @@ export async function generarNotas(req, res) {
     const parsed = notesSchema.safeParse(result);
     if (!parsed.success) {
       console.error('[notes.controller] Formato invalido del proveedor:', parsed.error.flatten());
-      return res.status(502).json({
+      return sendError(res, 503, {
         error: 'Respuesta invalida del proveedor',
         mensaje: 'La respuesta del proveedor no tuvo el formato esperado.',
         codigo: 'INVALID_NOTES_RESPONSE'
