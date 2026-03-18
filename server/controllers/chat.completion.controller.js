@@ -1,15 +1,9 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/responseCache.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+// dotenv ya cargado en server/index.js al arranque
 
 function getProviderConfig(provider) {
   const resolved = String(provider || '').trim();

@@ -1,7 +1,5 @@
 
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv ya cargado en server/index.js al arranque
 
 export const settings = {
   openai: {
