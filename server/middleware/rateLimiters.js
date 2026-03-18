@@ -20,161 +20,65 @@ const getBearerToken = (req) => {
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 /**
- * Rate limiter para endpoints de análisis (costosos).
- * - Preferimos agrupar por usuario si llega Authorization: Bearer <token> (no se almacena el token; se hashea).
- * - Si no hay auth, se usa IP (por eso los umbrales por defecto son altos para evitar romper aulas con NAT).
+ * Factory para rate limiters con keyGenerator por Bearer token (hasheado) o IP.
+ * @param {string} envPrefix - Prefijo de variables de entorno (e.g. 'ANALYSIS' busca ANALYSIS_RATE_LIMIT_WINDOW_MS y ANALYSIS_RATE_LIMIT_MAX).
+ * @param {object} opts
+ * @param {number} opts.defaultMax - Máximo de requests por ventana (default).
+ * @param {string} opts.errorMessage - Mensaje de error para 429.
+ * @param {number} [opts.defaultWindowMs=60000] - Ventana por defecto en ms.
  */
-export const analysisLimiter = rateLimit({
-  windowMs: toPositiveInt(process.env.ANALYSIS_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  max: toPositiveInt(process.env.ANALYSIS_RATE_LIMIT_MAX, 120),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const token = getBearerToken(req);
-    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return getClientIp(req);
-  },
-  handler: (req, res, next, options) => {
-    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
-    res.status(options.statusCode).json({
-      error: 'Demasiadas solicitudes de análisis. Intenta de nuevo en un minuto.',
-      retryAfter
-    });
-  }
+function createLimiter(envPrefix, { defaultMax, errorMessage, defaultWindowMs = 60 * 1000 }) {
+  return rateLimit({
+    windowMs: toPositiveInt(process.env[`${envPrefix}_RATE_LIMIT_WINDOW_MS`], defaultWindowMs),
+    max: toPositiveInt(process.env[`${envPrefix}_RATE_LIMIT_MAX`], defaultMax),
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      const token = getBearerToken(req);
+      if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
+      return getClientIp(req);
+    },
+    handler: (req, res, next, options) => {
+      const retryAfter = Math.ceil((options.windowMs || defaultWindowMs) / 1000);
+      res.status(options.statusCode).json({
+        error: errorMessage,
+        retryAfter
+      });
+    }
+  });
+}
+
+export const analysisLimiter = createLimiter('ANALYSIS', {
+  defaultMax: 120,
+  errorMessage: 'Demasiadas solicitudes de análisis. Intenta de nuevo en un minuto.'
 });
 
-/**
- * Rate limiter para chat/completion (costoso y potencialmente disparado por loops de UI).
- * - Si hay bearer token, agrupa por token hasheado.
- * - Si no hay auth, agrupa por IP (ojo con NAT en aulas; ajusta los env si hace falta).
- */
-export const chatLimiter = rateLimit({
-  windowMs: toPositiveInt(process.env.CHAT_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  max: toPositiveInt(process.env.CHAT_RATE_LIMIT_MAX, 200),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const token = getBearerToken(req);
-    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return getClientIp(req);
-  },
-  handler: (req, res, next, options) => {
-    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
-    res.status(options.statusCode).json({
-      error: 'Demasiadas solicitudes de chat. Espera unos segundos y reintenta.',
-      retryAfter
-    });
-  }
+export const chatLimiter = createLimiter('CHAT', {
+  defaultMax: 200,
+  errorMessage: 'Demasiadas solicitudes de chat. Espera unos segundos y reintenta.'
 });
 
-/**
- * Rate limiter para generación de notas (costoso).
- */
-export const notesLimiter = rateLimit({
-  windowMs: toPositiveInt(process.env.NOTES_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  max: toPositiveInt(process.env.NOTES_RATE_LIMIT_MAX, 60),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const token = getBearerToken(req);
-    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return getClientIp(req);
-  },
-  handler: (req, res, next, options) => {
-    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
-    res.status(options.statusCode).json({
-      error: 'Demasiadas solicitudes para generar notas. Intenta de nuevo en un minuto.',
-      retryAfter
-    });
-  }
+export const notesLimiter = createLimiter('NOTES', {
+  defaultMax: 60,
+  errorMessage: 'Demasiadas solicitudes para generar notas. Intenta de nuevo en un minuto.'
 });
 
-/**
- * Rate limiter para búsqueda web (puede ser costosa por APIs externas y por /answer con IA).
- */
-export const webSearchLimiter = rateLimit({
-  windowMs: toPositiveInt(process.env.WEB_SEARCH_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  max: toPositiveInt(process.env.WEB_SEARCH_RATE_LIMIT_MAX, 120),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const token = getBearerToken(req);
-    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return getClientIp(req);
-  },
-  handler: (req, res, next, options) => {
-    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
-    res.status(options.statusCode).json({
-      error: 'Demasiadas solicitudes de búsqueda web. Espera un momento y reintenta.',
-      retryAfter
-    });
-  }
+export const webSearchLimiter = createLimiter('WEB_SEARCH', {
+  defaultMax: 120,
+  errorMessage: 'Demasiadas solicitudes de búsqueda web. Espera un momento y reintenta.'
 });
 
-/**
- * Rate limiter para evaluaciones/assessment (costoso).
- * - Defaults conservadores (10/min) similares a los anteriores.
- * - Agrupa por Bearer token si existe; si no, por IP.
- */
-export const assessmentLimiter = rateLimit({
-  windowMs: toPositiveInt(process.env.ASSESSMENT_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  max: toPositiveInt(process.env.ASSESSMENT_RATE_LIMIT_MAX, 10),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const token = getBearerToken(req);
-    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return getClientIp(req);
-  },
-  handler: (req, res, next, options) => {
-    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
-    res.status(options.statusCode).json({
-      error: 'Demasiadas evaluaciones. Intenta de nuevo en un minuto.',
-      retryAfter
-    });
-  }
+export const assessmentLimiter = createLimiter('ASSESSMENT', {
+  defaultMax: 10,
+  errorMessage: 'Demasiadas evaluaciones. Intenta de nuevo en un minuto.'
 });
 
-/**
- * Rate limiter para uploads costosos (PDF/OCR).
- */
-export const uploadLimiter = rateLimit({
-  windowMs: toPositiveInt(process.env.UPLOAD_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  max: toPositiveInt(process.env.UPLOAD_RATE_LIMIT_MAX, 30),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const token = getBearerToken(req);
-    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return getClientIp(req);
-  },
-  handler: (req, res, next, options) => {
-    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
-    res.status(options.statusCode).json({
-      error: 'Demasiadas cargas de archivo. Espera un momento y reintenta.',
-      retryAfter
-    });
-  }
+export const uploadLimiter = createLimiter('UPLOAD', {
+  defaultMax: 30,
+  errorMessage: 'Demasiadas cargas de archivo. Espera un momento y reintenta.'
 });
 
-/**
- * Rate limiter para proxy de storage (I/O intensivo).
- */
-export const storageProxyLimiter = rateLimit({
-  windowMs: toPositiveInt(process.env.STORAGE_PROXY_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  max: toPositiveInt(process.env.STORAGE_PROXY_RATE_LIMIT_MAX, 120),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const token = getBearerToken(req);
-    if (token) return `bearer:${hashToken(token).slice(0, 32)}`;
-    return getClientIp(req);
-  },
-  handler: (req, res, next, options) => {
-    const retryAfter = Math.ceil((options.windowMs || 60 * 1000) / 1000);
-    res.status(options.statusCode).json({
-      error: 'Demasiadas solicitudes al proxy de storage. Espera e intenta de nuevo.',
-      retryAfter
-    });
-  }
+export const storageProxyLimiter = createLimiter('STORAGE_PROXY', {
+  defaultMax: 120,
+  errorMessage: 'Demasiadas solicitudes al proxy de storage. Espera e intenta de nuevo.'
 });
