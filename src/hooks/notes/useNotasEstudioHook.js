@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchWithTimeout } from '../../utils/netUtils';
+import { fetchWithTimeout, replaceAbortController } from '../../utils/netUtils';
 import { buildBackendUrl } from '../../utils/backendConfig';
 import { NotesServices } from '../../services/notes';
 import { buildBackendError } from '../../services/unifiedAiService';
@@ -400,9 +400,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null, courseI
       return;
     }
 
-    abortRef.current?.abort?.();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const controller = replaceAbortController(abortRef);
 
     if (isMountedRef.current) {
       setCargando(true);

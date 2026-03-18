@@ -59,6 +59,20 @@ export const createAbortControllerWithTimeout = ({
   };
 };
 
+export const replaceAbortController = (controllerRef) => {
+  if (!controllerRef || typeof controllerRef !== 'object') {
+    return new AbortController();
+  }
+
+  try {
+    controllerRef.current?.abort?.();
+  } catch {}
+
+  const controller = new AbortController();
+  controllerRef.current = controller;
+  return controller;
+};
+
 export const fetchWithTimeout = (resource, options = {}, timeoutMs = 45000) => {
   const { signal: extSignal, ...rest } = options || {};
   const abortControl = createAbortControllerWithTimeout({

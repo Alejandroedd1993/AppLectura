@@ -4,6 +4,7 @@ import {
   hashText,
   fetchWithTimeout,
   fetchWithRetry,
+  replaceAbortController,
   retryAsync
 } from '../../../src/utils/netUtils';
 
@@ -104,5 +105,17 @@ describe('netUtils', () => {
 
     expect(abortControl.signal.aborted).toBe(true);
     abortControl.cleanup();
+  });
+
+  test('replaceAbortController aborta el controller previo y reemplaza la referencia', () => {
+    const ref = { current: new AbortController() };
+    const previous = ref.current;
+
+    const next = replaceAbortController(ref);
+
+    expect(previous.signal.aborted).toBe(true);
+    expect(ref.current).toBe(next);
+    expect(next).not.toBe(previous);
+    expect(next.signal.aborted).toBe(false);
   });
 });
