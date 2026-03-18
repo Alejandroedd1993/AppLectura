@@ -201,6 +201,8 @@ export async function createChatCompletion(req, res) {
     if (!cfg.apiKey) {
       return res.status(503).json({
         error: `Proveedor ${provider} no configurado en servidor`,
+        mensaje: 'El proveedor de IA solicitado no esta configurado en el servidor.',
+        codigo: 'CHAT_PROVIDER_NOT_CONFIGURED',
         requestId
       });
     }
@@ -429,6 +431,7 @@ export async function createChatCompletion(req, res) {
     const status = error.status || 500;
     res.status(status).json({
       error: 'Error interno generando completion',
+      mensaje: 'No se pudo completar la solicitud de chat en este momento.',
       codigo: 'CHAT_COMPLETION_ERROR',
       requestId
     });

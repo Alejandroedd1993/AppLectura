@@ -34,7 +34,9 @@ const uploadPdfMiddleware = (req, res, next) => {
 
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({
-        error: `El archivo excede el limite de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB`
+        error: `El archivo excede el limite de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB`,
+        mensaje: `El archivo PDF supera el tamaño maximo permitido de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB.`,
+        codigo: 'PDF_TOO_LARGE'
       });
     }
 
@@ -47,7 +49,8 @@ const uploadPdfMiddleware = (req, res, next) => {
 
     return res.status(400).json({
       error: 'Error procesando upload de PDF',
-      mensaje: 'No se pudo procesar la subida del archivo PDF.'
+      mensaje: 'No se pudo procesar la subida del archivo PDF.',
+      codigo: 'PDF_UPLOAD_ERROR'
     });
   });
 };

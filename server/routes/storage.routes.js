@@ -48,7 +48,8 @@ router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (re
       console.error('❌ [StorageProxy] Upstream failed:', upstreamResponse.status, errorText.substring(0, 200));
       return res.status(upstreamResponse.status || 502).json({
         error: 'Upstream request failed',
-        mensaje: 'No se pudo recuperar el archivo desde el origen remoto.'
+        mensaje: 'No se pudo recuperar el archivo desde el origen remoto.',
+        codigo: 'STORAGE_UPSTREAM_ERROR'
       });
     }
 
@@ -72,7 +73,8 @@ router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (re
     console.error('❌ [StorageProxy] Error fetching file from Storage:', error.message);
     res.status(500).json({
       error: 'Failed to retrieve file from Storage',
-      mensaje: 'No se pudo recuperar el archivo solicitado.'
+      mensaje: 'No se pudo recuperar el archivo solicitado.',
+      codigo: 'STORAGE_FETCH_ERROR'
     });
   }
 });

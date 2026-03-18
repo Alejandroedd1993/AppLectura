@@ -18,7 +18,8 @@ export function errorHandler(error, req, res, next) {
     error: code,
     mensaje: statusCode >= 500
       ? 'Ocurrió un error interno procesando la solicitud.'
-      : 'No se pudo completar la solicitud.'
+      : 'No se pudo completar la solicitud.',
+    codigo: code
   });
 }
 

@@ -157,6 +157,7 @@ const buscarWeb = async (req, res) => {
 
     res.status(500).json({
       error: 'Error en búsqueda web',
+      mensaje: 'No se pudo completar la busqueda web en este momento.',
       codigo: 'WEB_SEARCH_ERROR',
       query: req.body?.query,
       fallback_disponible: true
@@ -297,6 +298,7 @@ ${contextLines.join('\n')}`;
     console.error('❌ Error en responderBusquedaIA:', error);
     return res.status(500).json({
       error: 'Error en respuesta con IA',
+      mensaje: 'No se pudo generar la respuesta con IA en este momento.',
       codigo: 'WEB_SEARCH_AI_ERROR'
     });
   }

@@ -17,6 +17,7 @@ export async function ocrImageUpload(req, res) {
     console.error('Error en OCR de imagen:', err);
     res.status(500).json({
       error: 'Error realizando OCR.',
+      mensaje: 'No se pudo procesar la imagen con OCR en este momento.',
       codigo: 'OCR_PROCESSING_ERROR'
     });
   }

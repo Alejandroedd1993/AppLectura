@@ -43,7 +43,9 @@ const uploadImageMiddleware = (req, res, next) => {
 
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({
-        error: `La imagen excede el limite de ${Math.floor(imageMaxBytes / (1024 * 1024))} MB`
+        error: `La imagen excede el limite de ${Math.floor(imageMaxBytes / (1024 * 1024))} MB`,
+        mensaje: `El archivo de imagen supera el tamaño maximo permitido de ${Math.floor(imageMaxBytes / (1024 * 1024))} MB.`,
+        codigo: 'IMAGE_TOO_LARGE'
       });
     }
 
@@ -56,7 +58,8 @@ const uploadImageMiddleware = (req, res, next) => {
 
     return res.status(400).json({
       error: 'Error procesando upload de imagen',
-      mensaje: 'No se pudo procesar la subida de la imagen.'
+      mensaje: 'No se pudo procesar la subida de la imagen.',
+      codigo: 'IMAGE_UPLOAD_ERROR'
     });
   });
 };

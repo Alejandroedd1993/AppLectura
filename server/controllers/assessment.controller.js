@@ -204,7 +204,7 @@ export async function evaluateAnswer(req, res) {
 
   } catch (err) {
     console.error('[assessment.evaluateAnswer] Error:', err);
-    const statusCode = Number.isFinite(err?.status) ? err.status : 502;
+    const statusCode = Number.isFinite(err?.status) ? err.status : 500;
     return res.status(statusCode).json({
       valid: false,
       degraded: true,
@@ -325,7 +325,7 @@ export async function evaluateComprehensive(req, res) {
 
   } catch (err) {
     console.error('[assessment.evaluateComprehensive] Error:', err);
-    const statusCode = Number.isFinite(err?.status) ? err.status : 502;
+    const statusCode = Number.isFinite(err?.status) ? err.status : 500;
     return res.status(statusCode).json({
       valid: false,
       degraded: true,
