@@ -14,10 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEBUG_LOG_PATH = path.join(__dirname, '..', 'debug_analysis.log');
 
-function parseBooleanEnv(value) {
-  const raw = String(value ?? '').trim().toLowerCase();
-  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
-}
+import { parseBool as parseBooleanEnv } from '../utils/envUtils.js';
 
 function buildWebDecisionMetadata(searchDecision) {
   if (!searchDecision || typeof searchDecision !== 'object') {

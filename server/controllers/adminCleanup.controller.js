@@ -5,12 +5,7 @@ import {
   processPendingOwnedCleanupJobs
 } from '../services/ownedCourseCleanup.service.js';
 import { sendValidationError } from '../utils/validationError.js';
-
-function parseBool(value, fallback = false) {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
-}
+import { parseBool } from '../utils/envUtils.js';
 
 async function assertTeacherOwnsCourse(courseId, requesterUid) {
   const db = getAdminDb();

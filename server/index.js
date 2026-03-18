@@ -21,6 +21,7 @@ import assessmentRoutes from './routes/assessment.route.js';
 import performanceMiddleware from './middleware/performance.js';
 import errorHandler from './middleware/errorHandler.js';
 import { sendValidationError } from './utils/validationError.js';
+import { parseBool } from './utils/envUtils.js';
 
 // Configuración básica
 const __filename = fileURLToPath(import.meta.url);
@@ -124,7 +125,7 @@ app.use(cors({
     // En producción exigir Origin salvo que se habilite explícitamente por env.
     const allowNoOrigin =
       (process.env.NODE_ENV || 'development') !== 'production' ||
-      String(process.env.ALLOW_NO_ORIGIN || '').trim().toLowerCase() === 'true';
+      parseBool(process.env.ALLOW_NO_ORIGIN);
     if (!origin) {
       if (allowNoOrigin) return callback(null, true);
       return callback(new Error('Origin requerido'));

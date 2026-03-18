@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/responseCache.js';
 import { sendValidationError } from '../utils/validationError.js';
+import { parseBool } from '../utils/envUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -264,7 +265,7 @@ export async function createChatCompletion(req, res) {
       }
     }
 
-    const logUsage = String(process.env.CHAT_USAGE_LOG || '').trim().toLowerCase() === 'true';
+    const logUsage = parseBool(process.env.CHAT_USAGE_LOG);
     const messageStats = summarizeMessages(safeMessages);
     const requestTag = {
       provider,
