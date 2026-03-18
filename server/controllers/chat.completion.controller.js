@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/responseCache.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
+import { parseAllowedModels } from '../utils/modelUtils.js';
 
 // dotenv ya cargado en server/index.js al arranque
 
@@ -57,16 +58,7 @@ function buildRequestId(req) {
   return `chat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function parseAllowedModels(envValue, fallbackCsv) {
-  const raw = String(envValue || '').trim();
-  const csv = raw || fallbackCsv;
-  return new Set(
-    String(csv)
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-  );
-}
+// parseAllowedModels importado desde ../utils/modelUtils.js
 
 function validateAndNormalizeMessages(messages) {
   const maxMessages = safeNumber(process.env.CHAT_MAX_MESSAGES, 50);

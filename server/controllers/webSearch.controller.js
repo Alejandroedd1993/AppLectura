@@ -3,10 +3,8 @@
  * Permite obtener información actual de Internet para contextualizar análisis crítico
  */
 
-const toBool = (value) => {
-  const raw = String(value ?? '').trim().toLowerCase();
-  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
-};
+import { parseBool } from '../utils/envUtils.js';
+import { parseAllowedModels, pickAllowedModel } from '../utils/modelUtils.js';
 
 const clampInt = (value, { min, max, fallback }) => {
   const n = Number(value);
@@ -20,23 +18,11 @@ const sanitizeQuery = (query, maxLen = 500) => {
   return q.slice(0, maxLen);
 };
 
-const isWebSearchEnabled = () => toBool(process.env.ENABLE_WEB_SEARCH);
-
-const parseCsv = (raw) =>
-  String(raw ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-const getAllowedDeepseekModels = () => {
-  const allowed = parseCsv(process.env.DEEPSEEK_ALLOWED_MODELS);
-  return allowed.length ? allowed : ['deepseek-chat'];
-};
+const isWebSearchEnabled = () => parseBool(process.env.ENABLE_WEB_SEARCH);
 
 const pickDeepseekModel = (desired) => {
-  const allowed = getAllowedDeepseekModels();
-  const model = String(desired ?? '').trim() || 'deepseek-chat';
-  return allowed.includes(model) ? model : allowed[0];
+  const allowed = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
+  return pickAllowedModel({ requested: desired, allowed, fallback: 'deepseek-chat' });
 };
 
 const normalizeBaseUrl = (raw) => String(raw ?? '').trim().replace(/\/+$/, '') || 'https://api.deepseek.com/v1';

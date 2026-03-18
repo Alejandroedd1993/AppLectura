@@ -15,6 +15,7 @@ const __dirname = path.dirname(__filename);
 const DEBUG_LOG_PATH = path.join(__dirname, '..', 'debug_analysis.log');
 
 import { parseBool as parseBooleanEnv } from '../utils/envUtils.js';
+import { parseAllowedModels as parseAllowedModelsCsv, pickAllowedModel } from '../utils/modelUtils.js';
 
 function buildWebDecisionMetadata(searchDecision) {
   if (!searchDecision || typeof searchDecision !== 'object') {
@@ -1165,29 +1166,7 @@ function normalizeText(text) {
     .trim();
 }
 
-function parseAllowedModelsCsv(envValue, fallbackCsv) {
-  const raw = String(envValue || '').trim();
-  const csv = raw || String(fallbackCsv || '').trim();
-  return new Set(
-    csv
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-  );
-}
-
-function pickAllowedModel({ requested, allowed, fallback }) {
-  const requestedModel = String(requested || '').trim();
-  const fallbackModel = String(fallback || '').trim();
-
-  if (allowed && allowed.size > 0) {
-    if (requestedModel && allowed.has(requestedModel)) return requestedModel;
-    if (fallbackModel && allowed.has(fallbackModel)) return fallbackModel;
-    return Array.from(allowed)[0];
-  }
-
-  return requestedModel || fallbackModel;
-}
+// parseAllowedModelsCsv y pickAllowedModel importados desde ../utils/modelUtils.js
 
 /**
  * Valida que las figuras retóricas detectadas realmente existan en el texto original
