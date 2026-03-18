@@ -106,6 +106,34 @@ describe('Templates - Generación de Prompts', () => {
     expect(prompt).toContain('Identifica tesis central');
     expect(prompt).toContain('ÚNICAMENTE con un JSON válido');
   });
+
+  test('createPromptWithTimeout devuelve prompt y aborta el controller al vencer el timeout', async () => {
+    jest.useFakeTimers();
+
+    const { createPromptWithTimeout } = await import('../../src/pedagogy/prompts/templates.js');
+    const result = await createPromptWithTimeout(
+      ({ pregunta }) => `Prompt: ${pregunta}`,
+      { pregunta: 'hola' },
+      25
+    );
+
+    expect(result.prompt).toBe('Prompt: hola');
+    expect(result.controller.signal.aborted).toBe(false);
+
+    jest.advanceTimersByTime(30);
+
+    expect(result.controller.signal.aborted).toBe(true);
+    result.cleanup();
+    jest.useRealTimers();
+  });
+
+  test('createPromptWithTimeout limpia y rechaza si el builder falla', async () => {
+    const { createPromptWithTimeout } = await import('../../src/pedagogy/prompts/templates.js');
+
+    await expect(createPromptWithTimeout(() => {
+      throw new Error('fallo de builder');
+    }, {})).rejects.toThrow('fallo de builder');
+  });
 });
 
 describe('Rúbrica - Validación y Normalización', () => {

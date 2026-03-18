@@ -1,4 +1,5 @@
 import { RUBRIC } from '../rubrics/criticalLiteracyRubric.js';
+import { createAbortControllerWithTimeout } from '../../utils/netUtils';
 
 /**
  * CORRECCIÓN: Plantillas centralizadas para evitar duplicación entre Tutor/Evaluador
@@ -167,22 +168,21 @@ export function validateEvaluatorInput({ respuesta, texto, dimension }) {
   return errors;
 }
 
-// CORRECCIÓN: Timeout y abort controller para requests largos
+// CORRECCIÓN: Helper para construir prompt y devolver un controller
+// cuyo abort se disparará automáticamente al vencer el timeout.
 export function createPromptWithTimeout(promptBuilder, params, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const controller = new AbortController();
-    
-    const timeout = setTimeout(() => {
-      controller.abort();
-      reject(new Error(`Timeout después de ${timeoutMs}ms`));
-    }, timeoutMs);
-    
+    const abortControl = createAbortControllerWithTimeout({ timeoutMs });
+
     try {
       const prompt = promptBuilder(params);
-      clearTimeout(timeout);
-      resolve({ prompt, controller });
+      resolve({
+        prompt,
+        controller: abortControl.controller,
+        cleanup: abortControl.cleanup
+      });
     } catch (error) {
-      clearTimeout(timeout);
+      abortControl.cleanup();
       reject(error);
     }
   });
