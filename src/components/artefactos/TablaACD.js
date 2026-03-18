@@ -18,6 +18,12 @@ import TeacherScoreOverrideBanner from './TeacherScoreOverrideBanner';
 import ConfirmModal from '../common/ConfirmModal';
 import logger from '../../utils/logger';
 import {
+  EVAL_STEP_ANALYZE_DELAY_MS,
+  EVAL_STEP_DEEPSEEK_DELAY_MS,
+  EVAL_STEP_OPENAI_DELAY_MS,
+  EVAL_STEP_COMBINE_DELAY_MS,
+} from '../../constants/timeoutConstants';
+import {
   AutoSaveMessage,
   ButtonGroup,
   CitaFooter,
@@ -745,10 +751,10 @@ export default function TablaACD({ theme }) {
     try {
       // Simular pasos para feedback visual
       stepTimeouts.push(
-        setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando marco ideológico...', icon: '📊', duration: 6 }), 1000),
-        setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con DeepSeek...', icon: '🤖', duration: 12 }), 4000),
-        setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), 16000),
-        setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando análisis...', icon: '🔧', duration: 4 }), 28000)
+        setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando marco ideológico...', icon: '📊', duration: 6 }), EVAL_STEP_ANALYZE_DELAY_MS),
+        setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con DeepSeek...', icon: '🤖', duration: 12 }), EVAL_STEP_DEEPSEEK_DELAY_MS),
+        setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), EVAL_STEP_OPENAI_DELAY_MS),
+        setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando análisis...', icon: '🔧', duration: 4 }), EVAL_STEP_COMBINE_DELAY_MS)
       );
       timersRef.current.push(...stepTimeouts);
 

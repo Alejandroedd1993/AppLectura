@@ -34,6 +34,12 @@ export const PRELECTURE_ANALYSIS_TIMEOUT_MS = 300000; // 5 minutos
 // Timeout específico para evaluación de ensayos (más largo que chat normal)
 export const ESSAY_EVALUATION_TIMEOUT_MS = Math.max(CHAT_TIMEOUT_MS, 90000); // mínimo 90s
 
+// Delays de pasos visuales para evaluación dual-provider (barra de progreso)
+export const EVAL_STEP_ANALYZE_DELAY_MS = 1000;
+export const EVAL_STEP_DEEPSEEK_DELAY_MS = 3500;
+export const EVAL_STEP_OPENAI_DELAY_MS = 15500;
+export const EVAL_STEP_COMBINE_DELAY_MS = 27500;
+
 // Delay inicial para retry automático
 export const RETRY_DELAY_MS = 3000; // 3 segundos
 

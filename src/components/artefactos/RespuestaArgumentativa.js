@@ -19,6 +19,12 @@ import ConfirmModal from '../common/ConfirmModal';
 import KeyboardShortcutsBar from '../ui/KeyboardShortcutsBar';
 import HistoryRibbon from '../ui/HistoryRibbon';
 import {
+  EVAL_STEP_ANALYZE_DELAY_MS,
+  EVAL_STEP_DEEPSEEK_DELAY_MS,
+  EVAL_STEP_OPENAI_DELAY_MS,
+  EVAL_STEP_COMBINE_DELAY_MS,
+} from '../../constants/timeoutConstants';
+import {
   AutoSaveMessage,
   ButtonGroup,
   CitaFooter,
@@ -695,10 +701,10 @@ export default function RespuestaArgumentativa({ theme }) {
     // 🆕 Programar pasos de evaluación
     let stepTimeouts = [];
     stepTimeouts = [
-      setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando estructura de la tesis...', icon: '💡', duration: 5 }), 1000),
-      setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con DeepSeek...', icon: '🤖', duration: 12 }), 3500),
-      setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), 15500),
-      setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando feedback...', icon: '🔧', duration: 4 }), 27500)
+      setTimeout(() => setCurrentEvaluationStep({ label: 'Analizando estructura de la tesis...', icon: '💡', duration: 5 }), EVAL_STEP_ANALYZE_DELAY_MS),
+      setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con DeepSeek...', icon: '🤖', duration: 12 }), EVAL_STEP_DEEPSEEK_DELAY_MS),
+      setTimeout(() => setCurrentEvaluationStep({ label: 'Evaluando con OpenAI...', icon: '🧠', duration: 12 }), EVAL_STEP_OPENAI_DELAY_MS),
+      setTimeout(() => setCurrentEvaluationStep({ label: 'Combinando feedback...', icon: '🔧', duration: 4 }), EVAL_STEP_COMBINE_DELAY_MS)
     ];
     stepTimeouts.forEach(id => timersRef.current.push(id));
 
