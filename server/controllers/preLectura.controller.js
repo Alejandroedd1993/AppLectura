@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { searchWebSources } from './webSearch.controller.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -263,7 +264,7 @@ export async function analyzePreLecture(req, res) {
     const { text, metadata = {} } = req.body || {};
 
     if (!text || typeof text !== 'string' || text.trim().length < 100) {
-      return res.status(400).json({
+      return sendValidationError(res, {
         error: 'Texto invalido o muy corto (minimo 100 caracteres)',
         mensaje: 'Debes enviar un texto mas extenso para el analisis de prelectura.',
         codigo: 'INVALID_PRELECTURA_TEXT'

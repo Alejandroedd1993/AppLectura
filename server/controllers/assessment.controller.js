@@ -116,7 +116,7 @@ export async function evaluateAnswer(req, res) {
     // Validar entrada
     const validationErrors = validateCriterialEvaluationInput({ respuesta, texto, dimensionKey: dimension });
     if (validationErrors.length > 0) {
-      return res.status(400).json({
+      return sendError(res, 400, {
         error: 'Datos de entrada inválidos',
         mensaje: 'Revisa los campos requeridos antes de volver a intentar.',
         codigo: 'INVALID_ASSESSMENT_INPUT',
@@ -140,7 +140,7 @@ export async function evaluateAnswer(req, res) {
     // Reutilizar cliente de IA
     const aiClient = req.app.get('aiClient');
     if (!aiClient) {
-      return res.status(503).json({
+      return sendError(res, 503, {
         error: 'Servicio no disponible',
         mensaje: 'El servicio de evaluacion no esta configurado en el servidor.',
         codigo: 'ASSESSMENT_SERVICE_UNAVAILABLE'
@@ -206,7 +206,7 @@ export async function evaluateAnswer(req, res) {
   } catch (err) {
     console.error('[assessment.evaluateAnswer] Error:', err);
     const statusCode = Number.isFinite(err?.status) ? err.status : 500;
-    return res.status(statusCode).json({
+    return sendError(res, statusCode, {
       valid: false,
       degraded: true,
       error: 'Error al evaluar la respuesta',
@@ -248,7 +248,7 @@ export async function evaluateComprehensive(req, res) {
     // Validar entrada
     const validationErrors = validateComprehensiveEvaluationInput({ respuesta, texto });
     if (validationErrors.length > 0) {
-      return res.status(400).json({
+      return sendError(res, 400, {
         error: 'Datos de entrada inválidos',
         mensaje: 'Revisa los campos requeridos antes de volver a intentar.',
         codigo: 'INVALID_COMPREHENSIVE_ASSESSMENT_INPUT',
@@ -271,7 +271,7 @@ export async function evaluateComprehensive(req, res) {
     // Reutilizar cliente de IA
     const aiClient = req.app.get('aiClient');
     if (!aiClient) {
-      return res.status(503).json({
+      return sendError(res, 503, {
         error: 'Servicio no disponible',
         mensaje: 'El servicio de evaluacion no esta configurado en el servidor.',
         codigo: 'ASSESSMENT_SERVICE_UNAVAILABLE'
@@ -327,7 +327,7 @@ export async function evaluateComprehensive(req, res) {
   } catch (err) {
     console.error('[assessment.evaluateComprehensive] Error:', err);
     const statusCode = Number.isFinite(err?.status) ? err.status : 500;
-    return res.status(statusCode).json({
+    return sendError(res, statusCode, {
       valid: false,
       degraded: true,
       error: 'Error en evaluación comprehensiva',
@@ -361,7 +361,7 @@ export async function bulkEvaluate(req, res) {
     const { items } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({
+      return sendError(res, 400, {
         error: 'items debe ser un array con al menos una evaluacion',
         mensaje: 'Proporciona al menos una evaluacion para procesar.',
         codigo: 'INVALID_BULK_ASSESSMENT_INPUT'
@@ -369,7 +369,7 @@ export async function bulkEvaluate(req, res) {
     }
 
     if (items.length > 10) {
-      return res.status(400).json({
+      return sendError(res, 400, {
         error: 'Maximo 10 evaluaciones por lote',
         mensaje: 'Reduce la cantidad de evaluaciones enviadas en una sola solicitud.',
         codigo: 'ASSESSMENT_BULK_LIMIT_EXCEEDED',
@@ -383,7 +383,7 @@ export async function bulkEvaluate(req, res) {
     const aiClient = req.app.get('aiClient');
 
     if (!aiClient) {
-      return res.status(503).json({
+      return sendError(res, 503, {
         error: 'Servicio no disponible',
         mensaje: 'El servicio de evaluacion no esta configurado en el servidor.',
         codigo: 'ASSESSMENT_SERVICE_UNAVAILABLE'
@@ -472,7 +472,7 @@ export async function bulkEvaluate(req, res) {
 
   } catch (err) {
     console.error('[assessment.bulkEvaluate] Error:', err);
-    return res.status(500).json({
+    return sendError(res, 500, {
       error: 'Error en evaluación en lote',
       mensaje: 'No se pudo completar la evaluacion en lote.',
       codigo: 'ASSESSMENT_BULK_ERROR'

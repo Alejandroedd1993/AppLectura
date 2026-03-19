@@ -1,6 +1,7 @@
 
 import { analizarTexto as analizarTextoService } from '../services/analisis.service.js';
 import { analizarTextoBasico } from '../services/basic.service.js';
+import { sendError } from '../utils/responseHelpers.js';
 import { analysisSchema } from '../validators/schemas.js';
 import { sendValidationError } from '../utils/validationError.js';
 
@@ -86,7 +87,7 @@ export async function analizarTexto(req, res) {
     }
 
     if (error.message.includes('Timeout')) {
-      return res.status(504).json({
+      return sendError(res, 504, {
         error: 'Timeout',
         mensaje: 'La solicitud tardó demasiado tiempo en completarse',
         codigo: 'AI_TIMEOUT'
@@ -94,14 +95,14 @@ export async function analizarTexto(req, res) {
     }
 
     if (error.message.includes('Rate limit')) {
-      return res.status(429).json({
+      return sendError(res, 429, {
         error: 'Límite de tasa excedido',
         mensaje: 'Has excedido el límite de solicitudes a la API',
         codigo: 'RATE_LIMITED'
       });
     }
 
-    return res.status(500).json({
+    return sendError(res, 500, {
       error: `Error al comunicarse con ${api}`,
       mensaje: 'Ocurrió un error al procesar tu solicitud',
       codigo: 'ANALYSIS_PROVIDER_ERROR'

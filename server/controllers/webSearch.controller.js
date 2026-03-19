@@ -5,6 +5,7 @@
 
 import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels, pickAllowedModel } from '../utils/modelUtils.js';
+import { sendError } from '../utils/responseHelpers.js';
 
 const clampInt = (value, { min, max, fallback }) => {
   const n = Number(value);
@@ -103,7 +104,7 @@ const buscarWeb = async (req, res) => {
     const max = clampInt(maxResults, { min: 1, max: 10, fallback: 5 });
 
     if (!q) {
-      return res.status(400).json({
+      return sendError(res, 400, {
         error: 'Query de búsqueda requerida',
         mensaje: 'Debes proporcionar una consulta para realizar la busqueda web.',
         codigo: 'QUERY_REQUIRED'
@@ -155,7 +156,7 @@ const buscarWeb = async (req, res) => {
   } catch (error) {
     console.error('❌ Error en búsqueda web:', error);
 
-    res.status(500).json({
+    return sendError(res, 500, {
       error: 'Error en búsqueda web',
       mensaje: 'No se pudo completar la busqueda web en este momento.',
       codigo: 'WEB_SEARCH_ERROR',
@@ -176,7 +177,7 @@ const responderBusquedaIA = async (req, res) => {
     const q = sanitizeQuery(query);
     const max = clampInt(maxResults, { min: 1, max: 10, fallback: 5 });
     if (!q) {
-      return res.status(400).json({
+      return sendError(res, 400, {
         error: 'Query requerida',
         mensaje: 'Debes proporcionar una consulta para generar la respuesta con IA.',
         codigo: 'QUERY_REQUIRED'
@@ -296,7 +297,7 @@ ${contextLines.join('\n')}`;
     });
   } catch (error) {
     console.error('❌ Error en responderBusquedaIA:', error);
-    return res.status(500).json({
+    return sendError(res, 500, {
       error: 'Error en respuesta con IA',
       mensaje: 'No se pudo generar la respuesta con IA en este momento.',
       codigo: 'WEB_SEARCH_AI_ERROR'

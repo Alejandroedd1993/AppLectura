@@ -4,6 +4,7 @@ import {
   processOwnedCourseCleanupJob,
   processPendingOwnedCleanupJobs
 } from '../services/ownedCourseCleanup.service.js';
+import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
 
@@ -27,7 +28,7 @@ async function assertTeacherOwnsCourse(courseId, requesterUid) {
 const enqueueOwnedCleanup = async (req, res) => {
   try {
     if (!isFirebaseAdminConfigured()) {
-      return res.status(503).json({
+      return sendError(res, 503, {
         ok: false,
         error: 'Firebase Admin no configurado en backend',
         mensaje: 'La limpieza administrativa no esta disponible porque Firebase Admin no esta configurado.',
@@ -61,7 +62,7 @@ const enqueueOwnedCleanup = async (req, res) => {
     if (processNow) {
       processResult = await processOwnedCourseCleanupJob(jobId);
       if (!processResult?.ok) {
-        return res.status(500).json({
+        return sendError(res, 500, {
           ok: false,
           queued: true,
           jobId,
@@ -83,7 +84,7 @@ const enqueueOwnedCleanup = async (req, res) => {
     });
   } catch (error) {
     const code = Number(error?.statusCode || 500);
-    return res.status(code).json({
+    return sendError(res, code, {
       ok: false,
       error: error?.message || 'Error encolando limpieza owner-only',
       mensaje: code >= 500
@@ -101,7 +102,7 @@ const enqueueOwnedCleanup = async (req, res) => {
 const runPendingOwnedCleanup = async (req, res) => {
   try {
     if (!isFirebaseAdminConfigured()) {
-      return res.status(503).json({
+      return sendError(res, 503, {
         ok: false,
         error: 'Firebase Admin no configurado en backend',
         mensaje: 'La limpieza administrativa no esta disponible porque Firebase Admin no esta configurado.',
@@ -112,7 +113,7 @@ const runPendingOwnedCleanup = async (req, res) => {
     const workerSecret = String(process.env.CLEANUP_WORKER_SECRET || '').trim();
     const providedSecret = String(req.get('x-cleanup-secret') || '').trim();
     if (!workerSecret || providedSecret !== workerSecret) {
-      return res.status(403).json({
+      return sendError(res, 403, {
         ok: false,
         error: 'No autorizado para ejecutar worker de limpieza',
         mensaje: 'La credencial del worker de limpieza no es valida.',
@@ -124,7 +125,7 @@ const runPendingOwnedCleanup = async (req, res) => {
     const result = await processPendingOwnedCleanupJobs({ maxJobs });
     return res.json({ ok: true, ...result });
   } catch (error) {
-    return res.status(500).json({
+    return sendError(res, 500, {
       ok: false,
       error: error?.message || 'Error ejecutando worker de limpieza',
       mensaje: 'El worker de limpieza administrativa no pudo completarse.',

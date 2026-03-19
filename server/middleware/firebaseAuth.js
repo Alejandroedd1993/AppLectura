@@ -1,4 +1,5 @@
 import { getAdminApp } from '../config/firebaseAdmin.js';
+import { sendError } from '../utils/responseHelpers.js';
 
 let authBypassWarningLogged = false;
 
@@ -160,7 +161,7 @@ export async function requireFirebaseAuth(req, res, next) {
 
     const token = parseBearerToken(req);
     if (!token) {
-      return res.status(401).json({
+      return sendError(res, 401, {
         error: 'Authorization Bearer token requerido',
         mensaje: 'Inicia sesion para acceder a este recurso.',
         codigo: 'AUTH_TOKEN_REQUIRED'
@@ -179,7 +180,7 @@ export async function requireFirebaseAuth(req, res, next) {
   } catch (error) {
     if (isFirebaseAdminConfigurationError(error)) {
       console.error('[auth] Firebase Admin no configurado correctamente:', error);
-      return res.status(503).json({
+      return sendError(res, 503, {
         error: 'Servicio de autenticacion no disponible',
         mensaje: 'Firebase Admin no esta configurado correctamente en el servidor.',
         codigo: 'FIREBASE_ADMIN_NOT_CONFIGURED'
@@ -187,7 +188,7 @@ export async function requireFirebaseAuth(req, res, next) {
     }
 
     if (isRevokedTokenError(error)) {
-      return res.status(401).json({
+      return sendError(res, 401, {
         error: 'Token revocado',
         mensaje: 'La sesion fue revocada. Vuelve a iniciar sesion.',
         codigo: 'AUTH_TOKEN_REVOKED'
@@ -195,7 +196,7 @@ export async function requireFirebaseAuth(req, res, next) {
     }
 
     if (isDisabledUserError(error)) {
-      return res.status(403).json({
+      return sendError(res, 403, {
         error: 'Usuario deshabilitado',
         mensaje: 'La cuenta asociada a este token esta deshabilitada.',
         codigo: 'AUTH_USER_DISABLED'
@@ -209,7 +210,7 @@ export async function requireFirebaseAuth(req, res, next) {
         });
 
     if (inferredAuthState === 'revoked') {
-      return res.status(401).json({
+      return sendError(res, 401, {
         error: 'Token revocado',
         mensaje: 'La sesion fue revocada. Vuelve a iniciar sesion.',
         codigo: 'AUTH_TOKEN_REVOKED'
@@ -217,14 +218,14 @@ export async function requireFirebaseAuth(req, res, next) {
     }
 
     if (inferredAuthState === 'disabled') {
-      return res.status(403).json({
+      return sendError(res, 403, {
         error: 'Usuario deshabilitado',
         mensaje: 'La cuenta asociada a este token esta deshabilitada.',
         codigo: 'AUTH_USER_DISABLED'
       });
     }
 
-    return res.status(401).json({
+    return sendError(res, 401, {
       error: 'Token no válido',
       mensaje: 'El token de autenticacion es invalido o expiro.',
       codigo: 'INVALID_AUTH_TOKEN'

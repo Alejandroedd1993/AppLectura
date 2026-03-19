@@ -4,6 +4,7 @@ import multer from 'multer';
 import { processPdfUpload, detectPdfTables } from '../controllers/pdf.controller.js';
 import requireFirebaseAuth from '../middleware/firebaseAuth.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
+import { sendError } from '../utils/responseHelpers.js';
 
 const router = Router();
 const DEFAULT_PDF_MAX_BYTES = 20 * 1024 * 1024;
@@ -33,7 +34,7 @@ const uploadPdfMiddleware = (req, res, next) => {
     if (!err) return next();
 
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({
+      return sendError(res, 413, {
         error: `El archivo excede el limite de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB`,
         mensaje: `El archivo PDF supera el tamaño maximo permitido de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB.`,
         codigo: 'PDF_TOO_LARGE'
@@ -41,13 +42,14 @@ const uploadPdfMiddleware = (req, res, next) => {
     }
 
     if (err.code === 'UNSUPPORTED_MEDIA_TYPE') {
-      return res.status(415).json({
+      return sendError(res, 415, {
         error: 'Formato de archivo no soportado.',
+        mensaje: 'El tipo de archivo enviado no es compatible con procesamiento PDF.',
         codigo: 'UNSUPPORTED_PDF_TYPE'
       });
     }
 
-    return res.status(400).json({
+    return sendError(res, 400, {
       error: 'Error procesando upload de PDF',
       mensaje: 'No se pudo procesar la subida del archivo PDF.',
       codigo: 'PDF_UPLOAD_ERROR'

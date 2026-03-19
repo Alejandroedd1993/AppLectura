@@ -3,6 +3,8 @@
  */
 
 import axios from 'axios';
+import { sendError } from '../utils/responseHelpers.js';
+import { sendValidationError } from '../utils/validationError.js';
 
 /**
  * Genera glosario de términos clave del texto
@@ -21,7 +23,7 @@ export async function generateGlossary(req, res) {
     const { text, maxTerms = 6 } = req.body || {};
     
     if (!text || typeof text !== 'string' || text.trim().length < 200) {
-      return res.status(400).json({
+      return sendValidationError(res, {
         error: 'Texto invalido o muy corto',
         mensaje: 'Se requieren al menos 200 caracteres para generar glosario.',
         codigo: 'INVALID_GLOSSARY_INPUT'
@@ -63,7 +65,7 @@ export async function generateGlossary(req, res) {
     
     if (!responseSent) {
       responseSent = true;
-      res.status(500).json({
+      return sendError(res, 500, {
         error: 'Error generando glosario',
         mensaje: 'No se pudo generar el glosario en este momento.',
         codigo: 'GLOSSARY_GENERATION_ERROR',

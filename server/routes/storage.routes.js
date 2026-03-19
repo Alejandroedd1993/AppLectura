@@ -1,6 +1,7 @@
 import express from 'express';
 import requireFirebaseAuth from '../middleware/firebaseAuth.js';
 import { storageProxyLimiter } from '../middleware/rateLimiters.js';
+import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 
 const router = express.Router();
@@ -46,7 +47,7 @@ router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (re
     if (!upstreamResponse.ok) {
       const errorText = await upstreamResponse.text().catch(() => 'Upstream error');
       console.error('❌ [StorageProxy] Upstream failed:', upstreamResponse.status, errorText.substring(0, 200));
-      return res.status(upstreamResponse.status || 502).json({
+      return sendError(res, upstreamResponse.status || 502, {
         error: 'Upstream request failed',
         mensaje: 'No se pudo recuperar el archivo desde el origen remoto.',
         codigo: 'STORAGE_UPSTREAM_ERROR'
@@ -71,7 +72,7 @@ router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (re
     res.send(buffer);
   } catch (error) {
     console.error('❌ [StorageProxy] Error fetching file from Storage:', error.message);
-    res.status(500).json({
+    return sendError(res, 500, {
       error: 'Failed to retrieve file from Storage',
       mensaje: 'No se pudo recuperar el archivo solicitado.',
       codigo: 'STORAGE_FETCH_ERROR'

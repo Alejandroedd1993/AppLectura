@@ -81,7 +81,7 @@ export async function generarNotas(req, res) {
 
   // Validación por proveedor
   if (!['openai', 'deepseek', 'gemini'].includes(provider)) {
-    return res.status(400).json({
+    return sendError(res, 400, {
       error: 'API no soportada',
       mensaje: 'El proveedor solicitado no es valido.',
       codigo: 'UNSUPPORTED_AI_PROVIDER'
@@ -89,7 +89,7 @@ export async function generarNotas(req, res) {
   }
 
   if (!isProviderConfigured(provider)) {
-    return res.status(503).json({
+    return sendError(res, 503, {
       error: 'Proveedor no disponible',
       mensaje: 'El proveedor solicitado no esta configurado en el servidor.',
       codigo: 'AI_PROVIDER_NOT_CONFIGURED'
@@ -122,7 +122,7 @@ export async function generarNotas(req, res) {
   } catch (error) {
     console.error('Error en generarNotas:', error);
     const { status, body } = getNotesErrorResponse(error);
-    return res.status(status).json(body);
+    return sendError(res, status, body);
   }
 }
 

@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/responseCache.js';
+import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels } from '../utils/modelUtils.js';
@@ -194,7 +195,7 @@ export async function createChatCompletion(req, res) {
       console.warn('⚠️ [chat/completion] apiKey recibida desde cliente e ignorada por política de seguridad');
     }
     if (!cfg.apiKey) {
-      return res.status(503).json({
+      return sendError(res, 503, {
         error: `Proveedor ${provider} no configurado en servidor`,
         mensaje: 'El proveedor de IA solicitado no esta configurado en el servidor.',
         codigo: 'CHAT_PROVIDER_NOT_CONFIGURED',
@@ -424,7 +425,7 @@ export async function createChatCompletion(req, res) {
     const requestId = String(res.getHeader('x-request-id') || '').trim() || 'unknown';
     console.error('❌ Error en createChatCompletion:', { requestId, error });
     const status = error.status || 500;
-    res.status(status).json({
+    return sendError(res, status, {
       error: 'Error interno generando completion',
       mensaje: 'No se pudo completar la solicitud de chat en este momento.',
       codigo: 'CHAT_COMPLETION_ERROR',
@@ -439,7 +440,7 @@ export function getChatCacheStats(req, res) {
     return res.json(stats);
   } catch (error) {
     console.error('❌ Error obteniendo cache stats:', error);
-    return res.status(500).json({
+    return sendError(res, 500, {
       error: 'Error obteniendo estadisticas',
       mensaje: 'No se pudieron obtener las estadisticas del cache de chat.',
       codigo: 'CHAT_CACHE_STATS_ERROR'

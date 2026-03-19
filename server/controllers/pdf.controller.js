@@ -2,6 +2,7 @@
 import PdfService from '../services/pdf.service.js';
 import OCRService, { ocrPdfBuffer } from '../services/ocr.service.js';
 import TableDetectService, { detectTablesAndThumbnails } from '../services/tableDetect.service.js';
+import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 
 /**
@@ -39,7 +40,7 @@ export async function processPdfUpload(req, res) {
     res.json({ text: extractedText, meta: { ocr: false } });
   } catch (error) {
     console.error('Error en el controlador de procesamiento de PDF:', error);
-    res.status(500).json({
+    return sendError(res, 500, {
       error: 'Error interno del servidor al procesar el PDF.',
       mensaje: 'No se pudo procesar el archivo PDF en este momento.',
       codigo: 'PDF_PROCESSING_ERROR'
@@ -64,7 +65,7 @@ export async function detectPdfTables(req, res) {
     res.json(data);
   } catch (error) {
     console.error('Error en detección de tablas:', error);
-    res.status(500).json({
+    return sendError(res, 500, {
       error: 'No se pudo detectar tablas.',
       mensaje: 'La deteccion de tablas del PDF no pudo completarse.',
       codigo: 'PDF_TABLE_DETECTION_ERROR'
