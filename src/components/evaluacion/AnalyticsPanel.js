@@ -318,10 +318,22 @@ function getSessionLectureId(session) {
 }
 
 function getTrendLabel(trends) {
-  if (!trends?.hasSufficientData) return 'Datos limitados';
+  if (!trends?.hasSufficientData) return 'Sin tendencia';
   if (trends.overallTrend === 'improving') return 'Mejorando';
   if (trends.overallTrend === 'declining') return 'Bajando';
   return 'Estable';
+}
+
+function getTrendHelper(trends) {
+  if (!trends?.hasSufficientData) {
+    return 'Necesitas 2 intentos en una misma dimension para comparar evolucion.';
+  }
+
+  if (trends?.hasConsistencyData) {
+    return `Consistencia ${trends.consistencyScore.toFixed(1)}`;
+  }
+
+  return 'Tendencia calculada con la evidencia comparable disponible.';
 }
 
 const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
@@ -438,12 +450,7 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
               <OverviewCard theme={theme} $accent={theme.secondary}>
                 <span className="label">Tendencia</span>
                 <span className="value">{getTrendLabel(analytics.trends)}</span>
-                <span className="helper">
-                  {analytics.trends.hasConsistencyData
-                    ? `Consistencia ${analytics.trends.consistencyScore.toFixed(1)}`
-                    : 'Consistencia aun en construccion'
-                  }
-                </span>
+                <span className="helper">{getTrendHelper(analytics.trends)}</span>
               </OverviewCard>
             </OverviewGrid>
           )}

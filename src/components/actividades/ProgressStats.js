@@ -135,7 +135,7 @@ const CompactRow = styled.div`
   gap: 0.9rem;
   padding: 0.85rem 0.95rem;
   border-radius: 12px;
-  border: 1px dashed ${props => props.$accent || props.theme.border};
+  border: ${props => props.$solid ? '1px solid' : '1px dashed'} ${props => props.$accent || props.theme.border};
   background: ${props => props.$focus ? `${props.$accent}0D` : props.theme.background};
 `;
 
@@ -173,7 +173,9 @@ const CompactAction = styled.button`
   border: none;
   border-radius: 999px;
   padding: 0.55rem 0.85rem;
-  background: ${props => props.$accent || props.theme.primary || '#2563EB'};
+  background: ${props => props.$accent === '#94A3B8'
+    ? (props.theme.primary || '#2563EB')
+    : (props.$accent || props.theme.primary || '#2563EB')};
   color: white;
   font-size: 0.8rem;
   font-weight: 700;
@@ -229,6 +231,64 @@ export default function ProgressStats({ rubricProgress, progressSnapshot = null,
     () => sortActiveRubrics(snapshot.lists.started, snapshot.focusRubricId),
     [snapshot.lists.started, snapshot.focusRubricId]
   );
+  const isFullyCovered = snapshot.summary.coverageCount === snapshot.summary.totalRubrics;
+  const leadRubric = isFullyCovered ? activeRubrics[0] || null : null;
+  const secondaryActiveRubrics = isFullyCovered ? activeRubrics.slice(1) : [];
+
+  const renderActiveDetailCard = (rubric) => {
+    const accent = getAccent(rubric);
+    const currentScoreLabel = rubric.effectiveScore > 0 ? `${rubric.effectiveScore.toFixed(1)}/10` : 'Sin nota';
+    const bestScoreLabel = rubric.bestRecordedScore > 0
+      ? `${rubric.bestRecordedScore.toFixed(1)}/10`
+      : 'Sin historial';
+
+    return (
+      <DetailCard
+        key={rubric.rubricId}
+        $accent={accent}
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.22 }}
+      >
+        <CardHeader $accent={accent}>
+          <div className="title">
+            <strong>{rubric.artifactName}</strong>
+            <span>{rubric.name}</span>
+          </div>
+          <div className="badge">{rubric.badgeLabel}</div>
+        </CardHeader>
+
+        <StatList>
+          <StatRow>
+            <span>Estado actual</span>
+            <span>{rubric.currentStatusLabel}</span>
+          </StatRow>
+          <StatRow>
+            <span>Puntaje vigente</span>
+            <span>{currentScoreLabel}</span>
+          </StatRow>
+          <StatRow>
+            <span>Puntaje mas alto</span>
+            <span>{bestScoreLabel}</span>
+          </StatRow>
+          <StatRow>
+            <span>Ultima actividad</span>
+            <span>{formatSnapshotDate(rubric.lastActivityAt)}</span>
+          </StatRow>
+        </StatList>
+
+        {onSelectRubric && (
+          <CardAction
+            type="button"
+            $accent={accent}
+            onClick={() => onSelectRubric(rubric.rubricId)}
+          >
+            Abrir dimension
+          </CardAction>
+        )}
+      </DetailCard>
+    );
+  };
 
   if (!snapshot.hasData) {
     return (
@@ -249,66 +309,61 @@ export default function ProgressStats({ rubricProgress, progressSnapshot = null,
     <Container>
       <Header>
         <h3>Mi progreso en lectura critica</h3>
-        <p>Esta vista se enfoca en el detalle activo de la lectura y deja en compacto lo que todavia falta por abrir.</p>
+        <p>Esta vista prioriza la dimension en foco y compacta el resto del mapa para que puedas decidir tu siguiente movimiento sin tanto scroll.</p>
       </Header>
 
-      <SectionTitle>Dimensiones activas ahora</SectionTitle>
-      <DetailGrid>
-        {activeRubrics.map((rubric) => {
-          const accent = getAccent(rubric);
-          const currentScoreLabel = rubric.effectiveScore > 0 ? `${rubric.effectiveScore.toFixed(1)}/10` : 'Sin nota';
-          const bestScoreLabel = rubric.bestRecordedScore > 0
-            ? `${rubric.bestRecordedScore.toFixed(1)}/10`
-            : 'Sin historial';
+      {isFullyCovered ? (
+        <>
+          {leadRubric && (
+            <>
+              <SectionTitle>Dimension en foco ahora</SectionTitle>
+              <DetailGrid style={{ gridTemplateColumns: '1fr' }}>
+                {renderActiveDetailCard(leadRubric)}
+              </DetailGrid>
+            </>
+          )}
 
-          return (
-            <DetailCard
-              key={rubric.rubricId}
-              $accent={accent}
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22 }}
-            >
-              <CardHeader $accent={accent}>
-                <div className="title">
-                  <strong>{rubric.artifactName}</strong>
-                  <span>{rubric.name}</span>
-                </div>
-                <div className="badge">{rubric.badgeLabel}</div>
-              </CardHeader>
-
-              <StatList>
-                <StatRow>
-                  <span>Estado actual</span>
-                  <span>{rubric.currentStatusLabel}</span>
-                </StatRow>
-                <StatRow>
-                  <span>Puntaje vigente</span>
-                  <span>{currentScoreLabel}</span>
-                </StatRow>
-                <StatRow>
-                  <span>Puntaje mas alto</span>
-                  <span>{bestScoreLabel}</span>
-                </StatRow>
-                <StatRow>
-                  <span>Ultima actividad</span>
-                  <span>{formatSnapshotDate(rubric.lastActivityAt)}</span>
-                </StatRow>
-              </StatList>
-
-              {onSelectRubric && (
-                <CardAction
-                  type="button"
-                  $accent={accent}
-                  onClick={() => onSelectRubric(rubric.rubricId)}
-                >
-                  Abrir dimension
-                </CardAction>
-              )}
-            </DetailCard>
-          );
-        })}
-      </DetailGrid>
+          {secondaryActiveRubrics.length > 0 && (
+            <>
+              <SectionTitle style={{ marginTop: '1.25rem' }}>Resto del mapa activo</SectionTitle>
+              <CompactList>
+                {secondaryActiveRubrics.map((rubric) => {
+                  const accent = getAccent(rubric);
+                  const currentScoreLabel = rubric.effectiveScore > 0 ? `${rubric.effectiveScore.toFixed(1)}/10` : 'Sin nota';
+                  return (
+                    <CompactRow key={rubric.rubricId} $accent={accent} $solid>
+                      <CompactCopy>
+                        <strong>{rubric.artifactName}</strong>
+                        <p>{rubric.name}. {rubric.currentStatusLabel} con {currentScoreLabel}. Ultima actividad: {formatSnapshotDate(rubric.lastActivityAt)}.</p>
+                      </CompactCopy>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                        <CompactTag $accent={accent}>{rubric.badgeLabel}</CompactTag>
+                        <CompactTag $accent={accent}>{currentScoreLabel}</CompactTag>
+                        {onSelectRubric && (
+                          <CompactAction
+                            type="button"
+                            $accent={accent}
+                            onClick={() => onSelectRubric(rubric.rubricId)}
+                          >
+                            Abrir
+                          </CompactAction>
+                        )}
+                      </div>
+                    </CompactRow>
+                  );
+                })}
+              </CompactList>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <SectionTitle>Dimensiones activas ahora</SectionTitle>
+          <DetailGrid>
+            {activeRubrics.map((rubric) => renderActiveDetailCard(rubric))}
+          </DetailGrid>
+        </>
+      )}
 
       {snapshot.lists.unstarted.length > 0 && (
         <>

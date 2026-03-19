@@ -287,6 +287,15 @@ function buildStageSummary(summary) {
     };
   }
 
+  if (summary.weakCount > 0) {
+    return {
+      id: 'balanced-focus',
+      label: 'Cobertura completa con foco de mejora',
+      tone: 'success',
+      description: 'Ya abriste todo el mapa. Ahora conviene reforzar las dimensiones con menor puntaje para equilibrar el desempeno general.'
+    };
+  }
+
   if (summary.strongCount >= 4) {
     return {
       id: 'solid',
@@ -395,6 +404,7 @@ export function buildProgressSnapshot({
   const totalAttempts = rubrics.reduce((sum, rubric) => sum + rubric.totalAttempts, 0);
   const coveragePercent = Math.round((coverageCount / RUBRIC_ORDER.length) * 100);
   const strongCount = rubrics.filter((rubric) => (rubric.scoreBand?.rank || 0) >= 3).length;
+  const weakCount = rubrics.filter((rubric) => rubric.evaluated && (rubric.scoreBand?.rank || 0) > 0 && (rubric.scoreBand?.rank || 0) < 3).length;
   const hasMeaningfulTimeSeries = rubrics.some((rubric) => rubric.formativeAttempts >= 2);
   const stage = buildStageSummary({
     totalRubrics: RUBRIC_ORDER.length,
@@ -402,6 +412,7 @@ export function buildProgressSnapshot({
     evaluatedCount,
     pendingCount,
     strongCount,
+    weakCount,
     totalAttempts
   });
   const nextAction = buildNextAction(rubrics, {
@@ -410,6 +421,7 @@ export function buildProgressSnapshot({
     evaluatedCount,
     pendingCount,
     strongCount,
+    weakCount,
     totalAttempts
   });
   const focusRubricId = nextAction?.rubricId || null;
@@ -423,6 +435,7 @@ export function buildProgressSnapshot({
       evaluatedCount,
       pendingCount,
       strongCount,
+      weakCount,
       totalAttempts,
       bestScore,
       averageEvaluatedScore,

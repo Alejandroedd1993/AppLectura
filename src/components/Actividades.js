@@ -38,6 +38,14 @@ const Container = styled.div`
   margin: 0 auto;
   background: ${props => props.theme.background || '#f8f9fa'};
   min-height: calc(100vh - 120px);
+
+  @media (max-width: 768px) {
+    padding: 1rem;
+  }
+
+  @media (max-width: 480px) {
+    padding: 0.8rem;
+  }
 `;
 
 const Header = styled.div`
@@ -54,6 +62,12 @@ const HeaderTitle = styled.h1`
   display: flex;
   align-items: center;
   gap: 0.75rem;
+
+  @media (max-width: 640px) {
+    flex-wrap: wrap;
+    font-size: 1.4rem;
+    gap: 0.45rem;
+  }
 `;
 
 const HeaderDescription = styled.p`
@@ -61,6 +75,10 @@ const HeaderDescription = styled.p`
   color: ${props => props.theme.textSecondary || '#666'};
   font-size: 1rem;
   line-height: 1.5;
+
+  @media (max-width: 640px) {
+    font-size: 0.92rem;
+  }
 `;
 
 const TabsContainer = styled.div`
@@ -139,6 +157,10 @@ const Section = styled.section`
   border-radius: 12px;
   padding: 1.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+
+  @media (max-width: 640px) {
+    padding: 1rem;
+  }
 `;
 
 const ProgressHero = styled.div`
@@ -278,6 +300,10 @@ const HeroActionCard = styled.div`
     line-height: 1.55;
     font-size: 0.92rem;
   }
+
+  @media (max-width: 640px) {
+    padding: 0.9rem;
+  }
 `;
 
 const HeroActionButton = styled.button`
@@ -300,6 +326,12 @@ const HeroActionButton = styled.button`
     transform: translateY(-1px);
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
   }
+
+  @media (max-width: 640px) {
+    width: 100%;
+    align-self: stretch;
+    justify-content: center;
+  }
 `;
 
 const SectionTitle = styled.h3`
@@ -310,6 +342,10 @@ const SectionTitle = styled.h3`
   display: flex;
   align-items: center;
   gap: 0.5rem;
+
+  @media (max-width: 640px) {
+    font-size: 1.1rem;
+  }
 `;
 
 const ResetButton = styled.button`
@@ -566,6 +602,7 @@ export default function Actividades() {
     activitiesProgress,
     lectureId
   }), [rubricProgress, activitiesProgress, lectureId]);
+  const isProgressFullyCovered = progressSnapshot.summary.coverageCount === progressSnapshot.summary.totalRubrics;
 
   // ARIA: Cerrar modal con Escape
   const cancelBtnRef = useRef(null);
@@ -853,6 +890,28 @@ export default function Actividades() {
                 </HeroActionCard>
               )}
             </ProgressHero>
+            <div style={{
+              margin: '1rem 0 1.25rem',
+              padding: '0.8rem 1rem',
+              background: (theme.infoBg || `${theme.primary}10`),
+              border: `1px solid ${theme.primary}35`,
+              borderRadius: '12px',
+              color: theme.textSecondary,
+              fontSize: '0.85rem',
+              lineHeight: 1.55,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.65rem'
+            }}>
+              <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>💡</span>
+              <span>
+                <strong style={{ color: theme.textPrimary }}>Tip rapido:</strong>{' '}
+                {isProgressFullyCovered
+                  ? 'usa la dimension sugerida para equilibrar el mapa; las demas siguen disponibles por si quieres revisar evidencia o mejorar una nota fuerte.'
+                  : 'haz clic en cualquier tarjeta de rubrica para ir a Dimensiones y abrir el artefacto correspondiente para revisarlo o mejorarlo.'
+                }
+              </span>
+            </div>
             <Wrapper $layout="sidebar" theme={theme}>
               <Section theme={theme}>
                 <SectionTitle theme={theme}>
@@ -866,7 +925,7 @@ export default function Actividades() {
                 />
 
                 {/* 💡 Ayuda para el usuario */}
-                <p style={{
+                {false && <p style={{
                   marginTop: '1rem',
                   padding: '0.75rem 1rem',
                   background: theme.primary + '10',
@@ -883,7 +942,7 @@ export default function Actividades() {
                   <span>
                     <strong>Tip:</strong> Haz clic en cualquier tarjeta de rúbrica para ir a la vista de dimensiones y abrir el artefacto correspondiente para revisarlo o mejorarlo.
                   </span>
-                </p>
+                </p>}
 
                 {/* 📈 Gráficas de progreso (dashboard analítico) */}
                 <AnalyticsPanel
@@ -898,14 +957,14 @@ export default function Actividades() {
                   <span>📊</span>
                   Mi Progreso Detallado
                 </SectionTitle>
-                <p style={{
+                {false && <p style={{
                   margin: '0 0 1rem 0',
                   color: theme.textSecondary,
                   fontSize: '0.88rem',
                   lineHeight: 1.55
                 }}>
                   Esta columna resume <strong>solo la lectura actual</strong> y te deja exportar o reiniciar este avance sin mezclar otras lecturas.
-                </p>
+                </p>}
 
                 {/* Panel de Estadísticas de Progreso */}
                 <ProgressStats

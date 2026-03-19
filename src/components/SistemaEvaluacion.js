@@ -6,8 +6,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AppContext } from '../context/AppContext';
 import { lightTheme, darkTheme } from '../styles/theme';
 import EnhancedDashboard from './evaluacion/EnhancedDashboard';
-import AnalyticsPanel from './evaluacion/AnalyticsPanel';
-import ExportPanel from './evaluacion/ExportPanel';
 import GuidedPracticeMode from './evaluacion/GuidedPracticeMode';
 import HintsSystem from './evaluacion/HintsSystem';
 import PrerequisitosChecklist from './evaluacion/PrerequisitosChecklist';
