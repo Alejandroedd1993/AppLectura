@@ -90,24 +90,25 @@ async function __enqueueOwnedCloudCleanupJob({ courseId, studentUid, reason = 't
     }
 
     const payload = await res.json();
-    const processFailed = payload?.processNow && payload?.processResult && payload?.processResult?.ok === false;
-    if (payload?.ok === false || processFailed) {
+    const normalizedPayload = payload?.ok === true && payload?.data ? payload.data : payload;
+    const processFailed = normalizedPayload?.processNow && normalizedPayload?.processResult && normalizedPayload?.processResult?.ok === false;
+    if (payload?.ok === false || normalizedPayload?.ok === false || processFailed) {
       return {
         ok: false,
         skipped: true,
         reason: processFailed ? 'backend_process_failed' : 'backend_payload_rejected',
         status: res.status,
-        details: payload?.error || payload?.processResult?.error || null,
-        processResult: payload?.processResult || null,
-        jobId: payload?.jobId || null
+        details: payload?.error || normalizedPayload?.error || normalizedPayload?.processResult?.error || null,
+        processResult: normalizedPayload?.processResult || null,
+        jobId: normalizedPayload?.jobId || null
       };
     }
 
     return {
       ok: true,
-      queued: Boolean(payload?.queued),
-      jobId: payload?.jobId || null,
-      processResult: payload?.processResult || null
+      queued: Boolean(normalizedPayload?.queued),
+      jobId: normalizedPayload?.jobId || null,
+      processResult: normalizedPayload?.processResult || null
     };
   } catch (error) {
     return {

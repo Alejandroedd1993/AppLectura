@@ -4,7 +4,7 @@
 
 import { fetchWithTimeout } from './netUtils';
 import logger from './logger';
-import { buildBackendError } from '../services/unifiedAiService';
+import { buildBackendError, unwrapBackendSuccessPayload } from '../services/unifiedAiService';
 import { buildBackendUrl, getBackendUrl as readBackendUrl } from './backendConfig';
 
 /**
@@ -52,7 +52,7 @@ export const processPdfWithBackend = async (file) => {
     });
   }
 
-  const result = await response.json();
+  const result = unwrapBackendSuccessPayload(await response.json());
   const extractedText = result.text || result.content || '';
   
   logger.log('✅ Texto recibido del backend, longitud:', extractedText.length, 'caracteres');

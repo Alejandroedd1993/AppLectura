@@ -2,6 +2,7 @@
 import PdfService from '../services/pdf.service.js';
 import OCRService, { ocrPdfBuffer } from '../services/ocr.service.js';
 import TableDetectService, { detectTablesAndThumbnails } from '../services/tableDetect.service.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 
@@ -30,14 +31,22 @@ export async function processPdfUpload(req, res) {
       try {
         const ocr = await ocrPdfBuffer(pdfBuffer, { lang: 'spa', maxPages: 3 });
         if (ocr?.text && ocr.text.trim().length > (extractedText?.trim().length || 0)) {
-          return res.json({ text: ocr.text, meta: { ocr: true, confidence: ocr.confidence, pagesProcessed: ocr.pagesProcessed, totalPages: ocr.totalPages } });
+          return sendSuccess(res, {
+            text: ocr.text,
+            meta: {
+              ocr: true,
+              confidence: ocr.confidence,
+              pagesProcessed: ocr.pagesProcessed,
+              totalPages: ocr.totalPages
+            }
+          });
         }
       } catch (ocrErr) {
         console.warn('OCR no disponible o falló, devolviendo texto de pdf-parse:', ocrErr.message);
       }
     }
 
-    res.json({ text: extractedText, meta: { ocr: false } });
+    return sendSuccess(res, { text: extractedText, meta: { ocr: false } });
   } catch (error) {
     console.error('Error en el controlador de procesamiento de PDF:', error);
     return sendError(res, 500, {
@@ -62,7 +71,7 @@ export async function detectPdfTables(req, res) {
   const pdfBuffer = req.file.buffer;
   try {
     const data = await detectTablesAndThumbnails(pdfBuffer, { maxPages: 5, scale: 1.8 });
-    res.json(data);
+    return sendSuccess(res, data);
   } catch (error) {
     console.error('Error en detección de tablas:', error);
     return sendError(res, 500, {

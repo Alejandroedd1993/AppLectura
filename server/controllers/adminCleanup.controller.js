@@ -4,6 +4,7 @@ import {
   processOwnedCourseCleanupJob,
   processPendingOwnedCleanupJobs
 } from '../services/ownedCourseCleanup.service.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
@@ -75,8 +76,7 @@ const enqueueOwnedCleanup = async (req, res) => {
       }
     }
 
-    return res.json({
-      ok: true,
+    return sendSuccess(res, {
       queued: true,
       jobId,
       processNow,
@@ -123,7 +123,7 @@ const runPendingOwnedCleanup = async (req, res) => {
 
     const maxJobs = Number(req.body?.maxJobs || req.query?.maxJobs || 20);
     const result = await processPendingOwnedCleanupJobs({ maxJobs });
-    return res.json({ ok: true, ...result });
+    return sendSuccess(res, result);
   } catch (error) {
     return sendError(res, 500, {
       ok: false,

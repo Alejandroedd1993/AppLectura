@@ -83,11 +83,14 @@ describe('adminCleanup.controller', () => {
       requestedByUid: 'teacher-1'
     }));
     expect(mockProcessOwnedCourseCleanupJob).toHaveBeenCalledWith('owned_course-1_student-1');
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
       ok: true,
-      queued: true,
-      jobId: 'owned_course-1_student-1'
-    }));
+      data: expect.objectContaining({
+        queued: true,
+        jobId: 'owned_course-1_student-1'
+      })
+    });
   });
 
   test('enqueueOwnedCleanup responde error si processNow falla en backend', async () => {
@@ -159,5 +162,42 @@ describe('adminCleanup.controller', () => {
       codigo: 'ADMIN_CLEANUP_FORBIDDEN',
       mensaje: expect.any(String)
     }));
+  });
+
+  test('runPendingOwnedCleanup responde success envelope cuando el worker es válido', async () => {
+    mockIsFirebaseAdminConfigured.mockReturnValue(true);
+    mockProcessPendingOwnedCleanupJobs.mockResolvedValue({
+      processedJobs: 2,
+      succeeded: 2,
+      failed: 0
+    });
+
+    const originalSecret = process.env.CLEANUP_WORKER_SECRET;
+    process.env.CLEANUP_WORKER_SECRET = 'secret-ok';
+
+    const req = {
+      body: { maxJobs: 10 },
+      query: {},
+      get: jest.fn(() => 'secret-ok')
+    };
+    const res = makeRes();
+
+    await adminCleanupController.runPendingOwnedCleanup(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      data: {
+        processedJobs: 2,
+        succeeded: 2,
+        failed: 0
+      }
+    });
+
+    if (originalSecret === undefined) {
+      delete process.env.CLEANUP_WORKER_SECRET;
+    } else {
+      process.env.CLEANUP_WORKER_SECRET = originalSecret;
+    }
   });
 });
