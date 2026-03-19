@@ -5,6 +5,7 @@
 import axios from 'axios';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 /**
  * Genera glosario de términos clave del texto
@@ -57,7 +58,7 @@ export async function generateGlossary(req, res) {
     
     if (!responseSent) {
       responseSent = true;
-      res.json(result);
+      return sendSuccess(res, result);
     }
 
   } catch (error) {

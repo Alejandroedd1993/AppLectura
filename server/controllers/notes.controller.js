@@ -2,6 +2,7 @@ import { generarNotasConOpenAI, generarNotasConDeepSeek, generarNotasConGemini }
 import { notesSchema } from '../validators/schemas.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendError } from '../utils/responseHelpers.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 function isProviderConfigured(provider) {
   if (provider === 'openai') return Boolean(process.env.OPENAI_API_KEY);
@@ -118,7 +119,7 @@ export async function generarNotas(req, res) {
         codigo: 'INVALID_NOTES_RESPONSE'
       });
     }
-    return res.json(parsed.data);
+    return sendSuccess(res, parsed.data);
   } catch (error) {
     console.error('Error en generarNotas:', error);
     const { status, body } = getNotesErrorResponse(error);

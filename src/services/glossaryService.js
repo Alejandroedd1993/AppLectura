@@ -1,4 +1,4 @@
-import { buildBackendError, chatCompletion, extractContent } from './unifiedAiService';
+import { buildBackendError, chatCompletion, extractContent, unwrapBackendSuccessPayload } from './unifiedAiService';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { GLOSSARY_TERM_TIMEOUT_MS } from '../constants/timeoutConstants';
@@ -142,7 +142,7 @@ export async function generateGlossary(fullText, _minComplexity = 5) {
       });
     }
 
-    const data = await response.json();
+    const data = unwrapBackendSuccessPayload(await response.json());
     devLog(`✅ [GlossaryService] ${data.terms.length} términos generados`);
     
     // Mapear al formato esperado por el frontend

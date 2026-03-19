@@ -5,6 +5,7 @@ import express from 'express';
 import webSearchController from '../controllers/webSearch.controller.js';
 import { webSearchLimiter } from '../middleware/rateLimiters.js';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 const router = express.Router();
 
@@ -49,7 +50,7 @@ const webSearchTestHandler = (req, res) => {
     estado: 'Operativo'
   };
   
-  res.json({
+  return sendSuccess(res, {
     mensaje: 'Servicio de búsqueda web contextual',
     configuracion,
     ejemplo_uso: {

@@ -20,6 +20,7 @@ import assessmentRoutes from './routes/assessment.route.js';
 
 import performanceMiddleware from './middleware/performance.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { sendSuccess } from './utils/apiResponse.js';
 import { sendValidationError } from './utils/validationError.js';
 import { parseBool } from './utils/envUtils.js';
 import { attachRequestContext } from './utils/requestContext.js';
@@ -161,7 +162,7 @@ app.use((err, req, res, next) => {
 
 // Ruta de salud para Render (en raíz)
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
+  return sendSuccess(res, {
     status: 'ok', 
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
@@ -176,7 +177,7 @@ app.get('/api/health', (req, res) => {
     gemini: process.env.GEMINI_API_KEY ? "configurada" : "no configurada"
   };
   
-  res.json({ 
+  return sendSuccess(res, {
     status: 'ok', 
     apis: apiStatus,
     timestamp: new Date().toISOString(),

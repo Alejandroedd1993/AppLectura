@@ -1,6 +1,7 @@
 import { ocrImageBuffer } from '../services/ocr.service.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 export async function ocrImageUpload(req, res) {
   try {
@@ -13,7 +14,10 @@ export async function ocrImageUpload(req, res) {
     }
     const buffer = req.file.buffer;
     const result = await ocrImageBuffer(buffer, { lang: 'spa' });
-    res.json({ text: result.text || '', confidence: result.confidence });
+    return sendSuccess(res, {
+      text: result.text || '',
+      confidence: result.confidence
+    });
   } catch (err) {
     console.error('Error en OCR de imagen:', err);
     return sendError(res, 500, {

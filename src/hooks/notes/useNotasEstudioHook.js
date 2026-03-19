@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { fetchWithTimeout, replaceAbortController } from '../../utils/netUtils';
 import { buildBackendUrl } from '../../utils/backendConfig';
 import { NotesServices } from '../../services/notes';
-import { buildBackendError } from '../../services/unifiedAiService';
+import { buildBackendError, unwrapBackendSuccessPayload } from '../../services/unifiedAiService';
 import logger from '../../utils/logger';
 
 /**
@@ -341,7 +341,7 @@ const useNotasEstudio = (texto, completeAnalysis = null, textoId = null, courseI
       }, 45000);
       
       if (res.ok) {
-        const notasGeneradas = await res.json();
+        const notasGeneradas = unwrapBackendSuccessPayload(await res.json());
         logger.log('[useNotasEstudio] Notas generadas con contexto del backend');
         setOrigenNotas('backend');
         return ajustarTarjetas(notasGeneradas, textoParam, contextoEnriquecido, numeroTarjetas);

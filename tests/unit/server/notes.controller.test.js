@@ -59,4 +59,28 @@ describe('notes.controller', () => {
       codigo: 'INVALID_NOTES_RESPONSE'
     }));
   });
+
+  test('generarNotas responde success envelope cuando el proveedor devuelve notas validas', async () => {
+    generarNotasConOpenAI.mockResolvedValue({
+      resumen: 'Resumen válido',
+      notas: [{ titulo: 'Idea clave', contenido: 'Contenido válido' }],
+      preguntas: ['¿Qué significa esto?'],
+      tarjetas: [{ frente: 'Frente', reverso: 'Reverso' }]
+    });
+    const req = { body: { texto: 'Texto suficiente para generar notas.', api: 'openai' } };
+    const res = makeRes();
+
+    await generarNotas(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      data: {
+        resumen: 'Resumen válido',
+        notas: [{ titulo: 'Idea clave', contenido: 'Contenido válido' }],
+        preguntas: ['¿Qué significa esto?'],
+        tarjetas: [{ frente: 'Frente', reverso: 'Reverso' }]
+      }
+    });
+  });
 });

@@ -88,6 +88,14 @@ export async function buildBackendError(response, options = {}) {
   return error;
 }
 
+export function unwrapBackendSuccessPayload(payload) {
+  if (payload && typeof payload === 'object' && payload.ok === true && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+    return payload.data;
+  }
+
+  return payload;
+}
+
 export async function chatCompletion({
   messages,
   provider = 'deepseek',
