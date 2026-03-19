@@ -76,6 +76,10 @@ async function requestJson({ method, path, auth = false, body }) {
     data = null;
   }
 
+  if (data?.ok === true && Object.prototype.hasOwnProperty.call(data, "data")) {
+    data = data.data;
+  }
+
   return {
     url,
     ok: res.ok,

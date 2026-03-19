@@ -2,6 +2,12 @@
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3001";
 
+function unwrapSuccessPayload(payload) {
+  return payload?.ok === true && Object.prototype.hasOwnProperty.call(payload, "data")
+    ? payload.data
+    : payload;
+}
+
 async function timedPost(name, endpoint, payload) {
   const start = Date.now();
   try {
@@ -38,9 +44,10 @@ async function timedPost(name, endpoint, payload) {
       return;
     }
 
-    const fr = data.finish_reason || data.finishReason || "n/a";
+    const normalized = unwrapSuccessPayload(data);
+    const fr = normalized.finish_reason || normalized.finishReason || "n/a";
     console.log(`OK ${name}: ${ms}ms | finish_reason=${fr}`);
-    console.log(`sample: ${JSON.stringify(data).slice(0, 200)}...\n`);
+    console.log(`sample: ${JSON.stringify(normalized).slice(0, 200)}...\n`);
   } catch (e) {
     const ms = Date.now() - start;
     console.error(`ERR ${name}: ${ms}ms | ${e.name} ${e.message}\n`);
@@ -51,15 +58,15 @@ async function timedPost(name, endpoint, payload) {
   console.log("Diagnóstico de rendimiento:\n");
 
   await timedPost("Chat Completion (no stream)", "/api/chat/completion", {
-    message: "Explica en 3 frases qué es la fotosíntesis.",
+    messages: [{ role: "user", content: "Explica en 3 frases qué es la fotosíntesis." }],
     provider: "openai",
     model: "gpt-3.5-turbo",
-    maxTokens: 512,
+    max_tokens: 512,
     stream: false,
   });
 
   await timedPost("Text Analysis", "/api/analysis/text", {
-    text: "La fotosíntesis es un proceso biológico de plantas.",
-    analysisType: "summary",
+    texto: "La fotosíntesis es un proceso biológico de plantas que convierte la luz en energía química y sostiene buena parte de las cadenas tróficas terrestres.",
+    api: "smart",
   });
 })();

@@ -19,12 +19,18 @@ function log(message, color = 'reset') {
   console.log(`${colors[color]}${message}${colors.reset}`);
 }
 
+function unwrapSuccessPayload(payload) {
+  return payload?.ok === true && Object.prototype.hasOwnProperty.call(payload, 'data')
+    ? payload.data
+    : payload;
+}
+
 async function testBackendAvailability() {
   log('\n📋 TEST 1: Verificar disponibilidad del backend', 'cyan');
   
   try {
     const response = await fetch('http://localhost:3001/api/web-search/test');
-    const data = await response.json();
+    const data = unwrapSuccessPayload(await response.json());
     
     if (response.ok) {
       log('✅ Backend disponible', 'green');
@@ -58,13 +64,12 @@ async function testWebSearch() {
       })
     });
     
-    const data = await response.json();
+    const data = unwrapSuccessPayload(await response.json());
     
     if (response.ok && data.resultados) {
       log('✅ Búsqueda exitosa', 'green');
       log(`   Resultados: ${data.resultados.length}`, 'blue');
       log(`   API utilizada: ${data.api_utilizada}`, 'blue');
-      log(`   Tiempo: ${data.tiempo_ms}ms`, 'blue');
       
       if (data.resultados.length > 0) {
         log('\n   Primer resultado:', 'blue');
@@ -119,7 +124,7 @@ async function checkWebSearchServiceRefactor() {
   const path = require('path');
   
   try {
-    const servicePath = path.join(__dirname, '..', 'src', 'services', 'webSearchService.js');
+    const servicePath = path.join(__dirname, '..', 'src', 'utils', 'fetchWebSearch.js');
     const serviceContent = fs.readFileSync(servicePath, 'utf8');
     
     const hasBackendCall = serviceContent.includes('/api/web-search');
@@ -129,6 +134,7 @@ async function checkWebSearchServiceRefactor() {
     
     if (hasBackendCall && !hasOldTavilyCall) {
       log('✅ Servicio refactorizado correctamente', 'green');
+      log('   ✓ Usa src/utils/fetchWebSearch.js', 'blue');
       log('   ✓ Usa endpoint /api/web-search', 'blue');
       log('   ✓ No hace llamadas directas a APIs externas', 'blue');
       return true;
@@ -192,7 +198,7 @@ async function runAllTests() {
       log('\n💡 Solución: Agrega REACT_APP_TAVILY_API_KEY=configured en .env', 'yellow');
     }
     if (!results.refactor) {
-      log('\n💡 Solución: Refactoriza webSearchService.js para usar /api/web-search', 'yellow');
+      log('\n💡 Solución: Revisa src/utils/fetchWebSearch.js y confirma que siga apuntando a /api/web-search', 'yellow');
     }
   }
   

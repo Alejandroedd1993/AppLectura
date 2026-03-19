@@ -98,6 +98,20 @@ function Has-JsonKey {
     return ($null -ne $prop) -and ($null -ne $prop.Value)
 }
 
+function Resolve-SuccessPayload {
+    param($Object)
+
+    if ($null -eq $Object) { return $null }
+
+    $okProp = $Object.PSObject.Properties['ok']
+    $dataProp = $Object.PSObject.Properties['data']
+    if ($null -ne $okProp -and $okProp.Value -eq $true -and $null -ne $dataProp) {
+        return $dataProp.Value
+    }
+
+    return $Object
+}
+
 function Invoke-SmokeTest {
     param(
         [Parameter(Mandatory = $true)]
@@ -159,6 +173,8 @@ function Invoke-SmokeTest {
         catch {
             $jsonObj = $null
         }
+
+        $jsonObj = Resolve-SuccessPayload -Object $jsonObj
 
         foreach ($k in $Test.requiredKeys) {
             if (-not (Has-JsonKey -Object $jsonObj -Key $k)) {

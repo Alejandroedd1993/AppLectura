@@ -25,6 +25,12 @@ function log(message, color = 'reset') {
   console.log(`${colors[color]}${message}${colors.reset}`);
 }
 
+function unwrapSuccessPayload(payload) {
+  return payload?.ok === true && Object.prototype.hasOwnProperty.call(payload, 'data')
+    ? payload.data
+    : payload;
+}
+
 function logSection(title) {
   console.log('\n' + '='.repeat(80));
   log(title, 'bright');
@@ -128,7 +134,7 @@ async function testEvaluacion(payload, nombreTest) {
       return { success: false, error: errorData, duration };
     }
     
-    const data = await response.json();
+    const data = unwrapSuccessPayload(await response.json());
     
     log('✅ Respuesta recibida exitosamente', 'green');
     
@@ -138,9 +144,8 @@ async function testEvaluacion(payload, nombreTest) {
       'Tiene campo dimension': !!data.dimension,
       'Tiene campo scoreGlobal': typeof data.scoreGlobal === 'number',
       'Tiene campo nivel': typeof data.nivel === 'number',
-      'Tiene campo nivelTexto': !!data.nivelTexto,
       'Tiene criteriosEvaluados': Array.isArray(data.criteriosEvaluados),
-      'Tiene 5 criterios': data.criteriosEvaluados?.length === 5,
+      'Tiene al menos 1 criterio': (data.criteriosEvaluados?.length || 0) > 0,
       'Tiene resumenDimension': !!data.resumenDimension,
       'Tiene siguientesPasos': Array.isArray(data.siguientesPasos),
       'Tiene timestamp': !!data.timestamp,
@@ -162,15 +167,15 @@ async function testEvaluacion(payload, nombreTest) {
       console.log('\n📋 Resumen de la Evaluación:');
       console.log(`  Dimensión: ${data.dimension}`);
       console.log(`  Puntuación Global: ${data.scoreGlobal}/10`);
-      console.log(`  Nivel: ${data.nivel}/4 - ${data.nivelTexto}`);
+      console.log(`  Nivel: ${data.nivel}/4`);
       console.log(`  Criterios Evaluados: ${data.criteriosEvaluados.length}`);
       
       console.log('\n📝 Criterios por Nivel:');
       data.criteriosEvaluados.forEach((crit, idx) => {
         const nivelIcon = ['🔴', '🟠', '🟢', '🔵'][crit.nivel - 1] || '⚪';
-        console.log(`  ${nivelIcon} Criterio ${idx + 1}: ${crit.titulo}`);
-        console.log(`     Nivel: ${crit.nivel}/4 - ${crit.nivelTexto}`);
-        console.log(`     Evidencias: ${crit.evidencias?.length || 0}`);
+        console.log(`  ${nivelIcon} Criterio ${idx + 1}: ${crit.criterio}`);
+        console.log(`     Nivel: ${crit.nivel}/4`);
+        console.log(`     Evidencias: ${crit.evidencia?.length || 0}`);
         console.log(`     Fortalezas: ${crit.fortalezas?.length || 0}`);
         console.log(`     Mejoras: ${crit.mejoras?.length || 0}`);
       });

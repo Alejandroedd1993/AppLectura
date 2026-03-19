@@ -6,6 +6,20 @@ Write-Host "  Prueba de Evaluación Criterial - Backend Real     " -ForegroundCo
 Write-Host "=====================================================" -ForegroundColor Cyan
 Write-Host ""
 
+function Resolve-SuccessPayload {
+    param($Object)
+
+    if ($null -eq $Object) { return $null }
+
+    $okProp = $Object.PSObject.Properties['ok']
+    $dataProp = $Object.PSObject.Properties['data']
+    if ($null -ne $okProp -and $okProp.Value -eq $true -and $null -ne $dataProp) {
+        return $dataProp.Value
+    }
+
+    return $Object
+}
+
 # Verificar que el servidor esté corriendo
 Write-Host "1. Verificando servidor..." -ForegroundColor Yellow
 try {
@@ -56,7 +70,7 @@ try {
     Write-Host ""
     
     # Parsear respuesta
-    $data = $response.Content | ConvertFrom-Json
+    $data = Resolve-SuccessPayload ($response.Content | ConvertFrom-Json)
     
     # Mostrar resultado
     Write-Host "=====================================================" -ForegroundColor Cyan
@@ -65,14 +79,14 @@ try {
     Write-Host ""
     
     Write-Host "📊 PUNTUACIÓN GENERAL" -ForegroundColor Yellow
-    Write-Host "   Puntaje: $($data.evaluacion.puntajeGeneral)/10" -ForegroundColor White
-    Write-Host "   Nivel: $($data.evaluacion.nivelLogrado)" -ForegroundColor White
+    Write-Host "   Puntaje: $($data.scoreGlobal)/10" -ForegroundColor White
+    Write-Host "   Nivel: $($data.nivel)" -ForegroundColor White
     Write-Host ""
     
     Write-Host "📋 CRITERIOS EVALUADOS (5 criterios)" -ForegroundColor Yellow
     $criterioNum = 1
-    foreach ($criterio in $data.evaluacion.criterios) {
-        $nivelTexto = switch ($criterio.nivelAlcanzado) {
+    foreach ($criterio in $data.criteriosEvaluados) {
+        $nivelTexto = switch ($criterio.nivel) {
             1 { "[NIVEL 1]" }
             2 { "[NIVEL 2]" }
             3 { "[NIVEL 3]" }
@@ -81,11 +95,10 @@ try {
         }
         
         Write-Host "   $criterioNum. $($criterio.criterio) $nivelTexto" -ForegroundColor Cyan
-        Write-Host "      Puntaje: $($criterio.puntaje)/10" -ForegroundColor Gray
         
-        if ($criterio.evidencias -and $criterio.evidencias.Count -gt 0) {
+        if ($criterio.evidencia -and $criterio.evidencia.Count -gt 0) {
             Write-Host "      Evidencias:" -ForegroundColor Gray
-            foreach ($evidencia in $criterio.evidencias) {
+            foreach ($evidencia in $criterio.evidencia) {
                 $textoCorto = if ($evidencia.Length -gt 60) { $evidencia.Substring(0, 60) + "..." } else { $evidencia }
                 Write-Host "        • `"$textoCorto`"" -ForegroundColor DarkGray
             }
@@ -95,25 +108,25 @@ try {
         $criterioNum++
     }
     
-    Write-Host "FORTALEZAS ($($data.evaluacion.fortalezas.Count) detectadas)" -ForegroundColor Green
-    foreach ($fortaleza in $data.evaluacion.fortalezas) {
+    Write-Host "FORTALEZAS ($($data.fortalezas.Count) detectadas)" -ForegroundColor Green
+    foreach ($fortaleza in $data.fortalezas) {
         Write-Host "   + $fortaleza" -ForegroundColor Green
     }
     Write-Host ""
     
-    Write-Host "AREAS DE MEJORA ($($data.evaluacion.areasMejora.Count) identificadas)" -ForegroundColor Yellow
-    foreach ($mejora in $data.evaluacion.areasMejora) {
+    Write-Host "AREAS DE MEJORA ($($data.mejoras.Count) identificadas)" -ForegroundColor Yellow
+    foreach ($mejora in $data.mejoras) {
         Write-Host "   - $mejora" -ForegroundColor Yellow
     }
     Write-Host ""
     
     Write-Host "RESUMEN" -ForegroundColor Cyan
-    Write-Host "   $($data.evaluacion.resumenGeneral)" -ForegroundColor White
+    Write-Host "   $($data.resumenDimension)" -ForegroundColor White
     Write-Host ""
     
-    Write-Host "SIGUIENTES PASOS ($($data.evaluacion.siguientesPasos.Count) recomendaciones)" -ForegroundColor Magenta
+    Write-Host "SIGUIENTES PASOS ($($data.siguientesPasos.Count) recomendaciones)" -ForegroundColor Magenta
     $pasoNum = 1
-    foreach ($paso in $data.evaluacion.siguientesPasos) {
+    foreach ($paso in $data.siguientesPasos) {
         Write-Host "   $pasoNum. $paso" -ForegroundColor Magenta
         $pasoNum++
     }
@@ -126,15 +139,13 @@ try {
     
     # Validaciones estructurales
     $validaciones = @(
-        @{ nombre = "Estructura 'evaluacion' existe"; condicion = $null -ne $data.evaluacion }
-        @{ nombre = "puntajeGeneral presente"; condicion = $null -ne $data.evaluacion.puntajeGeneral }
-        @{ nombre = "nivelLogrado presente"; condicion = $null -ne $data.evaluacion.nivelLogrado }
-        @{ nombre = "criterios es array"; condicion = $data.evaluacion.criterios -is [Array] }
-        @{ nombre = "5 criterios evaluados"; condicion = $data.evaluacion.criterios.Count -eq 5 }
-        @{ nombre = "fortalezas es array"; condicion = $data.evaluacion.fortalezas -is [Array] }
-        @{ nombre = "areasMejora es array"; condicion = $data.evaluacion.areasMejora -is [Array] }
-        @{ nombre = "resumenGeneral presente"; condicion = ![string]::IsNullOrWhiteSpace($data.evaluacion.resumenGeneral) }
-        @{ nombre = "siguientesPasos es array"; condicion = $data.evaluacion.siguientesPasos -is [Array] }
+        @{ nombre = "valid presente"; condicion = $null -ne $data.valid }
+        @{ nombre = "scoreGlobal presente"; condicion = $null -ne $data.scoreGlobal }
+        @{ nombre = "nivel presente"; condicion = $null -ne $data.nivel }
+        @{ nombre = "criteriosEvaluados es array"; condicion = $data.criteriosEvaluados -is [Array] }
+        @{ nombre = "al menos 1 criterio"; condicion = $data.criteriosEvaluados.Count -gt 0 }
+        @{ nombre = "resumenDimension presente"; condicion = ![string]::IsNullOrWhiteSpace($data.resumenDimension) }
+        @{ nombre = "siguientesPasos es array"; condicion = $data.siguientesPasos -is [Array] }
     )
     
     $pasadas = 0

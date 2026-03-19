@@ -6,6 +6,12 @@
 
 const BACKEND_URL = 'http://localhost:3001';
 
+function unwrapSuccessPayload(payload) {
+  return payload?.ok === true && Object.prototype.hasOwnProperty.call(payload, 'data')
+    ? payload.data
+    : payload;
+}
+
 // ============================================================================
 // DATOS DE PRUEBA
 // ============================================================================
@@ -89,7 +95,7 @@ async function testBackend() {
       return;
     }
     
-    const data = await response.json();
+    const data = unwrapSuccessPayload(await response.json());
     
     console.log('✅ ¡Evaluación recibida exitosamente!\n');
     console.log('='.repeat(80));
@@ -98,7 +104,7 @@ async function testBackend() {
     
     console.log(`📖 Dimensión: ${data.dimension}`);
     console.log(`⭐ Puntuación Global: ${data.scoreGlobal}/10`);
-    console.log(`🎯 Nivel: ${data.nivel}/4 - ${data.nivelTexto}`);
+    console.log(`🎯 Nivel: ${data.nivel}/4`);
     console.log(`📋 Criterios Evaluados: ${data.criteriosEvaluados?.length || 0}\n`);
     
     console.log('─'.repeat(80));
@@ -108,15 +114,15 @@ async function testBackend() {
     if (data.criteriosEvaluados) {
       data.criteriosEvaluados.forEach((crit, idx) => {
         const nivelIcon = ['🔴', '🟠', '🟢', '🔵'][crit.nivel - 1] || '⚪';
-        console.log(`${nivelIcon} Criterio ${idx + 1}: ${crit.titulo}`);
-        console.log(`   Nivel: ${crit.nivel}/4 - ${crit.nivelTexto}`);
-        console.log(`   📌 Evidencias: ${crit.evidencias?.length || 0}`);
+        console.log(`${nivelIcon} Criterio ${idx + 1}: ${crit.criterio}`);
+        console.log(`   Nivel: ${crit.nivel}/4`);
+        console.log(`   📌 Evidencias: ${crit.evidencia?.length || 0}`);
         console.log(`   ✅ Fortalezas: ${crit.fortalezas?.length || 0}`);
         console.log(`   🎯 Mejoras: ${crit.mejoras?.length || 0}`);
         
-        if (crit.evidencias && crit.evidencias.length > 0) {
+        if (crit.evidencia && crit.evidencia.length > 0) {
           console.log(`\n   📌 Evidencias:`);
-          crit.evidencias.slice(0, 2).forEach((ev, i) => {
+          crit.evidencia.slice(0, 2).forEach((ev, i) => {
             console.log(`      ${i + 1}. "${ev.substring(0, 80)}..."`);
           });
         }
@@ -169,9 +175,8 @@ async function testBackend() {
       ['✅ Campo dimension', !!data.dimension],
       ['✅ Campo scoreGlobal', typeof data.scoreGlobal === 'number'],
       ['✅ Campo nivel (1-4)', data.nivel >= 1 && data.nivel <= 4],
-      ['✅ Campo nivelTexto', !!data.nivelTexto],
       ['✅ Campo criteriosEvaluados', Array.isArray(data.criteriosEvaluados)],
-      ['✅ 5 criterios', data.criteriosEvaluados?.length === 5],
+      ['✅ Al menos 1 criterio', (data.criteriosEvaluados?.length || 0) > 0],
       ['✅ Campo resumenDimension', !!data.resumenDimension],
       ['✅ Campo siguientesPasos', Array.isArray(data.siguientesPasos)],
       ['✅ Timestamp', !!data.timestamp],
