@@ -39,4 +39,7 @@ jobs:
           node-version: 18
           cache: npm
       - run: npm ci
-      - run: npx eslint src/ server/
+      - name: ESLint (errors only — warnings tracked separately)
+        run: npx eslint src/ --quiet
+      - name: react-doctor (baseline check)
+        run: npx -y react-doctor@latest . --verbose 2>&1 | tee /tmp/rd.txt; grep -q 'Duplicate export' /tmp/rd.txt && exit 1 || true

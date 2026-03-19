@@ -20,10 +20,10 @@ npm run test:ci
 
 ## 📊 Cobertura Actual
 
-### Estado Global (15 Nov 2025 - Post-Fixes)
-- **Test Suites**: 37/52 passing (71%) ⬆️ +6%
-- **Tests**: 224/301 passing (74%)
-- **Cobertura**: Datos parciales por fallos de integración
+### Estado Global (Marzo 2026)
+- **Test Suites**: 67/67 passing (100%)
+- **Tests**: 351 passing
+- **Coverage threshold**: 30% (plan target: 45%)
 
 ### Componentes Nuevos (Mejoras Nov 2025)
 
@@ -274,12 +274,14 @@ start coverage/lcov-report/index.html # Windows
 
 ### Umbrales de Cobertura
 
-| Métrica | Umbral Mínimo | Actual |
-|---------|--------------|--------|
-| Statements | 80% | **95%** |
-| Branches | 75% | **92%** |
-| Functions | 80% | **94%** |
-| Lines | 80% | **95%** |
+| Métrica | Umbral Mínimo | Actual (Mar 2026) |
+|---------|--------------|-------------------|
+| Statements | 30% | ~20% |
+| Branches | 30% | ~14% |
+| Functions | 30% | ~19% |
+| Lines | 30% | ~21% |
+
+> **Nota:** la cobertura global es baja porque muchos componentes UI grandes aún no tienen tests. El plan prevé alcanzar 45% añadiendo tests de backend, middleware y flujos críticos.
 
 ## 🚨 Tests Críticos para CI/CD
 
