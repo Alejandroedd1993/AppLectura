@@ -1,17 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useContext, useMemo } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
-
-/**
- * 📊 ProgressStats - Panel de estadísticas de progreso del estudiante
- * 
- * Muestra:
- * - Progreso general por artefacto (4 dimensiones)
- * - Nivel alcanzado en cada rúbrica
- * - Historial de intentos por artefacto
- * - Puntuación más alta por dimensión
- * - Indicador visual de completitud
- */
+import { AppContext } from '../../context/AppContext';
+import { buildProgressSnapshot, formatSnapshotDate } from '../../services/progressSnapshot';
 
 const Container = styled.div`
   background: ${props => props.theme.surface};
@@ -22,466 +13,454 @@ const Container = styled.div`
 `;
 
 const Header = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  
+  margin-bottom: 1.25rem;
+
   h3 {
     margin: 0;
-    font-size: 1.3rem;
-    color: ${props => props.theme.textPrimary};
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    font-size: 1.2rem;
+    color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
+  }
+
+  p {
+    margin: 0.45rem 0 0;
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+    font-size: 0.9rem;
+    line-height: 1.55;
   }
 `;
 
-const OverallProgress = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  padding: 1rem;
-  background: ${props => props.theme.primary}10;
-  border: 1px solid ${props => props.theme.primary}30;
-  border-radius: 8px;
-  
-  .icon {
-    font-size: 2.5rem;
-  }
-  
-  .info {
-    flex: 1;
-  }
-  
-  .label {
-    font-size: 0.85rem;
-    color: ${props => props.theme.textSecondary};
-    font-weight: 500;
-    margin-bottom: 0.3rem;
-  }
-  
-  .progress-bar {
-    height: 24px;
-    background: ${props => props.theme.background};
-    border: 1px solid ${props => props.theme.border};
-    border-radius: 12px;
-    overflow: hidden;
-    position: relative;
-    margin-bottom: 0.3rem;
-  }
-  
-  .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, ${props => props.theme.primary}, ${props => props.theme.success});
-    transition: width 0.5s ease;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    padding-right: 0.5rem;
-    color: white;
-    font-weight: 700;
-    font-size: 0.85rem;
-  }
-  
-  .stats {
-    display: flex;
-    gap: 1rem;
-    font-size: 0.85rem;
-    color: ${props => props.theme.textSecondary};
-  }
-`;
-
-const ArtefactosGrid = styled.div`
+const SummaryGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+
+  @media (max-width: 840px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (max-width: 520px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const SummaryCard = styled.div`
+  padding: 0.9rem;
+  border-radius: 12px;
+  background: ${props => props.theme.background};
+  border: 1px solid ${props => props.theme.border};
+
+  .label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: 0.73rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  }
+
+  .value {
+    display: block;
+    font-size: 1.22rem;
+    font-weight: 700;
+    color: ${props => props.$accent || props.theme.textPrimary || props.theme.text || '#111827'};
+  }
+
+  .helper {
+    display: block;
+    margin-top: 0.22rem;
+    font-size: 0.78rem;
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  }
+`;
+
+const FocusBanner = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid ${props => {
+    if (props.$tone === 'warning') return '#F59E0B55';
+    if (props.$tone === 'success') return '#16A34A44';
+    return `${props.theme.primary}30`;
+  }};
+  background: ${props => {
+    if (props.$tone === 'warning') return 'rgba(245, 158, 11, 0.09)';
+    if (props.$tone === 'success') return 'rgba(22, 163, 74, 0.08)';
+    return `${props.theme.primary}10`;
+  }};
+`;
+
+const FocusCopy = styled.div`
+  min-width: 220px;
+
+  .eyebrow {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  }
+
+  strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
+    font-size: 1rem;
+  }
+
+  p {
+    margin: 0;
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+    font-size: 0.88rem;
+    line-height: 1.5;
+  }
+`;
+
+const FocusButton = styled.button`
+  border: none;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  background: ${props => {
+    if (props.$tone === 'warning') return '#F59E0B';
+    if (props.$tone === 'success') return '#16A34A';
+    return props.theme.primary || '#2196F3';
+  }};
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+`;
+
+const SectionTitle = styled.h4`
+  margin: 0 0 0.9rem 0;
+  color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
+  font-size: 0.98rem;
+`;
+
+const DetailGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 1rem;
 `;
 
-const ArtefactoCard = styled(motion.div)`
+const DetailCard = styled(motion.div)`
   background: ${props => props.theme.background};
-  border: 2px solid ${props => props.$completed ? props.theme.success : props.theme.border};
-  border-radius: 12px;
-  padding: 1.25rem;
-  position: relative;
-  overflow: hidden;
-  
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: ${props => props.$color || props.theme.primary};
-  }
+  border: 1px solid ${props => props.$accent}44;
+  border-left: 4px solid ${props => props.$accent};
+  border-radius: 14px;
+  padding: 1rem;
 `;
 
-const ArtefactoHeader = styled.div`
+const CardHeader = styled.div`
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 1rem;
-  
-  .icon {
-    font-size: 2rem;
-    flex-shrink: 0;
-  }
-  
+  margin-bottom: 0.85rem;
+
   .title {
     flex: 1;
-    
-    h4 {
-      margin: 0 0 0.2rem 0;
-      font-size: 1.05rem;
-      color: ${props => props.theme.textPrimary};
-    }
-    
-    p {
-      margin: 0;
-      font-size: 0.8rem;
-      color: ${props => props.theme.textSecondary};
-    }
   }
-  
+
+  .title strong {
+    display: block;
+    margin-bottom: 0.2rem;
+    font-size: 0.95rem;
+    color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
+  }
+
+  .title span {
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+    font-size: 0.8rem;
+  }
+
   .badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 12px;
-    font-size: 0.75rem;
+    padding: 0.28rem 0.7rem;
+    border-radius: 999px;
+    background: ${props => props.$accent}18;
+    color: ${props => props.$accent};
+    border: 1px solid ${props => props.$accent}40;
+    font-size: 0.74rem;
     font-weight: 700;
-    background: ${props => props.$badgeColor}20;
-    color: ${props => props.$badgeColor};
-    border: 1px solid ${props => props.$badgeColor};
+    white-space: nowrap;
   }
 `;
 
-const ArtefactoStats = styled.div`
+const StatList = styled.div`
+  display: grid;
+  gap: 0.55rem;
+`;
+
+const StatRow = styled.div`
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
   gap: 0.75rem;
-  
-  .stat-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem;
-    background: ${props => props.theme.surface};
-    border-radius: 6px;
-    font-size: 0.85rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: ${props => props.theme.surface};
+  font-size: 0.83rem;
+
+  span:first-child {
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
   }
-  
-  .stat-label {
-    color: ${props => props.theme.textSecondary};
-    font-weight: 500;
-  }
-  
-  .stat-value {
+
+  span:last-child {
+    color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
     font-weight: 700;
-    color: ${props => props.theme.textPrimary};
-    
-    &.highlight {
-      color: ${props => props.theme.success};
-      font-size: 1.1em;
-    }
+    text-align: right;
   }
-  
-  .nivel-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 12px;
+`;
+
+const CardAction = styled.button`
+  margin-top: 0.85rem;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  background: ${props => props.$accent};
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+`;
+
+const CompactGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+`;
+
+const CompactCard = styled.div`
+  padding: 0.95rem;
+  border-radius: 12px;
+  border: 1px dashed ${props => props.$accent || props.theme.border};
+  background: ${props => props.theme.background};
+
+  strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
+    font-size: 0.9rem;
+  }
+
+  p {
+    margin: 0;
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+
+  span {
+    display: inline-flex;
+    margin-top: 0.65rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    background: ${props => props.$accent || props.theme.border}18;
+    color: ${props => props.$accent || props.theme.textSecondary || '#6B7280'};
+    font-size: 0.72rem;
     font-weight: 700;
-    font-size: 0.85rem;
-    background: ${props => props.$levelColor}20;
-    color: ${props => props.$levelColor};
-    border: 1px solid ${props => props.$levelColor};
   }
 `;
 
 const EmptyState = styled.div`
   text-align: center;
   padding: 2rem;
-  color: ${props => props.theme.textSecondary};
-  
+  color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+
   .icon {
     font-size: 3rem;
-    opacity: 0.3;
+    opacity: 0.35;
     margin-bottom: 0.5rem;
   }
-  
+
   p {
     margin: 0;
     font-size: 0.95rem;
   }
 `;
 
-const ARTEFACTO_CONFIG = {
-  rubrica1: {
-    name: 'Resumen Académico',
-    icon: '📝',
-    color: '#3190FC'
-  },
-  rubrica2: {
-    name: 'Tabla ACD',
-    icon: '📊',
-    color: '#009688'
-  },
-  rubrica3: {
-    name: 'Mapa de Actores',
-    icon: '🗺️',
-    color: '#FF9800'
-  },
-  rubrica4: {
-    name: 'Respuesta Argumentativa',
-    icon: '💭',
-    color: '#E91E63'
-  },
-  rubrica5: {
-    name: 'Bitácora Ética IA',
-    icon: '🤖',
-    color: '#9C27B0'
-  }
-};
+function getAccent(rubric) {
+  if (!rubric.started) return '#CBD5E1';
+  if (rubric.isPendingReview) return '#F59E0B';
+  return rubric.badgeColor;
+}
 
-const NIVEL_CONFIG = {
-  1: { label: 'Inicial', color: '#607D8B' },
-  2: { label: 'Básico', color: '#03A9F4' },
-  3: { label: 'Competente', color: '#4CAF50' },
-  4: { label: 'Avanzado', color: '#9C27B0' }
-};
+function sortActiveRubrics(rubrics = [], focusRubricId = null) {
+  return [...rubrics].sort((a, b) => {
+    if (a.rubricId === focusRubricId) return -1;
+    if (b.rubricId === focusRubricId) return 1;
+    if (a.isPendingReview && !b.isPendingReview) return -1;
+    if (!a.isPendingReview && b.isPendingReview) return 1;
+    return (b.lastActivityAt || 0) - (a.lastActivityAt || 0);
+  });
+}
 
-export default function ProgressStats({ rubricProgress }) {
-  const stats = useMemo(() => {
-    if (!rubricProgress) return null;
+export default function ProgressStats({ rubricProgress, progressSnapshot = null, onSelectRubric }) {
+  const { activitiesProgress, currentTextoId, completeAnalysis } = useContext(AppContext);
+  const lectureId = currentTextoId || completeAnalysis?.metadata?.document_id || null;
 
-    const hasSummativeAttempt = (summative) => {
-      if (!summative || typeof summative !== 'object') return false;
-      const status = String(summative.status || '').toLowerCase();
-      const attemptsUsed = Number(summative.attemptsUsed || 0);
-      return (
-        attemptsUsed > 0 ||
-        status === 'submitted' ||
-        status === 'graded' ||
-        Number(summative.submittedAt || 0) > 0 ||
-        Number(summative.gradedAt || 0) > 0
-      );
-    };
+  const snapshot = useMemo(() => (
+    progressSnapshot || buildProgressSnapshot({
+      rubricProgress,
+      activitiesProgress,
+      lectureId
+    })
+  ), [progressSnapshot, rubricProgress, activitiesProgress, lectureId]);
 
-    const getSummativeScore = (summative) => {
-      if (String(summative?.status || '').toLowerCase() !== 'graded') return 0;
-      const override = Number(summative?.teacherOverrideScore);
-      if (Number.isFinite(override) && override > 0) return override;
-      const score = Number(summative?.score);
-      return Number.isFinite(score) && score > 0 ? score : 0;
-    };
-    
-    const artefactos = [];
-    let totalCompleted = 0;
-    let totalScore = 0;
-    let totalAttempts = 0;
-    let dimensionesEvaluadas = 0;
-    
-    Object.entries(ARTEFACTO_CONFIG).forEach(([rubricId, config]) => {
-      const data = rubricProgress[rubricId];
-      // 🛡️ Excluir scores de PracticaGuiada (solo artefactos reales)
-      const formativeScores = (data?.scores || []).filter(s => s.artefacto !== 'PracticaGuiada');
-      const hasFormative = formativeScores.length > 0;
-      const summative = data?.summative;
-      const hasSummative = hasSummativeAttempt(summative);
-      const summativeScoreNum = getSummativeScore(summative);
-      const hasAny = hasFormative || hasSummative;
-      
-      const lastFormative = hasFormative ? formativeScores[formativeScores.length - 1] : null;
-      const formativeHighestScore = hasFormative ? Math.max(...formativeScores.map(s => s.score)) : 0;
-      const formativeAttempts = formativeScores.length;
+  const activeRubrics = useMemo(
+    () => sortActiveRubrics(snapshot.lists.started, snapshot.focusRubricId),
+    [snapshot.lists.started, snapshot.focusRubricId]
+  );
 
-      const scoreForNivel = hasSummative ? summativeScoreNum : (lastFormative?.score ?? 0);
-      const nivel = hasSummative
-        ? (summative?.nivel ?? (scoreForNivel > 0 ? Math.ceil(scoreForNivel / 2.5) : 0))
-        : (lastFormative?.nivel ?? (scoreForNivel > 0 ? Math.ceil(scoreForNivel / 2.5) : 0));
-      const isCompleted = scoreForNivel > 0 && nivel >= 3; // Nivel 3+ considerado completado
-
-      const summativeAttempts = hasSummative ? Math.max(1, Number(summative?.attemptsUsed || 1)) : 0;
-
-      artefactos.push({
-        rubricId,
-        ...config,
-        hasFormative,
-        formativeLastScore: lastFormative?.score ?? 0,
-        formativeHighestScore,
-        formativeAttempts,
-        formativeLastAttempt: lastFormative?.timestamp ?? null,
-        hasSummative,
-        summativeScore: hasSummative ? summativeScoreNum : 0,
-        summativeNivel: hasSummative ? (summative.nivel ?? Math.ceil(summative.score / 2.5)) : 0,
-        summativeTimestamp: hasSummative ? (summative.timestamp ?? summative.gradedAt ?? null) : null,
-        nivel,
-        isCompleted
-      });
-
-      if (hasAny) {
-        dimensionesEvaluadas++;
-        if (isCompleted) totalCompleted++;
-        totalScore += scoreForNivel;
-        totalAttempts += formativeAttempts + summativeAttempts;
-      }
-    });
-    
-    const overallProgress = (totalCompleted / 5) * 100;
-    const averageScore = dimensionesEvaluadas > 0 ? totalScore / dimensionesEvaluadas : 0;
-    
-    return {
-      artefactos,
-      overallProgress,
-      totalCompleted,
-      averageScore: averageScore.toFixed(1),
-      totalAttempts
-    };
-  }, [rubricProgress]);
-  
-  if (!stats || stats.totalAttempts === 0) {
+  if (!snapshot.hasData) {
     return (
       <Container>
         <Header>
-          <h3>📊 Mi Progreso</h3>
+          <h3>Mi progreso detallado</h3>
+          <p>Cuando registres tus primeras respuestas o entregas, aqui veras estados, notas y actividad reciente por dimension.</p>
         </Header>
         <EmptyState>
-          <div className="icon">📭</div>
-          <p>Aún no has completado ninguna evaluación.</p>
-          <p style={{ fontSize: '0.85rem', marginTop: '0.5rem', opacity: 0.8 }}>
-            Comienza con la Preparación y luego completa los artefactos.
-          </p>
+          <div className="icon">📝</div>
+          <p>Aun no hay evidencia suficiente para mostrar progreso detallado.</p>
         </EmptyState>
       </Container>
     );
   }
-  
+
   return (
     <Container>
       <Header>
-        <h3>📊 Mi Progreso en Literacidad Crítica</h3>
+        <h3>Mi progreso en lectura critica</h3>
+        <p>Esta vista separa lo que ya esta en movimiento de las dimensiones que aun faltan por abrir.</p>
       </Header>
-      
-      {/* Progreso General */}
-      <OverallProgress>
-        <div className="icon">
-          {stats.overallProgress === 100 ? '🎓' : stats.overallProgress >= 75 ? '🔥' : stats.overallProgress >= 50 ? '📈' : '🌱'}
-        </div>
-        <div className="info">
-          <div className="label">Progreso General</div>
-          <div className="progress-bar">
-            <div 
-              className="progress-fill" 
-              style={{ width: `${stats.overallProgress}%` }}
-            >
-              {stats.overallProgress > 15 && `${stats.overallProgress.toFixed(0)}%`}
-            </div>
-          </div>
-          <div className="stats">
-            <span>✅ {stats.totalCompleted}/5 dimensiones completadas</span>
-            <span>📊 Promedio: {stats.averageScore}/10</span>
-            <span>🔄 {stats.totalAttempts} intentos totales</span>
-          </div>
-        </div>
-      </OverallProgress>
-      
-      {/* Grid de Artefactos */}
-      <ArtefactosGrid>
-        {stats.artefactos.map((artefacto) => (
-          <ArtefactoCard
-            key={artefacto.rubricId}
-            $completed={artefacto.isCompleted}
-            $color={artefacto.color}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
+
+      <SummaryGrid>
+        <SummaryCard $accent="#2563EB">
+          <span className="label">Activas</span>
+          <span className="value">{snapshot.summary.coverageCount}/5</span>
+          <span className="helper">Dimensiones con actividad</span>
+        </SummaryCard>
+        <SummaryCard $accent="#16A34A">
+          <span className="label">Con nota</span>
+          <span className="value">{snapshot.summary.evaluatedCount}/5</span>
+          <span className="helper">
+            {snapshot.summary.averageEvaluatedScore > 0
+              ? `${snapshot.summary.averageEvaluatedScore.toFixed(1)}/10 promedio`
+              : 'Sin promedio vigente'
+            }
+          </span>
+        </SummaryCard>
+        <SummaryCard $accent="#F59E0B">
+          <span className="label">Pendientes</span>
+          <span className="value">{snapshot.summary.pendingCount}</span>
+          <span className="helper">Entregas a la espera</span>
+        </SummaryCard>
+        <SummaryCard $accent="#7C3AED">
+          <span className="label">Intentos</span>
+          <span className="value">{snapshot.summary.totalAttempts}</span>
+          <span className="helper">Total registrado en esta lectura</span>
+        </SummaryCard>
+      </SummaryGrid>
+
+      {snapshot.nextAction && onSelectRubric && (
+        <FocusBanner $tone={snapshot.nextAction.tone}>
+          <FocusCopy>
+            <span className="eyebrow">Siguiente mejor paso</span>
+            <strong>{snapshot.nextAction.title}</strong>
+            <p>{snapshot.nextAction.description}</p>
+          </FocusCopy>
+          <FocusButton
+            type="button"
+            $tone={snapshot.nextAction.tone}
+            onClick={() => onSelectRubric(snapshot.nextAction.rubricId)}
           >
-            <ArtefactoHeader $badgeColor={artefacto.nivel > 0 ? NIVEL_CONFIG[artefacto.nivel].color : '#ccc'}>
-              <div className="icon">{artefacto.icon}</div>
-              <div className="title">
-                <h4>{artefacto.name}</h4>
-                <p>{artefacto.rubricId}</p>
-              </div>
-              {artefacto.nivel > 0 && (
-                <div className="badge">
-                  {NIVEL_CONFIG[artefacto.nivel].label}
+            {snapshot.nextAction.ctaLabel}
+          </FocusButton>
+        </FocusBanner>
+      )}
+
+      <SectionTitle>Dimensiones activas ahora</SectionTitle>
+      <DetailGrid>
+        {activeRubrics.map((rubric) => {
+          const accent = getAccent(rubric);
+          const currentScoreLabel = rubric.effectiveScore > 0 ? `${rubric.effectiveScore.toFixed(1)}/10` : 'Sin nota';
+          const bestScoreLabel = rubric.bestFormativeScore > 0
+            ? `${rubric.bestFormativeScore.toFixed(1)}/10`
+            : rubric.effectiveScore > 0
+              ? `${rubric.effectiveScore.toFixed(1)}/10`
+              : 'Sin historial';
+
+          return (
+            <DetailCard
+              key={rubric.rubricId}
+              $accent={accent}
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22 }}
+            >
+              <CardHeader $accent={accent}>
+                <div className="title">
+                  <strong>{rubric.artifactName}</strong>
+                  <span>{rubric.name}</span>
                 </div>
+                <div className="badge">{rubric.badgeLabel}</div>
+              </CardHeader>
+
+              <StatList>
+                <StatRow>
+                  <span>Estado actual</span>
+                  <span>{rubric.currentStatusLabel}</span>
+                </StatRow>
+                <StatRow>
+                  <span>Puntaje vigente</span>
+                  <span>{currentScoreLabel}</span>
+                </StatRow>
+                <StatRow>
+                  <span>Puntaje mas alto</span>
+                  <span>{bestScoreLabel}</span>
+                </StatRow>
+                <StatRow>
+                  <span>Ultima actividad</span>
+                  <span>{formatSnapshotDate(rubric.lastActivityAt)}</span>
+                </StatRow>
+              </StatList>
+
+              {onSelectRubric && (
+                <CardAction
+                  type="button"
+                  $accent={accent}
+                  onClick={() => onSelectRubric(rubric.rubricId)}
+                >
+                  Abrir dimension
+                </CardAction>
               )}
-            </ArtefactoHeader>
-            
-            <ArtefactoStats>
-              {artefacto.hasFormative || artefacto.hasSummative ? (
-                <>
-                  {artefacto.hasFormative ? (
-                    <>
-                      <div className="stat-row">
-                        <span className="stat-label">Última puntuación:</span>
-                        <span className="stat-value highlight">{artefacto.formativeLastScore.toFixed(1)}/10</span>
-                      </div>
+            </DetailCard>
+          );
+        })}
+      </DetailGrid>
 
-                      <div className="stat-row">
-                        <span className="stat-label">Puntuación más alta:</span>
-                        <span className="stat-value">{artefacto.formativeHighestScore.toFixed(1)}/10</span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="stat-row">
-                      <span className="stat-label">Artefactos:</span>
-                      <span className="stat-value">Sin intentos</span>
-                    </div>
-                  )}
-
-                  {artefacto.nivel > 0 && (
-                    <div className="stat-row">
-                      <span className="stat-label">Nivel alcanzado:</span>
-                      <span
-                        className="nivel-badge"
-                        style={{
-                          background: `${NIVEL_CONFIG[artefacto.nivel].color}20`,
-                          color: NIVEL_CONFIG[artefacto.nivel].color,
-                          border: `1px solid ${NIVEL_CONFIG[artefacto.nivel].color}`
-                        }}
-                      >
-                        Nivel {artefacto.nivel} - {NIVEL_CONFIG[artefacto.nivel].label}
-                      </span>
-                    </div>
-                  )}
-
-                  {artefacto.hasSummative && (
-                    <div className="stat-row">
-                      <span className="stat-label">Ensayo (sumativo):</span>
-                      <span className="stat-value highlight">{artefacto.summativeScore.toFixed(1)}/10</span>
-                    </div>
-                  )}
-
-                  <div className="stat-row">
-                    <span className="stat-label">Intentos:</span>
-                    <span className="stat-value">{artefacto.formativeAttempts + (artefacto.hasSummative ? 1 : 0)}</span>
-                  </div>
-
-                  {artefacto.formativeLastAttempt && (
-                    <div className="stat-row">
-                      <span className="stat-label">Último intento:</span>
-                      <span className="stat-value" style={{ fontSize: '0.75rem' }}>
-                        {new Date(artefacto.formativeLastAttempt).toLocaleDateString('es-ES', {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <EmptyState style={{ padding: '1rem' }}>
-                  <div className="icon" style={{ fontSize: '2rem' }}>📝</div>
-                  <p style={{ fontSize: '0.85rem' }}>No completado</p>
-                </EmptyState>
-              )}
-            </ArtefactoStats>
-          </ArtefactoCard>
-        ))}
-      </ArtefactosGrid>
+      {snapshot.lists.unstarted.length > 0 && (
+        <>
+          <SectionTitle style={{ marginTop: '1.25rem' }}>Dimensiones por abrir</SectionTitle>
+          <CompactGrid>
+            {snapshot.lists.unstarted.map((rubric) => {
+              const isFocus = snapshot.focusRubricId === rubric.rubricId;
+              return (
+                <CompactCard key={rubric.rubricId} $accent={isFocus ? rubric.color : '#CBD5E1'}>
+                  <strong>{rubric.name}</strong>
+                  <p>{rubric.artifactName}. Aun no hay evidencia registrada en esta dimension.</p>
+                  <span>{isFocus ? 'Siguiente sugerida' : 'Lista para empezar'}</span>
+                </CompactCard>
+              );
+            })}
+          </CompactGrid>
+        </>
+      )}
     </Container>
   );
 }

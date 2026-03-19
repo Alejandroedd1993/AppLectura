@@ -1,5 +1,5 @@
 import { RUBRIC } from '../rubrics/criticalLiteracyRubric.js';
-import { createAbortControllerWithTimeout } from '../../utils/netUtils';
+import { createAbortControllerWithTimeout } from '../../utils/netUtils.js';
 
 /**
  * CORRECCIÓN: Plantillas centralizadas para evitar duplicación entre Tutor/Evaluador

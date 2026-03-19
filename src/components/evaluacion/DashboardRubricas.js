@@ -1,8 +1,8 @@
-// src/components/evaluacion/DashboardRubricas.js
 import React, { useContext, useMemo } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
+import { buildProgressSnapshot } from '../../services/progressSnapshot';
 
 const DashboardContainer = styled.div`
   background: ${props => props.theme.surface};
@@ -13,245 +13,224 @@ const DashboardContainer = styled.div`
 `;
 
 const DashboardTitle = styled.h3`
-  margin: 0 0 1.5rem 0;
-  color: ${props => props.theme.text};
+  margin: 0 0 0.4rem 0;
+  color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
   font-size: 1.1rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
 `;
 
-const RubricsGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+const ScopeNote = styled.p`
+  margin: 0 0 1rem 0;
+  color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  font-size: 0.86rem;
+  line-height: 1.5;
 `;
 
-const RubricCard = styled(motion.div)`
-  background: ${props => props.theme.background};
-  border: 2px solid ${props => {
-    const avg = props.$average;
-    if (avg === 0) return props.theme.border;
-    if (avg >= 8.6) return '#8b5cf6';
-    if (avg >= 5.6) return props.theme.success;
-    if (avg >= 2.6) return '#f59e0b';
-    return '#ef4444';
-  }};
-  border-radius: 10px;
-  padding: 1rem;
-  transition: all 0.3s ease;
-  cursor: pointer;
+const SummaryStrip = styled.div`
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
 
-  &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 6px 20px ${props => {
-      const avg = props.$average;
-      if (avg === 0) return 'rgba(0,0,0,0.1)';
-      if (avg >= 8.6) return 'rgba(139, 92, 246, 0.3)';
-      if (avg >= 5.6) return 'rgba(16, 185, 129, 0.3)';
-      if (avg >= 2.6) return 'rgba(245, 158, 11, 0.3)';
-      return 'rgba(239, 68, 68, 0.3)';
-    }};
+  @media (max-width: 760px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (max-width: 480px) {
+    grid-template-columns: 1fr;
   }
 `;
 
+const SummaryCard = styled.div`
+  padding: 0.85rem 0.9rem;
+  border-radius: 12px;
+  background: ${props => props.theme.background};
+  border: 1px solid ${props => props.theme.border};
+
+  .label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  }
+
+  .value {
+    display: block;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: ${props => props.$accent || props.theme.textPrimary || props.theme.text || '#111827'};
+  }
+
+  .helper {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.78rem;
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  }
+`;
+
+const RubricsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+`;
+
+const RubricCard = styled(motion.button)`
+  background: ${props => props.$muted ? props.theme.surface : props.theme.background};
+  border: 2px ${props => props.$muted ? 'dashed' : 'solid'} ${props => props.$accent};
+  border-radius: 14px;
+  padding: 1rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  cursor: pointer;
+  text-align: left;
+  opacity: ${props => props.$muted ? 0.82 : 1};
+
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px ${props => `${props.$accent}26`};
+    opacity: 1;
+  }
+`;
+
+const CardTop = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+`;
+
 const RubricIcon = styled.div`
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
-  text-align: center;
+  font-size: 1.6rem;
+  line-height: 1;
+`;
+
+const FocusPill = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: ${props => props.$accent}18;
+  color: ${props => props.$accent};
+  border: 1px solid ${props => props.$accent}50;
 `;
 
 const RubricName = styled.div`
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: ${props => props.theme.text};
-  text-align: center;
-  margin-bottom: 0.75rem;
-  min-height: 2.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`;
-
-const RubricScore = styled.div`
-  font-size: 1.5rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  text-align: center;
-  color: ${props => {
-    const avg = props.$average;
-    if (avg === 0) return props.theme.textMuted;
-    if (avg >= 8.6) return '#8b5cf6';
-    if (avg >= 5.6) return '#10b981';
-    if (avg >= 2.6) return '#f59e0b';
-    return '#ef4444';
-  }};
+  color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
   margin-bottom: 0.25rem;
 `;
 
-const RubricLabel = styled.div`
-  font-size: 0.7rem;
-  text-align: center;
-  color: ${props => props.theme.textMuted};
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+const RubricArtifact = styled.div`
+  font-size: 0.78rem;
+  color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  margin-bottom: 0.85rem;
 `;
 
-const RubricAttempts = styled.div`
-  font-size: 0.7rem;
-  text-align: center;
-  color: ${props => props.theme.textMuted};
-  margin-top: 0.5rem;
-  font-style: italic;
-`;
-
-const PromedioGlobal = styled.div`
-  margin-top: 1.5rem;
-  padding: 1rem;
-  background: linear-gradient(135deg, ${props => props.theme.primary}15, ${props => props.theme.secondary}15);
-  border-radius: 8px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-`;
-
-const PromedioLabel = styled.span`
-  font-weight: 600;
-  color: ${props => props.theme.text};
-  font-size: 1rem;
-`;
-
-const PromedioValue = styled.span`
-  font-size: 1.5rem;
+const RubricScore = styled.div`
+  font-size: 1.35rem;
   font-weight: 700;
-  color: ${props => {
-    const avg = props.$value;
-    if (avg >= 8.6) return '#8b5cf6';
-    if (avg >= 5.6) return '#10b981';
-    if (avg >= 2.6) return '#f59e0b';
-    return '#ef4444';
-  }};
+  color: ${props => props.$accent};
+  margin-bottom: 0.25rem;
+`;
+
+const RubricStatus = styled.div`
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  margin-bottom: 0.85rem;
+`;
+
+const RubricMeta = styled.div`
+  display: grid;
+  gap: 0.45rem;
+
+  div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: 10px;
+    background: ${props => props.theme.surface};
+    font-size: 0.8rem;
+  }
+
+  span:first-child {
+    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
+  }
+
+  span:last-child {
+    color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
+    font-weight: 700;
+    text-align: right;
+  }
 `;
 
 const EmptyState = styled.div`
   text-align: center;
   padding: 2rem;
-  color: ${props => props.theme.textMuted};
+  color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
 `;
 
 const EmptyIcon = styled.div`
-  font-size: 3rem;
-  margin-bottom: 1rem;
+  font-size: 2.8rem;
+  margin-bottom: 0.75rem;
 `;
 
 const EmptyText = styled.p`
   margin: 0;
   font-size: 0.95rem;
+  line-height: 1.6;
 `;
 
-const RUBRICAS_INFO = {
-  rubrica1: {
-    nombre: 'Comprensión Analítica',
-    icono: '📚',
-    descripcion: 'Síntesis con evidencias textuales'
-  },
-  rubrica2: {
-    nombre: 'Análisis Ideológico-Discursivo',
-    icono: '🔍',
-    descripcion: 'Marcos ideológicos y estrategias retóricas'
-  },
-  rubrica3: {
-    nombre: 'Contextualización Socio-Histórica',
-    icono: '🗺️',
-    descripcion: 'Actores, relaciones de poder y consecuencias'
-  },
-  rubrica4: {
-    nombre: 'Argumentación y Contraargumento',
-    icono: '💭',
-    descripcion: 'Tesis, evidencias y refutación dialógica'
-  },
-  rubrica5: {
-    nombre: 'Metacognición Ética del Uso de IA',
-    icono: '🤖',
-    descripcion: 'Reflexión transparente y responsable'
-  }
-};
+function getAccent(rubric, theme) {
+  if (!rubric.started) return theme.border || '#CBD5E1';
+  if (rubric.isPendingReview) return '#F59E0B';
+  return rubric.badgeColor;
+}
 
-export default function DashboardRubricas({ theme, onSelectRubric }) {
-  const { rubricProgress } = useContext(AppContext);
+function formatScore(rubric) {
+  if (rubric.isPendingReview) return 'Pend.';
+  if (rubric.effectiveScore > 0) return `${rubric.effectiveScore.toFixed(1)}/10`;
+  return 'Lista';
+}
 
-  const hasSummativeAttempt = (summative) => {
-    if (!summative || typeof summative !== 'object') return false;
-    const status = String(summative.status || '').toLowerCase();
-    const attemptsUsed = Number(summative.attemptsUsed || 0);
-    return (
-      attemptsUsed > 0 ||
-      status === 'submitted' ||
-      status === 'graded' ||
-      Number(summative.submittedAt || 0) > 0 ||
-      Number(summative.gradedAt || 0) > 0
-    );
-  };
+export default function DashboardRubricas({ theme, onSelectRubric, progressSnapshot = null }) {
+  const { rubricProgress, activitiesProgress, currentTextoId, completeAnalysis } = useContext(AppContext);
+  const lectureId = currentTextoId || completeAnalysis?.metadata?.document_id || null;
 
-  const getSummativeScore = (summative) => {
-    const overrideScore = Number(summative?.teacherOverrideScore);
-    if (summative?.status !== 'graded') return 0;
-    if (Number.isFinite(overrideScore) && overrideScore > 0) return overrideScore;
-    const n = Number(summative?.score);
-    if (summative?.status !== 'graded') return 0;
-    if (!Number.isFinite(n)) return 0;
-    return n > 0 ? n : 0;
-  };
+  const snapshot = useMemo(() => (
+    progressSnapshot || buildProgressSnapshot({
+      rubricProgress,
+      activitiesProgress,
+      lectureId
+    })
+  ), [progressSnapshot, rubricProgress, activitiesProgress, lectureId]);
 
-  // 🏆 Helper: obtener nota efectiva con prioridad a teacherOverrideScore
-  const getEffectiveScore = (data) => {
-    // Prioridad 1: Override del docente (sumativa)
-    if (Number(data?.summative?.teacherOverrideScore) > 0) return Number(data.summative.teacherOverrideScore);
-    // Prioridad 2: Nota sumativa del ensayo
-    const summative = getSummativeScore(data?.summative);
-    if (summative > 0) return summative;
-    // Prioridad 3: Promedio formativo
-    if (data?.average > 0) return data.average;
-    return 0;
-  };
+  const averageAccent = snapshot.summary.averageEvaluatedScore >= 8.6
+    ? '#7C3AED'
+    : snapshot.summary.averageEvaluatedScore >= 5.6
+      ? '#16A34A'
+      : '#F59E0B';
 
-  // Calcular promedio global y dimensiones evaluadas
-  const { promedioGlobal, dimensionesEvaluadas } = useMemo(() => {
-    const rubricasConDatos = Object.values(rubricProgress || {}).filter(r => {
-      return getEffectiveScore(r) > 0;
-    });
-    if (rubricasConDatos.length === 0) return { promedioGlobal: 0, dimensionesEvaluadas: 0 };
-    
-    const suma = rubricasConDatos.reduce((sum, r) => {
-      return sum + getEffectiveScore(r);
-    }, 0);
-    const promedio = Math.round((suma / rubricasConDatos.length) * 10) / 10;
-    
-    return { 
-      promedioGlobal: promedio, 
-      dimensionesEvaluadas: rubricasConDatos.length 
-    };
-  }, [rubricProgress]);
-
-  // Verificar si hay algún dato
-  const hayDatos = useMemo(() => {
-    return Object.values(rubricProgress || {}).some(r => {
-      const formativeCount = r?.scores?.length || 0;
-      const hasSummative = hasSummativeAttempt(r?.summative);
-      const hasOverride = Number(r?.summative?.teacherOverrideScore) > 0;
-      return formativeCount > 0 || hasSummative || hasOverride;
-    });
-  }, [rubricProgress]);
-
-  if (!hayDatos) {
+  if (!snapshot.hasData) {
     return (
       <DashboardContainer theme={theme}>
-        <DashboardTitle theme={theme}>
-          📊 Tu Progreso en las 5 Dimensiones de Literacidad Crítica
-        </DashboardTitle>
+        <DashboardTitle theme={theme}>📊 Tu mapa de dimensiones</DashboardTitle>
+        <ScopeNote theme={theme}>Este resumen se limita a la lectura actual para no mezclar historiales.</ScopeNote>
         <EmptyState theme={theme}>
-          <EmptyIcon>📭</EmptyIcon>
+          <EmptyIcon>📝</EmptyIcon>
           <EmptyText>
-            Aún no has completado ningún artefacto. Ve a la pestaña <strong>Actividades</strong> para empezar a practicar.
+            Aun no hay actividad registrada en esta lectura. En cuanto abras una dimension, aqui veras cobertura, estados y puntajes.
           </EmptyText>
         </EmptyState>
       </DashboardContainer>
@@ -260,72 +239,84 @@ export default function DashboardRubricas({ theme, onSelectRubric }) {
 
   return (
     <DashboardContainer theme={theme}>
-      <DashboardTitle theme={theme}>
-        📊 Tu Progreso en las 5 Dimensiones de Literacidad Crítica
-      </DashboardTitle>
+      <DashboardTitle theme={theme}>📊 Tu progreso en las 5 dimensiones</DashboardTitle>
+      <ScopeNote theme={theme}>
+        La cobertura y las notas usan el mismo criterio en todas las vistas para evitar contradicciones.
+      </ScopeNote>
+
+      <SummaryStrip>
+        <SummaryCard theme={theme} $accent={theme.primary}>
+          <span className="label">Cobertura</span>
+          <span className="value">{snapshot.summary.coverageCount}/5</span>
+          <span className="helper">{snapshot.summary.coveragePercent}% activado</span>
+        </SummaryCard>
+        <SummaryCard theme={theme} $accent={theme.success}>
+          <span className="label">Con nota</span>
+          <span className="value">{snapshot.summary.evaluatedCount}/5</span>
+          <span className="helper">
+            {snapshot.summary.averageEvaluatedScore > 0
+              ? `${snapshot.summary.averageEvaluatedScore.toFixed(1)}/10 promedio`
+              : 'Aun sin promedio'
+            }
+          </span>
+        </SummaryCard>
+        <SummaryCard theme={theme} $accent={theme.warning}>
+          <span className="label">Pendientes</span>
+          <span className="value">{snapshot.summary.pendingCount}</span>
+          <span className="helper">Revisiones en curso</span>
+        </SummaryCard>
+        <SummaryCard theme={theme} $accent={averageAccent}>
+          <span className="label">Fortalezas</span>
+          <span className="value">{snapshot.summary.strongCount}</span>
+          <span className="helper">Competente o experto</span>
+        </SummaryCard>
+      </SummaryStrip>
 
       <RubricsGrid>
-        {Object.entries(RUBRICAS_INFO).map(([rubricId, info]) => {
-          const data = rubricProgress[rubricId] || { scores: [], average: 0 };
-          const hasSummative = hasSummativeAttempt(data?.summative);
-          const summativeAttempts = hasSummative ? Math.max(1, Number(data?.summative?.attemptsUsed || 1)) : 0;
-          const intentos = (data?.scores?.length || 0) + summativeAttempts;
-          const displayAvg = getEffectiveScore(data);
-          
+        {snapshot.rubrics.map((rubric) => {
+          const accent = getAccent(rubric, theme);
+          const isFocus = snapshot.focusRubricId === rubric.rubricId;
+
           return (
             <RubricCard
-              key={rubricId}
-              $average={displayAvg}
+              key={rubric.rubricId}
+              type="button"
+              $accent={accent}
+              $muted={!rubric.started}
               theme={theme}
-              onClick={() => onSelectRubric?.(rubricId)}
-              initial={{ opacity: 0, y: 20 }}
+              onClick={() => onSelectRubric?.(rubric.rubricId)}
+              initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: parseInt(rubricId.replace('rubrica', '')) * 0.1 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              transition={{ delay: parseInt(rubric.rubricId.replace('rubrica', ''), 10) * 0.06 }}
             >
-              <RubricIcon>{info.icono}</RubricIcon>
-              <RubricName theme={theme}>{info.nombre}</RubricName>
-              <RubricScore $average={displayAvg} theme={theme}>
-                {displayAvg > 0 ? `${displayAvg}/10` : '—'}
-              </RubricScore>
-              <RubricLabel theme={theme}>
-                {displayAvg === 0 ? 'Sin evaluar' : 
-                 displayAvg >= 8.6 ? 'Experto' :
-                 displayAvg >= 5.6 ? 'Competente' :
-                 displayAvg >= 2.6 ? 'Aprendiz' : 'Novato'}
-              </RubricLabel>
-              {intentos > 0 && (
-                <RubricAttempts theme={theme}>
-                  {intentos} {intentos === 1 ? 'intento' : 'intentos'}
-                </RubricAttempts>
-              )}
+              <CardTop>
+                <RubricIcon>{rubric.icon}</RubricIcon>
+                {isFocus && (
+                  <FocusPill $accent={accent}>
+                    {rubric.isPendingReview ? 'En foco' : 'Siguiente'}
+                  </FocusPill>
+                )}
+              </CardTop>
+
+              <RubricName theme={theme}>{rubric.name}</RubricName>
+              <RubricArtifact theme={theme}>{rubric.artifactName}</RubricArtifact>
+              <RubricScore $accent={accent}>{formatScore(rubric)}</RubricScore>
+              <RubricStatus theme={theme}>{rubric.currentStatusLabel}</RubricStatus>
+
+              <RubricMeta theme={theme}>
+                <div>
+                  <span>Intentos</span>
+                  <span>{rubric.totalAttempts}</span>
+                </div>
+                <div>
+                  <span>{rubric.started ? 'Proximo paso' : 'Estado'}</span>
+                  <span>{rubric.started ? 'Abrir dimension' : 'Lista para empezar'}</span>
+                </div>
+              </RubricMeta>
             </RubricCard>
           );
         })}
       </RubricsGrid>
-
-      {promedioGlobal > 0 && (
-        <PromedioGlobal theme={theme}>
-          <PromedioLabel theme={theme}>
-            🎯 Promedio Global de Literacidad Crítica
-            <span style={{ 
-              fontSize: '0.85rem', 
-              fontWeight: 400, 
-              marginLeft: '0.5rem',
-              opacity: 0.8 
-            }}>
-              ({dimensionesEvaluadas}/5 dimensiones)
-            </span>
-          </PromedioLabel>
-          <PromedioValue $value={promedioGlobal} theme={theme}>
-            {promedioGlobal}/10
-          </PromedioValue>
-        </PromedioGlobal>
-      )}
     </DashboardContainer>
   );
 }
-
-
-

@@ -1,16 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { exportGenericPDF } from '../../utils/exportUtils';
-
+import { buildProgressSnapshot, formatSnapshotDate } from '../../services/progressSnapshot';
 import logger from '../../utils/logger';
-/**
- * 📥 ExportProgressButton - Exporta el progreso del estudiante en CSV/PDF
- *
- * Funcionalidades:
- * - Formato CSV para análisis en Excel/SPSS (detalle por intento)
- * - Formato PDF para portafolio/lectura humana (resumen + tabla)
- */
 
 const ButtonContainer = styled.div`
   display: flex;
@@ -32,22 +25,22 @@ const ExportButton = styled(motion.button)`
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  
+
   &:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
   }
-  
+
   &:active {
     transform: translateY(0);
   }
-  
+
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
   }
-  
+
   .icon {
     font-size: 1.2em;
   }
@@ -73,7 +66,7 @@ const ModalContent = styled(motion.div)`
   width: 100%;
   padding: 2rem;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  
+
   h3 {
     margin: 0 0 1rem 0;
     font-size: 1.5rem;
@@ -82,13 +75,13 @@ const ModalContent = styled(motion.div)`
     align-items: center;
     gap: 0.5rem;
   }
-  
+
   p {
     margin: 0 0 1.5rem 0;
     color: ${props => props.theme.textSecondary};
     line-height: 1.6;
   }
-  
+
   .buttons {
     display: flex;
     gap: 0.75rem;
@@ -104,22 +97,22 @@ const Button = styled.button`
   cursor: pointer;
   transition: all 0.2s ease;
   border: none;
-  
+
   &.primary {
     background: ${props => props.theme.success};
     color: white;
-    
+
     &:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(0, 150, 136, 0.3);
     }
   }
-  
+
   &.secondary {
     background: transparent;
     color: ${props => props.theme.textPrimary};
     border: 2px solid ${props => props.theme.border};
-    
+
     &:hover {
       background: ${props => props.theme.background};
     }
@@ -127,17 +120,123 @@ const Button = styled.button`
 `;
 
 const ARTEFACTO_NAMES = {
-  rubrica1: 'Resumen Académico',
+  rubrica1: 'Resumen Academico',
   rubrica2: 'Tabla ACD',
   rubrica3: 'Mapa de Actores',
   rubrica4: 'Respuesta Argumentativa',
-  rubrica5: 'Bitácora Ética IA'
+  rubrica5: 'Bitacora Etica IA'
 };
+
+function toNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function buildAggregateExportRow(rubric, nivelDescripcion) {
+  const artifactScore = toNumber(rubric?.artifactData?.teacherOverrideScore) ||
+    toNumber(rubric?.artifactData?.score) ||
+    toNumber(rubric?.artifactData?.lastScore);
+  const hasAggregateState = rubric.isPendingReview || rubric.summativeAttempted || artifactScore > 0;
+
+  if (!hasAggregateState) return null;
+
+  let estado = rubric.currentStatusLabel;
+  if (rubric.isPendingReview) {
+    const sumStatus = String(rubric?.summative?.status || '').toLowerCase();
+    estado = sumStatus === 'submitted'
+      ? 'Sumativo pendiente de revision'
+      : 'Artefacto pendiente de revision';
+  } else if (rubric.summativeAttempted && rubric.summativeScore > 0) {
+    estado = 'Evaluacion sumativa';
+  } else if (toNumber(rubric?.artifactData?.teacherOverrideScore) > 0) {
+    estado = 'Override docente vigente';
+  } else if (artifactScore > 0) {
+    estado = 'Artefacto evaluado';
+  }
+
+  const rank = rubric.scoreBand?.rank || '';
+  const rankDescription = rank ? (nivelDescripcion[rank] || rubric.badgeLabel) : rubric.badgeLabel;
+
+  return {
+    sortTime: rubric.lastActivityAt || 0,
+    values: [
+      rubric.lastActivityAt ? new Date(rubric.lastActivityAt).toLocaleString('es-ES') : 'Sin fecha',
+      rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
+      estado,
+      rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
+      rank,
+      rankDescription,
+      rubric.totalAttempts
+    ]
+  };
+}
+
+function buildCsvRows(snapshot) {
+  const nivelDescripcion = {
+    1: 'Novato - Inicio del proceso',
+    2: 'Aprendiz - En progreso',
+    3: 'Competente - Satisfactorio',
+    4: 'Experto - Excelente'
+  };
+
+  const rows = [];
+
+  snapshot.rubrics.forEach((rubric) => {
+    if (rubric.formativeScores.length > 0) {
+      rubric.formativeScores.forEach((score, index) => {
+        const numericScore = toNumber(score.score);
+        const nivel = score.nivel || Math.ceil(numericScore / 2.5);
+        rows.push({
+          sortTime: Number(score.timestamp) || 0,
+          values: [
+            new Date(score.timestamp).toLocaleString('es-ES'),
+            rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
+            'Evaluacion formativa',
+            numericScore.toFixed(2),
+            nivel,
+            nivelDescripcion[nivel] || 'Evaluacion formativa',
+            index + 1
+          ]
+        });
+      });
+
+      const aggregateRow = buildAggregateExportRow(rubric, nivelDescripcion);
+      if (aggregateRow) {
+        rows.push(aggregateRow);
+      }
+      return;
+    }
+
+    if (!rubric.started) return;
+
+    const aggregateRow = buildAggregateExportRow(rubric, nivelDescripcion);
+    if (aggregateRow) {
+      rows.push(aggregateRow);
+      return;
+    }
+
+    rows.push({
+      sortTime: rubric.lastActivityAt || 0,
+      values: [
+        rubric.lastActivityAt ? new Date(rubric.lastActivityAt).toLocaleString('es-ES') : 'Sin fecha',
+        rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
+        rubric.currentStatusLabel,
+        rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
+        rubric.scoreBand?.rank || '',
+        rubric.badgeLabel,
+        rubric.totalAttempts
+      ]
+    });
+  });
+
+  return rows.sort((a, b) => b.sortTime - a.sortTime);
+}
 
 export default function ExportProgressButton({
   rubricProgress,
+  progressSnapshot = null,
   studentName: _studentName = 'estudiante',
-  documentId = 'documento',
+  documentId = null,
   tutorInteractions = [],
   savedCitations = [],
   lectureId = null,
@@ -146,33 +245,33 @@ export default function ExportProgressButton({
   const [showConfirm, setShowConfirm] = useState(false);
   const [format, setFormat] = useState('csv');
 
-  const hasData = rubricProgress && Object.values(rubricProgress).some(r => r?.scores?.length > 0);
+  const snapshot = useMemo(() => (
+    progressSnapshot || buildProgressSnapshot({ rubricProgress, lectureId })
+  ), [progressSnapshot, rubricProgress, lectureId]);
 
-  // 🆕 Cargar contenido de artefactos desde localStorage
+  const safeDocumentId = documentId || lectureId || 'documento';
+  const hasData = snapshot.hasData;
+
   const loadArtefactosContent = () => {
     const content = {};
     const key = lectureId || 'global';
     const scopedKey = sourceCourseId ? `${sourceCourseId}_${key}` : key;
     const courseScope = sourceCourseId ? `${sourceCourseId}::` : '';
 
-    // Resumen Académico
     try {
-      const resumenKey = `activity_resumen_academico_${scopedKey}`;
-      const resumenLegacyKey = `activity_resumen_academico_${key}`;
-      const resumenData = localStorage.getItem(resumenKey) ||
-        (!sourceCourseId ? localStorage.getItem(resumenLegacyKey) : null);
+      const resumenData = localStorage.getItem(`activity_resumen_academico_${scopedKey}`) ||
+        (!sourceCourseId ? localStorage.getItem(`activity_resumen_academico_${key}`) : null);
       if (resumenData) {
         const parsed = JSON.parse(resumenData);
         content.resumenAcademico = parsed.student_answers?.resumen || '';
       }
-    } catch (e) { logger.warn('Error loading resumenAcademico', e); }
+    } catch (error) {
+      logger.warn('Error loading resumenAcademico', error);
+    }
 
-    // Tabla ACD
     try {
-      const acdKey = `activity_tabla_acd_${scopedKey}`;
-      const acdLegacyKey = `activity_tabla_acd_${key}`;
-      const acdData = localStorage.getItem(acdKey) ||
-        (!sourceCourseId ? localStorage.getItem(acdLegacyKey) : null);
+      const acdData = localStorage.getItem(`activity_tabla_acd_${scopedKey}`) ||
+        (!sourceCourseId ? localStorage.getItem(`activity_tabla_acd_${key}`) : null);
       if (acdData) {
         const parsed = JSON.parse(acdData);
         content.tablaACD = {
@@ -182,14 +281,13 @@ export default function ExportProgressButton({
           vocesSilenciadas: parsed.student_answers?.voces_silenciadas || ''
         };
       }
-    } catch (e) { logger.warn('Error loading tablaACD', e); }
+    } catch (error) {
+      logger.warn('Error loading tablaACD', error);
+    }
 
-    // Mapa de Actores
     try {
-      const mapaKey = `activity_mapa_actores_${scopedKey}`;
-      const mapaLegacyKey = `activity_mapa_actores_${key}`;
-      const mapaData = localStorage.getItem(mapaKey) ||
-        (!sourceCourseId ? localStorage.getItem(mapaLegacyKey) : null);
+      const mapaData = localStorage.getItem(`activity_mapa_actores_${scopedKey}`) ||
+        (!sourceCourseId ? localStorage.getItem(`activity_mapa_actores_${key}`) : null);
       if (mapaData) {
         const parsed = JSON.parse(mapaData);
         content.mapaActores = {
@@ -199,14 +297,13 @@ export default function ExportProgressButton({
           consecuencias: parsed.student_answers?.consecuencias || ''
         };
       }
-    } catch (e) { logger.warn('Error loading mapaActores', e); }
+    } catch (error) {
+      logger.warn('Error loading mapaActores', error);
+    }
 
-    // Respuesta Argumentativa
     try {
-      const respKey = `activity_respuesta_argumentativa_${scopedKey}`;
-      const respLegacyKey = `activity_respuesta_argumentativa_${key}`;
-      const respData = localStorage.getItem(respKey) ||
-        (!sourceCourseId ? localStorage.getItem(respLegacyKey) : null);
+      const respData = localStorage.getItem(`activity_respuesta_argumentativa_${scopedKey}`) ||
+        (!sourceCourseId ? localStorage.getItem(`activity_respuesta_argumentativa_${key}`) : null);
       if (respData) {
         const parsed = JSON.parse(respData);
         content.respuestaArgumentativa = {
@@ -216,18 +313,15 @@ export default function ExportProgressButton({
           refutacion: parsed.student_answers?.refutacion || ''
         };
       }
-    } catch (e) { logger.warn('Error loading respuestaArgumentativa', e); }
+    } catch (error) {
+      logger.warn('Error loading respuestaArgumentativa', error);
+    }
 
-    // Bitácora Ética IA
     try {
-      const bitacoraKey = `activity_bitacora_etica_ia_${scopedKey}`;
-      const bitacoraLegacyKey = `activity_bitacora_etica_ia_${key}`;
-      const bitacoraData = localStorage.getItem(bitacoraKey) ||
-        (!sourceCourseId ? localStorage.getItem(bitacoraLegacyKey) : null);
-      const reflexionesKey = `ethicalReflections:${courseScope}${key}`;
-      const reflexionesLegacyKey = `ethicalReflections:${key}`;
-      const reflexionesData = localStorage.getItem(reflexionesKey) ||
-        (!sourceCourseId ? localStorage.getItem(reflexionesLegacyKey) : null);
+      const bitacoraData = localStorage.getItem(`activity_bitacora_etica_ia_${scopedKey}`) ||
+        (!sourceCourseId ? localStorage.getItem(`activity_bitacora_etica_ia_${key}`) : null);
+      const reflexionesData = localStorage.getItem(`ethicalReflections:${courseScope}${key}`) ||
+        (!sourceCourseId ? localStorage.getItem(`ethicalReflections:${key}`) : null);
 
       content.bitacoraEticaIA = {};
       if (bitacoraData) {
@@ -240,6 +334,7 @@ export default function ExportProgressButton({
           declaraciones: answers.declaraciones || []
         };
       }
+
       if (reflexionesData) {
         const reflexiones = JSON.parse(reflexionesData);
         content.bitacoraEticaIA = {
@@ -250,13 +345,15 @@ export default function ExportProgressButton({
           declaraciones: reflexiones.declaraciones || content.bitacoraEticaIA.declaraciones || []
         };
       }
-    } catch (e) { logger.warn('Error loading bitacoraEticaIA', e); }
+    } catch (error) {
+      logger.warn('Error loading bitacoraEticaIA', error);
+    }
 
     return content;
   };
 
   const handleExport = (selectedFormat) => {
-    if (!rubricProgress) return;
+    if (!hasData) return;
 
     if (selectedFormat === 'csv') {
       exportCSV();
@@ -271,59 +368,23 @@ export default function ExportProgressButton({
     const headers = [
       'Fecha y Hora',
       'Artefacto',
-      'Puntuación (sobre 10)',
+      'Estado',
+      'Puntuacion (sobre 10)',
       'Nivel Alcanzado (1-4)',
-      'Descripción del Nivel',
-      'Número de Intento'
+      'Descripcion del Nivel',
+      'Numero de Intento'
     ];
 
-    const nivelDescripcion = {
-      1: 'Inicial - Requiere desarrollo',
-      2: 'Básico - En progreso',
-      3: 'Competente - Satisfactorio',
-      4: 'Avanzado - Excelente'
-    };
-
-    const rows = [];
-
-    Object.entries(rubricProgress).forEach(([rubricId, data]) => {
-      if (data?.scores) {
-        data.scores.forEach((score, index) => {
-          const nivel = score.nivel || Math.ceil(score.score / 2.5);
-
-          rows.push([
-            new Date(score.timestamp).toLocaleString('es-ES', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit'
-            }),
-            ARTEFACTO_NAMES[rubricId] || rubricId,
-            score.score.toFixed(2),
-            nivel,
-            nivelDescripcion[nivel] || 'Sin clasificar',
-            index + 1
-          ]);
-        });
-      }
-    });
-
-    // Ordenar por fecha (más reciente primero)
-    rows.sort((a, b) => new Date(b[0]) - new Date(a[0]));
-
-    const titleRow = `"Historial de Evaluaciones — Exportado: ${new Date().toLocaleString('es-ES')}"`;
+    const rows = buildCsvRows(snapshot);
+    const titleRow = `"Historial de Evaluaciones - Exportado: ${new Date().toLocaleString('es-ES')}"`;
     const csv = [titleRow, headers.map(h => `"${h}"`).join(','), ...rows
-      .map(row => row.map(cell => `"${cell}"`).join(','))]
+      .map(row => row.values.map(cell => `"${cell}"`).join(','))]
       .join('\n');
 
-    const BOM = '\uFEFF';
-    downloadFile(BOM + csv, `progreso_${documentId}_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8');
+    downloadFile(`\uFEFF${csv}`, `progreso_${safeDocumentId}_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8');
   };
 
   const exportPDF = async () => {
-    // 🆕 Cargar contenido de artefactos
     const artefactosContent = loadArtefactosContent();
 
     const rubricToContentKey = {
@@ -334,107 +395,71 @@ export default function ExportProgressButton({
       rubrica5: 'bitacoraEticaIA'
     };
 
-    const rubricIds = Object.keys(ARTEFACTO_NAMES);
-    const nivelDescripcion = {
-      1: 'Inicial - Requiere desarrollo',
-      2: 'Básico - En progreso',
-      3: 'Competente - Satisfactorio',
-      4: 'Avanzado - Excelente'
-    };
-
-    let totalScore = 0;
-    let totalNivel = 0;
-    let artefactosConDatos = 0;
-    let dimensionesCompletadas = 0;
-    let totalEvaluaciones = 0;
-
-    const rows = rubricIds.map((rubricId) => {
-      const data = rubricProgress?.[rubricId];
-      // 🛡️ Excluir scores de PracticaGuiada (solo artefactos reales)
-      const scores = (data?.scores || []).filter(s => s.artefacto !== 'PracticaGuiada');
-      totalEvaluaciones += scores.length;
-
-      if (scores.length === 0) {
-        return [ARTEFACTO_NAMES[rubricId] || rubricId, 'Sin datos', '0', '—', '—', '—'];
-      }
-
-      const lastScore = scores[scores.length - 1];
-      const highestScore = Math.max(...scores.map(s => Number(s?.score) || 0));
-      const lastNivel = lastScore.nivel || Math.ceil((Number(lastScore.score) || 0) / 2.5);
-
-      artefactosConDatos++;
-      totalScore += Number(lastScore.score) || 0;
-      totalNivel += Number(lastNivel) || 0;
-      if (lastNivel >= 3) dimensionesCompletadas++;
-
-      const estado = lastNivel >= 3 ? 'Completado' : 'En progreso';
-      const ultimaFecha = lastScore.timestamp ? new Date(lastScore.timestamp).toLocaleString('es-ES') : '—';
+    const rows = snapshot.rubrics.map((rubric) => {
+      const bestScore = rubric.bestFormativeScore > 0 ? rubric.bestFormativeScore : rubric.effectiveScore;
+      const levelLabel = rubric.scoreBand?.rank
+        ? `${rubric.scoreBand.rank} (${rubric.badgeLabel})`
+        : rubric.badgeLabel;
 
       return [
-        ARTEFACTO_NAMES[rubricId] || rubricId,
-        estado,
-        String(scores.length),
-        (Number(lastScore.score) || 0).toFixed(2),
-        highestScore.toFixed(2),
-        `${lastNivel} (${nivelDescripcion[lastNivel] || 'Sin clasificar'}) · ${ultimaFecha}`
+        rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
+        rubric.currentStatusLabel,
+        String(rubric.totalAttempts),
+        rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : '—',
+        bestScore > 0 ? bestScore.toFixed(2) : '—',
+        `${levelLabel} · ${formatSnapshotDate(rubric.lastActivityAt)}`
       ];
     });
 
-    const promedioGeneral = artefactosConDatos > 0 ? (totalScore / artefactosConDatos).toFixed(2) : '0.00';
-    const nivelPromedioAlcanzado = artefactosConDatos > 0 ? Math.round(totalNivel / artefactosConDatos) : 0;
-
     const contenidoArtefactos = {};
-    rubricIds.forEach(rubricId => {
-      const key = rubricToContentKey[rubricId];
-      if (!key) return;
-      contenidoArtefactos[key] = artefactosContent?.[key];
+    Object.keys(rubricToContentKey).forEach((rubricId) => {
+      const contentKey = rubricToContentKey[rubricId];
+      contenidoArtefactos[contentKey] = artefactosContent?.[contentKey];
     });
 
     const interaccionesTutorRecientes = Array.isArray(tutorInteractions)
-      ? tutorInteractions
-        .slice(-8)
-        .map(interaction => ({
-          fecha: interaction?.timestamp ? new Date(interaction.timestamp).toLocaleString('es-ES') : null,
-          tipo: interaction?.type || 'chat',
-          preguntaEstudiante: interaction?.prompt || interaction?.question || '',
-          respuestaTutor: interaction?.response || '',
-        }))
+      ? tutorInteractions.slice(-8).map((interaction) => ({
+        fecha: interaction?.timestamp ? new Date(interaction.timestamp).toLocaleString('es-ES') : null,
+        tipo: interaction?.type || 'chat',
+        preguntaEstudiante: interaction?.prompt || interaction?.question || '',
+        respuestaTutor: interaction?.response || '',
+      }))
       : [];
 
     const citasRecientes = Array.isArray(savedCitations)
-      ? savedCitations
-        .slice(0, 12)
-        .map(cita => ({
-          texto: cita?.texto || cita?.text || '',
-          posicion: cita?.posicion || cita?.position || null,
-          fechaGuardado: cita?.timestamp ? new Date(cita.timestamp).toLocaleString('es-ES') : null
-        }))
+      ? savedCitations.slice(0, 12).map((cita) => ({
+        texto: cita?.texto || cita?.text || '',
+        posicion: cita?.posicion || cita?.position || null,
+        fechaGuardado: cita?.timestamp ? new Date(cita.timestamp).toLocaleString('es-ES') : null
+      }))
       : [];
 
     const datePart = new Date().toISOString().split('T')[0];
     await exportGenericPDF({
       title: 'Informe de progreso (Actividades)',
-      fileName: `progreso_${documentId}_${datePart}.pdf`,
+      fileName: `progreso_${safeDocumentId}_${datePart}.pdf`,
       sections: [
         {
           heading: 'Resumen',
           keyValues: {
             fechaExportacion: new Date().toLocaleString('es-ES'),
-            documentoID: documentId,
+            documentoID: safeDocumentId,
             lectureId,
-            totalEvaluaciones,
-            dimensionesCompletadas,
-            promedioGeneral,
-            nivelPromedioAlcanzado,
+            dimensionesActivas: snapshot.summary.coverageCount,
+            dimensionesConNota: snapshot.summary.evaluatedCount,
+            pendientesRevision: snapshot.summary.pendingCount,
+            totalEvaluaciones: snapshot.summary.totalAttempts,
+            promedioGeneral: snapshot.summary.averageEvaluatedScore > 0 ? snapshot.summary.averageEvaluatedScore.toFixed(2) : '0.00',
+            mejorPuntaje: snapshot.summary.bestScore > 0 ? snapshot.summary.bestScore.toFixed(2) : '0.00',
             totalInteraccionesTutor: tutorInteractions?.length || 0,
             totalCitasGuardadas: savedCitations?.length || 0,
           }
         },
         {
           heading: 'Tabla por artefacto',
-          text: 'Detalle por artefacto (estado, intentos y puntuaciones). Para el historial completo de intentos, usa el CSV.',
+          text: 'Detalle por artefacto (estado, intentos y puntuaciones). Para el historial completo por intento, usa el CSV.',
           table: {
-            headers: ['Artefacto', 'Estado', 'Intentos', 'Última', 'Máxima', 'Nivel / Fecha'],
+            headers: ['Artefacto', 'Estado', 'Intentos', 'Ultima', 'Maxima', 'Nivel / Fecha'],
             rows
           }
         },
@@ -501,7 +526,6 @@ export default function ExportProgressButton({
         </ExportButton>
       </ButtonContainer>
 
-      {/* Modal de Confirmación */}
       <AnimatePresence>
         {showConfirm && (
           <Modal
@@ -509,6 +533,9 @@ export default function ExportProgressButton({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setShowConfirm(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-progress-title"
           >
             <ModalContent
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -516,13 +543,13 @@ export default function ExportProgressButton({
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3>
+              <h3 id="export-progress-title">
                 <span>{format === 'csv' ? '📊' : '📄'}</span>
                 Exportar Progreso en {format.toUpperCase()}
               </h3>
 
               <p>
-                Se descargará un archivo {format.toUpperCase()} con toda tu información de progreso:
+                Se descargara un archivo {format.toUpperCase()} con la informacion visible de esta lectura y sus evidencias asociadas.
               </p>
 
               <ul style={{
@@ -533,28 +560,27 @@ export default function ExportProgressButton({
               }}>
                 {format === 'csv' ? (
                   <>
-                    <li><strong>Fecha y hora</strong> de cada evaluación</li>
-                    <li><strong>Nombre del artefacto</strong> evaluado</li>
-                    <li><strong>Puntuación sobre 10</strong></li>
-                    <li><strong>Nivel alcanzado</strong> (Inicial, Básico, Competente, Avanzado)</li>
-                    <li><strong>Número de intento</strong> (1, 2, 3...)</li>
-                    <li>Ordenado por fecha (más reciente primero)</li>
+                    <li><strong>Fecha y hora</strong> de cada evaluacion registrada</li>
+                    <li><strong>Artefacto y estado</strong> actual de la dimension</li>
+                    <li><strong>Puntuacion sobre 10</strong> cuando exista</li>
+                    <li><strong>Nivel alcanzado</strong> o estado pendiente</li>
+                    <li><strong>Numero de intento</strong> por registro</li>
                   </>
                 ) : (
                   <>
-                    <li><strong>Resumen general:</strong> dimensiones completadas, promedio y nivel alcanzado</li>
-                    <li><strong>Tabla por artefacto:</strong> estado, intentos, última y máxima puntuación</li>
-                    <li><strong>Contenido (si existe):</strong> respuestas guardadas del estudiante en cada artefacto</li>
-                    <li><strong>Soporte:</strong> muestra de interacciones con el tutor y citas guardadas</li>
-                    <li><strong>Nota:</strong> para el historial completo por intento, usa el CSV</li>
+                    <li><strong>Resumen general:</strong> cobertura, notas, pendientes y mejor puntaje</li>
+                    <li><strong>Tabla por artefacto:</strong> estado, intentos, ultima nota y maxima</li>
+                    <li><strong>Contenido del estudiante:</strong> respuestas guardadas si existen</li>
+                    <li><strong>Soporte:</strong> muestra de interacciones con tutor y citas guardadas</li>
+                    <li><strong>Nota:</strong> para el historial fino por intento, usa el CSV</li>
                   </>
                 )}
               </ul>
 
               <p style={{ fontSize: '0.85rem', fontStyle: 'italic' }}>
                 {format === 'csv'
-                  ? '📊 Archivo CSV listo para abrir en Excel, Google Sheets o cualquier hoja de cálculo. Ideal para gráficos y análisis visual.'
-                  : '📦 Archivo JSON estructurado para programadores e investigadores. Incluye metadatos completos y estructura jerárquica.'
+                  ? '📊 Archivo CSV listo para abrir en Excel, Google Sheets o cualquier hoja de calculo.'
+                  : '📄 Archivo PDF listo para compartir o archivar en portafolios y seguimiento docente.'
                 }
               </p>
 

@@ -1,24 +1,35 @@
-// src/services/analyticsService.js
+const RUBRIC_LABELS = {
+  rubrica1: 'Comprension Analitica',
+  rubrica2: 'Analisis Ideologico-Discursivo',
+  rubrica3: 'Contextualizacion Socio-Historica',
+  rubrica4: 'Argumentacion y Contraargumento',
+  rubrica5: 'Metacognicion Etica del Uso de IA'
+};
 
-/**
- * Servicio de analíticas para tracking de métricas educativas
- */
+function toNumericScore(entry) {
+  if (typeof entry === 'object' && entry !== null) return Number(entry.score);
+  return Number(entry);
+}
 
-/**
- * Calcula estadísticas detalladas de progreso
- */
-export function calculateDetailedStats(rubricProgress) {
-  const rubrics = Object.entries(rubricProgress);
-  const toNumericScore = (entry) => {
-    if (typeof entry === 'object' && entry !== null) return Number(entry.score);
-    return Number(entry);
-  };
-  const getArtifactScores = (scores = []) => {
-    if (!Array.isArray(scores)) return [];
-    return scores.filter((entry) => !(typeof entry === 'object' && entry?.artefacto === 'PracticaGuiada'));
-  };
-  
-  if (rubrics.length === 0) {
+function getArtifactScores(scores = []) {
+  if (!Array.isArray(scores)) return [];
+  return scores.filter((entry) => !(typeof entry === 'object' && entry?.artefacto === 'PracticaGuiada'));
+}
+
+function getSnapshotEvaluated(progressSnapshot) {
+  if (!Array.isArray(progressSnapshot?.rubrics)) return [];
+  return progressSnapshot.rubrics.filter((rubric) => Number(rubric?.effectiveScore || 0) > 0);
+}
+
+export function calculateDetailedStats(rubricProgress, progressSnapshot = null) {
+  const rubrics = Object.entries(rubricProgress || {});
+  const snapshotEvaluated = getSnapshotEvaluated(progressSnapshot);
+  const hasSnapshot = Array.isArray(progressSnapshot?.rubrics) && progressSnapshot.rubrics.length > 0;
+  const totalRubrics = hasSnapshot
+    ? Number(progressSnapshot?.summary?.totalRubrics || progressSnapshot.rubrics.length || 0)
+    : rubrics.length;
+
+  if (totalRubrics === 0) {
     return {
       summary: {
         totalRubrics: 0,
@@ -43,68 +54,73 @@ export function calculateDetailedStats(rubricProgress) {
     };
   }
 
-  // Resumen básico
-  const evaluated = rubrics.filter(([_, data]) => getArtifactScores(data?.scores).length > 0);
-  const allScores = rubrics.flatMap(([_, data]) => 
-    getArtifactScores(data.scores).map(toNumericScore)
-  );
-  const totalAttempts = allScores.length;
-  
+  const evaluated = hasSnapshot
+    ? snapshotEvaluated.map((rubric) => [rubric.rubricId, rubric])
+    : rubrics.filter(([_, data]) => getArtifactScores(data?.scores).length > 0);
+  const allScores = rubrics.flatMap(([_, data]) => getArtifactScores(data?.scores || []).map(toNumericScore));
+  const totalAttempts = hasSnapshot
+    ? Number(progressSnapshot?.summary?.totalAttempts || 0)
+    : allScores.length;
+
   const averageScore = evaluated.length > 0
-    ? evaluated.reduce((sum, [_, data]) => sum + Number(data.average || 0), 0) / evaluated.length
+    ? (hasSnapshot
+      ? Number(progressSnapshot?.summary?.averageEvaluatedScore || 0)
+      : evaluated.reduce((sum, [_, data]) => sum + Number(data?.average || 0), 0) / evaluated.length)
     : 0;
-  
-  // Mediana
+
   const sortedScores = [...allScores].sort((a, b) => a - b);
   const mid = Math.floor(sortedScores.length / 2);
   const medianScore = sortedScores.length > 0
-    ? (sortedScores.length % 2 === 0 
-        ? (Number(sortedScores[mid - 1]) + Number(sortedScores[mid])) / 2 
-        : Number(sortedScores[mid]))
+    ? (sortedScores.length % 2 === 0
+      ? (Number(sortedScores[mid - 1]) + Number(sortedScores[mid])) / 2
+      : Number(sortedScores[mid]))
     : 0;
 
-  // Fortalezas y debilidades
   const strengths = evaluated
-    .filter(([_, data]) => Number(data.average) >= 8.6)
-    .map(([id, data]) => ({ rubricId: id, score: Number(data.average) }));
-  
-  const weaknesses = evaluated
-    .filter(([_, data]) => Number(data.average) < 5.6)
-    .map(([id, data]) => ({ rubricId: id, score: Number(data.average) }));
+    .filter(([_, data]) => Number(hasSnapshot ? data?.effectiveScore : data?.average || 0) >= 8.6)
+    .map(([id, data]) => ({
+      rubricId: id,
+      rubricLabel: RUBRIC_LABELS[id] || id,
+      score: Number(hasSnapshot ? data?.effectiveScore : data?.average || 0)
+    }));
 
-  // Tendencias (últimos 3 vs primeros 3 intentos)
+  const weaknesses = evaluated
+    .filter(([_, data]) => Number(hasSnapshot ? data?.effectiveScore : data?.average || 0) < 5.6)
+    .map(([id, data]) => ({
+      rubricId: id,
+      rubricLabel: RUBRIC_LABELS[id] || id,
+      score: Number(hasSnapshot ? data?.effectiveScore : data?.average || 0)
+    }));
+
   const improving = [];
   const declining = [];
   let rubricsWithTrendData = 0;
-  
+
   evaluated.forEach(([id, data]) => {
-    const artifactScores = getArtifactScores(data.scores);
+    const artifactScores = getArtifactScores(data?.scores || []);
     if (artifactScores.length >= 3) {
       rubricsWithTrendData += 1;
       const first3 = artifactScores.slice(0, 3).reduce((sum, entry) => sum + toNumericScore(entry), 0) / 3;
       const last3 = artifactScores.slice(-3).reduce((sum, entry) => sum + toNumericScore(entry), 0) / 3;
       const change = last3 - first3;
-      
-      if (change > 1) improving.push({ rubricId: id, improvement: change });
-      if (change < -1) declining.push({ rubricId: id, decline: Math.abs(change) });
+
+      if (change > 1) improving.push({ rubricId: id, rubricLabel: RUBRIC_LABELS[id] || id, improvement: change });
+      if (change < -1) declining.push({ rubricId: id, rubricLabel: RUBRIC_LABELS[id] || id, decline: Math.abs(change) });
     }
   });
 
-  // Tendencia general
   let overallTrend = 'stable';
   if (rubricsWithTrendData > 0) {
     if (improving.length > declining.length) overallTrend = 'improving';
     if (declining.length > improving.length) overallTrend = 'declining';
   }
-  const hasSufficientData = rubricsWithTrendData > 0;
 
-  // Consistencia (desviación estándar normalizada)
-  const variance = allScores.reduce((sum, score) => 
-    sum + Math.pow(score - averageScore, 2), 0) / allScores.length;
+  const variance = allScores.length > 0
+    ? allScores.reduce((sum, score) => sum + Math.pow(score - averageScore, 2), 0) / allScores.length
+    : 0;
   const stdDev = Math.sqrt(variance);
-  const consistencyScore = Math.max(0, 10 - stdDev); // 10 = muy consistente, 0 = muy inconsistente
+  const consistencyScore = Math.max(0, 10 - stdDev);
 
-  // Recomendaciones
   const recommendations = generateRecommendations({
     averageScore,
     strengths,
@@ -113,16 +129,18 @@ export function calculateDetailedStats(rubricProgress) {
     declining,
     totalAttempts,
     consistencyScore,
+    evaluatedRubrics: evaluated.length,
+    totalRubrics,
   });
 
   return {
     summary: {
-      totalRubrics: rubrics.length,
+      totalRubrics,
       evaluatedRubrics: evaluated.length,
       totalAttempts,
       averageScore: parseFloat(averageScore.toFixed(2)),
       medianScore: parseFloat(medianScore.toFixed(2)),
-      completionRate: (evaluated.length / rubrics.length) * 100,
+      completionRate: totalRubrics > 0 ? (evaluated.length / totalRubrics) * 100 : 0,
     },
     performance: {
       strengths,
@@ -133,92 +151,92 @@ export function calculateDetailedStats(rubricProgress) {
     trends: {
       overallTrend,
       consistencyScore: parseFloat(consistencyScore.toFixed(2)),
-      hasSufficientData,
+      hasSufficientData: rubricsWithTrendData > 0,
     },
     recommendations,
   };
 }
 
-/**
- * Genera recomendaciones personalizadas
- */
 function generateRecommendations(data) {
   const recommendations = [];
-  
-  // Recomendación por promedio bajo
+
   if (data.averageScore < 5.6) {
     recommendations.push({
       type: 'improvement',
       priority: 'high',
       title: 'Refuerza conceptos fundamentales',
-      description: 'Tu promedio actual sugiere que necesitas fortalecer las bases. Revisa los artefactos de las dimensiones con menor puntaje.',
-      action: 'Visita el tab de Análisis para revisar el texto'
+      description: 'Tu promedio actual sugiere que necesitas fortalecer las bases. Revisa primero las dimensiones con menor puntaje.',
+      action: 'Vuelve a una dimension debil y responde un nuevo artefacto'
     });
   }
 
-  // Recomendación por debilidades
   if (data.weaknesses.length > 0) {
     recommendations.push({
       type: 'focus',
       priority: 'high',
-      title: `Enfócate en ${data.weaknesses.length} dimensión(es) débil(es)`,
-      description: 'Has identificado áreas de mejora específicas. Trabaja en ellas sistemáticamente.',
-      action: 'Practica más en las dimensiones con puntaje bajo'
+      title: `Enfocate en ${data.weaknesses.length} dimension(es) debil(es)`,
+      description: 'Ya hay areas claras de mejora. Trabaja una por una para subir cobertura y consistencia.',
+      action: 'Prioriza las dimensiones con menor puntaje'
     });
   }
 
-  // Recomendación por mejora
   if (data.improving.length > 0) {
     recommendations.push({
       type: 'motivation',
       priority: 'medium',
-      title: '¡Estás mejorando!',
-      description: `Has mostrado progreso en ${data.improving.length} dimensión(es). Mantén el ritmo.`,
-      action: 'Continúa practicando con constancia'
+      title: 'Estas mejorando',
+      description: `Se detecta progreso en ${data.improving.length} dimension(es). Mantener continuidad ahora vale mas que cambiar de estrategia.`,
+      action: 'Sigue practicando la misma rutina que te dio mejores resultados'
     });
   }
 
-  // Recomendación por inconsistencia
-  if (data.consistencyScore < 6) {
+  if (data.consistencyScore < 6 && data.totalAttempts >= 3) {
     recommendations.push({
       type: 'strategy',
       priority: 'medium',
       title: 'Mejora tu consistencia',
-      description: 'Tus puntajes varían mucho. Desarrolla una estrategia de respuesta más sistemática.',
-      action: 'Revisa los feedbacks para identificar patrones'
+      description: 'Tus puntajes varian bastante. Conviene revisar el feedback para identificar que se repite cuando obtienes mejores notas.',
+      action: 'Compara tus respuestas fuertes con las mas debiles'
     });
   }
 
-  // Recomendación por declive
   if (data.declining.length > 0) {
     recommendations.push({
       type: 'alert',
       priority: 'high',
-      title: '⚠️ Atención: declive detectado',
-      description: `${data.declining.length} dimensión(es) muestran declive. Puede ser fatiga o falta de práctica.`,
-      action: 'Toma un descanso y retoma con enfoque renovado'
+      title: 'Atencion: hay una caida reciente',
+      description: `${data.declining.length} dimension(es) muestran una baja respecto a intentos anteriores.`,
+      action: 'Haz una pausa corta y vuelve a evaluar la dimension mas inestable'
     });
   }
 
-  // Recomendación por pocos intentos
-  if (data.totalAttempts < 5) {
+  if (data.averageScore >= 8.6 && data.evaluatedRubrics < data.totalRubrics) {
+    recommendations.push({
+      type: 'coverage',
+      priority: 'medium',
+      title: 'Amplia tu cobertura',
+      description: 'Tu desempeno en lo evaluado es fuerte. Ahora conviene activar mas dimensiones para tener un panorama completo.',
+      action: 'Elige una dimension sin nota y trabaja un nuevo artefacto'
+    });
+  } else if (data.totalAttempts < 5) {
     recommendations.push({
       type: 'engagement',
       priority: 'low',
-      title: 'Aumenta tu práctica',
-      description: 'Más evaluaciones te darán mejor feedback sobre tu progreso.',
-      action: 'Intenta responder al menos 2 preguntas por dimensión'
+      title: 'Aumenta tu practica',
+      description: 'Con mas evaluaciones el feedback sera mas estable y util para ver tendencias reales.',
+      action: 'Intenta responder al menos 2 preguntas o artefactos mas'
     });
   }
 
-  // Recomendación por excelencia
   if (data.averageScore >= 8.6) {
     recommendations.push({
       type: 'challenge',
       priority: 'low',
-      title: '🌟 ¡Excelente desempeño!',
-      description: 'Has demostrado dominio. Considera desafíos más complejos.',
-      action: 'Explora textos más avanzados o géneros diferentes'
+      title: 'Excelente desempeno en lo evaluado',
+      description: 'Ya hay señales de dominio en las dimensiones con nota.',
+      action: data.evaluatedRubrics < data.totalRubrics
+        ? 'Conserva el nivel mientras abres nuevas dimensiones'
+        : 'Explora textos mas avanzados o generos diferentes'
     });
   }
 
@@ -228,22 +246,19 @@ function generateRecommendations(data) {
   });
 }
 
-/**
- * Genera datos para gráfico de evolución temporal
- */
 export function generateTimeSeriesData(rubricProgress) {
   const timeSeries = {};
 
-  Object.entries(rubricProgress).forEach(([rubricId, data]) => {
-    if (data.scores && data.scores.length > 0) {
+  Object.entries(rubricProgress || {}).forEach(([rubricId, data]) => {
+    if (data?.scores && data.scores.length > 0) {
       timeSeries[rubricId] = data.scores.map((scoreEntry, index) => {
         const score = typeof scoreEntry === 'object' ? Number(scoreEntry.score) : Number(scoreEntry);
         const timestamp = typeof scoreEntry === 'object' ? scoreEntry.timestamp : null;
-        
+
         return {
           attempt: index + 1,
-          score: score,
-          timestamp: timestamp,
+          score,
+          timestamp,
         };
       });
     }
@@ -252,19 +267,13 @@ export function generateTimeSeriesData(rubricProgress) {
   return timeSeries;
 }
 
-/**
- * Calcula métricas de engagement
- */
 export function calculateEngagementMetrics(activityData) {
   const now = Date.now();
   const oneDayAgo = now - (24 * 60 * 60 * 1000);
   const oneWeekAgo = now - (7 * 24 * 60 * 60 * 1000);
 
-  // Actividad reciente
   const recentActivity = activityData?.filter(a => a.timestamp > oneDayAgo).length || 0;
   const weekActivity = activityData?.filter(a => a.timestamp > oneWeekAgo).length || 0;
-
-  // Tiempo promedio por sesión
   const avgSessionTime = activityData && activityData.length > 0
     ? activityData.reduce((sum, a) => sum + (a.duration || 0), 0) / activityData.length
     : 0;
@@ -272,47 +281,44 @@ export function calculateEngagementMetrics(activityData) {
   return {
     dailyActivity: recentActivity,
     weeklyActivity: weekActivity,
-    avgSessionTime: Math.round(avgSessionTime / 60), // convertir a minutos
+    avgSessionTime: Math.round(avgSessionTime / 60),
     totalSessions: activityData?.length || 0,
   };
 }
 
-/**
- * Exporta datos a CSV
- */
 export function exportToCSV(rubricProgress) {
   const rubricNames = {
-    rubrica1: 'Resumen Académico',
+    rubrica1: 'Resumen Academico',
     rubrica2: 'Tabla ACD',
     rubrica3: 'Mapa de Actores',
     rubrica4: 'Respuesta Argumentativa',
-    rubrica5: 'Bitácora Ética IA'
+    rubrica5: 'Bitacora Etica IA'
   };
-  
+
   const nivelDescripcion = {
     1: 'Inicial',
-    2: 'Básico',
+    2: 'Basico',
     3: 'Competente',
     4: 'Avanzado'
   };
-  
+
   const headers = [
     'Artefacto',
     'Promedio (sobre 10)',
     'Nivel Alcanzado (1-4)',
-    'Descripción del Nivel',
-    'Número de Intentos',
-    'Mejor Puntuación',
-    'Última Puntuación'
+    'Descripcion del Nivel',
+    'Numero de Intentos',
+    'Mejor Puntuacion',
+    'Ultima Puntuacion'
   ];
-  
-  const rows = Object.entries(rubricProgress).map(([id, data]) => {
-    const scores = (data.scores || []).map(s => typeof s === 'object' ? Number(s.score) : Number(s));
+
+  const rows = Object.entries(rubricProgress || {}).map(([id, data]) => {
+    const scores = (data?.scores || []).map(s => typeof s === 'object' ? Number(s.score) : Number(s));
     const bestScore = scores.length > 0 ? Math.max(...scores) : 0;
     const lastScore = scores.length > 0 ? scores[scores.length - 1] : 0;
-    const averageScore = Number(data.average || 0);
+    const averageScore = Number(data?.average || 0);
     const nivel = Math.ceil(averageScore / 2.5);
-    
+
     return [
       rubricNames[id] || id,
       averageScore.toFixed(2),
@@ -324,42 +330,37 @@ export function exportToCSV(rubricProgress) {
     ];
   });
 
-  const dateRow = `"Evaluación de Rúbricas — Exportado: ${new Date().toLocaleString('es-ES')}"`;
+  const dateRow = `"Evaluacion de Rubricas - Exportado: ${new Date().toLocaleString('es-ES')}"`;
   const csvContent = [
     dateRow,
     headers.map(h => `"${h}"`).join(','),
     ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
   ].join('\n');
 
-  // BOM UTF-8 para correcta visualización en Excel
   return '\uFEFF' + csvContent;
 }
 
-/**
- * @deprecated Ya no se usa directamente — las exportaciones usan PDF (exportGenericPDF).
- * Se mantiene por compatibilidad.
- */
 export function exportToJSON(rubricProgress, stats) {
   const rubricNames = {
-    rubrica1: 'Resumen Académico',
+    rubrica1: 'Resumen Academico',
     rubrica2: 'Tabla ACD',
     rubrica3: 'Mapa de Actores',
     rubrica4: 'Respuesta Argumentativa',
-    rubrica5: 'Bitácora Ética IA'
+    rubrica5: 'Bitacora Etica IA'
   };
-  
+
   const nivelDescripcion = {
     1: 'Inicial - Requiere desarrollo',
-    2: 'Básico - En progreso',
+    2: 'Basico - En progreso',
     3: 'Competente - Satisfactorio',
     4: 'Avanzado - Excelente'
   };
-  
+
   const enrichedRubrics = {};
-  Object.entries(rubricProgress).forEach(([id, data]) => {
-    const averageScore = Number(data.average || 0);
+  Object.entries(rubricProgress || {}).forEach(([id, data]) => {
+    const averageScore = Number(data?.average || 0);
     const nivel = Math.ceil(averageScore / 2.5);
-    
+
     enrichedRubrics[id] = {
       nombre: rubricNames[id] || id,
       nivelAlcanzado: nivel,
@@ -367,18 +368,18 @@ export function exportToJSON(rubricProgress, stats) {
       ...data
     };
   });
-  
+
   return JSON.stringify({
     metadata: {
       fechaExportacion: new Date().toLocaleString('es-ES'),
-      version: '1.0'
+      version: '1.1'
     },
     resumen: {
       rubricasEvaluadas: stats.summary.evaluatedRubrics,
       totalIntentos: stats.summary.totalAttempts,
       promedioGeneral: stats.summary.averageScore.toFixed(2),
       mediana: stats.summary.medianScore.toFixed(2),
-      tasaCompletitud: stats.summary.completionRate.toFixed(1) + '%'
+      tasaCompletitud: `${stats.summary.completionRate.toFixed(1)}%`
     },
     estadisticas: stats,
     rubricas: enrichedRubrics,

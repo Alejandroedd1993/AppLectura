@@ -29,7 +29,8 @@ import {
   subscribeToStudentProgress,
   getUserSessions,
   mergeSessions,
-  subscribeToUserSessions
+  subscribeToUserSessions,
+  resetAllStudentArtifacts
 } from '../firebase/firestore';
 import { auth } from '../firebase/config';
 // (firebase/sessionManager) quedó deprecado en AppContext; se mantiene en otros módulos.
@@ -2444,19 +2445,45 @@ export const AppContextProvider = ({ children }) => {
   }, []);
 
   // 🆕 FUNCIÓN PARA RESETEAR TODO EL PROGRESO
-  const resetAllProgress = useCallback(() => {
+  const resetAllProgress = useCallback(async () => {
     logger.log('🗑️ [resetAllProgress] Reseteando todo el progreso de rúbricas');
     const emptyProgress = createEmptyRubricProgressV2();
-    setRubricProgress(emptyProgress);
+    const targetTextoId = currentTextoId || null;
 
     try {
       if (currentUser?.uid && currentTextoId) {
+        const result = await resetAllStudentArtifacts(currentUser.uid, currentTextoId, sourceCourseIdRef.current, 'estudiante');
+        if (!result?.success) {
+          logger.warn('⚠️ [resetAllProgress] Reset remoto incompleto:', result?.message);
+          return false;
+        }
+
+        logger.log('✅ [resetAllProgress] Reset persistido en Firestore');
         localStorage.removeItem(rubricProgressKey(currentUser.uid, currentTextoId, sourceCourseIdRef.current));
+        localStorage.removeItem(activitiesProgressKey(
+          currentUser.uid,
+          currentTextoId,
+          resolveProgressCourseScope(currentTextoId, sourceCourseIdRef.current)
+        ));
       }
-    } catch {
-      // ignore
+
+      setRubricProgress(emptyProgress);
+      if (targetTextoId) {
+        setActivitiesProgress(prev => ({
+          ...prev,
+          [targetTextoId]: {
+            ...(prev?.[targetTextoId] || {}),
+            artifacts: {}
+          }
+        }));
+      }
+
+      return true;
+    } catch (error) {
+      logger.warn('⚠️ [resetAllProgress] Error sincronizando reset completo:', error);
+      return false;
     }
-  }, [currentUser?.uid, currentTextoId]);
+  }, [currentUser?.uid, currentTextoId, resolveProgressCourseScope]);
 
   // 🆕 FUNCIÓN PARA GUARDAR UNA CITA (llamada desde Lectura Guiada)
   const saveCitation = useCallback((citation) => {
@@ -4365,12 +4392,13 @@ export const AppContextProvider = ({ children }) => {
     // 🆕 A1 FIX: FASE 2 - Análisis profundo en background (no bloquea UI)
     // 🆕 A1-1 FIX: Pasamos originalDocId para verificar que el texto no cambió
     const enrichInBackground = async (originalDocId) => {
+      let abortControl = null;
       try {
         logger.log('🌐 [AppContext.analyzeDocument] Llamando al endpoint /api/analysis/prelecture...');
         logger.log('🔗 [AppContext.analyzeDocument] Backend URL:', BACKEND_URL);
 
         // Crear AbortController con timeout de 5 minutos (alineado con backend)
-        const abortControl = createAbortControllerWithTimeout({
+        abortControl = createAbortControllerWithTimeout({
           timeoutMs: PRELECTURE_ANALYSIS_TIMEOUT_MS
         });
         let authHeader = {};

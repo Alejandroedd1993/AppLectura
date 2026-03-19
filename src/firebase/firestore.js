@@ -4036,11 +4036,13 @@ export async function resetStudentArtifact(studentUid, textoId, artifactName, co
  * @param {string} textoId - ID del texto/lectura
  * @returns {Promise<{success: boolean, message: string, resetCount: number}>}
  */
-export async function resetAllStudentArtifacts(studentUid, textoId, courseId = null) {
+export async function resetAllStudentArtifacts(studentUid, textoId, courseId = null, resetBy = 'docente') {
   try {
     if (!studentUid || !textoId) {
       throw new Error('Se requieren studentUid y textoId');
     }
+
+    const normalizedResetBy = resetBy === 'estudiante' ? 'estudiante' : 'docente';
 
     logger.log(`🔄 [Reset ALL] Iniciando reset de todos los artefactos para ${studentUid} en ${textoId} (courseId: ${courseId || 'legacy'})`);
     const { ref: progressRef, snap: progressSnap, legacyCourseId } = await __resolveProgressDoc(studentUid, textoId, courseId);
@@ -4097,22 +4099,23 @@ export async function resetAllStudentArtifacts(studentUid, textoId, courseId = n
         commentedAt: null,
         commentedBy: null,
         resetAt: new Date().toISOString(),
-        resetBy: 'docente'
+        resetBy: normalizedResetBy
       };
     });
 
     // Resetear todas las rúbricas con estructura correcta (scores array)
     const emptyRubrics = {
-      rubrica1: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: 'docente' },
-      rubrica2: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: 'docente' },
-      rubrica3: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: 'docente' },
-      rubrica4: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: 'docente' },
-      rubrica5: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: 'docente' }
+      rubrica1: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: normalizedResetBy },
+      rubrica2: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: normalizedResetBy },
+      rubrica3: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: normalizedResetBy },
+      rubrica4: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: normalizedResetBy },
+      rubrica5: { scores: [], average: 0, lastUpdate: Date.now(), artefactos: [], resetAt: new Date().toISOString(), resetBy: normalizedResetBy }
     };
 
     const updateData = {
       rubricProgress: emptyRubrics,
-      lastResetAt: serverTimestamp()
+      lastResetAt: serverTimestamp(),
+      lastResetBy: normalizedResetBy
     };
 
     artifactsPaths.forEach((path) => {

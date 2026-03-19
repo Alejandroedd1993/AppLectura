@@ -23,6 +23,7 @@ import ModoPracticaGuiada from './actividades/ModoPracticaGuiada';
 import AnalyticsPanel from './evaluacion/AnalyticsPanel';
 import DimensionCard, { DIMENSIONS } from './actividades/DimensionCard';
 import { generatePracticePlan } from '../services/practiceService';
+import { buildProgressSnapshot } from '../services/progressSnapshot';
 
 // ✅ LAZY: Artefactos pesados (solo cargan cuando se necesitan)
 const ResumenAcademico = lazy(() => import('./artefactos/ResumenAcademico'));
@@ -138,6 +139,167 @@ const Section = styled.section`
   border-radius: 12px;
   padding: 1.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+`;
+
+const ProgressHero = styled.div`
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1.35rem;
+  border-radius: 16px;
+  border: 1px solid ${p => {
+    if (p.$tone === 'warning') return '#F59E0B55';
+    if (p.$tone === 'success') return '#16A34A40';
+    return `${p.theme.primary}35`;
+  }};
+  background: ${p => {
+    if (p.$tone === 'warning') return 'linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.05))';
+    if (p.$tone === 'success') return 'linear-gradient(135deg, rgba(22, 163, 74, 0.12), rgba(33, 150, 243, 0.05))';
+    return `linear-gradient(135deg, ${p.theme.primary}18, rgba(255,255,255,0.02))`;
+  }};
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const HeroCopy = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+`;
+
+const HeroEyebrow = styled.div`
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: ${p => p.theme.textSecondary || '#666'};
+`;
+
+const HeroTitle = styled.h3`
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  color: ${p => p.theme.textPrimary || '#333'};
+`;
+
+const HeroDescription = styled.p`
+  margin: 0;
+  max-width: 680px;
+  line-height: 1.6;
+  color: ${p => p.theme.textSecondary || '#666'};
+`;
+
+const HeroMetrics = styled.div`
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+
+  @media (max-width: 900px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (max-width: 520px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const HeroMetricCard = styled.div`
+  padding: 0.85rem 0.95rem;
+  border-radius: 12px;
+  background: ${p => p.theme.cardBg || '#fff'};
+  border: 1px solid ${p => p.theme.border || '#e5e7eb'};
+
+  .label {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: ${p => p.theme.textSecondary || '#666'};
+  }
+
+  .value {
+    display: block;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: ${p => p.$accent || p.theme.textPrimary || '#333'};
+  }
+
+  .helper {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.78rem;
+    color: ${p => p.theme.textSecondary || '#666'};
+  }
+`;
+
+const HeroActionCard = styled.div`
+  padding: 1rem;
+  border-radius: 14px;
+  background: ${p => p.theme.cardBg || '#fff'};
+  border: 1px solid ${p => {
+    if (p.$tone === 'warning') return '#F59E0B66';
+    if (p.$tone === 'success') return '#16A34A55';
+    return `${p.theme.primary}30`;
+  }};
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 100%;
+
+  .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: ${p => p.theme.textSecondary || '#666'};
+    margin-bottom: 0.6rem;
+  }
+
+  .headline {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    margin-bottom: 0.65rem;
+    color: ${p => p.theme.textPrimary || '#333'};
+  }
+
+  .headline strong {
+    font-size: 1.02rem;
+    line-height: 1.35;
+  }
+
+  p {
+    margin: 0 0 1rem 0;
+    color: ${p => p.theme.textSecondary || '#666'};
+    line-height: 1.55;
+    font-size: 0.92rem;
+  }
+`;
+
+const HeroActionButton = styled.button`
+  align-self: flex-start;
+  border: none;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: ${p => {
+    if (p.$tone === 'warning') return '#F59E0B';
+    if (p.$tone === 'success') return '#16A34A';
+    return p.theme.primary || '#2196F3';
+  }};
+  color: white;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+  }
 `;
 
 const SectionTitle = styled.h3`
@@ -331,45 +493,6 @@ export default function Actividades() {
     }
   }, [sourceCourseId]);
 
-  const getArtifactScores = useCallback((scores) => {
-    if (!Array.isArray(scores)) return [];
-    return scores.filter((s) => s?.artefacto !== 'PracticaGuiada');
-  }, []);
-
-  const hasSummativeAttempt = useCallback((summative) => {
-    if (!summative || typeof summative !== 'object') return false;
-    const status = String(summative.status || '').toLowerCase();
-    const attemptsUsed = Number(summative.attemptsUsed || 0);
-    return (
-      attemptsUsed > 0 ||
-      status === 'submitted' ||
-      status === 'graded' ||
-      Number(summative.submittedAt || 0) > 0 ||
-      Number(summative.gradedAt || 0) > 0
-    );
-  }, []);
-
-  const getSummativeScore = useCallback((summative) => {
-    if (String(summative?.status || '').toLowerCase() !== 'graded') return 0;
-    const override = Number(summative?.teacherOverrideScore);
-    if (Number.isFinite(override) && override > 0) return override;
-    const score = Number(summative?.score);
-    return Number.isFinite(score) && score > 0 ? score : 0;
-  }, []);
-
-  const getEffectiveRubricScore = useCallback((rubricData) => {
-    if (!rubricData || typeof rubricData !== 'object') return 0;
-
-    const summativeScore = getSummativeScore(rubricData.summative);
-    if (summativeScore > 0) return summativeScore;
-
-    const artifactScores = getArtifactScores(rubricData.scores);
-    if (!artifactScores.length) return 0;
-
-    const lastScore = Number(artifactScores[artifactScores.length - 1]?.score);
-    return Number.isFinite(lastScore) && lastScore > 0 ? lastScore : 0;
-  }, [getArtifactScores, getSummativeScore]);
-
   // 🆕 Escuchar evento de completación de ejercicios
   React.useEffect(() => {
     const handleExercisesCompleted = () => {
@@ -382,39 +505,6 @@ export default function Actividades() {
     window.addEventListener('exercises-completed', handleExercisesCompleted);
     return () => window.removeEventListener('exercises-completed', handleExercisesCompleted);
   }, [lectureId, markPreparationProgress]);
-
-  // 🆕 Función para calcular estado de cada artefacto
-  const getArtefactoStatus = useCallback((rubricId) => {
-    const data = rubricProgress?.[rubricId];
-    const effectiveScore = getEffectiveRubricScore(data);
-
-    if (effectiveScore <= 0) {
-      return { status: 'empty', icon: '', label: '', color: '' };
-    }
-
-    if (effectiveScore >= 8.6) {
-      return {
-        status: 'excellent',
-        icon: '🌟',
-        label: effectiveScore.toFixed(1),
-        color: '#10b981' // verde brillante
-      };
-    } else if (effectiveScore >= 5.6) {
-      return {
-        status: 'good',
-        icon: '✅',
-        label: effectiveScore.toFixed(1),
-        color: '#4CAF50' // verde
-      };
-    } else {
-      return {
-        status: 'needs-work',
-        icon: '⏳',
-        label: effectiveScore.toFixed(1),
-        color: '#FF9800' // naranja
-      };
-    }
-  }, [rubricProgress, getEffectiveRubricScore]);
 
   // Si no hay texto cargado, mostrar estado vacío
   if (!texto) {
@@ -457,27 +547,25 @@ export default function Actividades() {
     border: modoOscuro ? '#444' : '#e0e0e0',
     textPrimary: modoOscuro ? '#fff' : '#333',
     textSecondary: modoOscuro ? '#aaa' : '#666',
+    text: modoOscuro ? '#fff' : '#333',
+    textMuted: modoOscuro ? '#aaa' : '#666',
     primary: '#2196F3',
+    primaryDark: '#1976D2',
+    secondary: '#8B5CF6',
     success: '#4CAF50',
     warning: '#FF9800',
     danger: '#F44336',
+    info: '#0EA5E9',
+    infoBg: modoOscuro ? 'rgba(14, 165, 233, 0.12)' : '#EFF6FF',
+    errorBackground: modoOscuro ? 'rgba(244, 67, 54, 0.12)' : '#FEF2F2',
+    surfaceVariant: modoOscuro ? '#3a3a3a' : '#EEF2FF',
+    hoverBg: modoOscuro ? '#383838' : '#f1f5f9'
   }), [modoOscuro]);
-
-  // Pre-computar status de cada artefacto (evita 30+ llamadas en JSX)
-  const artefactoStatuses = useMemo(() => ({
-    rubrica1: getArtefactoStatus('rubrica1'),
-    rubrica2: getArtefactoStatus('rubrica2'),
-    rubrica3: getArtefactoStatus('rubrica3'),
-    rubrica4: getArtefactoStatus('rubrica4'),
-    rubrica5: getArtefactoStatus('rubrica5'),
-  }), [getArtefactoStatus]);
-
-  // Calcular progreso general
-  const artefactosCompletados = useMemo(() => 
-    Object.values(artefactoStatuses).filter(s => s.icon !== '').length,
-  [artefactoStatuses]);
-
-  const progresoGeneral = Math.round((artefactosCompletados / 5) * 100);
+  const progressSnapshot = useMemo(() => buildProgressSnapshot({
+    rubricProgress,
+    activitiesProgress,
+    lectureId
+  }), [rubricProgress, activitiesProgress, lectureId]);
 
   // ARIA: Cerrar modal con Escape
   const cancelBtnRef = useRef(null);
@@ -539,13 +627,38 @@ export default function Actividades() {
     );
   }, [theme, ARTIFACT_MAP]);
 
+  const openProgressRubric = useCallback((rubricId) => {
+    setSelectedRubricId(rubricId || null);
+    setActiveSection('dimensiones');
+  }, []);
+
+  const progressPrimaryAction = useMemo(() => {
+    if (!preparacionCompletada) {
+      return {
+        tone: 'primary',
+        icon: '🧠',
+        title: 'Completa el checkpoint rapido',
+        description: 'Necesitas terminar el checkpoint para desbloquear las dimensiones y empezar a registrar progreso real.',
+        ctaLabel: 'Ir a checkpoint',
+        onClick: () => setActiveSection('checkpoint')
+      };
+    }
+
+    if (!progressSnapshot.nextAction) return null;
+
+    return {
+      ...progressSnapshot.nextAction,
+      onClick: () => openProgressRubric(progressSnapshot.nextAction.rubricId)
+    };
+  }, [preparacionCompletada, progressSnapshot.nextAction, openProgressRubric]);
+
   return (
     <Container theme={theme}>
       <Header theme={theme}>
         <HeaderTitle theme={theme}>
           <span>📝</span>
           Actividades de Literacidad Crítica
-          {artefactosCompletados > 0 && (
+          {progressSnapshot.hasData && (
             <span style={{
               fontSize: '0.85rem',
               fontWeight: 500,
@@ -553,7 +666,7 @@ export default function Actividades() {
               color: theme.success,
               opacity: 0.9
             }}>
-              ({artefactosCompletados}/5 completados • {progresoGeneral}%)
+              ({progressSnapshot.summary.coverageCount}/5 activas • {progressSnapshot.summary.coveragePercent}% cobertura)
             </span>
           )}
         </HeaderTitle>
@@ -675,6 +788,71 @@ export default function Actividades() {
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
+            <ProgressHero theme={theme} $tone={progressSnapshot.stage?.tone}>
+              <HeroCopy>
+                <div>
+                  <HeroEyebrow theme={theme}>Lectura actual</HeroEyebrow>
+                  <HeroTitle theme={theme}>
+                    Mi progreso: {progressSnapshot.stage?.label || 'Sin iniciar'}
+                  </HeroTitle>
+                </div>
+                <HeroDescription theme={theme}>
+                  {preparacionCompletada
+                    ? progressSnapshot.stage?.description
+                    : 'El panel ya esta listo, pero primero debes completar el checkpoint para desbloquear las dimensiones de trabajo.'
+                  }
+                </HeroDescription>
+
+                <HeroMetrics>
+                  <HeroMetricCard theme={theme} $accent={theme.primary}>
+                    <span className="label">Cobertura</span>
+                    <span className="value">{progressSnapshot.summary.coverageCount}/5</span>
+                    <span className="helper">{progressSnapshot.summary.coveragePercent}% del mapa activo</span>
+                  </HeroMetricCard>
+                  <HeroMetricCard theme={theme} $accent={theme.success}>
+                    <span className="label">Con nota</span>
+                    <span className="value">{progressSnapshot.summary.evaluatedCount}/5</span>
+                    <span className="helper">
+                      {progressSnapshot.summary.averageEvaluatedScore > 0
+                        ? `${progressSnapshot.summary.averageEvaluatedScore.toFixed(1)}/10 promedio`
+                        : 'Aun sin promedio evaluado'
+                      }
+                    </span>
+                  </HeroMetricCard>
+                  <HeroMetricCard theme={theme} $accent={theme.warning}>
+                    <span className="label">Pendientes</span>
+                    <span className="value">{progressSnapshot.summary.pendingCount}</span>
+                    <span className="helper">Entregas o revisiones por cerrar</span>
+                  </HeroMetricCard>
+                  <HeroMetricCard theme={theme} $accent={theme.secondary}>
+                    <span className="label">Fortalezas</span>
+                    <span className="value">{progressSnapshot.summary.strongCount}</span>
+                    <span className="helper">Dimensiones en nivel competente o experto</span>
+                  </HeroMetricCard>
+                </HeroMetrics>
+              </HeroCopy>
+
+              {progressPrimaryAction && (
+                <HeroActionCard theme={theme} $tone={progressPrimaryAction.tone}>
+                  <div>
+                    <div className="eyebrow">Siguiente mejor paso</div>
+                    <div className="headline">
+                      <span>{progressPrimaryAction.icon}</span>
+                      <strong>{progressPrimaryAction.title}</strong>
+                    </div>
+                    <p>{progressPrimaryAction.description}</p>
+                  </div>
+                  <HeroActionButton
+                    type="button"
+                    theme={theme}
+                    $tone={progressPrimaryAction.tone}
+                    onClick={progressPrimaryAction.onClick}
+                  >
+                    {progressPrimaryAction.ctaLabel}
+                  </HeroActionButton>
+                </HeroActionCard>
+              )}
+            </ProgressHero>
             <Wrapper $layout="sidebar" theme={theme}>
               <Section theme={theme}>
                 <SectionTitle theme={theme}>
@@ -683,11 +861,8 @@ export default function Actividades() {
                 </SectionTitle>
                 <DashboardRubricas
                   theme={theme}
-                  onSelectRubric={(rubricId) => {
-                    // Navegar a dimensiones al hacer clic en una rúbrica
-                    setSelectedRubricId(rubricId || null);
-                    setActiveSection('dimensiones');
-                  }}
+                  progressSnapshot={progressSnapshot}
+                  onSelectRubric={openProgressRubric}
                 />
 
                 {/* 💡 Ayuda para el usuario */}
@@ -711,7 +886,11 @@ export default function Actividades() {
                 </p>
 
                 {/* 📈 Gráficas de progreso (dashboard analítico) */}
-                <AnalyticsPanel rubricProgress={rubricProgress} theme={theme} />
+                <AnalyticsPanel
+                  rubricProgress={rubricProgress}
+                  progressSnapshot={progressSnapshot}
+                  theme={theme}
+                />
               </Section>
 
               <Section theme={theme}>
@@ -721,7 +900,11 @@ export default function Actividades() {
                 </SectionTitle>
 
                 {/* Panel de Estadísticas de Progreso */}
-                <ProgressStats rubricProgress={rubricProgress} />
+                <ProgressStats
+                  rubricProgress={rubricProgress}
+                  progressSnapshot={progressSnapshot}
+                  onSelectRubric={openProgressRubric}
+                />
 
                 {/* Botones de Exportación */}
                 <div style={{
@@ -769,6 +952,7 @@ export default function Actividades() {
                   </p>
                   <ExportProgressButton
                     rubricProgress={rubricProgress}
+                    progressSnapshot={progressSnapshot}
                     documentId={documentId}
                     studentName="estudiante"
                     tutorInteractions={globalTutorInteractions}
@@ -783,12 +967,7 @@ export default function Actividades() {
                   <ResetButton
                     $variant="danger"
                     onClick={() => setShowResetConfirm(true)}
-                    disabled={!rubricProgress || Object.values(rubricProgress).every(r => {
-                      const formativeCount = getArtifactScores(r?.scores).length;
-                      const hasSummative = hasSummativeAttempt(r?.summative);
-                      const effectiveScore = getEffectiveRubricScore(r);
-                      return formativeCount === 0 && !hasSummative && effectiveScore <= 0;
-                    })}
+                    disabled={!progressSnapshot.hasData}
                     title="Resetear todo el progreso"
                   >
                     <span>🗑️</span>
@@ -830,9 +1009,11 @@ export default function Actividades() {
               </ResetButtonSecondary>
               <ResetButton
                 $variant="danger"
-                onClick={() => {
-                  resetAllProgress();
-                  setShowResetConfirm(false);
+                onClick={async () => {
+                  const resetSucceeded = await resetAllProgress();
+                  if (resetSucceeded !== false) {
+                    setShowResetConfirm(false);
+                  }
                 }}
               >
                 <span>🗑️</span>
