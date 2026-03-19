@@ -364,9 +364,7 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
   const canShowRadar = progressSnapshot?.canRenderRadar;
   const canShowDistribution = progressSnapshot?.canRenderDistribution;
   const sparseMode = Boolean(progressSnapshot) && !canShowTimeSeries && !canShowRadar && !canShowDistribution;
-  const shownRecommendations = sparseMode
-    ? analytics.recommendations.slice(0, 2)
-    : analytics.recommendations;
+  const shownRecommendations = analytics.recommendations;
 
   if (!hasProgressData) {
     return (
@@ -420,33 +418,35 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
 
       {activeTab === 'current' ? (
         <>
-          <OverviewGrid>
-            <OverviewCard theme={theme} $accent={theme.primary}>
-              <span className="label">Cobertura</span>
-              <span className="value">{progressSnapshot?.summary.coverageCount || 0}/5</span>
-              <span className="helper">{progressSnapshot?.summary.coveragePercent || 0}% activa</span>
-            </OverviewCard>
-            <OverviewCard theme={theme} $accent={theme.success}>
-              <span className="label">Con nota</span>
-              <span className="value">{analytics.summary.evaluatedRubrics}/{analytics.summary.totalRubrics}</span>
-              <span className="helper">Promedio {analytics.summary.averageScore.toFixed(1)}/10</span>
-            </OverviewCard>
-            <OverviewCard theme={theme} $accent={theme.warning}>
-              <span className="label">Intentos</span>
-              <span className="value">{analytics.summary.totalAttempts}</span>
-              <span className="helper">Datos disponibles en esta lectura</span>
-            </OverviewCard>
-            <OverviewCard theme={theme} $accent={theme.secondary}>
-              <span className="label">Tendencia</span>
-              <span className="value">{getTrendLabel(analytics.trends)}</span>
-              <span className="helper">
-                {analytics.trends.hasConsistencyData
-                  ? `Consistencia ${analytics.trends.consistencyScore.toFixed(1)}`
-                  : 'Consistencia aun en construccion'
-                }
-              </span>
-            </OverviewCard>
-          </OverviewGrid>
+          {!sparseMode && (
+            <OverviewGrid>
+              <OverviewCard theme={theme} $accent={theme.primary}>
+                <span className="label">Cobertura</span>
+                <span className="value">{progressSnapshot?.summary.coverageCount || 0}/5</span>
+                <span className="helper">{progressSnapshot?.summary.coveragePercent || 0}% activa</span>
+              </OverviewCard>
+              <OverviewCard theme={theme} $accent={theme.success}>
+                <span className="label">Con nota</span>
+                <span className="value">{analytics.summary.evaluatedRubrics}/{analytics.summary.totalRubrics}</span>
+                <span className="helper">Promedio {analytics.summary.averageScore.toFixed(1)}/10</span>
+              </OverviewCard>
+              <OverviewCard theme={theme} $accent={theme.warning}>
+                <span className="label">Intentos</span>
+                <span className="value">{analytics.summary.totalAttempts}</span>
+                <span className="helper">Datos disponibles en esta lectura</span>
+              </OverviewCard>
+              <OverviewCard theme={theme} $accent={theme.secondary}>
+                <span className="label">Tendencia</span>
+                <span className="value">{getTrendLabel(analytics.trends)}</span>
+                <span className="helper">
+                  {analytics.trends.hasConsistencyData
+                    ? `Consistencia ${analytics.trends.consistencyScore.toFixed(1)}`
+                    : 'Consistencia aun en construccion'
+                  }
+                </span>
+              </OverviewCard>
+            </OverviewGrid>
+          )}
 
           {sparseMode ? (
             <Section>
@@ -456,6 +456,7 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
                   <strong>Lo que ya tienes</strong>
                   <p>
                     Hay {progressSnapshot?.summary.coverageCount || 0} dimension(es) activas y {analytics.summary.totalAttempts} intento(s) registrados.
+                    {analytics.summary.averageScore > 0 ? ` En lo evaluado llevas ${analytics.summary.averageScore.toFixed(1)}/10.` : ''}
                   </p>
                 </SparseCard>
                 <SparseCard theme={theme}>
@@ -502,37 +503,39 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
             </Section>
           )}
 
-          <Section>
-            <SectionTitle theme={theme}>Lecturas rapidas</SectionTitle>
-            <MetricsGrid>
-              <MetricCard theme={theme}>
-                <MetricValue theme={theme} $color={theme.primary}>{analytics.summary.evaluatedRubrics}</MetricValue>
-                <MetricLabel theme={theme}>Con nota</MetricLabel>
-              </MetricCard>
-              <MetricCard theme={theme}>
-                <MetricValue theme={theme}>
-                  {analytics.summary.hasMedianData ? analytics.summary.medianScore.toFixed(1) : '—'}
-                </MetricValue>
-                <MetricLabel theme={theme}>Mediana</MetricLabel>
-              </MetricCard>
-              <MetricCard theme={theme}>
-                <MetricValue theme={theme} $color={theme.info || theme.primary}>
-                  {analytics.trends.hasConsistencyData ? analytics.trends.consistencyScore.toFixed(1) : '—'}
-                </MetricValue>
-                <MetricLabel theme={theme}>Consistencia</MetricLabel>
-              </MetricCard>
-              <MetricCard theme={theme}>
-                <MetricValue theme={theme}>
-                  <TrendBadge theme={theme} $trend={analytics.trends.overallTrend}>
-                    {getTrendLabel(analytics.trends)}
-                  </TrendBadge>
-                </MetricValue>
-                <MetricLabel theme={theme}>Tendencia</MetricLabel>
-              </MetricCard>
-            </MetricsGrid>
-          </Section>
+          {!sparseMode && (
+            <Section>
+              <SectionTitle theme={theme}>Lecturas rapidas</SectionTitle>
+              <MetricsGrid>
+                <MetricCard theme={theme}>
+                  <MetricValue theme={theme} $color={theme.primary}>{analytics.summary.evaluatedRubrics}</MetricValue>
+                  <MetricLabel theme={theme}>Con nota</MetricLabel>
+                </MetricCard>
+                <MetricCard theme={theme}>
+                  <MetricValue theme={theme}>
+                    {analytics.summary.hasMedianData ? analytics.summary.medianScore.toFixed(1) : '—'}
+                  </MetricValue>
+                  <MetricLabel theme={theme}>Mediana</MetricLabel>
+                </MetricCard>
+                <MetricCard theme={theme}>
+                  <MetricValue theme={theme} $color={theme.info || theme.primary}>
+                    {analytics.trends.hasConsistencyData ? analytics.trends.consistencyScore.toFixed(1) : '—'}
+                  </MetricValue>
+                  <MetricLabel theme={theme}>Consistencia</MetricLabel>
+                </MetricCard>
+                <MetricCard theme={theme}>
+                  <MetricValue theme={theme}>
+                    <TrendBadge theme={theme} $trend={analytics.trends.overallTrend}>
+                      {getTrendLabel(analytics.trends)}
+                    </TrendBadge>
+                  </MetricValue>
+                  <MetricLabel theme={theme}>Tendencia</MetricLabel>
+                </MetricCard>
+              </MetricsGrid>
+            </Section>
+          )}
 
-          {(analytics.performance.strengths.length > 0 || analytics.performance.weaknesses.length > 0) && (
+          {!sparseMode && (analytics.performance.strengths.length > 0 || analytics.performance.weaknesses.length > 0) && (
             <Section>
               <SectionTitle theme={theme}>Fortalezas y focos de mejora</SectionTitle>
               <PerformanceGrid>
@@ -567,7 +570,7 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
             </Section>
           )}
 
-          {shownRecommendations.length > 0 && (
+          {!sparseMode && shownRecommendations.length > 0 && (
             <Section>
               <SectionTitle theme={theme}>Recomendaciones personalizadas</SectionTitle>
               <RecommendationsList>
