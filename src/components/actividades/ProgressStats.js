@@ -29,113 +29,6 @@ const Header = styled.div`
   }
 `;
 
-const SummaryGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.8rem;
-  margin-bottom: 1rem;
-
-  @media (max-width: 840px) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  @media (max-width: 520px) {
-    grid-template-columns: 1fr;
-  }
-`;
-
-const SummaryCard = styled.div`
-  padding: 0.9rem;
-  border-radius: 12px;
-  background: ${props => props.theme.background};
-  border: 1px solid ${props => props.theme.border};
-
-  .label {
-    display: block;
-    margin-bottom: 0.3rem;
-    font-size: 0.73rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
-  }
-
-  .value {
-    display: block;
-    font-size: 1.22rem;
-    font-weight: 700;
-    color: ${props => props.$accent || props.theme.textPrimary || props.theme.text || '#111827'};
-  }
-
-  .helper {
-    display: block;
-    margin-top: 0.22rem;
-    font-size: 0.78rem;
-    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
-  }
-`;
-
-const FocusBanner = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.2rem;
-  padding: 1rem 1.1rem;
-  border-radius: 14px;
-  border: 1px solid ${props => {
-    if (props.$tone === 'warning') return '#F59E0B55';
-    if (props.$tone === 'success') return '#16A34A44';
-    return `${props.theme.primary}30`;
-  }};
-  background: ${props => {
-    if (props.$tone === 'warning') return 'rgba(245, 158, 11, 0.09)';
-    if (props.$tone === 'success') return 'rgba(22, 163, 74, 0.08)';
-    return `${props.theme.primary}10`;
-  }};
-`;
-
-const FocusCopy = styled.div`
-  min-width: 220px;
-
-  .eyebrow {
-    display: block;
-    margin-bottom: 0.35rem;
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
-  }
-
-  strong {
-    display: block;
-    margin-bottom: 0.25rem;
-    color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
-    font-size: 1rem;
-  }
-
-  p {
-    margin: 0;
-    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
-    font-size: 0.88rem;
-    line-height: 1.5;
-  }
-`;
-
-const FocusButton = styled.button`
-  border: none;
-  border-radius: 999px;
-  padding: 0.7rem 1rem;
-  background: ${props => {
-    if (props.$tone === 'warning') return '#F59E0B';
-    if (props.$tone === 'success') return '#16A34A';
-    return props.theme.primary || '#2196F3';
-  }};
-  color: white;
-  font-weight: 700;
-  cursor: pointer;
-`;
-
 const SectionTitle = styled.h4`
   margin: 0 0 0.9rem 0;
   color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
@@ -228,22 +121,31 @@ const CardAction = styled.button`
   cursor: pointer;
 `;
 
-const CompactGrid = styled.div`
+const CompactList = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.8rem;
-  margin-top: 1rem;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
 `;
 
-const CompactCard = styled.div`
-  padding: 0.95rem;
+const CompactRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.85rem 0.95rem;
   border-radius: 12px;
   border: 1px dashed ${props => props.$accent || props.theme.border};
-  background: ${props => props.theme.background};
+  background: ${props => props.$focus ? `${props.$accent}0D` : props.theme.background};
+`;
+
+const CompactCopy = styled.div`
+  flex: 1;
+  min-width: 220px;
 
   strong {
     display: block;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.2rem;
     color: ${props => props.theme.textPrimary || props.theme.text || '#111827'};
     font-size: 0.9rem;
   }
@@ -254,17 +156,28 @@ const CompactCard = styled.div`
     font-size: 0.8rem;
     line-height: 1.5;
   }
+`;
 
-  span {
-    display: inline-flex;
-    margin-top: 0.65rem;
-    padding: 0.25rem 0.6rem;
-    border-radius: 999px;
-    background: ${props => props.$accent || props.theme.border}18;
-    color: ${props => props.$accent || props.theme.textSecondary || '#6B7280'};
-    font-size: 0.72rem;
-    font-weight: 700;
-  }
+const CompactTag = styled.span`
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: ${props => props.$accent || props.theme.border}18;
+  color: ${props => props.$accent || props.theme.textSecondary || '#6B7280'};
+  font-size: 0.72rem;
+  font-weight: 700;
+`;
+
+const CompactAction = styled.button`
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  background: ${props => props.$accent || props.theme.primary || '#2563EB'};
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
 `;
 
 const EmptyState = styled.div`
@@ -336,53 +249,8 @@ export default function ProgressStats({ rubricProgress, progressSnapshot = null,
     <Container>
       <Header>
         <h3>Mi progreso en lectura critica</h3>
-        <p>Esta vista separa lo que ya esta en movimiento de las dimensiones que aun faltan por abrir.</p>
+        <p>Esta vista se enfoca en el detalle activo de la lectura y deja en compacto lo que todavia falta por abrir.</p>
       </Header>
-
-      <SummaryGrid>
-        <SummaryCard $accent="#2563EB">
-          <span className="label">Activas</span>
-          <span className="value">{snapshot.summary.coverageCount}/5</span>
-          <span className="helper">Dimensiones con actividad</span>
-        </SummaryCard>
-        <SummaryCard $accent="#16A34A">
-          <span className="label">Con nota</span>
-          <span className="value">{snapshot.summary.evaluatedCount}/5</span>
-          <span className="helper">
-            {snapshot.summary.averageEvaluatedScore > 0
-              ? `${snapshot.summary.averageEvaluatedScore.toFixed(1)}/10 promedio`
-              : 'Sin promedio vigente'
-            }
-          </span>
-        </SummaryCard>
-        <SummaryCard $accent="#F59E0B">
-          <span className="label">Pendientes</span>
-          <span className="value">{snapshot.summary.pendingCount}</span>
-          <span className="helper">Entregas a la espera</span>
-        </SummaryCard>
-        <SummaryCard $accent="#7C3AED">
-          <span className="label">Intentos</span>
-          <span className="value">{snapshot.summary.totalAttempts}</span>
-          <span className="helper">Total registrado en esta lectura</span>
-        </SummaryCard>
-      </SummaryGrid>
-
-      {snapshot.nextAction && onSelectRubric && (
-        <FocusBanner $tone={snapshot.nextAction.tone}>
-          <FocusCopy>
-            <span className="eyebrow">Siguiente mejor paso</span>
-            <strong>{snapshot.nextAction.title}</strong>
-            <p>{snapshot.nextAction.description}</p>
-          </FocusCopy>
-          <FocusButton
-            type="button"
-            $tone={snapshot.nextAction.tone}
-            onClick={() => onSelectRubric(snapshot.nextAction.rubricId)}
-          >
-            {snapshot.nextAction.ctaLabel}
-          </FocusButton>
-        </FocusBanner>
-      )}
 
       <SectionTitle>Dimensiones activas ahora</SectionTitle>
       <DetailGrid>
@@ -445,18 +313,33 @@ export default function ProgressStats({ rubricProgress, progressSnapshot = null,
       {snapshot.lists.unstarted.length > 0 && (
         <>
           <SectionTitle style={{ marginTop: '1.25rem' }}>Dimensiones por abrir</SectionTitle>
-          <CompactGrid>
+          <CompactList>
             {snapshot.lists.unstarted.map((rubric) => {
               const isFocus = snapshot.focusRubricId === rubric.rubricId;
               return (
-                <CompactCard key={rubric.rubricId} $accent={isFocus ? rubric.color : '#CBD5E1'}>
-                  <strong>{rubric.name}</strong>
-                  <p>{rubric.artifactName}. Aun no hay evidencia registrada en esta dimension.</p>
-                  <span>{isFocus ? 'Siguiente sugerida' : 'Lista para empezar'}</span>
-                </CompactCard>
+                <CompactRow key={rubric.rubricId} $accent={isFocus ? rubric.color : '#CBD5E1'} $focus={isFocus}>
+                  <CompactCopy>
+                    <strong>{rubric.name}</strong>
+                    <p>{rubric.artifactName}. Aun no hay evidencia registrada en esta dimension.</p>
+                  </CompactCopy>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                    <CompactTag $accent={isFocus ? rubric.color : '#94A3B8'}>
+                      {isFocus ? 'Siguiente sugerida' : 'Lista para empezar'}
+                    </CompactTag>
+                    {onSelectRubric && (
+                      <CompactAction
+                        type="button"
+                        $accent={isFocus ? rubric.color : '#94A3B8'}
+                        onClick={() => onSelectRubric(rubric.rubricId)}
+                      >
+                        Abrir
+                      </CompactAction>
+                    )}
+                  </div>
+                </CompactRow>
               );
             })}
-          </CompactGrid>
+          </CompactList>
         </>
       )}
     </Container>

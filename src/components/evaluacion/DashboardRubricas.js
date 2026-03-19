@@ -28,51 +28,6 @@ const ScopeNote = styled.p`
   line-height: 1.5;
 `;
 
-const SummaryStrip = styled.div`
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-
-  @media (max-width: 760px) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  @media (max-width: 480px) {
-    grid-template-columns: 1fr;
-  }
-`;
-
-const SummaryCard = styled.div`
-  padding: 0.85rem 0.9rem;
-  border-radius: 12px;
-  background: ${props => props.theme.background};
-  border: 1px solid ${props => props.theme.border};
-
-  .label {
-    display: block;
-    margin-bottom: 0.3rem;
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
-  }
-
-  .value {
-    display: block;
-    font-size: 1.15rem;
-    font-weight: 700;
-    color: ${props => props.$accent || props.theme.textPrimary || props.theme.text || '#111827'};
-  }
-
-  .helper {
-    display: block;
-    margin-top: 0.2rem;
-    font-size: 0.78rem;
-    color: ${props => props.theme.textSecondary || props.theme.textMuted || '#6B7280'};
-  }
-`;
-
 const RubricsGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -216,12 +171,6 @@ export default function DashboardRubricas({ theme, onSelectRubric, progressSnaps
     })
   ), [progressSnapshot, rubricProgress, activitiesProgress, lectureId]);
 
-  const averageAccent = snapshot.summary.averageEvaluatedScore >= 8.6
-    ? '#7C3AED'
-    : snapshot.summary.averageEvaluatedScore >= 5.6
-      ? '#16A34A'
-      : '#F59E0B';
-
   if (!snapshot.hasData) {
     return (
       <DashboardContainer theme={theme}>
@@ -241,36 +190,8 @@ export default function DashboardRubricas({ theme, onSelectRubric, progressSnaps
     <DashboardContainer theme={theme}>
       <DashboardTitle theme={theme}>📊 Tu progreso en las 5 dimensiones</DashboardTitle>
       <ScopeNote theme={theme}>
-        La cobertura y las notas usan el mismo criterio en todas las vistas para evitar contradicciones.
+        Hay {snapshot.summary.coverageCount} activa(s), {snapshot.lists.unstarted.length} por abrir y {snapshot.summary.pendingCount} pendiente(s) en esta lectura.
       </ScopeNote>
-
-      <SummaryStrip>
-        <SummaryCard theme={theme} $accent={theme.primary}>
-          <span className="label">Cobertura</span>
-          <span className="value">{snapshot.summary.coverageCount}/5</span>
-          <span className="helper">{snapshot.summary.coveragePercent}% activado</span>
-        </SummaryCard>
-        <SummaryCard theme={theme} $accent={theme.success}>
-          <span className="label">Con nota</span>
-          <span className="value">{snapshot.summary.evaluatedCount}/5</span>
-          <span className="helper">
-            {snapshot.summary.averageEvaluatedScore > 0
-              ? `${snapshot.summary.averageEvaluatedScore.toFixed(1)}/10 promedio`
-              : 'Aun sin promedio'
-            }
-          </span>
-        </SummaryCard>
-        <SummaryCard theme={theme} $accent={theme.warning}>
-          <span className="label">Pendientes</span>
-          <span className="value">{snapshot.summary.pendingCount}</span>
-          <span className="helper">Revisiones en curso</span>
-        </SummaryCard>
-        <SummaryCard theme={theme} $accent={averageAccent}>
-          <span className="label">Fortalezas</span>
-          <span className="value">{snapshot.summary.strongCount}</span>
-          <span className="helper">Competente o experto</span>
-        </SummaryCard>
-      </SummaryStrip>
 
       <RubricsGrid>
         {snapshot.rubrics.map((rubric) => {
