@@ -6,6 +6,7 @@
 import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels, pickAllowedModel } from '../utils/modelUtils.js';
 import { sendError } from '../utils/responseHelpers.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 const clampInt = (value, { min, max, fallback }) => {
   const n = Number(value);
@@ -142,7 +143,7 @@ const buscarWeb = async (req, res) => {
     // Filtrar y procesar resultados según el tipo de búsqueda
     const resultadosProcesados = procesarResultadosPorTipo(resultados, type, q);
 
-    res.json({
+    sendSuccess(res, {
       query: q,
       type,
       resultados: resultadosProcesados.slice(0, max),
@@ -286,7 +287,7 @@ ${contextLines.join('\n')}`;
         `\n\nFuentes: ` + fuentes.map((f, i) => `[${i + 1}] ${f}`).join(', ');
     }
 
-    return res.json({
+    return sendSuccess(res, {
       query: q,
       proveedor: proveedorUsado,
       respuesta: respuestaIA,

@@ -49,7 +49,9 @@ export async function fetchWebSearch(query, opts = {}) {
       return null;
     }
 
-    const data = await response.json();
+    const raw = await response.json();
+    // Unwrap success envelope {ok, data} if present, otherwise use legacy format
+    const data = raw?.ok === true && 'data' in raw ? raw.data : raw;
     return data.resultados || [];
   } catch (e) {
     if (e.name === 'AbortError') {
