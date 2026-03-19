@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { searchWebSources } from './webSearch.controller.js';
 import { sendValidationError } from '../utils/validationError.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -256,7 +257,7 @@ export async function analyzePreLecture(req, res) {
         'El análisis excedió el tiempo límite de seguridad',
         decision
       );
-      res.status(200).json(analysis);
+      sendSuccess(res, analysis);
     }
   }, safetyTimeoutMs);
 
@@ -372,7 +373,7 @@ export async function analyzePreLecture(req, res) {
 
     if (!responseSent) {
       responseSent = true;
-      res.json(analysis);
+      sendSuccess(res, analysis);
     }
 
   } catch (error) {
@@ -391,7 +392,7 @@ export async function analyzePreLecture(req, res) {
         error?.message || 'Error en análisis',
         typeof searchDecision !== 'undefined' ? searchDecision : null
       );
-      res.status(200).json(analysis);
+      sendSuccess(res, analysis);
     }
   }
 }

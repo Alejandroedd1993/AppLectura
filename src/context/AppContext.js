@@ -4440,6 +4440,11 @@ export const AppContextProvider = ({ children }) => {
           responseData = null;
         }
 
+        // Unwrap success envelope {ok, data} if present (A3 migration compat)
+        if (responseData?.ok === true && 'data' in responseData) {
+          responseData = responseData.data;
+        }
+
         // Compat: algunos backends devuelven HTTP 200 con { degraded, fallback }
         // En ese caso, tratamos el fallback como resultado válido para no romper la UI.
         if (responseData && typeof responseData === 'object' && responseData.fallback && (responseData.degraded || responseData.error)) {
