@@ -52,7 +52,7 @@ import {
 } from '../services/rubricProgressV2';
 
 // Backend URL configuration
-export const BACKEND_URL = getBackendUrl();
+const BACKEND_URL = getBackendUrl();
 logger.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
 
 const normalizeTutorInteraction = (entry) => {

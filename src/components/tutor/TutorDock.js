@@ -6,7 +6,10 @@ import useTutorThreads from '../../hooks/useTutorThreads';
 import useLocalStorageState from '../../hooks/useLocalStorageState';
 import useFollowUpQuestion from '../../hooks/useFollowUpQuestion';
 import useReaderActions from '../../hooks/useReaderActions';
-import { AppContext, BACKEND_URL } from '../../context/AppContext';
+import { AppContext } from '../../context/AppContext';
+import { getBackendUrl } from '../../utils/backendConfig';
+
+const BACKEND_URL = getBackendUrl();
 import { generateTextHash } from '../../utils/cache';
 import { useAuth } from '../../context/AuthContext';
 

@@ -28,8 +28,7 @@ jest.mock('./context/AppContext', () => {
   );
   return {
     AppContext,
-    AppContextProvider,
-    BACKEND_URL: 'http://localhost:3001'
+    AppContextProvider
   };
 });
 
