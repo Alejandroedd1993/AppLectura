@@ -341,7 +341,7 @@ function buildNextAction(rubrics, summary) {
       icon: '🧭',
       rubricId: unstartedRubric.rubricId,
       title: `Activa ${unstartedRubric.name}`,
-      description: `Solo llevas ${summary.coverageCount}/${summary.totalRubrics} dimensiones activas. Abrir una nueva ampliara la cobertura del texto.`,
+      description: `Solo llevas ${summary.coverageCount}/${summary.totalRubrics} dimensiones activas. Abrir una nueva ampliará la cobertura del texto.`,
       ctaLabel: 'Abrir nueva dimension'
     };
   }
