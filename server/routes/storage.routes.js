@@ -1,5 +1,5 @@
 import express from 'express';
-import requireFirebaseAuth from '../middleware/firebaseAuth.js';
+import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 import { storageProxyLimiter } from '../middleware/rateLimiters.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';

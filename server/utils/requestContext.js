@@ -43,5 +43,3 @@ export function attachRequestContext(req, res, next) {
 
   next();
 }
-
-export default attachRequestContext;

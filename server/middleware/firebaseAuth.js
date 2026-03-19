@@ -232,5 +232,3 @@ export async function requireFirebaseAuth(req, res, next) {
     });
   }
 }
-
-export default requireFirebaseAuth;

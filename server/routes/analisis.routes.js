@@ -4,7 +4,7 @@ import { analizarTexto } from '../controllers/analisis.controller.js';
 import { analyzePreLecture } from '../controllers/preLectura.controller.js';
 import { generateGlossary } from '../controllers/glossary.controller.js';
 import { analysisLimiter } from '../middleware/rateLimiters.js';
-import requireFirebaseAuth from '../middleware/firebaseAuth.js';
+import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 
 const router = Router();
 

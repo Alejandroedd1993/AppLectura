@@ -1,5 +1,5 @@
 import express from 'express';
-import requireFirebaseAuth from '../middleware/firebaseAuth.js';
+import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 import adminCleanupController from '../controllers/adminCleanup.controller.js';
 
 const router = express.Router();

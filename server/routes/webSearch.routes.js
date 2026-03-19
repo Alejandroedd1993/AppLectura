@@ -4,7 +4,7 @@
 import express from 'express';
 import webSearchController from '../controllers/webSearch.controller.js';
 import { webSearchLimiter } from '../middleware/rateLimiters.js';
-import requireFirebaseAuth from '../middleware/firebaseAuth.js';
+import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 
 const router = express.Router();
 

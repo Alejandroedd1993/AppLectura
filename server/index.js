@@ -19,7 +19,7 @@ import adminCleanupRoutes from './routes/adminCleanup.routes.js';
 import assessmentRoutes from './routes/assessment.route.js';
 
 import performanceMiddleware from './middleware/performance.js';
-import errorHandler from './middleware/errorHandler.js';
+import { errorHandler } from './middleware/errorHandler.js';
 import { sendValidationError } from './utils/validationError.js';
 import { parseBool } from './utils/envUtils.js';
 import { attachRequestContext } from './utils/requestContext.js';

@@ -24,5 +24,3 @@ export function errorHandler(error, req, res, next) {
     codigo: code
   });
 }
-
-export default errorHandler;

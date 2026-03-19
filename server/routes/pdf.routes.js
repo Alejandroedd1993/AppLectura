@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { processPdfUpload, detectPdfTables } from '../controllers/pdf.controller.js';
-import requireFirebaseAuth from '../middleware/firebaseAuth.js';
+import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { sendError } from '../utils/responseHelpers.js';
 
