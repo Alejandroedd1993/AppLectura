@@ -898,6 +898,14 @@ export default function Actividades() {
                   <span>📊</span>
                   Mi Progreso Detallado
                 </SectionTitle>
+                <p style={{
+                  margin: '0 0 1rem 0',
+                  color: theme.textSecondary,
+                  fontSize: '0.88rem',
+                  lineHeight: 1.55
+                }}>
+                  Esta columna resume <strong>solo la lectura actual</strong> y te deja exportar o reiniciar este avance sin mezclar otras lecturas.
+                </p>
 
                 {/* Panel de Estadísticas de Progreso */}
                 <ProgressStats
@@ -931,7 +939,7 @@ export default function Actividades() {
                     fontSize: '0.9rem',
                     lineHeight: 1.6
                   }}>
-                    Descarga tu progreso en formatos útiles:
+                    Descarga un resumen fiel de esta lectura con sus estados actuales, intentos y evidencias asociadas:
                   </p>
                   <ul style={{
                     margin: '0 0 1rem 1.5rem',
@@ -948,7 +956,7 @@ export default function Actividades() {
                     fontSize: '0.8rem',
                     fontStyle: 'italic'
                   }}>
-                    💡 Útil para portafolios académicos, seguimiento docente o análisis de progreso personal.
+                    💡 Útil para portafolios académicos, seguimiento docente o revisión personal sin perder el contexto de esta lectura.
                   </p>
                   <ExportProgressButton
                     rubricProgress={rubricProgress}
@@ -963,6 +971,19 @@ export default function Actividades() {
                 </div>
 
                 {/* 🆕 Botón crítico: al final */}
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '0.9rem 1rem',
+                  borderRadius: '12px',
+                  background: theme.warning + '12',
+                  border: `1px solid ${theme.warning}35`,
+                  color: theme.textSecondary,
+                  fontSize: '0.84rem',
+                  lineHeight: 1.55
+                }}>
+                  <strong style={{ color: theme.textPrimary }}>Reset de esta lectura:</strong> se borran las puntuaciones y estados de progreso,
+                  pero <strong>no</strong> el contenido base de tus artefactos.
+                </div>
                 <ProgressActionsBar theme={theme}>
                   <ResetButton
                     $variant="danger"

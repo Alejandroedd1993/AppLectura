@@ -389,11 +389,9 @@ export default function ProgressStats({ rubricProgress, progressSnapshot = null,
         {activeRubrics.map((rubric) => {
           const accent = getAccent(rubric);
           const currentScoreLabel = rubric.effectiveScore > 0 ? `${rubric.effectiveScore.toFixed(1)}/10` : 'Sin nota';
-          const bestScoreLabel = rubric.bestFormativeScore > 0
-            ? `${rubric.bestFormativeScore.toFixed(1)}/10`
-            : rubric.effectiveScore > 0
-              ? `${rubric.effectiveScore.toFixed(1)}/10`
-              : 'Sin historial';
+          const bestScoreLabel = rubric.bestRecordedScore > 0
+            ? `${rubric.bestRecordedScore.toFixed(1)}/10`
+            : 'Sin historial';
 
           return (
             <DetailCard

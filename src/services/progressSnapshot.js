@@ -189,6 +189,7 @@ function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureI
   const formativeScore = parseScore(lastFormative?.score) || parseScore(rubricData?.average);
 
   const effectiveScore = artifactOverrideScore || summativeScore || artifactScore || formativeScore || 0;
+  const bestRecordedScore = Math.max(bestFormativeScore, effectiveScore);
   const scoreBand = getPerformanceBand(effectiveScore);
 
   const hasPendingSummative = summativeAttempted && summativeScore <= 0 &&
@@ -225,6 +226,7 @@ function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureI
     summativeScore,
     summativeAttempts,
     effectiveScore,
+    bestRecordedScore,
     scoreBand,
     totalAttempts,
     started,

@@ -396,7 +396,7 @@ export default function ExportProgressButton({
     };
 
     const rows = snapshot.rubrics.map((rubric) => {
-      const bestScore = rubric.bestFormativeScore > 0 ? rubric.bestFormativeScore : rubric.effectiveScore;
+      const bestScore = rubric.bestRecordedScore > 0 ? rubric.bestRecordedScore : rubric.effectiveScore;
       const levelLabel = rubric.scoreBand?.rank
         ? `${rubric.scoreBand.rank} (${rubric.badgeLabel})`
         : rubric.badgeLabel;

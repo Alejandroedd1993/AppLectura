@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
 import { calculateDetailedStats } from '../../services/analyticsService';
+import { buildProgressSnapshot } from '../../services/progressSnapshot';
 import { getAllSessionsMerged } from '../../services/sessionManager';
 import ProgressChart from '../analytics/ProgressChart';
 import RadarComparisonChart from '../analytics/RadarComparisonChart';
@@ -291,15 +292,6 @@ const EmptyState = styled.div`
   line-height: 1.6;
 `;
 
-function countArtifactAttempts(rubricProgress = {}) {
-  return Object.values(rubricProgress).reduce((sum, rubric) => {
-    const scores = Array.isArray(rubric?.scores)
-      ? rubric.scores.filter((entry) => entry?.artefacto !== 'PracticaGuiada')
-      : [];
-    return sum + scores.length;
-  }, 0);
-}
-
 function withinCurrentScope(session, currentTextoId, sourceCourseId) {
   if (!session || typeof session !== 'object') return false;
   const sessionTextoId =
@@ -313,6 +305,16 @@ function withinCurrentScope(session, currentTextoId, sourceCourseId) {
   if (currentTextoId && sessionTextoId && sessionTextoId !== currentTextoId) return false;
   if (sourceCourseId != null && sessionCourseId !== sourceCourseId) return false;
   return true;
+}
+
+function getSessionLectureId(session) {
+  return (
+    session?.currentTextoId ||
+    session?.text?.metadata?.id ||
+    session?.text?.textoId ||
+    session?.textoId ||
+    null
+  );
 }
 
 function getTrendLabel(trends) {
@@ -341,10 +343,19 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
   ), [rubricProgress, progressSnapshot]);
 
   const scopedSessions = useMemo(() => (
-    sessions.filter((session) =>
-      withinCurrentScope(session, currentTextoId, sourceCourseId) &&
-      countArtifactAttempts(session.rubricProgress || {}) > 0
-    )
+    sessions
+      .map((session) => ({
+        ...session,
+        progressSnapshot: buildProgressSnapshot({
+          rubricProgress: session.rubricProgress || {},
+          activitiesProgress: session.activitiesProgress || {},
+          lectureId: getSessionLectureId(session)
+        })
+      }))
+      .filter((session) =>
+        withinCurrentScope(session, currentTextoId, sourceCourseId) &&
+        session.progressSnapshot?.hasData
+      )
   ), [sessions, currentTextoId, sourceCourseId]);
 
   const hasProgressData = Boolean(progressSnapshot?.hasData) || analytics.summary.totalAttempts > 0;
@@ -428,7 +439,12 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
             <OverviewCard theme={theme} $accent={theme.secondary}>
               <span className="label">Tendencia</span>
               <span className="value">{getTrendLabel(analytics.trends)}</span>
-              <span className="helper">Consistencia {analytics.trends.consistencyScore.toFixed(1)}</span>
+              <span className="helper">
+                {analytics.trends.hasConsistencyData
+                  ? `Consistencia ${analytics.trends.consistencyScore.toFixed(1)}`
+                  : 'Consistencia aun en construccion'
+                }
+              </span>
             </OverviewCard>
           </OverviewGrid>
 
@@ -494,12 +510,14 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
                 <MetricLabel theme={theme}>Con nota</MetricLabel>
               </MetricCard>
               <MetricCard theme={theme}>
-                <MetricValue theme={theme}>{analytics.summary.medianScore.toFixed(1)}</MetricValue>
+                <MetricValue theme={theme}>
+                  {analytics.summary.hasMedianData ? analytics.summary.medianScore.toFixed(1) : '—'}
+                </MetricValue>
                 <MetricLabel theme={theme}>Mediana</MetricLabel>
               </MetricCard>
               <MetricCard theme={theme}>
                 <MetricValue theme={theme} $color={theme.info || theme.primary}>
-                  {analytics.trends.consistencyScore.toFixed(1)}
+                  {analytics.trends.hasConsistencyData ? analytics.trends.consistencyScore.toFixed(1) : '—'}
                 </MetricValue>
                 <MetricLabel theme={theme}>Consistencia</MetricLabel>
               </MetricCard>

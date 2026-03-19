@@ -47,4 +47,35 @@ describe('progressSnapshot', () => {
     expect(snapshot.rubricsById.rubrica1.effectiveScore).toBe(7.5);
     expect(snapshot.summary.coverageCount).toBe(1);
   });
+
+  test('expone bestRecordedScore considerando override o sumativo si superan la mejor formativa', () => {
+    const snapshot = buildProgressSnapshot({
+      lectureId: 'lectura-score-max',
+      rubricProgress: {
+        rubrica1: {
+          scores: [
+            { score: 7, artefacto: 'ResumenAcademico', timestamp: 1 }
+          ],
+          average: 7,
+          artefactos: ['ResumenAcademico']
+        }
+      },
+      activitiesProgress: {
+        'lectura-score-max': {
+          artifacts: {
+            resumenAcademico: {
+              submitted: true,
+              teacherOverrideScore: 9,
+              attempts: 1,
+              submittedAt: '2026-03-18T15:00:00.000Z'
+            }
+          }
+        }
+      }
+    });
+
+    expect(snapshot.rubricsById.rubrica1.effectiveScore).toBe(9);
+    expect(snapshot.rubricsById.rubrica1.bestFormativeScore).toBe(7);
+    expect(snapshot.rubricsById.rubrica1.bestRecordedScore).toBe(9);
+  });
 });

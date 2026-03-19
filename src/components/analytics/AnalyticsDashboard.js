@@ -18,6 +18,20 @@ import {
   ResponsiveContainer, Area, AreaChart 
 } from 'recharts';
 
+function getSessionRubricScore(session, rubricId) {
+  const snapshotScore = Number(session?.progressSnapshot?.rubricsById?.[rubricId]?.effectiveScore || 0);
+  if (snapshotScore > 0) return snapshotScore;
+  return Number(session?.rubricProgress?.[rubricId]?.average || 0);
+}
+
+function getSessionAttemptCount(session, rubricIds = []) {
+  const snapshotAttempts = Number(session?.progressSnapshot?.summary?.totalAttempts || 0);
+  if (snapshotAttempts > 0) return snapshotAttempts;
+
+  const progress = session?.rubricProgress || {};
+  return rubricIds.reduce((acc, id) => acc + (progress[id]?.scores?.length || 0), 0);
+}
+
 const AnalyticsDashboard = ({ sessions, theme }) => {
   const [timeRange, setTimeRange] = useState('all'); // 'week' | 'month' | 'quarter' | 'all'
   const [selectedRubric, setSelectedRubric] = useState('all'); // 'all' | 'rubrica1' | ...
@@ -34,7 +48,10 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
 
   // Filtrar sesiones con progreso
   const sessionsWithProgress = useMemo(() => {
-    return sessions.filter(s => s.rubricProgress && Object.keys(s.rubricProgress).length > 0);
+    return sessions.filter((session) =>
+      Boolean(session?.progressSnapshot?.hasData) ||
+      Boolean(session?.rubricProgress && Object.keys(session.rubricProgress).length > 0)
+    );
   }, [sessions]);
 
   // Aplicar filtro temporal
@@ -65,20 +82,18 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
 
     // Calcular promedios por sesión
     const sessionScores = filteredByTime.map((session, index) => {
-      const progress = session.rubricProgress || {};
-      
-      const scores = rubricIds.map(rubricId => progress[rubricId]?.average || 0);
+      const scores = rubricIds.map((rubricId) => getSessionRubricScore(session, rubricId));
       const average = scores.reduce((sum, val) => sum + val, 0) / scores.length;
 
       return {
         sessionNumber: index + 1,
         sessionTitle: session.title || `Sesión ${index + 1}`,
         average: Math.round(average * 10) / 10,
-        rubrica1: progress.rubrica1?.average || 0,
-        rubrica2: progress.rubrica2?.average || 0,
-        rubrica3: progress.rubrica3?.average || 0,
-        rubrica4: progress.rubrica4?.average || 0,
-        rubrica5: progress.rubrica5?.average || 0,
+        rubrica1: getSessionRubricScore(session, 'rubrica1'),
+        rubrica2: getSessionRubricScore(session, 'rubrica2'),
+        rubrica3: getSessionRubricScore(session, 'rubrica3'),
+        rubrica4: getSessionRubricScore(session, 'rubrica4'),
+        rubrica5: getSessionRubricScore(session, 'rubrica5'),
         timestamp: session.timestamp || session.createdAt,
         date: new Date(session.timestamp || session.createdAt).toLocaleDateString('es-ES', {
           day: '2-digit',
@@ -89,12 +104,9 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
 
     // Calcular estadísticas generales
     const allScores = sessionScores.map(s => s.average);
-    const totalAttempts = sessionScores.reduce((sum, s) => {
-      const progress = filteredByTime[sessionScores.indexOf(s)].rubricProgress || {};
-      return sum + rubricIds.reduce((acc, id) => 
-        acc + (progress[id]?.scores?.length || 0), 0
-      );
-    }, 0);
+    const totalAttempts = filteredByTime.reduce((sum, session) => (
+      sum + getSessionAttemptCount(session, rubricIds)
+    ), 0);
 
     // Calcular tendencia (comparar primera vs segunda mitad)
     const midpoint = Math.ceil(allScores.length / 2);
@@ -102,7 +114,9 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
     const secondHalf = allScores.slice(midpoint);
     const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
     const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
-    const trendPercentage = ((avgSecond - avgFirst) / avgFirst) * 100;
+    const trendPercentage = avgFirst > 0
+      ? ((avgSecond - avgFirst) / avgFirst) * 100
+      : (avgSecond > 0 ? 100 : 0);
 
     // Distribución de puntuaciones
     const distribution = {
@@ -114,9 +128,7 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
 
     // Progreso por rúbrica (solo si "Todas")
     const rubricProgress = selectedRubric === 'all' ? rubricIds.map(rubricId => {
-      const allRubricScores = filteredByTime.map(s => 
-        s.rubricProgress?.[rubricId]?.average || 0
-      );
+      const allRubricScores = filteredByTime.map((session) => getSessionRubricScore(session, rubricId));
       const avg = allRubricScores.reduce((a, b) => a + b, 0) / allRubricScores.length;
       
       return {

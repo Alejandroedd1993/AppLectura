@@ -21,6 +21,45 @@ function getSnapshotEvaluated(progressSnapshot) {
   return progressSnapshot.rubrics.filter((rubric) => Number(rubric?.effectiveScore || 0) > 0);
 }
 
+function getSnapshotMetricScores(progressSnapshot, snapshotEvaluated) {
+  if (!Array.isArray(progressSnapshot?.rubrics)) return [];
+
+  const formativeScores = progressSnapshot.rubrics.flatMap((rubric) =>
+    getArtifactScores(rubric?.formativeScores || []).map(toNumericScore)
+  ).filter((score) => Number.isFinite(score) && score > 0);
+
+  if (formativeScores.length > 0) return formativeScores;
+
+  return snapshotEvaluated
+    .map((rubric) => Number(rubric?.effectiveScore || 0))
+    .filter((score) => Number.isFinite(score) && score > 0);
+}
+
+function calculateMedian(scores = []) {
+  if (!Array.isArray(scores) || scores.length === 0) return 0;
+  const sortedScores = [...scores].sort((a, b) => a - b);
+  const mid = Math.floor(sortedScores.length / 2);
+
+  return sortedScores.length % 2 === 0
+    ? (Number(sortedScores[mid - 1]) + Number(sortedScores[mid])) / 2
+    : Number(sortedScores[mid]);
+}
+
+function calculateConsistency(scores = []) {
+  if (!Array.isArray(scores) || scores.length < 2) {
+    return { score: 0, hasData: false };
+  }
+
+  const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+  const variance = scores.reduce((sum, score) => sum + Math.pow(score - average, 2), 0) / scores.length;
+  const stdDev = Math.sqrt(variance);
+
+  return {
+    score: Math.max(0, 10 - stdDev),
+    hasData: true
+  };
+}
+
 export function calculateDetailedStats(rubricProgress, progressSnapshot = null) {
   const rubrics = Object.entries(rubricProgress || {});
   const snapshotEvaluated = getSnapshotEvaluated(progressSnapshot);
@@ -57,7 +96,9 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
   const evaluated = hasSnapshot
     ? snapshotEvaluated.map((rubric) => [rubric.rubricId, rubric])
     : rubrics.filter(([_, data]) => getArtifactScores(data?.scores).length > 0);
-  const allScores = rubrics.flatMap(([_, data]) => getArtifactScores(data?.scores || []).map(toNumericScore));
+  const allScores = hasSnapshot
+    ? getSnapshotMetricScores(progressSnapshot, snapshotEvaluated)
+    : rubrics.flatMap(([_, data]) => getArtifactScores(data?.scores || []).map(toNumericScore));
   const totalAttempts = hasSnapshot
     ? Number(progressSnapshot?.summary?.totalAttempts || 0)
     : allScores.length;
@@ -68,13 +109,8 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
       : evaluated.reduce((sum, [_, data]) => sum + Number(data?.average || 0), 0) / evaluated.length)
     : 0;
 
-  const sortedScores = [...allScores].sort((a, b) => a - b);
-  const mid = Math.floor(sortedScores.length / 2);
-  const medianScore = sortedScores.length > 0
-    ? (sortedScores.length % 2 === 0
-      ? (Number(sortedScores[mid - 1]) + Number(sortedScores[mid])) / 2
-      : Number(sortedScores[mid]))
-    : 0;
+  const medianScore = calculateMedian(allScores);
+  const { score: consistencyScore, hasData: hasConsistencyData } = calculateConsistency(allScores);
 
   const strengths = evaluated
     .filter(([_, data]) => Number(hasSnapshot ? data?.effectiveScore : data?.average || 0) >= 8.6)
@@ -97,7 +133,9 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
   let rubricsWithTrendData = 0;
 
   evaluated.forEach(([id, data]) => {
-    const artifactScores = getArtifactScores(data?.scores || []);
+    const artifactScores = hasSnapshot
+      ? getArtifactScores(data?.formativeScores || [])
+      : getArtifactScores(data?.scores || []);
     if (artifactScores.length >= 3) {
       rubricsWithTrendData += 1;
       const first3 = artifactScores.slice(0, 3).reduce((sum, entry) => sum + toNumericScore(entry), 0) / 3;
@@ -115,12 +153,6 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
     if (declining.length > improving.length) overallTrend = 'declining';
   }
 
-  const variance = allScores.length > 0
-    ? allScores.reduce((sum, score) => sum + Math.pow(score - averageScore, 2), 0) / allScores.length
-    : 0;
-  const stdDev = Math.sqrt(variance);
-  const consistencyScore = Math.max(0, 10 - stdDev);
-
   const recommendations = generateRecommendations({
     averageScore,
     strengths,
@@ -129,6 +161,7 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
     declining,
     totalAttempts,
     consistencyScore,
+    hasConsistencyData,
     evaluatedRubrics: evaluated.length,
     totalRubrics,
   });
@@ -140,6 +173,7 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
       totalAttempts,
       averageScore: parseFloat(averageScore.toFixed(2)),
       medianScore: parseFloat(medianScore.toFixed(2)),
+      hasMedianData: allScores.length > 0,
       completionRate: totalRubrics > 0 ? (evaluated.length / totalRubrics) * 100 : 0,
     },
     performance: {
@@ -151,6 +185,7 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
     trends: {
       overallTrend,
       consistencyScore: parseFloat(consistencyScore.toFixed(2)),
+      hasConsistencyData,
       hasSufficientData: rubricsWithTrendData > 0,
     },
     recommendations,
@@ -190,7 +225,7 @@ function generateRecommendations(data) {
     });
   }
 
-  if (data.consistencyScore < 6 && data.totalAttempts >= 3) {
+  if (data.hasConsistencyData && data.consistencyScore < 6 && data.totalAttempts >= 3) {
     recommendations.push({
       type: 'strategy',
       priority: 'medium',

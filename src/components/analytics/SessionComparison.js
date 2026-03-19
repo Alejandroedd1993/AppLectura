@@ -14,11 +14,33 @@ import styled from 'styled-components';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import useMediaQuery from '../../hooks/useMediaQuery';
 
+function getSessionRubricScore(session, rubricId) {
+  const snapshotScore = Number(session?.progressSnapshot?.rubricsById?.[rubricId]?.effectiveScore || 0);
+  if (snapshotScore > 0) return snapshotScore;
+  return Number(session?.rubricProgress?.[rubricId]?.average || 0);
+}
+
+function getSessionAverageScore(session) {
+  const snapshotEvaluated = Number(session?.progressSnapshot?.summary?.evaluatedCount || 0);
+  if (snapshotEvaluated > 0) {
+    return Number(session?.progressSnapshot?.summary?.averageEvaluatedScore || 0);
+  }
+
+  const progress = session?.rubricProgress || {};
+  const rubrics = Object.keys(progress).filter((key) => key.startsWith('rubrica'));
+  if (rubrics.length === 0) return 0;
+
+  return rubrics.reduce((sum, key) => sum + Number(progress[key]?.average || 0), 0) / rubrics.length;
+}
+
 const SessionComparison = ({ sessions, theme }) => {
   const isMobile = useMediaQuery('(max-width: 640px)');
   // Filtrar sesiones con progreso de rúbricas
   const sessionsWithProgress = useMemo(() => {
-    return sessions.filter(s => s.rubricProgress && Object.keys(s.rubricProgress).length > 0);
+    return sessions.filter((session) =>
+      Boolean(session?.progressSnapshot?.hasData) ||
+      Boolean(session?.rubricProgress && Object.keys(session.rubricProgress).length > 0)
+    );
   }, [sessions]);
 
   // Calcular datos para gráfico de tendencia
@@ -27,22 +49,15 @@ const SessionComparison = ({ sessions, theme }) => {
     return sessionsWithProgress
       .sort((a, b) => (a.timestamp || a.createdAt) - (b.timestamp || b.createdAt))
       .map((session, index) => {
-        const progress = session.rubricProgress || {};
-        const rubrics = Object.keys(progress).filter(k => k.startsWith('rubrica'));
-        
-        const averageScore = rubrics.length > 0
-          ? rubrics.reduce((sum, key) => sum + (progress[key]?.average || 0), 0) / rubrics.length
-          : 0;
-
         return {
           sessionNumber: index + 1,
           sessionTitle: session.title || `Sesión ${index + 1}`,
-          promedio: Math.round(averageScore * 10) / 10,
-          rubrica1: progress.rubrica1?.average || 0,
-          rubrica2: progress.rubrica2?.average || 0,
-          rubrica3: progress.rubrica3?.average || 0,
-          rubrica4: progress.rubrica4?.average || 0,
-          rubrica5: progress.rubrica5?.average || 0,
+          promedio: Math.round(getSessionAverageScore(session) * 10) / 10,
+          rubrica1: getSessionRubricScore(session, 'rubrica1'),
+          rubrica2: getSessionRubricScore(session, 'rubrica2'),
+          rubrica3: getSessionRubricScore(session, 'rubrica3'),
+          rubrica4: getSessionRubricScore(session, 'rubrica4'),
+          rubrica5: getSessionRubricScore(session, 'rubrica5'),
           timestamp: session.timestamp || session.createdAt
         };
       });

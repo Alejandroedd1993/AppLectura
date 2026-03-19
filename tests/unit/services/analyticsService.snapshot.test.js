@@ -26,10 +26,45 @@ describe('analyticsService with progressSnapshot', () => {
     expect(stats.summary.evaluatedRubrics).toBe(1);
     expect(stats.summary.totalAttempts).toBe(1);
     expect(stats.summary.averageScore).toBe(9);
+    expect(stats.summary.medianScore).toBe(9);
+    expect(stats.summary.hasMedianData).toBe(true);
+    expect(stats.trends.consistencyScore).toBe(0);
+    expect(stats.trends.hasConsistencyData).toBe(false);
     expect(stats.performance.strengths).toEqual([
       expect.objectContaining({
         rubricId: 'rubrica1',
         score: 9
+      })
+    ]);
+  });
+
+  test('con snapshot mantiene tendencia e indicadores de mejora cuando hay historial formativo suficiente', () => {
+    const rubricProgress = {
+      rubrica1: {
+        scores: [
+          { score: 2, artefacto: 'ResumenAcademico', timestamp: 1 },
+          { score: 4, artefacto: 'ResumenAcademico', timestamp: 2 },
+          { score: 6, artefacto: 'ResumenAcademico', timestamp: 3 },
+          { score: 8, artefacto: 'ResumenAcademico', timestamp: 4 }
+        ],
+        average: 5,
+        artefactos: ['ResumenAcademico']
+      }
+    };
+
+    const snapshot = buildProgressSnapshot({
+      lectureId: 'lectura-2',
+      rubricProgress,
+      activitiesProgress: {}
+    });
+
+    const stats = calculateDetailedStats(rubricProgress, snapshot);
+
+    expect(stats.trends.hasSufficientData).toBe(true);
+    expect(stats.trends.overallTrend).toBe('improving');
+    expect(stats.performance.improving).toEqual([
+      expect.objectContaining({
+        rubricId: 'rubrica1'
       })
     ]);
   });
