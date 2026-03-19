@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/responseCache.js';
 import { sendError } from '../utils/responseHelpers.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels } from '../utils/modelUtils.js';
@@ -284,7 +285,7 @@ export async function createChatCompletion(req, res) {
         res.write(`data: ${JSON.stringify({ reason: 'stop', cached: true, done: true })}\n\n`);
         return res.end();
       }
-      return res.json({
+      return sendSuccess(res, {
         provider,
         model: selectedModel,
         max_tokens: resolvedMaxTokens,
@@ -412,7 +413,7 @@ export async function createChatCompletion(req, res) {
     if (content.length > 10) {
       setCachedResponse(safeMessages, resolvedTemperature, content, latencyMs, provider, selectedModel);
     }
-    return res.json({
+    return sendSuccess(res, {
       provider,
       model: selectedModel,
       max_tokens: resolvedMaxTokens,
@@ -437,7 +438,7 @@ export async function createChatCompletion(req, res) {
 export function getChatCacheStats(req, res) {
   try {
     const stats = getCacheStats();
-    return res.json(stats);
+    return sendSuccess(res, stats);
   } catch (error) {
     console.error('❌ Error obteniendo cache stats:', error);
     return sendError(res, 500, {

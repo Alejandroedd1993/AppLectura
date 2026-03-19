@@ -133,7 +133,7 @@ export async function chatCompletion({
       fallbackMessage: 'No se pudo completar la solicitud de chat.'
     });
   }
-  return res.json();
+  return unwrapBackendSuccessPayload(await res.json());
 }
 
 /**
