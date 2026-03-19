@@ -2,6 +2,7 @@
 import { analizarTexto as analizarTextoService } from '../services/analisis.service.js';
 import { analizarTextoBasico } from '../services/basic.service.js';
 import { sendError } from '../utils/responseHelpers.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 import { analysisSchema } from '../validators/schemas.js';
 import { sendValidationError } from '../utils/validationError.js';
 
@@ -66,10 +67,10 @@ export async function analizarTexto(req, res) {
       };
       
       console.log("✅ Usando análisis básico de fallback");
-      return res.json(fallbackAnalysis);
+      return sendSuccess(res, fallbackAnalysis);
     }
     console.log("✅ La respuesta de la IA ha sido validada exitosamente.");
-    return res.json(validationResult.data);
+    return sendSuccess(res, validationResult.data);
 
   } catch (error) {
     console.error(`Error en análisis con ${api}:`, error.message);
@@ -80,7 +81,7 @@ export async function analizarTexto(req, res) {
       try {
         const textoTruncado = texto.slice(0, 4000) + (texto.length > 4000 ? '...' : '');
         const fallback = analizarTextoBasico(textoTruncado);
-        return res.json(fallback);
+        return sendSuccess(res, fallback);
       } catch (fallbackErr) {
         // si incluso el fallback falla, continuar con la ruta estándar de error
       }

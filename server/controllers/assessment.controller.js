@@ -9,6 +9,7 @@ import {
 } from '../prompts/evaluationPrompts.js';
 import { normalizeDimensionInput } from '../../src/pedagogy/rubrics/criticalLiteracyRubric.js';
 import { sendError } from '../utils/responseHelpers.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 const safeJsonParse = (value) => {
   if (typeof value !== 'string') return { ok: true, data: value };
@@ -197,7 +198,7 @@ export async function evaluateAnswer(req, res) {
 
     console.log(`✅ [assessment.evaluateAnswer] Evaluación completada: score ${data.scoreGlobal}/10, nivel ${data.nivel}/4`);
 
-    return res.json({
+    return sendSuccess(res, {
       valid: true,
       ...data,
       timestamp: new Date().toISOString()
@@ -318,7 +319,7 @@ export async function evaluateComprehensive(req, res) {
 
     console.log(`✅ [assessment.evaluateComprehensive] Evaluación completada: score total ${data.scoreTotal}/10`);
 
-    return res.json({
+    return sendSuccess(res, {
       valid: true,
       ...data,
       timestamp: new Date().toISOString()
@@ -463,7 +464,7 @@ export async function bulkEvaluate(req, res) {
     const successCount = results.filter(r => r.ok).length;
     console.log(`✅ [assessment.bulkEvaluate] Completado: ${successCount}/${items.length} exitosos`);
 
-    return res.json({
+    return sendSuccess(res, {
       totalItems: items.length,
       successCount,
       failureCount: items.length - successCount,

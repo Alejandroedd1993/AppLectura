@@ -160,7 +160,7 @@ export async function analyzeText({ texto, api = 'deepseek', extra = {}, signal,
       fallbackMessage: 'No se pudo completar el analisis del texto.'
     });
   }
-  return res.json();
+  return unwrapBackendSuccessPayload(await res.json());
 }
 
 /**

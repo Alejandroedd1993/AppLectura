@@ -38,6 +38,36 @@ describe('assessment.controller provider response semantics', () => {
     }));
   });
 
+  test('evaluateAnswer returns {ok:true, data} on successful evaluation', async () => {
+    const aiResult = JSON.stringify({
+      dimension: 'comprensionAnalitica',
+      scoreGlobal: 8,
+      nivel: 3,
+      criteriosEvaluados: [{ criterio: 'c1', nivel: 3, evidencia: [], fortalezas: [], mejoras: [] }],
+      resumenDimension: 'Buen análisis',
+      siguientesPasos: ['Profundizar']
+    });
+    const req = makeReq({
+      texto: 'x'.repeat(80),
+      respuesta: 'y'.repeat(30),
+      dimension: 'comprensionAnalitica'
+    }, jest.fn().mockResolvedValue(aiResult));
+    const res = makeRes();
+
+    await evaluateAnswer(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: true,
+        data: expect.objectContaining({
+          valid: true,
+          dimension: 'comprensionAnalitica',
+          scoreGlobal: 8
+        })
+      })
+    );
+  });
+
   test('evaluateComprehensive responde 503 si la respuesta del proveedor es incompleta', async () => {
     const req = makeReq({
       texto: 'x'.repeat(250),
