@@ -304,7 +304,8 @@ export function withinCurrentScope(session, currentTextoId, sourceCourseId) {
   const sessionCourseId = session.sourceCourseId || session.text?.sourceCourseId || null;
 
   if (currentTextoId && (!sessionTextoId || sessionTextoId !== currentTextoId)) return false;
-  if (sourceCourseId != null && sessionCourseId !== sourceCourseId) return false;
+  if (sourceCourseId != null && sessionCourseId != null && sessionCourseId !== sourceCourseId) return false;
+  if (sourceCourseId != null && sessionCourseId == null && !currentTextoId) return false;
   return true;
 }
 

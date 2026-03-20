@@ -50,12 +50,37 @@ const TOOLTIP_RUBRIC_OPTIONS = ANALYTICS_RUBRIC_IDS.map((rubricId) => ({
   shortLabel: RUBRIC_PROGRESS_META[rubricId]?.shortName || rubricId
 }));
 
-function isSessionInTimeRange(session, range, now = Date.now()) {
+export function isSessionInTimeRange(session, range, now = Date.now()) {
   if (range === 'all') return true;
   const windowMs = TIME_RANGE_WINDOWS[range];
   if (!windowMs) return true;
   const timestamp = getSessionTimestamp(session);
+  if (!timestamp) return false;
   return timestamp >= (now - windowMs);
+}
+
+function compareSessionsByTimestamp(a, b) {
+  const aTimestamp = getSessionTimestamp(a);
+  const bTimestamp = getSessionTimestamp(b);
+  if (!aTimestamp && !bTimestamp) return 0;
+  if (!aTimestamp) return 1;
+  if (!bTimestamp) return -1;
+  return aTimestamp - bTimestamp;
+}
+
+export function formatSessionDateLabel(session, locale = 'es-ES') {
+  const timestamp = getSessionTimestamp(session);
+  if (!timestamp) return 'Sin fecha';
+  return new Date(timestamp).toLocaleDateString(locale, {
+    day: '2-digit',
+    month: 'short'
+  });
+}
+
+export function formatSessionAxisLabel(session, sessionNumber, locale = 'es-ES') {
+  const timestamp = getSessionTimestamp(session);
+  if (!timestamp) return `Sesion ${sessionNumber}`;
+  return formatSessionDateLabel(session, locale);
 }
 
 const AnalyticsDashboard = ({ sessions, theme }) => {
@@ -74,6 +99,19 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
   const selectedRubricIds = useMemo(() => (
     selectedRubric === 'all' ? ANALYTICS_RUBRIC_IDS : [selectedRubric]
   ), [selectedRubric]);
+
+  const undatedComparableCount = useMemo(() => (
+    sessionsWithProgress.filter((session) => (
+      !getSessionTimestamp(session) &&
+      hasSessionScoreForRubrics(session, selectedRubricIds)
+    )).length
+  ), [selectedRubricIds, sessionsWithProgress]);
+
+  const undatedSessionsMessage = useMemo(() => {
+    if (undatedComparableCount === 0) return null;
+    const sessionLabel = undatedComparableCount === 1 ? 'sesion' : 'sesiones';
+    return `Hay ${undatedComparableCount} ${sessionLabel} sin fecha. Se muestran como "Sesion N" y solo se incluyen en "Todo" dentro del historial.`;
+  }, [undatedComparableCount]);
 
   // Aplicar filtro temporal
   const filteredByTime = useMemo(() => {
@@ -104,7 +142,7 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
     const rubricIds = selectedRubricIds;
     const comparableSessions = filteredByTime
       .filter((session) => hasSessionScoreForRubrics(session, rubricIds))
-      .sort((a, b) => getSessionTimestamp(a) - getSessionTimestamp(b));
+      .sort(compareSessionsByTimestamp);
 
     if (comparableSessions.length === 0) {
       return {
@@ -145,10 +183,8 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
         sessionTitle: session.title || `Sesión ${index + 1}`,
         average: Math.round(average * 10) / 10,
         timestamp: getSessionTimestamp(session),
-        date: new Date(getSessionTimestamp(session)).toLocaleDateString('es-ES', {
-          day: '2-digit',
-          month: 'short'
-        }),
+        date: formatSessionDateLabel(session),
+        axisLabel: formatSessionAxisLabel(session, index + 1),
         ...rubricState
       };
     });
@@ -300,6 +336,10 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
           </FilterGroup>
         </FiltersSection>
 
+        {undatedSessionsMessage && (
+          <UndatedNotice theme={theme}>{undatedSessionsMessage}</UndatedNotice>
+        )}
+
         <EmptyState theme={theme}>
           <EmptyIcon>🔍</EmptyIcon>
           <EmptyText>No hay datos en este período</EmptyText>
@@ -369,6 +409,10 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
         </FilterGroup>
       </FiltersSection>
 
+      {undatedSessionsMessage && (
+        <UndatedNotice theme={theme}>{undatedSessionsMessage}</UndatedNotice>
+      )}
+
       {!dashboardData.hasComparableData ? (
         <EmptyState theme={theme}>
           <EmptyIcon>ðŸ”Ž</EmptyIcon>
@@ -437,7 +481,11 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={theme.border || '#E5E7EB'} />
               <XAxis 
-                dataKey="date" 
+                dataKey="sessionNumber"
+                tickFormatter={(value) => {
+                  const sessionPoint = dashboardData.sessionScores.find((item) => item.sessionNumber === Number(value));
+                  return sessionPoint?.axisLabel || value;
+                }}
                 stroke={theme.textMuted || '#6B7280'}
                 tick={{ fontSize: 12 }}
               />
@@ -725,6 +773,16 @@ const ChartLegend = styled.div`
 
 const ChartContainer = styled.div`
   width: 100%;
+`;
+
+const UndatedNotice = styled.div`
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid ${props => props.theme?.border || '#E5E7EB'};
+  background: ${props => props.theme?.surfaceVariant || '#F9FAFB'};
+  color: ${props => props.theme?.textMuted || '#6B7280'};
+  font-size: 0.88rem;
+  line-height: 1.5;
 `;
 
 const TwoColumnsGrid = styled.div`

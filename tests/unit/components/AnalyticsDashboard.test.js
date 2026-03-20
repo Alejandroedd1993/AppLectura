@@ -1,6 +1,10 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import AnalyticsDashboard from '../../../src/components/analytics/AnalyticsDashboard';
+import AnalyticsDashboard, {
+  formatSessionAxisLabel,
+  formatSessionDateLabel,
+  isSessionInTimeRange
+} from '../../../src/components/analytics/AnalyticsDashboard';
 import { buildProgressSnapshot } from '../../../src/services/progressSnapshot';
 import { lightTheme } from '../../../src/styles/theme';
 
@@ -38,6 +42,43 @@ function createSession({ title, createdAt, rubricProgress }) {
 }
 
 describe('AnalyticsDashboard', () => {
+  test('etiqueta sesiones sin timestamp como Sin fecha y no las fuerza dentro de rangos temporales', () => {
+    const session = {
+      rubricProgress: {
+        rubrica1: {
+          scores: [{ score: 8, artefacto: 'ResumenAcademico', timestamp: 1 }],
+          average: 8,
+          artefactos: ['ResumenAcademico']
+        }
+      }
+    };
+
+    expect(formatSessionDateLabel(session)).toBe('Sin fecha');
+    expect(formatSessionAxisLabel(session, 2)).toBe('Sesion 2');
+    expect(isSessionInTimeRange(session, 'month', Date.parse('2026-03-20T00:00:00.000Z'))).toBe(false);
+    expect(isSessionInTimeRange(session, 'all', Date.parse('2026-03-20T00:00:00.000Z'))).toBe(true);
+  });
+
+  test('avisa cuando existen sesiones comparables sin fecha dentro del historico', () => {
+    const sessions = [
+      createSession({
+        title: 'Sesion legacy',
+        rubricProgress: {
+          rubrica1: {
+            scores: [{ score: 8, artefacto: 'ResumenAcademico', timestamp: 1 }],
+            average: 8,
+            artefactos: ['ResumenAcademico']
+          }
+        }
+      })
+    ];
+
+    render(<AnalyticsDashboard sessions={sessions} theme={lightTheme} />);
+
+    expect(screen.getByText(/Hay 1 sesion sin fecha/i)).toBeInTheDocument();
+    expect(screen.getByText(/solo se incluyen en "Todo"/i)).toBeInTheDocument();
+  });
+
   test('muestra tendencia estable cuando la rubrica filtrada solo tiene una sesion comparable', () => {
     const sessions = [
       createSession({

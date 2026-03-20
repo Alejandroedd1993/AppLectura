@@ -15,4 +15,11 @@ describe('AnalyticsPanel scope helpers', () => {
       progressSnapshot: { hasData: true }
     }, 'lectura-actual', 'curso-1')).toBe(true);
   });
+
+  test('mantiene sesiones legacy del mismo texto aunque aun no tengan sourceCourseId', () => {
+    expect(withinCurrentScope({
+      currentTextoId: 'lectura-actual',
+      progressSnapshot: { hasData: true }
+    }, 'lectura-actual', 'curso-1')).toBe(true);
+  });
 });
