@@ -13,20 +13,20 @@ import React, { useMemo } from 'react';
 import styled from 'styled-components';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import useMediaQuery from '../../hooks/useMediaQuery';
+import { RUBRIC_PROGRESS_META } from '../../services/progressSnapshot';
 import {
+  ANALYTICS_RUBRIC_IDS,
   getSessionAverageForRubrics,
   getSessionRubricScore,
   getSessionTimestamp,
   hasSessionScoreForRubrics
 } from '../../services/progressAnalyticsView';
 
-const RUBRIC_COLUMNS = [
-  { id: 'rubrica1', label: '📖 Comprensión', icon: '📖' },
-  { id: 'rubrica2', label: '🔍 ACD', icon: '🔍' },
-  { id: 'rubrica3', label: '🌍 Contextualización', icon: '🌍' },
-  { id: 'rubrica4', label: '💬 Argumentación', icon: '💬' },
-  { id: 'rubrica5', label: '🧠 Metacognición', icon: '🧠' }
-];
+const RUBRIC_COLUMNS = ANALYTICS_RUBRIC_IDS.map((rubricId) => ({
+  id: rubricId,
+  label: `${RUBRIC_PROGRESS_META[rubricId]?.icon || '📘'} ${RUBRIC_PROGRESS_META[rubricId]?.shortName || rubricId}`,
+  icon: RUBRIC_PROGRESS_META[rubricId]?.icon || '📘'
+}));
 
 function formatRubricValue(sessionData, rubricId) {
   const hasData = Boolean(sessionData?.[`${rubricId}HasData`]);

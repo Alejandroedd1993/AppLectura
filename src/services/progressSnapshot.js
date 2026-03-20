@@ -159,7 +159,14 @@ function pickArtifactData(activitiesProgress, lectureId, artifactKey) {
 
 function getFormativeScores(rubricData) {
   if (!Array.isArray(rubricData?.scores)) return [];
-  return rubricData.scores.filter((entry) => entry?.artefacto !== 'PracticaGuiada');
+  return rubricData.scores
+    .filter((entry) => entry?.artefacto !== 'PracticaGuiada')
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const timeDiff = toMillis(a.entry?.timestamp) - toMillis(b.entry?.timestamp);
+      return timeDiff !== 0 ? timeDiff : a.index - b.index;
+    })
+    .map(({ entry }) => entry);
 }
 
 function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureId) {
@@ -183,19 +190,29 @@ function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureI
   const summativeAttempts = summativeAttempted
     ? Math.max(1, Number(summative?.attemptsUsed || 1))
     : 0;
+  const legacyAverageScore = parseScore(rubricData?.average);
 
   const artifactOverrideScore = parseScore(artifactData?.teacherOverrideScore);
   const artifactScore = parseScore(artifactData?.score) || parseScore(artifactData?.lastScore);
-  const formativeScore = parseScore(lastFormative?.score) || parseScore(rubricData?.average);
+  const formativeScore = parseScore(lastFormative?.score) || legacyAverageScore;
 
   const effectiveScore = artifactOverrideScore || summativeScore || artifactScore || formativeScore || 0;
   const bestRecordedScore = Math.max(bestFormativeScore, effectiveScore);
   const scoreBand = getPerformanceBand(effectiveScore);
+  const inferredLegacyAttempt = legacyAverageScore > 0 && formativeScores.length === 0 && artifactAttempts === 0 && !summativeAttempted
+    ? 1
+    : 0;
 
   const hasPendingSummative = summativeAttempted && summativeScore <= 0 &&
     String(summative?.status || '').toLowerCase() === 'submitted';
   const hasPendingArtifactReview = Boolean(artifactData?.submitted) && artifactScore <= 0 && artifactOverrideScore <= 0;
-  const hasAnyEvidence = formativeScores.length > 0 || artifactAttempts > 0 || summativeAttempted || Boolean(artifactData?.submitted);
+  const hasAnyEvidence = (
+    formativeScores.length > 0 ||
+    artifactAttempts > 0 ||
+    summativeAttempted ||
+    Boolean(artifactData?.submitted) ||
+    legacyAverageScore > 0
+  );
   const isPendingReview = hasPendingSummative || hasPendingArtifactReview;
 
   const lastActivityAt = Math.max(
@@ -208,7 +225,7 @@ function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureI
     toMillis(summative?.timestamp)
   ) || null;
 
-  const totalAttempts = Math.max(formativeScores.length, artifactAttempts) + summativeAttempts;
+  const totalAttempts = Math.max(formativeScores.length, artifactAttempts, inferredLegacyAttempt) + summativeAttempts;
   const started = hasAnyEvidence;
   const evaluated = effectiveScore > 0;
 
@@ -400,7 +417,7 @@ export function buildProgressSnapshot({
     ? rubrics.filter((rubric) => rubric.evaluated)
       .reduce((sum, rubric) => sum + rubric.effectiveScore, 0) / evaluatedCount
     : 0;
-  const bestScore = rubrics.reduce((best, rubric) => Math.max(best, rubric.effectiveScore), 0);
+  const bestScore = rubrics.reduce((best, rubric) => Math.max(best, rubric.bestRecordedScore || 0), 0);
   const totalAttempts = rubrics.reduce((sum, rubric) => sum + rubric.totalAttempts, 0);
   const coveragePercent = Math.round((coverageCount / RUBRIC_ORDER.length) * 100);
   const strongCount = rubrics.filter((rubric) => (rubric.scoreBand?.rank || 0) >= 3).length;

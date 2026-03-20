@@ -7,6 +7,7 @@ import React, { useMemo } from 'react';
 import styled from 'styled-components';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { buildProgressChartModel } from '../../services/progressAnalyticsView';
+import { RUBRIC_PROGRESS_META } from '../../services/progressSnapshot';
 
 const ChartContainer = styled.div`
   background: ${props => props.theme.surface};
@@ -130,21 +131,12 @@ const TooltipColor = styled.div`
   background: ${props => props.$color};
 `;
 
-const RUBRIC_COLORS = {
-  rubrica1: '#3B82F6',
-  rubrica2: '#8B5CF6',
-  rubrica3: '#10B981',
-  rubrica4: '#F59E0B',
-  rubrica5: '#EF4444'
-};
-
-const RUBRIC_NAMES = {
-  rubrica1: 'Comprension',
-  rubrica2: 'ACD',
-  rubrica3: 'Contextualizacion',
-  rubrica4: 'Argumentacion',
-  rubrica5: 'Metacognicion'
-};
+function getRubricMeta(rubricId) {
+  return RUBRIC_PROGRESS_META[rubricId] || {
+    shortName: rubricId,
+    color: '#3B82F6'
+  };
+}
 
 const CustomTooltipContent = ({ active, payload, label, theme }) => {
   if (!active || !payload) return null;
@@ -257,7 +249,7 @@ const ProgressChart = ({ rubricProgress = {}, progressSnapshot = null, theme }) 
               fontSize: '0.85rem',
               paddingTop: '1rem'
             }}
-            formatter={(value) => RUBRIC_NAMES[value] || value}
+            formatter={(value) => getRubricMeta(value).shortName || value}
           />
 
           {activeRubrics.map((rubricId) => (
@@ -265,11 +257,11 @@ const ProgressChart = ({ rubricProgress = {}, progressSnapshot = null, theme }) 
               key={rubricId}
               type="monotone"
               dataKey={rubricId}
-              stroke={RUBRIC_COLORS[rubricId]}
+              stroke={getRubricMeta(rubricId).color}
               strokeWidth={2.5}
               dot={{
                 r: 4,
-                fill: RUBRIC_COLORS[rubricId],
+                fill: getRubricMeta(rubricId).color,
                 strokeWidth: 2,
                 stroke: '#fff'
               }}
@@ -278,7 +270,7 @@ const ProgressChart = ({ rubricProgress = {}, progressSnapshot = null, theme }) 
                 stroke: '#fff',
                 strokeWidth: 2
               }}
-              name={RUBRIC_NAMES[rubricId]}
+              name={getRubricMeta(rubricId).shortName || rubricId}
               connectNulls
             />
           ))}

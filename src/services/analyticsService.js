@@ -1,19 +1,40 @@
-const RUBRIC_LABELS = {
-  rubrica1: 'Comprension Analitica',
-  rubrica2: 'Analisis Ideologico-Discursivo',
-  rubrica3: 'Contextualizacion Socio-Historica',
-  rubrica4: 'Argumentacion y Contraargumento',
-  rubrica5: 'Metacognicion Etica del Uso de IA'
-};
+import { RUBRIC_PROGRESS_META } from './progressSnapshot';
 
 function toNumericScore(entry) {
   if (typeof entry === 'object' && entry !== null) return Number(entry.score);
   return Number(entry);
 }
 
+function getRubricLabel(rubricId) {
+  return RUBRIC_PROGRESS_META[rubricId]?.name || rubricId;
+}
+
+function toTimestamp(value) {
+  if (value == null) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (typeof value?.toDate === 'function') {
+    return value.toDate().getTime();
+  }
+  if (typeof value?.seconds === 'number') {
+    return value.seconds * 1000;
+  }
+  return 0;
+}
+
 function getArtifactScores(scores = []) {
   if (!Array.isArray(scores)) return [];
-  return scores.filter((entry) => !(typeof entry === 'object' && entry?.artefacto === 'PracticaGuiada'));
+  return scores
+    .filter((entry) => !(typeof entry === 'object' && entry?.artefacto === 'PracticaGuiada'))
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const timeDiff = toTimestamp(a.entry?.timestamp) - toTimestamp(b.entry?.timestamp);
+      return timeDiff !== 0 ? timeDiff : a.index - b.index;
+    })
+    .map(({ entry }) => entry);
 }
 
 function getSnapshotEvaluated(progressSnapshot) {
@@ -24,11 +45,26 @@ function getSnapshotEvaluated(progressSnapshot) {
 function getSnapshotMetricScores(progressSnapshot, snapshotEvaluated) {
   if (!Array.isArray(progressSnapshot?.rubrics)) return [];
 
-  const formativeScores = progressSnapshot.rubrics.flatMap((rubric) =>
-    getArtifactScores(rubric?.formativeScores || []).map(toNumericScore)
-  ).filter((score) => Number.isFinite(score) && score > 0);
+  const scoredFormativesByRubric = progressSnapshot.rubrics.map((rubric) => ({
+    rubricId: rubric?.rubricId,
+    scores: getArtifactScores(rubric?.formativeScores || [])
+      .map(toNumericScore)
+      .filter((score) => Number.isFinite(score) && score > 0)
+  }));
 
-  if (formativeScores.length > 0) return formativeScores;
+  const formativeScores = scoredFormativesByRubric.flatMap((rubric) => rubric.scores);
+  const rubricsWithFormativeScores = new Set(
+    scoredFormativesByRubric
+      .filter((rubric) => rubric.scores.length > 0)
+      .map((rubric) => rubric.rubricId)
+  );
+  const snapshotOnlyScores = snapshotEvaluated
+    .filter((rubric) => !rubricsWithFormativeScores.has(rubric?.rubricId))
+    .map((rubric) => Number(rubric?.effectiveScore || 0))
+    .filter((score) => Number.isFinite(score) && score > 0);
+
+  const combinedScores = [...formativeScores, ...snapshotOnlyScores];
+  if (combinedScores.length > 0) return combinedScores;
 
   return snapshotEvaluated
     .map((rubric) => Number(rubric?.effectiveScore || 0))
@@ -116,7 +152,7 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
     .filter(([_, data]) => Number(hasSnapshot ? data?.effectiveScore : data?.average || 0) >= 8.6)
     .map(([id, data]) => ({
       rubricId: id,
-      rubricLabel: RUBRIC_LABELS[id] || id,
+      rubricLabel: getRubricLabel(id),
       score: Number(hasSnapshot ? data?.effectiveScore : data?.average || 0)
     }));
 
@@ -124,7 +160,7 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
     .filter(([_, data]) => Number(hasSnapshot ? data?.effectiveScore : data?.average || 0) < 5.6)
     .map(([id, data]) => ({
       rubricId: id,
-      rubricLabel: RUBRIC_LABELS[id] || id,
+      rubricLabel: getRubricLabel(id),
       score: Number(hasSnapshot ? data?.effectiveScore : data?.average || 0)
     }));
 
@@ -142,8 +178,8 @@ export function calculateDetailedStats(rubricProgress, progressSnapshot = null) 
       const last3 = artifactScores.slice(-3).reduce((sum, entry) => sum + toNumericScore(entry), 0) / 3;
       const change = last3 - first3;
 
-      if (change > 1) improving.push({ rubricId: id, rubricLabel: RUBRIC_LABELS[id] || id, improvement: change });
-      if (change < -1) declining.push({ rubricId: id, rubricLabel: RUBRIC_LABELS[id] || id, decline: Math.abs(change) });
+      if (change > 1) improving.push({ rubricId: id, rubricLabel: getRubricLabel(id), improvement: change });
+      if (change < -1) declining.push({ rubricId: id, rubricLabel: getRubricLabel(id), decline: Math.abs(change) });
     }
   });
 

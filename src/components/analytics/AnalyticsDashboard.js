@@ -44,6 +44,12 @@ const RUBRIC_OPTIONS = [
   }))
 ];
 
+const TOOLTIP_RUBRIC_OPTIONS = ANALYTICS_RUBRIC_IDS.map((rubricId) => ({
+  id: rubricId,
+  icon: RUBRIC_PROGRESS_META[rubricId]?.icon || '📘',
+  shortLabel: RUBRIC_PROGRESS_META[rubricId]?.shortName || rubricId
+}));
+
 function isSessionInTimeRange(session, range, now = Date.now()) {
   if (range === 'all') return true;
   const windowMs = TIME_RANGE_WINDOWS[range];
@@ -238,11 +244,11 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
           <>
             <TooltipStat><strong>Promedio con evidencia:</strong> {data.average.toFixed(1)}/10</TooltipStat>
             <TooltipDivider />
-            <TooltipStat>📖 Comprensión: {formatRubricValue('rubrica1')}</TooltipStat>
-            <TooltipStat>🔍 ACD: {formatRubricValue('rubrica2')}</TooltipStat>
-            <TooltipStat>🌍 Contextualización: {formatRubricValue('rubrica3')}</TooltipStat>
-            <TooltipStat>💬 Argumentación: {formatRubricValue('rubrica4')}</TooltipStat>
-            <TooltipStat>🧠 Metacognición: {formatRubricValue('rubrica5')}</TooltipStat>
+            {TOOLTIP_RUBRIC_OPTIONS.map((rubric) => (
+              <TooltipStat key={rubric.id}>
+                {rubric.icon} {rubric.shortLabel}: {formatRubricValue(rubric.id)}
+              </TooltipStat>
+            ))}
           </>
         ) : (
           <TooltipStat>

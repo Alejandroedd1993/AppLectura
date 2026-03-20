@@ -41,6 +41,33 @@ describe('progressAnalyticsView', () => {
     ]);
   });
 
+  test('ordena la serie temporal por timestamp aunque los intentos legacy lleguen desordenados', () => {
+    const snapshot = buildProgressSnapshot({
+      lectureId: 'lectura-chart-desordenado',
+      rubricProgress: {
+        rubrica1: {
+          scores: [
+            { score: 9, artefacto: 'ResumenAcademico', timestamp: 20 },
+            { score: 5, artefacto: 'ResumenAcademico', timestamp: 10 }
+          ],
+          average: 7,
+          artefactos: ['ResumenAcademico']
+        }
+      },
+      activitiesProgress: {}
+    });
+
+    const model = buildProgressChartModel({
+      rubricProgress: {},
+      progressSnapshot: snapshot
+    });
+
+    expect(model.chartData).toEqual([
+      { attempt: 1, rubrica1: 5 },
+      { attempt: 2, rubrica1: 9 }
+    ]);
+  });
+
   test('usa progressSnapshot para radar y distribucion cuando la nota viene de override docente', () => {
     const snapshot = buildProgressSnapshot({
       lectureId: 'lectura-override',
@@ -115,6 +142,35 @@ describe('progressAnalyticsView', () => {
     ]);
   });
 
+  test('infiere un intento minimo cuando un snapshot legacy trae nota valida pero totalAttempts en cero', () => {
+    const distributionData = buildDistributionChartData({
+      rubricProgress: {},
+      progressSnapshot: {
+        rubrics: [
+          {
+            rubricId: 'rubrica2',
+            totalAttempts: 0,
+            effectiveScore: 8,
+            bestRecordedScore: 8,
+            currentStatusLabel: 'Competente',
+            formativeScores: []
+          }
+        ]
+      }
+    });
+
+    expect(distributionData).toEqual([
+      expect.objectContaining({
+        rubric: 'rubrica2',
+        attempts: 1,
+        average: 8,
+        best: 8,
+        last: 8,
+        hasScoreData: true
+      })
+    ]);
+  });
+
   test('calcula insights de distribucion por intentos reales y no por orden de rubrica', () => {
     const insights = buildDistributionInsights([
       { name: 'Comprension', attempts: 1, average: 7, last: 7 },
@@ -179,6 +235,24 @@ describe('progressAnalyticsView', () => {
     expect(getSessionAttemptCount(session)).toBe(3);
     expect(getSessionAttemptCount(session, ['rubrica1'])).toBe(1);
     expect(getSessionAttemptCount(session, ['rubrica2'])).toBe(2);
+  });
+
+  test('normaliza intentos de snapshots legacy cuando la nota existe pero el contador guardado es cero', () => {
+    const session = {
+      progressSnapshot: {
+        summary: { totalAttempts: 0 },
+        rubricsById: {
+          rubrica4: {
+            rubricId: 'rubrica4',
+            totalAttempts: 0,
+            effectiveScore: 7.5
+          }
+        }
+      },
+      rubricProgress: {}
+    };
+
+    expect(getSessionAttemptCount(session, ['rubrica4'])).toBe(1);
   });
 
   test('detecta cuando una sesion no tiene nota para la rubrica filtrada', () => {

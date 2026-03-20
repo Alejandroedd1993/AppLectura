@@ -38,17 +38,35 @@ function getMeta(rubricId) {
   };
 }
 
+function getNormalizedAttemptCount(rubric = {}) {
+  const totalAttempts = Number(rubric?.totalAttempts || 0);
+  if (totalAttempts > 0) return totalAttempts;
+  return Number(rubric?.effectiveScore || 0) > 0 ? 1 : 0;
+}
+
 function getSnapshotRubrics(progressSnapshot) {
   return Array.isArray(progressSnapshot?.rubrics) ? progressSnapshot.rubrics : [];
 }
 
+function sortEntriesByTimestamp(entries = []) {
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const timeDiff = toTimestamp(a.entry?.timestamp) - toTimestamp(b.entry?.timestamp);
+      return timeDiff !== 0 ? timeDiff : a.index - b.index;
+    })
+    .map(({ entry }) => entry);
+}
+
 function getLegacyFormativeScores(rubricData = {}) {
   if (!Array.isArray(rubricData?.scores)) return [];
-  return rubricData.scores.filter((entry) => entry?.artefacto !== 'PracticaGuiada');
+  return sortEntriesByTimestamp(
+    rubricData.scores.filter((entry) => entry?.artefacto !== 'PracticaGuiada')
+  );
 }
 
 function getSnapshotFormativeScores(rubric = {}) {
-  return Array.isArray(rubric?.formativeScores) ? rubric.formativeScores : [];
+  return Array.isArray(rubric?.formativeScores) ? sortEntriesByTimestamp(rubric.formativeScores) : [];
 }
 
 function sortByRubricId(items = [], key = 'rubricId') {
@@ -210,12 +228,13 @@ export function buildDistributionChartData({ rubricProgress = {}, progressSnapsh
     const lastScore = hasScoreData
       ? ((Number.isFinite(effectiveScore) && effectiveScore > 0) ? effectiveScore : lastFormativeScore)
       : null;
+    const attempts = getNormalizedAttemptCount(rubric);
 
     return {
       rubric: rubric.rubricId,
       name: meta.shortName || rubric.rubricId,
       fullName: meta.name || rubric.rubricId,
-      attempts: Number(rubric.totalAttempts || 0),
+      attempts,
       average: hasScoreData ? average(metricScores) : null,
       best: bestScore,
       last: lastScore,
@@ -286,9 +305,14 @@ export function getSessionAttemptCount(session, rubricIds = ANALYTICS_RUBRIC_IDS
   const snapshotAttempts = Number(session?.progressSnapshot?.summary?.totalAttempts || 0);
   if (isFullScope && snapshotAttempts > 0) return snapshotAttempts;
 
-  const snapshotScopedAttempts = scopedRubricIds.reduce((acc, rubricId) => (
-    acc + Number(session?.progressSnapshot?.rubricsById?.[rubricId]?.totalAttempts || 0)
-  ), 0);
+  const snapshotScopedAttempts = scopedRubricIds.reduce((acc, rubricId) => {
+    const rubricFromMap = session?.progressSnapshot?.rubricsById?.[rubricId];
+    const rubricFromList = Array.isArray(session?.progressSnapshot?.rubrics)
+      ? session.progressSnapshot.rubrics.find((rubric) => rubric?.rubricId === rubricId)
+      : null;
+    const rubric = rubricFromMap || rubricFromList;
+    return acc + getNormalizedAttemptCount(rubric);
+  }, 0);
   if (snapshotScopedAttempts > 0) return snapshotScopedAttempts;
 
   const progress = session?.rubricProgress || {};
