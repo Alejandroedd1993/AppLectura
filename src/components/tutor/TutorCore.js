@@ -10,6 +10,12 @@ import { DEFAULT_BACKEND_URL } from '../../utils/backendConfig';
 import { createAbortControllerWithTimeout } from '../../utils/netUtils';
 import { detectStudentNeeds } from '../../pedagogy/tutor/studentNeedsAnalyzer';
 import usePedagogyIntegration from '../../hooks/usePedagogyIntegration';
+import {
+  clearTimeoutRef,
+  resetStreamPersistWindow,
+  scheduleAbortTimeout,
+  shouldNotifyStreamUpdate,
+} from './streamRuntime';
 
 // ==================== FUNCIONES PURAS (fuera del componente, se crean una sola vez) ====================
 
@@ -236,6 +242,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   const [loading, setLoading] = useState(false);
   const abortRef = useRef(null);
   const webSearchAbortRef = useRef(null);
+  const timeoutIdRef = useRef(null);
   const requestIdRef = useRef(0);
   const streamingMsgIdRef = useRef(null); // R12: rastrear placeholder activo para limpiar en abort
   const lastStreamPersistRef = useRef(0);
@@ -276,6 +283,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   // H2 FIX: Cancelar peticiones en vuelo al desmontar para evitar setState sobre componente desmontado
   useEffect(() => {
     return () => {
+      clearTimeoutRef(timeoutIdRef);
       try { abortRef.current?.abort(); } catch { /* noop */ }
       // F2 FIX: Also abort any in-flight web search fetch
       try { webSearchAbortRef.current?.abort(); } catch { /* noop */ }
@@ -311,8 +319,12 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   // 🌊 Streaming: actualizar contenido de un mensaje existente
   const updateMessage = useCallback((msgId, newContent, notify = false, updateLastRef = true) => {
     const now = Date.now();
-    const periodicNotify = !notify && (now - lastStreamPersistRef.current >= 3000);
-    const shouldNotify = notify || periodicNotify;
+    const shouldNotify = shouldNotifyStreamUpdate({
+      notify,
+      now,
+      lastPersistAt: lastStreamPersistRef.current,
+      intervalMs: 3000,
+    });
 
     setMessages(prev => {
       const idx = prev.findIndex(m => m.id === msgId);
@@ -440,9 +452,11 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
     onBusyChangeRef.current?.(true);
 
     // Crear AbortController con timeout
+    clearTimeoutRef(timeoutIdRef);
     abortRef.current?.abort();
     const abortControl = createAbortControllerWithTimeout({ timeoutMs: TIMEOUT_MS });
     abortRef.current = abortControl.controller;
+    const requestAbortController = abortControl.controller;
 
     // R12 FIX: Si hay un placeholder de stream previo sin finalizar (abort/nueva petición),
     // eliminarlo del estado para no dejar mensajes fantasma con cursor ▌.
@@ -580,6 +594,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       const streamingMsgId = Date.now() + '-assistant-stream';
       addMessage({ id: streamingMsgId, role: 'assistant', content: '▌' });
       streamingMsgIdRef.current = streamingMsgId; // R12: marcar placeholder activo
+      resetStreamPersistWindow(lastStreamPersistRef);
       // Evitar que el placeholder altere el filtro anti-eco
       lastAssistantContentRef.current = prevAssistantContent;
 
@@ -614,10 +629,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
         // ⏱️ Resetear timeout: una vez llegan chunks, usar idle timeout más corto
         // en lugar del timeout de conexión total (evita abortar streams largos)
         abortControl.cleanup();
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-          if (abortRef.current) abortRef.current.abort();
-        }, STREAM_IDLE_MS);
+        timeoutId = scheduleAbortTimeout(timeoutIdRef, requestAbortController, STREAM_IDLE_MS);
 
         if (myRequestId !== requestIdRef.current) {
           clearTimeout(timeoutId); // B18 FIX: Limpiar timeout antes de salir
@@ -915,6 +927,9 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
 
     } catch (e) {
       clearTimeout(timeoutId);
+      if (timeoutIdRef.current === timeoutId) {
+        timeoutIdRef.current = null;
+      }
       abortControl.cleanup();
 
       // H2 FIX: Si hay un placeholder de stream activo, eliminarlo antes de mostrar error.
@@ -994,6 +1009,9 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
       logger.warn('[TutorCore] Error:', e);
     } finally {
       clearTimeout(timeoutId);
+      if (timeoutIdRef.current === timeoutId) {
+        timeoutIdRef.current = null;
+      }
       abortControl.cleanup();
       if (myRequestId === requestIdRef.current) {
         setLoading(false);
@@ -1075,6 +1093,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   }, []);
   const stableCancelPending = useCallback(() => {
     requestIdRef.current += 1;
+    clearTimeoutRef(timeoutIdRef);
     try { abortRef.current?.abort(); } catch { /* noop */ }
     abortRef.current = null;
     // H1 FIX: Abortar también búsquedas web en curso para evitar fetch zombi
@@ -1085,6 +1104,7 @@ export default function TutorCore({ onBusyChange, onMessagesChange, onAssistantM
   }, []);
   const stableClear = useCallback(() => {
     requestIdRef.current += 1;
+    clearTimeoutRef(timeoutIdRef);
     try { abortRef.current?.abort(); } catch { /* noop */ }
     abortRef.current = null;
     // H1 FIX: Abortar también búsquedas web en curso para evitar fetch zombi
