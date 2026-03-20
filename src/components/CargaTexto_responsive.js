@@ -16,6 +16,38 @@ import AlertMessage from '../components/AlertMessage';
 import SessionsHistory from './common/SessionsHistory';
 
 import logger from '../utils/logger';
+
+const PDF_OPERATIONAL_PLACEHOLDER_MARKERS = [
+  'modo de demostración activo',
+  'contenido simulado',
+  'el servidor backend no está disponible',
+  'el servidor backend no esta disponible',
+  'inicia el servidor backend para experimentar el procesamiento completo de pdfs'
+];
+
+function normalizeForDetection(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function containsOperationalPlaceholderText(value) {
+  const normalized = normalizeForDetection(value);
+  return PDF_OPERATIONAL_PLACEHOLDER_MARKERS.some((marker) => normalized.includes(normalizeForDetection(marker)));
+}
+
+function buildExtractionTelemetry({ file, text, source }) {
+  const safeText = String(text || '');
+  return {
+    source,
+    fileName: file?.name || null,
+    fileType: file?.type || null,
+    textLength: safeText.length,
+    textHash: hashText(safeText.slice(0, 4000)),
+    isSuspiciousPlaceholder: containsOperationalPlaceholderText(safeText)
+  };
+}
 // Estilos optimizados para sidebar
 const CargaContainer = styled(motion.div)`
   background: ${props => props.theme.surface};
@@ -337,6 +369,17 @@ function CargaTexto() {
 
       if (!contenido || contenido.trim().length === 0) {
         throw new Error('El archivo está vacío o no se pudo leer el contenido');
+      }
+
+      const extractionTelemetry = buildExtractionTelemetry({
+        file,
+        text: contenido,
+        source: archivoSeleccionado?.contenido ? 'loaded-file-state' : (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf') ? 'pdf-backend' : 'local-text-extraction')
+      });
+      logger.log('🧪 [CargaTexto] Telemetría de extracción:', extractionTelemetry);
+
+      if ((file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) && extractionTelemetry.isSuspiciousPlaceholder) {
+        throw new Error('Se detectó contenido operativo no válido en lugar del texto del PDF. Reintenta la carga.');
       }
 
       logger.log('� Contenido extraído:', contenido.length, 'caracteres');
