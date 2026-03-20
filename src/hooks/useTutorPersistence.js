@@ -2,19 +2,10 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { db, isConfigValid } from '../firebase/config';
 import logger from '../utils/logger';
+import { legacyContentHash } from '../utils/hash';
 
 const EMPTY_MESSAGES = [];
 const ID_PREFIX = 'legacy_';
-
-function fastHash(input) {
-  const text = String(input || '');
-  let hash = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
-}
 
 function ensureCompactIds(items) {
   const seen = new Set();
@@ -30,7 +21,7 @@ function ensureCompactIds(items) {
       const baseKey = `${role}|${content}`;
       const occurrence = (occurrenceByBase.get(baseKey) || 0) + 1;
       occurrenceByBase.set(baseKey, occurrence);
-      id = `${ID_PREFIX}${fastHash(baseKey)}_${occurrence}`;
+      id = `${ID_PREFIX}${legacyContentHash(baseKey, { emptyValue: '0' })}_${occurrence}`;
     }
 
     let uniqueId = id;

@@ -29,6 +29,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { auth, db, storage } from './config';
 import { getSessionContentHash, compareSessionContent, mergeSessionsWithConflictResolution } from '../utils/sessionHash';
 import { BACKEND_BASE_URL } from '../config/backend';
+import { legacyContentHash } from '../utils/hash';
 import logger from '../utils/logger';
 
 const COURSE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -1620,22 +1621,6 @@ export function subscribeToCourseStudents(courseId, callback) {
 // ============================================
 
 /**
- * Genera hash simple de un texto para deduplicación
- * @param {string} text 
- * @returns {string}
- */
-function simpleHash(text) {
-  if (!text) return 'empty';
-  let hash = 0;
-  for (let i = 0; i < Math.min(text.length, 1000); i++) {
-    const char = text.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash).toString(36);
-}
-
-/**
  * Sube un texto grande a Firebase Storage y retorna la URL de descarga
  * @param {string} userId - UID del usuario
  * @param {string} sessionId - ID de la sesión
@@ -1795,7 +1780,7 @@ export async function saveSessionToFirestore(userId, sessionData) {
 
     // Generar hash del texto para deduplicación
     const textHash = sessionData.text?.content
-      ? simpleHash(sessionData.text.content)
+      ? legacyContentHash(sessionData.text.content, { maxChars: 1000, emptyValue: 'empty' })
       : 'no-text';
 
     // Preparar datos para Firestore (sin el texto completo si es muy grande)

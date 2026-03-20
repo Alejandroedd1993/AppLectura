@@ -2,6 +2,8 @@
 // Objetivo: reemplazar lógicas divergentes (regex simple vs chunking de 800 chars)
 // Estrategia: 1) Pre-normaliza 2) Detecta párrafos naturales 3) Fusiona párrafos muy cortos 4) Fallback a chunking si excede límites
 
+import { compactTextHash } from '../utils/hash';
+
 /**
  * @typedef {Object} Paragraph
  * @property {string} id Hash corto estable (en base a índice y contenido parcial)
@@ -27,12 +29,6 @@ function normalize(raw) {
     .replace(/ {2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-/** Genera hash corto no criptográfico */
-function shortHash(str) {
-  let h = 0; for (let i = 0; i < str.length && i < 120; i++) { h = (h * 31 + str.charCodeAt(i)) >>> 0; }
-  return h.toString(36);
 }
 
 /**
@@ -93,7 +89,7 @@ export function segmentText(raw, options = {}) {
     const endChar = startChar + content.length;
     cursor = endChar;
     paragraphs.push({
-      id: shortHash(idx + '_' + content),
+      id: compactTextHash(idx + '_' + content, { maxChars: 120 }),
       index: idx,
       startChar,
       endChar,
@@ -105,7 +101,7 @@ export function segmentText(raw, options = {}) {
 }
 
 /** Utilidad para obtener hash global del texto (reuse en storage keys) */
-export function hashText(raw) { return shortHash(normalize(raw)); }
+export function hashText(raw) { return compactTextHash(normalize(raw), { maxChars: 120 }); }
 
 // Sencilla caché en memoria (evita recalcular en vistas múltiples)
 const _cache = new Map();
