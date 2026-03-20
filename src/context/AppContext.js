@@ -98,6 +98,42 @@ const normalizeTutorInteraction = (entry) => {
   };
 };
 
+const normalizeCompleteAnalysisState = (analysis) => {
+  if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) {
+    return analysis;
+  }
+
+  const rootMetadata = analysis.metadata || null;
+  const prelectureMetadata = analysis.prelecture?.metadata || null;
+  const rootProvider = String(rootMetadata?.provider || '').trim().toLowerCase();
+  const prelectureProvider = String(prelectureMetadata?.provider || '').trim().toLowerCase();
+  const hasDeepAnalysis = Boolean(analysis.prelecture && analysis.critical);
+  const isBasicOnly = rootProvider === 'basic-local' || prelectureProvider === 'basic-local';
+  const shouldClearPreliminary = hasDeepAnalysis && !isBasicOnly && (
+    rootMetadata?._isPreliminary === true ||
+    prelectureMetadata?._isPreliminary === true
+  );
+
+  if (!shouldClearPreliminary) {
+    return analysis;
+  }
+
+  return {
+    ...analysis,
+    metadata: rootMetadata ? {
+      ...rootMetadata,
+      _isPreliminary: false
+    } : rootMetadata,
+    prelecture: analysis.prelecture ? {
+      ...analysis.prelecture,
+      metadata: {
+        ...(prelectureMetadata || {}),
+        _isPreliminary: false
+      }
+    } : analysis.prelecture
+  };
+};
+
 // 1. Crear el Contexto
 export const
   AppContext = createContext();
@@ -627,12 +663,18 @@ export const AppContextProvider = ({ children }) => {
 
   const setCompleteAnalysis = useCallback((analysis) => {
     logger.log('🔄 [AppContext] setCompleteAnalysis:', analysis ? 'CON DATOS' : 'NULL');
-    setActiveLecture(prev => ({
-      ...prev,
-      analysis: analysis,
-      isAnalyzing: false,
-      lastModified: Date.now()
-    }));
+    setActiveLecture(prev => {
+      const resolvedAnalysis = typeof analysis === 'function'
+        ? analysis(prev.analysis)
+        : analysis;
+
+      return {
+        ...prev,
+        analysis: normalizeCompleteAnalysisState(resolvedAnalysis),
+        isAnalyzing: false,
+        lastModified: Date.now()
+      };
+    });
   }, []);
 
   // 🆕 FUNCIÓN PRINCIPAL: Cambio atómico de lectura
