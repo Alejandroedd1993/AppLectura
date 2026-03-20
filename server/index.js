@@ -24,6 +24,7 @@ import { sendSuccess } from './utils/apiResponse.js';
 import { sendValidationError } from './utils/validationError.js';
 import { parseBool } from './utils/envUtils.js';
 import { attachRequestContext } from './utils/requestContext.js';
+import { getFirebaseAdminDiagnostics } from './config/firebaseAdmin.js';
 
 // Configuración básica
 const __filename = fileURLToPath(import.meta.url);
@@ -178,12 +179,14 @@ app.get('/api/health', (req, res) => {
     gemini: process.env.GEMINI_API_KEY ? 'configurada' : 'no configurada',
     tavily: process.env.TAVILY_API_KEY ? 'configurada' : 'no configurada'
   };
+  const firebaseAdmin = getFirebaseAdminDiagnostics();
   const authStatus = {
     enforce: String(process.env.ENFORCE_FIREBASE_AUTH || ''),
     nodeEnv: process.env.NODE_ENV || '',
     projectId: process.env.FIREBASE_PROJECT_ID || '',
     serviceAccount: process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ? 'configurada' : 'no configurada',
-    checkRevoked: String(process.env.FIREBASE_CHECK_REVOKED_TOKENS || '')
+    checkRevoked: String(process.env.FIREBASE_CHECK_REVOKED_TOKENS || ''),
+    firebaseAdmin
   };
   
   return sendSuccess(res, {

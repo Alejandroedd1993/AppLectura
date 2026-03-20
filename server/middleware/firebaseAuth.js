@@ -2,6 +2,7 @@ import { getAdminApp } from '../config/firebaseAdmin.js';
 import { sendError } from '../utils/responseHelpers.js';
 
 let authBypassWarningLogged = false;
+const REVOKED_CHECK_TIMEOUT_MS = 3000;
 
 function normalizeText(value) {
   return String(value || '').trim();
@@ -140,6 +141,31 @@ function shouldCheckRevokedTokens() {
   return isTrueLike(process.env.FIREBASE_CHECK_REVOKED_TOKENS);
 }
 
+function isTimeoutError(error) {
+  const code = normalizeTextLower(error?.code || '');
+  const message = normalizeTextLower(getFirebaseErrorMessage(error) || error?.message || '');
+
+  return code === 'auth/revocation-check-timeout' ||
+    message.includes('revocation check timeout') ||
+    message.includes('operation timed out') ||
+    message.includes('timed out');
+}
+
+async function verifyIdTokenWithTimeout(authApi, token, timeoutMs) {
+  return await Promise.race([
+    authApi.verifyIdToken(token, true),
+    new Promise((_, reject) => {
+      const timeout = setTimeout(() => {
+        const error = new Error(`Firebase revocation check timeout after ${timeoutMs}ms`);
+        error.code = 'auth/revocation-check-timeout';
+        reject(error);
+      }, timeoutMs);
+
+      timeout.unref?.();
+    })
+  ]);
+}
+
 function isFirebaseAdminConfigurationError(error) {
   const code = String(error?.code || '').trim();
   const message = String(error?.message || '').trim();
@@ -172,23 +198,30 @@ export async function requireFirebaseAuth(req, res, next) {
       });
     }
 
+    const adminAuth = getAdminApp().auth();
     const checkRevokedTokens = shouldCheckRevokedTokens();
     let decodedToken;
     try {
-      decodedToken = await getAdminApp().auth().verifyIdToken(token, checkRevokedTokens);
+      decodedToken = checkRevokedTokens
+        ? await verifyIdTokenWithTimeout(adminAuth, token, REVOKED_CHECK_TIMEOUT_MS)
+        : await adminAuth.verifyIdToken(token, false);
     } catch (verifyError) {
-      // If revocation check was enabled and failed for non-token reasons
-      // (e.g. missing service account credentials), retry without it
+      // If revocation check fails or hangs for infra reasons, retry without it
       if (checkRevokedTokens &&
+          !isTimeoutError(verifyError) &&
           !isRevokedTokenError(verifyError) &&
           !isExpiredTokenError(verifyError) &&
-          !isDisabledUserError(verifyError)) {
+          !isDisabledUserError(verifyError) &&
+          !isFirebaseAdminConfigurationError(verifyError)) {
         try {
-          decodedToken = await getAdminApp().auth().verifyIdToken(token, false);
+          decodedToken = await adminAuth.verifyIdToken(token, false);
           console.warn('[auth] Revocation check failed, used basic JWT verification:', verifyError.message);
         } catch (fallbackError) {
           throw fallbackError;
         }
+      } else if (checkRevokedTokens && isTimeoutError(verifyError)) {
+        decodedToken = await adminAuth.verifyIdToken(token, false);
+        console.warn('[auth] Revocation check timed out, used basic JWT verification.');
       } else {
         throw verifyError;
       }

@@ -4,6 +4,15 @@ let cachedApp = null;
 let initTried = false;
 let initError = null;
 
+function maskServiceAccountEmail(email) {
+  const raw = String(email || '').trim();
+  if (!raw || !raw.includes('@')) return null;
+  const [localPart, domain] = raw.split('@');
+  if (!localPart || !domain) return raw;
+  const visible = localPart.slice(0, 6);
+  return `${visible}***@${domain}`;
+}
+
 function parseServiceAccountFromEnv() {
   const jsonRaw = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim();
   if (jsonRaw) {
@@ -88,6 +97,46 @@ export function getAdminApp() {
 
 export function getAdminDb() {
   return getAdminApp().firestore();
+}
+
+export function getFirebaseAdminDiagnostics() {
+  let credentialJson = null;
+  let parseError = null;
+
+  try {
+    credentialJson = parseServiceAccountFromEnv();
+  } catch (error) {
+    parseError = error;
+  }
+
+  const resolvedProjectId = resolveProjectId(credentialJson);
+
+  try {
+    const app = ensureInitialized();
+    return {
+      configured: true,
+      initialized: true,
+      resolvedProjectId,
+      appProjectId: app?.options?.projectId || null,
+      serviceAccountProjectId: credentialJson?.project_id || null,
+      serviceAccountClientEmail: maskServiceAccountEmail(credentialJson?.client_email),
+      usesApplicationDefaultCredentials: !credentialJson,
+      parseError: parseError ? String(parseError.message || parseError) : null,
+      initError: null
+    };
+  } catch (error) {
+    return {
+      configured: false,
+      initialized: false,
+      resolvedProjectId,
+      appProjectId: null,
+      serviceAccountProjectId: credentialJson?.project_id || null,
+      serviceAccountClientEmail: maskServiceAccountEmail(credentialJson?.client_email),
+      usesApplicationDefaultCredentials: !credentialJson,
+      parseError: parseError ? String(parseError.message || parseError) : null,
+      initError: String(error?.message || error || 'Firebase Admin no inicializado')
+    };
+  }
 }
 
 export { admin };
