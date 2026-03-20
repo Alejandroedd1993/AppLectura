@@ -132,6 +132,27 @@ function toNumber(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function toMillis(value) {
+  if (value == null) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (typeof value?.toDate === 'function') {
+    return value.toDate().getTime();
+  }
+  if (typeof value?.seconds === 'number') {
+    return value.seconds * 1000;
+  }
+  return 0;
+}
+
+function formatExportDate(value, locale = 'es-ES') {
+  const millis = toMillis(value);
+  return millis ? new Date(millis).toLocaleString(locale) : 'Sin fecha';
+}
+
 function buildAggregateExportRow(rubric, nivelDescripcion) {
   const artifactScore = toNumber(rubric?.artifactData?.teacherOverrideScore) ||
     toNumber(rubric?.artifactData?.score) ||
@@ -158,9 +179,9 @@ function buildAggregateExportRow(rubric, nivelDescripcion) {
   const rankDescription = rank ? (nivelDescripcion[rank] || rubric.badgeLabel) : rubric.badgeLabel;
 
   return {
-    sortTime: rubric.lastActivityAt || 0,
+    sortTime: toMillis(rubric.lastActivityAt),
     values: [
-      rubric.lastActivityAt ? new Date(rubric.lastActivityAt).toLocaleString('es-ES') : 'Sin fecha',
+      formatExportDate(rubric.lastActivityAt),
       rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
       estado,
       rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
@@ -171,7 +192,7 @@ function buildAggregateExportRow(rubric, nivelDescripcion) {
   };
 }
 
-function buildCsvRows(snapshot) {
+export function buildCsvRows(snapshot) {
   const nivelDescripcion = {
     1: 'Novato - Inicio del proceso',
     2: 'Aprendiz - En progreso',
@@ -186,10 +207,11 @@ function buildCsvRows(snapshot) {
       rubric.formativeScores.forEach((score, index) => {
         const numericScore = toNumber(score.score);
         const nivel = score.nivel || Math.ceil(numericScore / 2.5);
+        const rowTime = toMillis(score.timestamp) || toMillis(rubric.lastActivityAt);
         rows.push({
-          sortTime: Number(score.timestamp) || 0,
+          sortTime: rowTime,
           values: [
-            new Date(score.timestamp).toLocaleString('es-ES'),
+            formatExportDate(rowTime),
             rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
             'Evaluacion formativa',
             numericScore.toFixed(2),
@@ -216,9 +238,9 @@ function buildCsvRows(snapshot) {
     }
 
     rows.push({
-      sortTime: rubric.lastActivityAt || 0,
+      sortTime: toMillis(rubric.lastActivityAt),
       values: [
-        rubric.lastActivityAt ? new Date(rubric.lastActivityAt).toLocaleString('es-ES') : 'Sin fecha',
+        formatExportDate(rubric.lastActivityAt),
         rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
         rubric.currentStatusLabel,
         rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
