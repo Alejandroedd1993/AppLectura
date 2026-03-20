@@ -10,12 +10,15 @@ import { processPdfWithBackend } from '../utils/backendUtils';
 import { checkUnsaveDrafts, getWarningMessage } from '../utils/checkUnsaveDrafts';
 import { hashText } from '../utils/netUtils';
 import { uploadSessionPdfFile } from '../firebase/firestore';
+import { isNonProductionEnvironment } from '../utils/runtimeEnv';
 
 // Componentes de UI
 import AlertMessage from '../components/AlertMessage';
 import SessionsHistory from './common/SessionsHistory';
 
 import logger from '../utils/logger';
+
+const __DEV__ = isNonProductionEnvironment;
 
 const PDF_OPERATIONAL_PLACEHOLDER_MARKERS = [
   'modo de demostración activo',
@@ -264,6 +267,33 @@ const StatusItem = styled.div`
   color: ${props => props.theme.textMuted};
 `;
 
+const DevDiagnosticsPanel = styled.div`
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: ${props => props.theme.background};
+  border: 1px dashed ${props => props.theme.border};
+  font-size: 0.78rem;
+  color: ${props => props.theme.textMuted};
+`;
+
+const DevDiagnosticsTitle = styled.div`
+  font-weight: 600;
+  color: ${props => props.theme.text};
+  margin-bottom: 0.4rem;
+`;
+
+const DevDiagnosticsRow = styled.div`
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+  flex-wrap: wrap;
+
+  strong {
+    color: ${props => props.theme.text};
+  }
+`;
+
 function CargaTexto() {
   const {
     setTexto,
@@ -299,12 +329,14 @@ function CargaTexto() {
   const [textoIngresado, setTextoIngresado] = useState('');
   const [isDragActive, setIsDragActive] = useState(false);
   const [procesando, setProcesando] = useState(false);
+  const [extractionTelemetry, setExtractionTelemetry] = useState(null);
 
   // Manejar selección de archivo
   const handleFileSelect = useCallback(async (file) => {
     logger.log('🔍 Iniciando procesamiento de archivo:', file.name, file.type, file.size);
     setError('');
     setProcesando(true);
+    setExtractionTelemetry(null);
 
     try {
       // Validar archivo básico
@@ -377,6 +409,7 @@ function CargaTexto() {
         source: archivoSeleccionado?.contenido ? 'loaded-file-state' : (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf') ? 'pdf-backend' : 'local-text-extraction')
       });
       logger.log('🧪 [CargaTexto] Telemetría de extracción:', extractionTelemetry);
+      setExtractionTelemetry(extractionTelemetry);
 
       if ((file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) && extractionTelemetry.isSuspiciousPlaceholder) {
         throw new Error('Se detectó contenido operativo no válido en lugar del texto del PDF. Reintenta la carga.');
@@ -605,6 +638,7 @@ function CargaTexto() {
   const removeFile = useCallback(() => {
     setArchivoSeleccionado(null);
     setArchivoFuente(null);
+    setExtractionTelemetry(null);
     setError('');
   }, [setError]);
 
@@ -766,6 +800,26 @@ function CargaTexto() {
             <StatusItem style={{ color: theme.success }}>
               ✅ Contenido cargado
             </StatusItem>
+          )}
+          {__DEV__ && extractionTelemetry && (
+            <DevDiagnosticsPanel data-testid="pdf-extraction-diagnostics">
+              <DevDiagnosticsTitle>Diagnóstico de extracción</DevDiagnosticsTitle>
+              <DevDiagnosticsRow>
+                <strong>Origen:</strong> <span>{extractionTelemetry.source}</span>
+              </DevDiagnosticsRow>
+              <DevDiagnosticsRow>
+                <strong>Archivo:</strong> <span>{extractionTelemetry.fileName || 'sin nombre'}</span>
+              </DevDiagnosticsRow>
+              <DevDiagnosticsRow>
+                <strong>Longitud:</strong> <span>{extractionTelemetry.textLength}</span>
+              </DevDiagnosticsRow>
+              <DevDiagnosticsRow>
+                <strong>Hash:</strong> <span>{extractionTelemetry.textHash}</span>
+              </DevDiagnosticsRow>
+              <DevDiagnosticsRow>
+                <strong>Placeholder sospechoso:</strong> <span>{extractionTelemetry.isSuspiciousPlaceholder ? 'si' : 'no'}</span>
+              </DevDiagnosticsRow>
+            </DevDiagnosticsPanel>
           )}
         </StatusSection>
       )}
