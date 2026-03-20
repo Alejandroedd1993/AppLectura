@@ -173,21 +173,24 @@ app.get('/health', (req, res) => {
 
 // Ruta de salud detallada
 app.get('/api/health', (req, res) => {
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
   const apiStatus = {
     deepseek: process.env.DEEPSEEK_API_KEY ? 'configurada' : 'no configurada',
     openai: process.env.OPENAI_API_KEY ? 'configurada' : 'no configurada',
     gemini: process.env.GEMINI_API_KEY ? 'configurada' : 'no configurada',
     tavily: process.env.TAVILY_API_KEY ? 'configurada' : 'no configurada'
   };
-  const firebaseAdmin = getFirebaseAdminDiagnostics();
   const authStatus = {
     enforce: String(process.env.ENFORCE_FIREBASE_AUTH || ''),
     nodeEnv: process.env.NODE_ENV || '',
     projectId: process.env.FIREBASE_PROJECT_ID || '',
     serviceAccount: process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ? 'configurada' : 'no configurada',
-    checkRevoked: String(process.env.FIREBASE_CHECK_REVOKED_TOKENS || ''),
-    firebaseAdmin
+    checkRevoked: String(process.env.FIREBASE_CHECK_REVOKED_TOKENS || '')
   };
+
+  if (!isProduction) {
+    authStatus.firebaseAdmin = getFirebaseAdminDiagnostics();
+  }
   
   return sendSuccess(res, {
     status: 'ok', 

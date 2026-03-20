@@ -141,6 +141,10 @@ function shouldCheckRevokedTokens() {
   return isTrueLike(process.env.FIREBASE_CHECK_REVOKED_TOKENS);
 }
 
+function shouldFailOpenOnRevocationTimeout() {
+  return isTrueLike(process.env.FIREBASE_AUTH_FAIL_OPEN_ON_TIMEOUT);
+}
+
 function isTimeoutError(error) {
   const code = normalizeTextLower(error?.code || '');
   const message = normalizeTextLower(getFirebaseErrorMessage(error) || error?.message || '');
@@ -220,8 +224,16 @@ export async function requireFirebaseAuth(req, res, next) {
           throw fallbackError;
         }
       } else if (checkRevokedTokens && isTimeoutError(verifyError)) {
-        decodedToken = await adminAuth.verifyIdToken(token, false);
-        console.warn('[auth] Revocation check timed out, used basic JWT verification.');
+        if (shouldFailOpenOnRevocationTimeout()) {
+          decodedToken = await adminAuth.verifyIdToken(token, false);
+          console.warn('[auth] Revocation check timed out, used basic JWT verification by explicit configuration.');
+        } else {
+          return sendError(res, 503, {
+            error: 'Servicio de autenticacion temporalmente no disponible',
+            mensaje: 'La verificacion segura de la sesion excedio el tiempo limite. Intenta nuevamente.',
+            codigo: 'AUTH_SERVICE_TIMEOUT'
+          });
+        }
       } else {
         throw verifyError;
       }

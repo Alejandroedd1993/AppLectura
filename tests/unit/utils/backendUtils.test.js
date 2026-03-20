@@ -4,7 +4,12 @@ jest.mock('../../../src/utils/netUtils', () => ({
   fetchWithTimeout: jest.fn()
 }));
 
+jest.mock('../../../src/utils/backendRequest', () => ({
+  getFirebaseAuthHeader: jest.fn(async () => ({ Authorization: 'Bearer token-demo' }))
+}));
+
 import { fetchWithTimeout } from '../../../src/utils/netUtils';
+import { getFirebaseAuthHeader } from '../../../src/utils/backendRequest';
 
 describe('backendUtils', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -27,6 +32,26 @@ describe('backendUtils', () => {
     });
     await expect(processPdfWithBackend(file)).resolves.toBe('contenido extraído');
     expect(fetchWithTimeout).toHaveBeenCalled();
+  });
+
+  test('processPdfWithBackend envia Authorization header para rutas protegidas', async () => {
+    const file = new File(['dummy'], 'demo.pdf', { type: 'application/pdf' });
+    fetchWithTimeout.mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, data: { text: 'contenido extraído' } })
+    });
+
+    await processPdfWithBackend(file);
+
+    expect(getFirebaseAuthHeader).toHaveBeenCalledTimes(1);
+    expect(fetchWithTimeout).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer token-demo' })
+      }),
+      60000
+    );
   });
 
   test('processPdfWithBackend lanza error si no ok', async () => {

@@ -241,4 +241,46 @@ describe('firebaseAuth middleware', () => {
       token: expect.objectContaining({ uid: 'user-123', email: 'user@example.com' })
     });
   });
+
+  test('responde 503 si el chequeo de revocacion excede el timeout', async () => {
+    process.env.ENFORCE_FIREBASE_AUTH = 'true';
+    process.env.FIREBASE_CHECK_REVOKED_TOKENS = 'true';
+
+    const timeoutError = new Error('Firebase revocation check timeout after 3000ms');
+    timeoutError.code = 'auth/revocation-check-timeout';
+    mockVerifyIdToken.mockRejectedValue(timeoutError);
+
+    const req = makeReq('Bearer token-demo');
+    const res = makeRes();
+    const next = jest.fn();
+
+    await requireFirebaseAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      codigo: 'AUTH_SERVICE_TIMEOUT'
+    }));
+  });
+
+  test('permite fail-open por timeout solo con configuracion explicita', async () => {
+    process.env.ENFORCE_FIREBASE_AUTH = 'true';
+    process.env.FIREBASE_CHECK_REVOKED_TOKENS = 'true';
+    process.env.FIREBASE_AUTH_FAIL_OPEN_ON_TIMEOUT = 'true';
+
+    const timeoutError = new Error('Firebase revocation check timeout after 3000ms');
+    timeoutError.code = 'auth/revocation-check-timeout';
+    mockVerifyIdToken
+      .mockRejectedValueOnce(timeoutError)
+      .mockResolvedValueOnce({ uid: 'user-123' });
+
+    const req = makeReq('Bearer token-demo');
+    const res = makeRes();
+    const next = jest.fn();
+
+    await requireFirebaseAuth(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(mockVerifyIdToken).toHaveBeenNthCalledWith(2, 'token-demo', false);
+  });
 });
