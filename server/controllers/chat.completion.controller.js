@@ -1,4 +1,3 @@
-import OpenAI from 'openai';
 import { getCachedResponse, setCachedResponse, getCacheStats } from '../utils/responseCache.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendSuccess } from '../utils/apiResponse.js';
@@ -6,6 +5,7 @@ import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels } from '../utils/modelUtils.js';
 import { buildRequestId } from '../utils/requestContext.js';
+import { getOpenAICompatibleClient } from '../config/apiClients.js';
 
 // dotenv ya cargado en server/index.js al arranque
 
@@ -204,7 +204,7 @@ export async function createChatCompletion(req, res) {
       });
     }
 
-    const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
+    const client = getOpenAICompatibleClient({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
     const selectedModel = model || cfg.defaultModel;
 
     if (provider === 'openai') {

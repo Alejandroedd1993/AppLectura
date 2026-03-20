@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
-import OpenAI from 'openai';
 // import pdf from 'pdf-parse';
 import chatCompletionRoutes from './routes/chat.completion.routes.js';
 import analisisRoutes from './routes/analisis.routes.js';
@@ -25,6 +24,7 @@ import { sendValidationError } from './utils/validationError.js';
 import { parseBool } from './utils/envUtils.js';
 import { attachRequestContext } from './utils/requestContext.js';
 import { getFirebaseAdminDiagnostics } from './config/firebaseAdmin.js';
+import { getOpenAICompatibleClient } from './config/apiClients.js';
 
 // Configuración básica
 const __filename = fileURLToPath(import.meta.url);
@@ -67,7 +67,7 @@ const aiClient = {
 
     const selectedConfig = config[provider] || config.deepseek;
     
-    const client = new OpenAI({
+    const client = getOpenAICompatibleClient({
       baseURL: selectedConfig.baseURL,
       apiKey: selectedConfig.apiKey,
     });

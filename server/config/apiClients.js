@@ -6,6 +6,40 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 let cachedOpenAI = null;
 let cachedGemini = null;
+const openAICompatibleClients = new Map();
+
+function normalizeBaseURL(baseURL) {
+  const value = String(baseURL || '').trim();
+  return value ? value.replace(/\/+$/, '') : undefined;
+}
+
+export function getOpenAICompatibleClient({ apiKey, baseURL, timeout } = {}) {
+  const resolvedApiKey = String(apiKey || '').trim();
+  if (!resolvedApiKey) {
+    throw new Error('OPENAI_COMPATIBLE_API_KEY no configurada en el entorno.');
+  }
+
+  const resolvedBaseURL = normalizeBaseURL(baseURL);
+  const resolvedTimeout = Number.isFinite(timeout) ? timeout : undefined;
+  const cacheKey = JSON.stringify({
+    apiKey: resolvedApiKey,
+    baseURL: resolvedBaseURL || null,
+    timeout: resolvedTimeout ?? null,
+  });
+
+  if (openAICompatibleClients.has(cacheKey)) {
+    return openAICompatibleClients.get(cacheKey);
+  }
+
+  const client = new OpenAI({
+    apiKey: resolvedApiKey,
+    ...(resolvedBaseURL ? { baseURL: resolvedBaseURL } : {}),
+    ...(resolvedTimeout ? { timeout: resolvedTimeout } : {}),
+  });
+
+  openAICompatibleClients.set(cacheKey, client);
+  return client;
+}
 
 export function getOpenAI() {
   if (cachedOpenAI) return cachedOpenAI;
@@ -16,7 +50,7 @@ export function getOpenAI() {
   }
 
   const openaiTimeoutMs = Number.parseInt(process.env.OPENAI_TIMEOUT || '', 10);
-  cachedOpenAI = new OpenAI({
+  cachedOpenAI = getOpenAICompatibleClient({
     apiKey: String(apiKey).trim(),
     timeout: Number.isFinite(openaiTimeoutMs) ? openaiTimeoutMs : 45000,
   });
