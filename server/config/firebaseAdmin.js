@@ -27,9 +27,11 @@ function parseServiceAccountFromEnv() {
   return null;
 }
 
-function resolveProjectId() {
+function resolveProjectId(credentialJson = null) {
   return String(
     process.env.FIREBASE_PROJECT_ID ||
+    credentialJson?.project_id ||
+    process.env.REACT_APP_FIREBASE_PROJECT_ID ||
     process.env.GCLOUD_PROJECT ||
     process.env.GOOGLE_CLOUD_PROJECT ||
     ''
@@ -47,7 +49,7 @@ function ensureInitialized() {
 
   try {
     const credentialJson = parseServiceAccountFromEnv();
-    const projectId = resolveProjectId();
+    const projectId = resolveProjectId(credentialJson);
 
     const appOptions = {
       projectId

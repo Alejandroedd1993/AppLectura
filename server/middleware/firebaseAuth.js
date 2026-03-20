@@ -127,9 +127,13 @@ function isTrueLike(value) {
 }
 
 function shouldEnforceFirebaseAuth() {
+  // Explicit override always wins
+  if (process.env.ENFORCE_FIREBASE_AUTH != null) {
+    return isTrueLike(process.env.ENFORCE_FIREBASE_AUTH);
+  }
+  // If NODE_ENV is explicitly production, enforce by default
   const envName = String(process.env.NODE_ENV || '').trim().toLowerCase();
-  const isLocalLikeEnv = envName === 'development' || envName === 'test';
-  return isTrueLike(process.env.ENFORCE_FIREBASE_AUTH ?? (isLocalLikeEnv ? 'false' : 'true'));
+  return envName === 'production';
 }
 
 function shouldCheckRevokedTokens() {
