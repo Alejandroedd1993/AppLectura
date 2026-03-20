@@ -1,8 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import multer from 'multer';
 // import pdf from 'pdf-parse';
 import chatCompletionRoutes from './routes/chat.completion.routes.js';
@@ -24,14 +21,10 @@ import { sendValidationError } from './utils/validationError.js';
 import { parseBool } from './utils/envUtils.js';
 import { attachRequestContext } from './utils/requestContext.js';
 import { getFirebaseAdminDiagnostics } from './config/firebaseAdmin.js';
+import { loadServerEnv } from './config/loadEnv.js';
 import { createEvaluationAIClient } from './services/aiClient.service.js';
 
-// Configuración básica
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-dotenv.config({ path: path.resolve(__dirname, '.env') });
-dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+loadServerEnv();
 
 console.log('🔐 Env check:', {
   DEEPSEEK_API_KEY: Boolean(String(process.env.DEEPSEEK_API_KEY || '').trim()),
