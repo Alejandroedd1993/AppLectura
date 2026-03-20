@@ -24,7 +24,7 @@ import { sendValidationError } from './utils/validationError.js';
 import { parseBool } from './utils/envUtils.js';
 import { attachRequestContext } from './utils/requestContext.js';
 import { getFirebaseAdminDiagnostics } from './config/firebaseAdmin.js';
-import { getOpenAICompatibleClient } from './config/apiClients.js';
+import { createEvaluationAIClient } from './services/aiClient.service.js';
 
 // Configuración básica
 const __filename = fileURLToPath(import.meta.url);
@@ -49,66 +49,7 @@ app.set('trust proxy', 1);
 // ============================================================================
 // CONFIGURAR AI CLIENT PARA EVALUACIÓN CRITERIAL
 // ============================================================================
-const aiClient = {
-  async complete({ provider = 'deepseek', prompt, response_format, max_tokens = 2500 }) {
-    // Configurar cliente según provider
-    const config = {
-      deepseek: {
-        baseURL: 'https://api.deepseek.com/v1',
-        apiKey: process.env.DEEPSEEK_API_KEY,
-        model: 'deepseek-chat'
-      },
-      openai: {
-        baseURL: 'https://api.openai.com/v1',
-        apiKey: process.env.OPENAI_API_KEY,
-        model: 'gpt-4o-mini'
-      }
-    };
-
-    const selectedConfig = config[provider] || config.deepseek;
-    
-    const client = getOpenAICompatibleClient({
-      baseURL: selectedConfig.baseURL,
-      apiKey: selectedConfig.apiKey,
-    });
-
-    // Construir response_format: pasar schema si el proveedor lo soporta
-    let resolvedFormat;
-    if (response_format?.type === 'json_object') {
-      resolvedFormat = { type: 'json_object' };
-      // OpenAI soporta json_schema con structured outputs
-      if (response_format.schema && provider === 'openai') {
-        resolvedFormat = {
-          type: 'json_schema',
-          json_schema: { name: 'evaluation', schema: response_format.schema, strict: false }
-        };
-      }
-    }
-
-    try {
-      console.log(`🤖 [aiClient] Usando ${provider} con modelo ${selectedConfig.model}, max_tokens: ${max_tokens}`);
-      
-      const completion = await client.chat.completions.create({
-        model: selectedConfig.model,
-        messages: [
-          { role: 'system', content: 'Eres un evaluador experto en literacidad crítica. Siempre respondes en español.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.3,
-        max_tokens,
-        response_format: resolvedFormat
-      });
-
-      const content = completion.choices[0].message.content;
-      console.log(`✅ [aiClient] Respuesta recibida: ${content.length} caracteres`);
-      
-      return content;
-    } catch (error) {
-      console.error(`❌ [aiClient] Error con ${provider}:`, error.message);
-      throw error;
-    }
-  }
-};
+const aiClient = createEvaluationAIClient();
 
 // Inyectar AI client en la app para uso de controllers
 app.set('aiClient', aiClient);
