@@ -4714,6 +4714,44 @@ export const AppContextProvider = ({ children }) => {
           }
         } else {
           logger.warn('⚠️ [AppContext.analyzeDocument] Error en análisis profundo (background). Se mantiene análisis previo.');
+
+          const backgroundErrorMessage = err.name === 'AbortError'
+            ? 'El análisis profundo tardó demasiado y se muestran resultados básicos.'
+            : `No se pudo completar el análisis profundo: ${err.message}`;
+
+          setError(backgroundErrorMessage);
+          setCompleteAnalysis((previousAnalysis) => {
+            if (!previousAnalysis) return previousAnalysis;
+
+            const nextAnalysis = {
+              ...previousAnalysis,
+              _isFallback: true,
+              _errorMessage: backgroundErrorMessage
+            };
+
+            if (previousAnalysis.metadata) {
+              nextAnalysis.metadata = {
+                ...previousAnalysis.metadata,
+                _isPreliminary: false,
+                error: true,
+                errorMessage: backgroundErrorMessage
+              };
+            }
+
+            if (previousAnalysis.prelecture) {
+              nextAnalysis.prelecture = {
+                ...previousAnalysis.prelecture,
+                metadata: {
+                  ...(previousAnalysis.prelecture.metadata || {}),
+                  _isPreliminary: false,
+                  error: true,
+                  errorMessage: backgroundErrorMessage
+                }
+              };
+            }
+
+            return nextAnalysis;
+          });
         }
 
         // Solo degradar a fallback mínimo si NO hay análisis previo (fase 1)
