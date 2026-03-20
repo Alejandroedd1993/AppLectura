@@ -83,5 +83,6 @@ describe('assessment.controller provider response semantics', () => {
       degraded: true,
       codigo: 'COMPREHENSIVE_ASSESSMENT_INCOMPLETE_PROVIDER_RESPONSE'
     }));
+    expect(res.json.mock.calls[0][0].evaluaciones).toBeUndefined();
   });
 });

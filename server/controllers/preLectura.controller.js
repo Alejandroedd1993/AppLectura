@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import { searchWebSources } from './webSearch.controller.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
+import { createFallbackAnalysis } from '../services/preLecturaFallback.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -362,8 +363,7 @@ export async function analyzePreLecture(req, res) {
 
       // 🆕 FALLBACK: Si el parsing falla, crear análisis básico
       console.log('🔧 [PreLectura] Generando análisis fallback por error de parsing...');
-      analysis = createFallbackAnalysis(text, Date.now() - startTime, `Error parseando respuesta IA: ${parseError.message}`, searchDecision);
-      analysis._parseError = parseError.message;
+      analysis = createFallbackAnalysis(text, Date.now() - startTime, 'PRELECTURA_PARSE_ERROR', searchDecision);
     }
 
     console.log(`✅ [PreLectura] Análisis completo en ${Date.now() - startTime}ms`);
@@ -389,7 +389,7 @@ export async function analyzePreLecture(req, res) {
       const analysis = createFallbackAnalysis(
         req.body.text,
         Date.now() - startTime,
-        error?.message || 'Error en análisis',
+        'PRELECTURA_ANALYSIS_ERROR',
         typeof searchDecision !== 'undefined' ? searchDecision : null
       );
       sendSuccess(res, analysis);
@@ -1445,63 +1445,3 @@ async function parseAndStructureAnalysis(aiResponse, webContext, webEnriched, st
   };
 }
 
-/**
- * Crea análisis fallback en caso de error
- */
-function createFallbackAnalysis(text, processingTime, errorMessage = null, searchDecision = null) {
-  return {
-    prelecture: {
-      metadata: {
-        genero_textual: 'No identificado',
-        proposito_comunicativo: 'No determinado',
-        tipologia_textual: 'No identificado',
-        autor: 'No identificado'
-      },
-      argumentation: {
-        tesis_central: 'No disponible (error en análisis)',
-        hipotesis_secundarias: [],
-        argumentos_principales: [],
-        tipo_argumentacion: 'No identificado',
-        tipo_razonamiento: 'No identificado'
-      },
-      linguistics: {
-        tipo_estructura: 'No identificado',
-        registro_linguistico: 'No identificado',
-        nivel_complejidad: 'Intermedio',
-        coherencia_cohesion: 'No evaluado',
-        figuras_retoricas: []
-      },
-      web_sources: [],
-      web_summary: ''
-    },
-    critical: {
-      resumen: 'Análisis no disponible temporalmente. Por favor, intenta de nuevo.',
-      temas_principales: [],
-      contexto_critico: {
-        descripcion: 'Error en procesamiento',
-        factores: [],
-        voces_representadas: [],
-        voces_silenciadas: [],
-        ideologia_subyacente: null,
-        marcadores_criticos: {},
-        contraste_web: null
-      },
-      mcqQuestions: [],
-      synthesisQuestions: []
-    },
-    metadata: {
-      document_id: `doc_fallback_${Date.now()}`,
-      analysis_timestamp: new Date().toISOString(),
-      processing_time_ms: processingTime,
-      web_enriched: false,
-      web_sources_count: 0,
-      ...buildWebDecisionMetadata(searchDecision),
-      provider: 'fallback',
-      version: '3.0-fallback',
-      error: true,
-      errorMessage: errorMessage || 'Error en análisis'
-    },
-    _isFallback: true,
-    _errorMessage: errorMessage || 'Error en análisis'
-  };
-}

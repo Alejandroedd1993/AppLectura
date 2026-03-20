@@ -182,7 +182,6 @@ export async function evaluateAnswer(req, res) {
         error: 'Respuesta incompleta del proveedor',
         mensaje: 'La evaluacion no incluyo todos los campos requeridos.',
         codigo: 'ASSESSMENT_INCOMPLETE_PROVIDER_RESPONSE',
-        ...data,
         timestamp: new Date().toISOString()
       });
     }
@@ -312,7 +311,6 @@ export async function evaluateComprehensive(req, res) {
         error: 'Respuesta incompleta del proveedor',
         mensaje: 'La evaluacion comprehensiva no incluyo todas las dimensiones requeridas.',
         codigo: 'COMPREHENSIVE_ASSESSMENT_INCOMPLETE_PROVIDER_RESPONSE',
-        ...data,
         timestamp: new Date().toISOString()
       });
     }
@@ -373,8 +371,7 @@ export async function bulkEvaluate(req, res) {
       return sendError(res, 400, {
         error: 'Maximo 10 evaluaciones por lote',
         mensaje: 'Reduce la cantidad de evaluaciones enviadas en una sola solicitud.',
-        codigo: 'ASSESSMENT_BULK_LIMIT_EXCEEDED',
-        details: `Recibidas ${items.length} evaluaciones`
+        codigo: 'ASSESSMENT_BULK_LIMIT_EXCEEDED'
       });
     }
 
