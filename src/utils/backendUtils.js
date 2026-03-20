@@ -6,6 +6,7 @@ import { fetchWithTimeout } from './netUtils';
 import logger from './logger';
 import { buildBackendError, unwrapBackendSuccessPayload } from '../services/unifiedAiService';
 import { buildBackendUrl, getBackendUrl as readBackendUrl } from './backendConfig';
+import { getFirebaseAuthHeader } from './backendRequest';
 
 /**
  * Verifica si el servidor backend está disponible
@@ -41,8 +42,13 @@ export const processPdfWithBackend = async (file) => {
   const formData = new FormData();
   formData.append('pdfFile', file);
 
+  const authHeader = await getFirebaseAuthHeader();
+
   const response = await fetchWithTimeout(buildBackendUrl('/api/process-pdf'), {
     method: 'POST',
+    headers: {
+      ...authHeader
+    },
     body: formData,
   }, 60000);
 

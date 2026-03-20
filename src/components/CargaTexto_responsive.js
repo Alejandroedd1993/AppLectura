@@ -352,24 +352,7 @@ function CargaTexto() {
               throw new Error('No se pudo extraer texto del PDF. El archivo puede estar vacío o contener solo imágenes.');
             }
 
-            // Analizar estructura del texto extraído
-            logger.log('🤖 Analizando estructura del PDF con IA...');
-            const result = await procesarArchivo(file, {
-              analyzeStructure: true,
-              onProgress: (progress) => {
-                logger.log('📊 Progreso:', progress.message || progress);
-              }
-            });
-
-            if (typeof result === 'object' && result.text) {
-              contenido = result.text;
-              if (result.hasStructure && result.structure) {
-                logger.log('✨ Estructura detectada por IA:', result.structure);
-                setTextStructure(result.structure);
-              }
-            } else {
-              contenido = result;
-            }
+            contenido = pdfText;
           } catch (backendError) {
             logger.warn('🔄 Error con backend, usando fallback:', backendError.message);
             // Si falla el backend, usar el procesador con fallback

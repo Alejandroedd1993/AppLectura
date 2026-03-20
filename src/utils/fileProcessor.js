@@ -60,37 +60,13 @@ async function procesarPdf(file, onProgress) {
     const text = await processPdfWithBackend(file);
     return text;
   } catch (error) {
-    logger.warn('🔄 Backend no disponible, usando procesamiento local del PDF:', error.message);
-    
-    // Fallback: Procesar PDF localmente (modo simulado)
-    if (onProgress) onProgress(0.1);
-    
-    // Simulamos un procesamiento exitoso con información básica del archivo
-    const mockText = `📄 **Archivo PDF procesado localmente**
-
-**Nombre del archivo:** ${file.name}
-**Tamaño:** ${(file.size / 1024 / 1024).toFixed(2)} MB
-**Fecha de carga:** ${new Date().toLocaleString()}
-
----
-
-**🔧 Modo de demostración activo**
-
-Este es contenido simulado ya que el servidor backend no está disponible. 
-
-**Para activar el procesamiento completo de PDFs:**
-1. Inicia el servidor backend en puerto 3001
-2. O usa archivos TXT/DOCX que se procesan localmente
-
-**Mientras tanto, puedes:**
-- ✅ Probar la lectura interactiva 
-- ✅ Explorar las opciones de configuración centralizada
-- ✅ Cargar archivos TXT o DOCX para procesamiento completo
-
-¡Inicia el servidor backend para experimentar el procesamiento completo de PDFs!`;
-
+    logger.error('❌ No se pudo procesar el PDF con el backend:', error.message);
     if (onProgress) onProgress(1.0);
-    return mockText;
+
+    throw new Error(
+      'No se pudo extraer el texto del PDF. Verifica tu sesión e intenta de nuevo. ' +
+      'Si el problema continúa, usa TXT/DOCX temporalmente.'
+    );
   }
 }
 
