@@ -173,7 +173,26 @@ export async function requireFirebaseAuth(req, res, next) {
     }
 
     const checkRevokedTokens = shouldCheckRevokedTokens();
-    const decodedToken = await getAdminApp().auth().verifyIdToken(token, checkRevokedTokens);
+    let decodedToken;
+    try {
+      decodedToken = await getAdminApp().auth().verifyIdToken(token, checkRevokedTokens);
+    } catch (verifyError) {
+      // If revocation check was enabled and failed for non-token reasons
+      // (e.g. missing service account credentials), retry without it
+      if (checkRevokedTokens &&
+          !isRevokedTokenError(verifyError) &&
+          !isExpiredTokenError(verifyError) &&
+          !isDisabledUserError(verifyError)) {
+        try {
+          decodedToken = await getAdminApp().auth().verifyIdToken(token, false);
+          console.warn('[auth] Revocation check failed, used basic JWT verification:', verifyError.message);
+        } catch (fallbackError) {
+          throw fallbackError;
+        }
+      } else {
+        throw verifyError;
+      }
+    }
 
     req.auth = {
       uid: decodedToken.uid,

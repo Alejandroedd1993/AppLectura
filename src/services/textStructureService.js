@@ -1,7 +1,7 @@
 import logger from '../utils/logger';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
-import { buildBackendError } from './unifiedAiService';
+import { buildBackendError, unwrapBackendSuccessPayload } from './unifiedAiService';
 import { createAbortControllerWithTimeout } from '../utils/netUtils';
 
 
@@ -124,7 +124,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON, sin markdown, sin explicaciones ad
       });
     }
 
-    const data = await response.json();
+    const data = unwrapBackendSuccessPayload(await response.json());
     // El backend devuelve { content, finish_reason, usage }
     const aiResponse = data.content || '';
 
