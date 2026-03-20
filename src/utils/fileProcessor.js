@@ -11,7 +11,7 @@
  */
 
 import mammoth from 'mammoth';
-import { checkBackendAvailability, processPdfWithBackend } from './backendUtils';
+import { processPdfWithBackend } from './backendUtils';
 
 import logger from './logger';
 // Configurar el worker de PDF.js para que se cargue localmente
@@ -54,9 +54,6 @@ async function procesarDocx(file) {
  */
 async function procesarPdf(file, onProgress) {
   try {
-    // Verificar backend y usar util centralizado
-    const online = await checkBackendAvailability();
-    if (!online) throw new Error('Backend no disponible');
     const text = await processPdfWithBackend(file);
     return text;
   } catch (error) {

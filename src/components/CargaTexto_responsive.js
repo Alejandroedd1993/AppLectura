@@ -6,8 +6,7 @@ import styled from 'styled-components';
 import { AppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { lightTheme, darkTheme } from '../styles/theme';
-import { procesarArchivo } from '../utils/fileProcessor';
-import { checkBackendAvailability, processPdfWithBackend } from '../utils/backendUtils';
+import { processPdfWithBackend } from '../utils/backendUtils';
 import { checkUnsaveDrafts, getWarningMessage } from '../utils/checkUnsaveDrafts';
 import { hashText } from '../utils/netUtils';
 import { uploadSessionPdfFile } from '../firebase/firestore';
@@ -322,57 +321,15 @@ function CargaTexto() {
         }
       } else if (fileName.endsWith('.pdf') || file.type === 'application/pdf') {
         logger.log('📕 Procesando archivo PDF...');
-        // Verificar si el backend está disponible
-        const isBackendAvailable = await checkBackendAvailability();
-
-        if (!isBackendAvailable) {
-          logger.warn('🔄 Backend no disponible, usando procesamiento con fallback');
-          // En lugar de lanzar un error, usar el procesador con fallback
-          const result = await procesarArchivo(file, {
-            analyzeStructure: true,
-            onProgress: (progress) => {
-              logger.log('📊 Progreso:', progress.message || progress);
-            }
-          });
-
-          // result puede ser string o { text, structure, hasStructure }
-          if (typeof result === 'object' && result.text) {
-            contenido = result.text;
-            if (result.hasStructure && result.structure) {
-              logger.log('✨ Estructura detectada por IA:', result.structure);
-              setTextStructure(result.structure);
-            }
-          } else {
-            contenido = result;
+        try {
+          const pdfText = await processPdfWithBackend(file);
+          if (!pdfText || pdfText.trim().length === 0) {
+            throw new Error('No se pudo extraer texto del PDF. El archivo puede estar vacío o contener solo imágenes.');
           }
-        } else {
-          try {
-            const pdfText = await processPdfWithBackend(file);
-            if (!pdfText || pdfText.trim().length === 0) {
-              throw new Error('No se pudo extraer texto del PDF. El archivo puede estar vacío o contener solo imágenes.');
-            }
 
-            contenido = pdfText;
-          } catch (backendError) {
-            logger.warn('🔄 Error con backend, usando fallback:', backendError.message);
-            // Si falla el backend, usar el procesador con fallback
-            const result = await procesarArchivo(file, {
-              analyzeStructure: true,
-              onProgress: (progress) => {
-                logger.log('📊 Progreso:', progress.message || progress);
-              }
-            });
-
-            if (typeof result === 'object' && result.text) {
-              contenido = result.text;
-              if (result.hasStructure && result.structure) {
-                logger.log('✨ Estructura detectada por IA:', result.structure);
-                setTextStructure(result.structure);
-              }
-            } else {
-              contenido = result;
-            }
-          }
+          contenido = pdfText;
+        } catch (backendError) {
+          throw new Error(backendError?.message || 'No se pudo extraer el texto del PDF.');
         }
       } else {
         throw new Error('Formato no soportado. Use archivos TXT, DOCX o PDF.');
