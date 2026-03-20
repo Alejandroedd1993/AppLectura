@@ -293,7 +293,7 @@ const EmptyState = styled.div`
   line-height: 1.6;
 `;
 
-function withinCurrentScope(session, currentTextoId, sourceCourseId) {
+export function withinCurrentScope(session, currentTextoId, sourceCourseId) {
   if (!session || typeof session !== 'object') return false;
   const sessionTextoId =
     session.currentTextoId ||
@@ -303,7 +303,7 @@ function withinCurrentScope(session, currentTextoId, sourceCourseId) {
     null;
   const sessionCourseId = session.sourceCourseId || session.text?.sourceCourseId || null;
 
-  if (currentTextoId && sessionTextoId && sessionTextoId !== currentTextoId) return false;
+  if (currentTextoId && (!sessionTextoId || sessionTextoId !== currentTextoId)) return false;
   if (sourceCourseId != null && sessionCourseId !== sourceCourseId) return false;
   return true;
 }
@@ -343,12 +343,32 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
   const [sessions, setSessions] = useState([]);
 
   useEffect(() => {
+    let mounted = true;
+
     const loadSessions = async () => {
       const allSessions = await getAllSessionsMerged();
-      setSessions(allSessions);
+      if (mounted) {
+        setSessions(allSessions);
+      }
+    };
+
+    const handleSessionUpdate = () => {
+      loadSessions();
     };
 
     loadSessions();
+    window.addEventListener('session-updated', handleSessionUpdate);
+    window.addEventListener('sessions-loaded-from-firebase', handleSessionUpdate);
+    window.addEventListener('session-restored', handleSessionUpdate);
+    window.addEventListener('app-history-cleared', handleSessionUpdate);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('session-updated', handleSessionUpdate);
+      window.removeEventListener('sessions-loaded-from-firebase', handleSessionUpdate);
+      window.removeEventListener('session-restored', handleSessionUpdate);
+      window.removeEventListener('app-history-cleared', handleSessionUpdate);
+    };
   }, []);
 
   const analytics = useMemo(() => (
