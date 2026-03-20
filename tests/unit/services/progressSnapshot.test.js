@@ -1,4 +1,4 @@
-import { buildProgressSnapshot } from '../../../src/services/progressSnapshot';
+import { buildProgressSnapshot, formatRubricAttemptDisplay } from '../../../src/services/progressSnapshot';
 
 describe('progressSnapshot', () => {
   test('no mezcla artefactos de otra lectura cuando existe progreso scopeado por texto', () => {
@@ -115,9 +115,45 @@ describe('progressSnapshot', () => {
     expect(snapshot.rubricsById.rubrica3.started).toBe(true);
     expect(snapshot.rubricsById.rubrica3.evaluated).toBe(true);
     expect(snapshot.rubricsById.rubrica3.effectiveScore).toBe(6.5);
-    expect(snapshot.rubricsById.rubrica3.totalAttempts).toBe(1);
+    expect(snapshot.rubricsById.rubrica3.totalAttempts).toBe(0);
+    expect(snapshot.rubricsById.rubrica3.hasLegacyScoreOnlyEvidence).toBe(true);
     expect(snapshot.hasData).toBe(true);
     expect(snapshot.summary.coverageCount).toBe(1);
+  });
+
+  test('mantiene el panel en modo inicial cuando solo existe un intento real registrado', () => {
+    const snapshot = buildProgressSnapshot({
+      lectureId: 'lectura-sparse',
+      rubricProgress: {
+        rubrica1: {
+          scores: [{ score: 8, artefacto: 'ResumenAcademico', timestamp: 1 }],
+          average: 8,
+          artefactos: ['ResumenAcademico']
+        }
+      },
+      activitiesProgress: {}
+    });
+
+    expect(snapshot.summary.totalAttempts).toBe(1);
+    expect(snapshot.hasMeaningfulTimeSeries).toBe(false);
+    expect(snapshot.canRenderRadar).toBe(false);
+    expect(snapshot.canRenderDistribution).toBe(false);
+  });
+
+  test('aclara cuando una nota legacy no tiene historial de intentos registrado', () => {
+    const snapshot = buildProgressSnapshot({
+      lectureId: 'lectura-legacy-display',
+      rubricProgress: {
+        rubrica4: {
+          average: 6,
+          artefactos: ['RespuestaArgumentativa']
+        }
+      },
+      activitiesProgress: {}
+    });
+
+    expect(formatRubricAttemptDisplay(snapshot.rubricsById.rubrica4)).toBe('Sin registro legacy');
+    expect(formatRubricAttemptDisplay(snapshot.rubricsById.rubrica1)).toBe('0');
   });
 
   test('usa una etapa de cobertura completa con foco de mejora cuando aun hay dimensiones debiles', () => {

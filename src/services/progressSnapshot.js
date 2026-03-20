@@ -199,9 +199,12 @@ function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureI
   const effectiveScore = artifactOverrideScore || summativeScore || artifactScore || formativeScore || 0;
   const bestRecordedScore = Math.max(bestFormativeScore, effectiveScore);
   const scoreBand = getPerformanceBand(effectiveScore);
-  const inferredLegacyAttempt = legacyAverageScore > 0 && formativeScores.length === 0 && artifactAttempts === 0 && !summativeAttempted
-    ? 1
-    : 0;
+  const hasLegacyScoreOnlyEvidence = (
+    legacyAverageScore > 0 &&
+    formativeScores.length === 0 &&
+    artifactAttempts === 0 &&
+    !summativeAttempted
+  );
 
   const hasPendingSummative = summativeAttempted && summativeScore <= 0 &&
     String(summative?.status || '').toLowerCase() === 'submitted';
@@ -225,7 +228,7 @@ function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureI
     toMillis(summative?.timestamp)
   ) || null;
 
-  const totalAttempts = Math.max(formativeScores.length, artifactAttempts, inferredLegacyAttempt) + summativeAttempts;
+  const totalAttempts = Math.max(formativeScores.length, artifactAttempts) + summativeAttempts;
   const started = hasAnyEvidence;
   const evaluated = effectiveScore > 0;
 
@@ -246,6 +249,7 @@ function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureI
     bestRecordedScore,
     scoreBand,
     totalAttempts,
+    hasLegacyScoreOnlyEvidence,
     started,
     evaluated,
     isPendingReview,
@@ -470,7 +474,7 @@ export function buildProgressSnapshot({
     hasData: coverageCount > 0,
     hasMeaningfulTimeSeries,
     canRenderRadar: evaluatedCount >= 2,
-    canRenderDistribution: totalAttempts >= 2 || evaluatedCount >= 2
+    canRenderDistribution: totalAttempts >= 2
   };
 }
 
@@ -483,4 +487,14 @@ export function formatSnapshotDate(timestamp, locale = 'es-ES') {
     hour: '2-digit',
     minute: '2-digit'
   });
+}
+
+export function formatRubricAttemptDisplay(rubric, {
+  emptyLabel = '0',
+  legacyLabel = 'Sin registro legacy'
+} = {}) {
+  const totalAttempts = Number(rubric?.totalAttempts || 0);
+  if (totalAttempts > 0) return String(totalAttempts);
+  if (rubric?.hasLegacyScoreOnlyEvidence) return legacyLabel;
+  return emptyLabel;
 }

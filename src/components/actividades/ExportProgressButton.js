@@ -2,7 +2,11 @@ import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { exportGenericPDF } from '../../utils/exportUtils';
-import { buildProgressSnapshot, formatSnapshotDate } from '../../services/progressSnapshot';
+import {
+  buildProgressSnapshot,
+  formatRubricAttemptDisplay,
+  formatSnapshotDate
+} from '../../services/progressSnapshot';
 import logger from '../../utils/logger';
 
 const ButtonContainer = styled.div`
@@ -153,6 +157,10 @@ function formatExportDate(value, locale = 'es-ES') {
   return millis ? new Date(millis).toLocaleString(locale) : 'Sin fecha';
 }
 
+function formatAttemptExportValue(rubric) {
+  return formatRubricAttemptDisplay(rubric, { legacyLabel: 'Sin registro legacy' });
+}
+
 function buildAggregateExportRow(rubric, nivelDescripcion) {
   const artifactScore = toNumber(rubric?.artifactData?.teacherOverrideScore) ||
     toNumber(rubric?.artifactData?.score) ||
@@ -187,7 +195,7 @@ function buildAggregateExportRow(rubric, nivelDescripcion) {
       rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
       rank,
       rankDescription,
-      rubric.totalAttempts
+      formatAttemptExportValue(rubric)
     ]
   };
 }
@@ -246,7 +254,7 @@ export function buildCsvRows(snapshot) {
         rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
         rubric.scoreBand?.rank || '',
         rubric.badgeLabel,
-        rubric.totalAttempts
+        formatAttemptExportValue(rubric)
       ]
     });
   });
@@ -408,6 +416,7 @@ export default function ExportProgressButton({
 
   const exportPDF = async () => {
     const artefactosContent = loadArtefactosContent();
+    const legacyEvidenceCount = snapshot.rubrics.filter((rubric) => rubric.hasLegacyScoreOnlyEvidence).length;
 
     const rubricToContentKey = {
       rubrica1: 'resumenAcademico',
@@ -426,7 +435,7 @@ export default function ExportProgressButton({
       return [
         rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
         rubric.currentStatusLabel,
-        String(rubric.totalAttempts),
+        formatAttemptExportValue(rubric),
         rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : '—',
         bestScore > 0 ? bestScore.toFixed(2) : '—',
         `${levelLabel} · ${formatSnapshotDate(rubric.lastActivityAt)}`
@@ -471,6 +480,7 @@ export default function ExportProgressButton({
             dimensionesConNota: snapshot.summary.evaluatedCount,
             pendientesRevision: snapshot.summary.pendingCount,
             totalEvaluaciones: snapshot.summary.totalAttempts,
+            ...(legacyEvidenceCount > 0 ? { registrosLegacySinHistorial: legacyEvidenceCount } : {}),
             promedioGeneral: snapshot.summary.averageEvaluatedScore > 0 ? snapshot.summary.averageEvaluatedScore.toFixed(2) : '0.00',
             mejorPuntaje: snapshot.summary.bestScore > 0 ? snapshot.summary.bestScore.toFixed(2) : '0.00',
             totalInteraccionesTutor: tutorInteractions?.length || 0,

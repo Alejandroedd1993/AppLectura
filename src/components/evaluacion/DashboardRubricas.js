@@ -2,7 +2,7 @@ import React, { useContext, useMemo } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
-import { buildProgressSnapshot } from '../../services/progressSnapshot';
+import { buildProgressSnapshot, formatRubricAttemptDisplay } from '../../services/progressSnapshot';
 
 const DashboardContainer = styled.div`
   background: ${props => props.theme.surface};
@@ -226,8 +226,8 @@ export default function DashboardRubricas({ theme, onSelectRubric, progressSnaps
 
               <RubricMeta theme={theme}>
                 <div>
-                  <span>Intentos</span>
-                  <span>{rubric.totalAttempts}</span>
+                  <span>{rubric.hasLegacyScoreOnlyEvidence ? 'Registro' : 'Intentos'}</span>
+                  <span>{formatRubricAttemptDisplay(rubric, { legacyLabel: 'Sin registro legacy' })}</span>
                 </div>
                 <div>
                   <span>{rubric.started ? 'Proximo paso' : 'Estado'}</span>

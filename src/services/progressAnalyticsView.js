@@ -38,10 +38,9 @@ function getMeta(rubricId) {
   };
 }
 
-function getNormalizedAttemptCount(rubric = {}) {
+function getRecordedAttemptCount(rubric = {}) {
   const totalAttempts = Number(rubric?.totalAttempts || 0);
-  if (totalAttempts > 0) return totalAttempts;
-  return Number(rubric?.effectiveScore || 0) > 0 ? 1 : 0;
+  return totalAttempts > 0 ? totalAttempts : 0;
 }
 
 function getSnapshotRubrics(progressSnapshot) {
@@ -228,17 +227,19 @@ export function buildDistributionChartData({ rubricProgress = {}, progressSnapsh
     const lastScore = hasScoreData
       ? ((Number.isFinite(effectiveScore) && effectiveScore > 0) ? effectiveScore : lastFormativeScore)
       : null;
-    const attempts = getNormalizedAttemptCount(rubric);
+    const attempts = getRecordedAttemptCount(rubric);
 
     return {
       rubric: rubric.rubricId,
       name: meta.shortName || rubric.rubricId,
       fullName: meta.name || rubric.rubricId,
       attempts,
+      hasRecordedAttempts: attempts > 0,
       average: hasScoreData ? average(metricScores) : null,
       best: bestScore,
       last: lastScore,
       hasScoreData,
+      hasLegacyScoreOnlyEvidence: Boolean(rubric.hasLegacyScoreOnlyEvidence),
       statusLabel: rubric.currentStatusLabel || null,
       color: rubric.color || meta.color
     };
@@ -249,20 +250,25 @@ export function buildDistributionInsights(chartData = []) {
   if (!Array.isArray(chartData) || chartData.length === 0) return [];
 
   const insights = [];
-  const totalAttempts = chartData.reduce((sum, item) => sum + Number(item.attempts || 0), 0);
-  const avgAttemptsPerRubric = totalAttempts / chartData.length;
-  const byAttemptsDesc = [...chartData].sort((a, b) => {
+  const practiceComparableItems = chartData.filter((item) => !item.hasLegacyScoreOnlyEvidence);
+  const practicedItems = practiceComparableItems.filter((item) => Number(item.attempts || 0) > 0);
+  const totalAttempts = practiceComparableItems.reduce((sum, item) => sum + Number(item.attempts || 0), 0);
+  const avgAttemptsPerRubric = practiceComparableItems.length > 0 ? totalAttempts / practiceComparableItems.length : 0;
+  const byAttemptsDesc = [...practicedItems].sort((a, b) => {
     const diff = Number(b.attempts || 0) - Number(a.attempts || 0);
     return diff !== 0 ? diff : String(a.name || '').localeCompare(String(b.name || ''));
   });
   const mostPracticed = byAttemptsDesc[0];
-  const leastPracticed = byAttemptsDesc[byAttemptsDesc.length - 1];
+  const leastPracticed = [...practiceComparableItems].sort((a, b) => {
+    const diff = Number(a.attempts || 0) - Number(b.attempts || 0);
+    return diff !== 0 ? diff : String(a.name || '').localeCompare(String(b.name || ''));
+  })[0];
 
-  if (mostPracticed && mostPracticed.attempts > avgAttemptsPerRubric * 1.5) {
+  if (mostPracticed && avgAttemptsPerRubric > 0 && mostPracticed.attempts > avgAttemptsPerRubric * 1.5) {
     insights.push(`${mostPracticed.name} es tu dimension mas practicada (${mostPracticed.attempts} intentos)`);
   }
 
-  if (leastPracticed && leastPracticed.attempts < avgAttemptsPerRubric * 0.5) {
+  if (leastPracticed && avgAttemptsPerRubric > 0 && leastPracticed.attempts < avgAttemptsPerRubric * 0.5) {
     insights.push(`Considera practicar mas ${leastPracticed.name} (solo ${leastPracticed.attempts} intento${leastPracticed.attempts === 1 ? '' : 's'})`);
   }
 
@@ -311,7 +317,7 @@ export function getSessionAttemptCount(session, rubricIds = ANALYTICS_RUBRIC_IDS
       ? session.progressSnapshot.rubrics.find((rubric) => rubric?.rubricId === rubricId)
       : null;
     const rubric = rubricFromMap || rubricFromList;
-    return acc + getNormalizedAttemptCount(rubric);
+    return acc + getRecordedAttemptCount(rubric);
   }, 0);
   if (snapshotScopedAttempts > 0) return snapshotScopedAttempts;
 

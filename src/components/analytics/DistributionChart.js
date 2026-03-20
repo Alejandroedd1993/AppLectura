@@ -110,13 +110,16 @@ const CustomTooltipContent = ({ active, payload, theme }) => {
     if (Number.isFinite(value)) return `${Number(value).toFixed(1)}/10`;
     return Number(data.attempts || 0) > 0 ? 'Pendiente' : 'Sin nota';
   };
+  const attemptsLabel = Number(data.attempts || 0) > 0
+    ? String(data.attempts)
+    : (data.hasLegacyScoreOnlyEvidence ? 'Sin registro legacy' : 'Sin registro');
 
   return (
     <CustomTooltip theme={theme}>
       <TooltipLabel theme={theme}>{data.fullName}</TooltipLabel>
       <TooltipRow>
         <TooltipKey theme={theme}>Intentos:</TooltipKey>
-        <TooltipValue theme={theme}>{data.attempts}</TooltipValue>
+        <TooltipValue theme={theme}>{attemptsLabel}</TooltipValue>
       </TooltipRow>
       <TooltipRow>
         <TooltipKey theme={theme}>Promedio:</TooltipKey>

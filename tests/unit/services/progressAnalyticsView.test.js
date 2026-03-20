@@ -142,7 +142,7 @@ describe('progressAnalyticsView', () => {
     ]);
   });
 
-  test('infiere un intento minimo cuando un snapshot legacy trae nota valida pero totalAttempts en cero', () => {
+  test('mantiene nota legacy sin inventar intentos cuando el snapshot no trae contador historico', () => {
     const distributionData = buildDistributionChartData({
       rubricProgress: {},
       progressSnapshot: {
@@ -152,6 +152,7 @@ describe('progressAnalyticsView', () => {
             totalAttempts: 0,
             effectiveScore: 8,
             bestRecordedScore: 8,
+            hasLegacyScoreOnlyEvidence: true,
             currentStatusLabel: 'Competente',
             formativeScores: []
           }
@@ -162,11 +163,12 @@ describe('progressAnalyticsView', () => {
     expect(distributionData).toEqual([
       expect.objectContaining({
         rubric: 'rubrica2',
-        attempts: 1,
+        attempts: 0,
         average: 8,
         best: 8,
         last: 8,
-        hasScoreData: true
+        hasScoreData: true,
+        hasLegacyScoreOnlyEvidence: true
       })
     ]);
   });
@@ -237,7 +239,7 @@ describe('progressAnalyticsView', () => {
     expect(getSessionAttemptCount(session, ['rubrica2'])).toBe(2);
   });
 
-  test('normaliza intentos de snapshots legacy cuando la nota existe pero el contador guardado es cero', () => {
+  test('no infla intentos de snapshots legacy cuando solo existe una nota sin historial detallado', () => {
     const session = {
       progressSnapshot: {
         summary: { totalAttempts: 0 },
@@ -252,7 +254,7 @@ describe('progressAnalyticsView', () => {
       rubricProgress: {}
     };
 
-    expect(getSessionAttemptCount(session, ['rubrica4'])).toBe(1);
+    expect(getSessionAttemptCount(session, ['rubrica4'])).toBe(0);
   });
 
   test('detecta cuando una sesion no tiene nota para la rubrica filtrada', () => {
