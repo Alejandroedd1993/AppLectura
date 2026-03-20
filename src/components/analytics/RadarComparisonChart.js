@@ -1,11 +1,12 @@
 /**
- * RadarComparisonChart - Gráfico de radar para comparar desempeño entre rúbricas
+ * RadarComparisonChart - Grafico de radar para comparar desempeno entre rubricas
  * Visualiza fortalezas y debilidades en un formato spider chart
  */
 
 import React, { useMemo } from 'react';
 import styled from 'styled-components';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { buildRadarChartData } from '../../services/progressAnalyticsView';
 
 const ChartContainer = styled.div`
   background: ${props => props.theme.surface};
@@ -112,56 +113,33 @@ const TooltipScore = styled.div`
   font-weight: 700;
 `;
 
-const RUBRIC_NAMES = {
-  rubrica1: 'Comprensión Analítica',
-  rubrica2: 'Análisis Crítico del Discurso',
-  rubrica3: 'Contextualización',
-  rubrica4: 'Argumentación',
-  rubrica5: 'Metacognición IA',
-};
-
 const CustomTooltipContent = ({ active, payload, theme }) => {
   if (!active || !payload || !payload[0]) return null;
 
   const data = payload[0].payload;
   const score = payload[0].value;
-  
+
   return (
     <CustomTooltip theme={theme}>
       <TooltipLabel theme={theme}>{data.fullName}</TooltipLabel>
       <TooltipScore $color={payload[0].fill}>
-        {score.toFixed(1)}/10
+        {Number(score || 0).toFixed(1)}/10
       </TooltipScore>
     </CustomTooltip>
   );
 };
 
-const RadarComparisonChart = ({ rubricProgress = {}, theme }) => {
-  const chartData = useMemo(() => {
-    const data = [];
-    
-    // Ordenar por rubricId para mantener orden consistente
-    const sortedEntries = Object.entries(rubricProgress).sort((a, b) => a[0].localeCompare(b[0]));
-    
-    sortedEntries.forEach(([rubricId, rubricData]) => {
-      if (rubricId.startsWith('rubrica') && rubricData?.average !== undefined) {
-        data.push({
-          rubric: rubricId,
-          name: RUBRIC_NAMES[rubricId]?.split(' ')[0] || rubricId, // Nombre corto para el gráfico
-          fullName: RUBRIC_NAMES[rubricId] || rubricId,
-          score: Number(rubricData.average),
-        });
-      }
-    });
-
-    return data;
-  }, [rubricProgress]);
+const RadarComparisonChart = ({ rubricProgress = {}, progressSnapshot = null, theme }) => {
+  const chartData = useMemo(
+    () => buildRadarChartData({ rubricProgress, progressSnapshot }),
+    [rubricProgress, progressSnapshot]
+  );
 
   const stats = useMemo(() => {
     if (chartData.length === 0) return null;
 
-    const scores = chartData.map(d => d.score);
-    const average = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const scores = chartData.map((item) => item.score);
+    const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
     const max = Math.max(...scores);
     const min = Math.min(...scores);
     const range = max - min;
@@ -178,10 +156,10 @@ const RadarComparisonChart = ({ rubricProgress = {}, theme }) => {
   if (chartData.length === 0) {
     return (
       <ChartContainer theme={theme}>
-        <ChartTitle theme={theme}>🎯 Comparación de Competencias</ChartTitle>
+        <ChartTitle theme={theme}>🎯 Comparacion de Competencias</ChartTitle>
         <EmptyState theme={theme}>
-          <p>📊 Aún no hay datos suficientes</p>
-          <p>Completa al menos 2 rúbricas para ver la comparación</p>
+          <p>Aun no hay datos suficientes.</p>
+          <p>Completa al menos 2 rubricas para ver la comparacion.</p>
         </EmptyState>
       </ChartContainer>
     );
@@ -189,27 +167,27 @@ const RadarComparisonChart = ({ rubricProgress = {}, theme }) => {
 
   return (
     <ChartContainer theme={theme}>
-      <ChartTitle theme={theme}>🎯 Comparación de Competencias</ChartTitle>
+      <ChartTitle theme={theme}>🎯 Comparacion de Competencias</ChartTitle>
       <ChartDescription theme={theme}>
-        Este gráfico de radar muestra tu nivel de dominio en cada dimensión.
-        Un área más amplia indica mayor desarrollo de competencias.
+        Este grafico de radar muestra tu nivel de dominio en cada dimension.
+        Un area mas amplia indica mayor desarrollo de competencias.
       </ChartDescription>
 
       <ResponsiveContainer width="100%" height={400}>
         <RadarChart data={chartData}>
-          <PolarGrid 
+          <PolarGrid
             stroke={theme.border || '#E4EAF1'}
             opacity={0.5}
           />
-          <PolarAngleAxis 
+          <PolarAngleAxis
             dataKey="name"
             stroke={theme.textMuted || '#607D8B'}
-            style={{ 
+            style={{
               fontSize: '0.8rem',
               fontWeight: '500'
             }}
           />
-          <PolarRadiusAxis 
+          <PolarRadiusAxis
             angle={90}
             domain={[0, 10]}
             stroke={theme.textMuted || '#607D8B'}
@@ -217,23 +195,21 @@ const RadarComparisonChart = ({ rubricProgress = {}, theme }) => {
             tick={{ fill: theme.textMuted }}
           />
           <Radar
-            name="Puntuación"
+            name="Puntuacion"
             dataKey="score"
             stroke={theme.primary || '#3190FC'}
             fill={theme.primary || '#3190FC'}
             fillOpacity={0.5}
             strokeWidth={2}
           />
-          <Tooltip 
-            content={<CustomTooltipContent theme={theme} />}
-          />
+          <Tooltip content={<CustomTooltipContent theme={theme} />} />
         </RadarChart>
       </ResponsiveContainer>
 
       <LegendContainer>
         <LegendItem>
           <LegendColor $color={theme.primary || '#3190FC'} />
-          <span style={{ color: theme.text }}>Tu Desempeño Actual</span>
+          <span style={{ color: theme.text }}>Tu desempeno actual</span>
         </LegendItem>
       </LegendContainer>
 
@@ -249,13 +225,13 @@ const RadarComparisonChart = ({ rubricProgress = {}, theme }) => {
             <StatValue $color="#10B981" theme={theme}>
               {stats.max}
             </StatValue>
-            <StatLabel theme={theme}>Máximo</StatLabel>
+            <StatLabel theme={theme}>Maximo</StatLabel>
           </StatItem>
           <StatItem>
             <StatValue $color="#EF4444" theme={theme}>
               {stats.min}
             </StatValue>
-            <StatLabel theme={theme}>Mínimo</StatLabel>
+            <StatLabel theme={theme}>Minimo</StatLabel>
           </StatItem>
           <StatItem>
             <StatValue $color={theme.textMuted} theme={theme}>

@@ -13,38 +13,49 @@
 import React, { useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { 
-  BarChart, Bar, 
+  BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Area, AreaChart 
 } from 'recharts';
+import { RUBRIC_PROGRESS_META } from '../../services/progressSnapshot';
+import {
+  ANALYTICS_RUBRIC_IDS,
+  getSessionAverageForRubrics,
+  getSessionAttemptCount,
+  getSessionRubricScore,
+  getSessionTimestamp,
+  hasSessionScoreForRubrics
+} from '../../services/progressAnalyticsView';
 
-function getSessionRubricScore(session, rubricId) {
-  const snapshotScore = Number(session?.progressSnapshot?.rubricsById?.[rubricId]?.effectiveScore || 0);
-  if (snapshotScore > 0) return snapshotScore;
-  return Number(session?.rubricProgress?.[rubricId]?.average || 0);
-}
+const TIME_RANGE_WINDOWS = {
+  week: 7 * 24 * 60 * 60 * 1000,
+  month: 30 * 24 * 60 * 60 * 1000,
+  quarter: 90 * 24 * 60 * 60 * 1000
+};
 
-function getSessionAttemptCount(session, rubricIds = []) {
-  const snapshotAttempts = Number(session?.progressSnapshot?.summary?.totalAttempts || 0);
-  if (snapshotAttempts > 0) return snapshotAttempts;
+const RUBRIC_OPTIONS = [
+  { id: 'all', name: 'Todas las Rubricas', shortLabel: 'Todas', icon: '📊', color: '#3B82F6' },
+  ...ANALYTICS_RUBRIC_IDS.map((rubricId) => ({
+    id: rubricId,
+    name: RUBRIC_PROGRESS_META[rubricId]?.name || rubricId,
+    shortLabel: RUBRIC_PROGRESS_META[rubricId]?.shortName || rubricId,
+    icon: RUBRIC_PROGRESS_META[rubricId]?.icon || '📘',
+    color: RUBRIC_PROGRESS_META[rubricId]?.color || '#3B82F6'
+  }))
+];
 
-  const progress = session?.rubricProgress || {};
-  return rubricIds.reduce((acc, id) => acc + (progress[id]?.scores?.length || 0), 0);
+function isSessionInTimeRange(session, range, now = Date.now()) {
+  if (range === 'all') return true;
+  const windowMs = TIME_RANGE_WINDOWS[range];
+  if (!windowMs) return true;
+  const timestamp = getSessionTimestamp(session);
+  return timestamp >= (now - windowMs);
 }
 
 const AnalyticsDashboard = ({ sessions, theme }) => {
   const [timeRange, setTimeRange] = useState('all'); // 'week' | 'month' | 'quarter' | 'all'
   const [selectedRubric, setSelectedRubric] = useState('all'); // 'all' | 'rubrica1' | ...
-
-  // Definición de rúbricas
-  const rubrics = [
-    { id: 'all', name: 'Todas las Rúbricas', icon: '📊', color: '#3B82F6' },
-    { id: 'rubrica1', name: 'Comprensión Literal', icon: '📖', color: '#3B82F6' },
-    { id: 'rubrica2', name: 'Análisis Crítico', icon: '🔍', color: '#8B5CF6' },
-    { id: 'rubrica3', name: 'Contextualización', icon: '🌍', color: '#10B981' },
-    { id: 'rubrica4', name: 'Argumentación', icon: '💬', color: '#F59E0B' },
-    { id: 'rubrica5', name: 'Metacognición', icon: '🧠', color: '#EF4444' }
-  ];
+  const rubrics = RUBRIC_OPTIONS;
 
   // Filtrar sesiones con progreso
   const sessionsWithProgress = useMemo(() => {
@@ -54,57 +65,91 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
     );
   }, [sessions]);
 
+  const selectedRubricIds = useMemo(() => (
+    selectedRubric === 'all' ? ANALYTICS_RUBRIC_IDS : [selectedRubric]
+  ), [selectedRubric]);
+
   // Aplicar filtro temporal
   const filteredByTime = useMemo(() => {
-    if (timeRange === 'all') return sessionsWithProgress;
-
-    const now = Date.now();
-    const ranges = {
-      week: 7 * 24 * 60 * 60 * 1000,
-      month: 30 * 24 * 60 * 60 * 1000,
-      quarter: 90 * 24 * 60 * 60 * 1000
-    };
-
-    const cutoff = now - ranges[timeRange];
-    return sessionsWithProgress.filter(s => {
-      const timestamp = s.timestamp || s.createdAt || 0;
-      return timestamp >= cutoff;
-    });
+    return sessionsWithProgress.filter((session) => isSessionInTimeRange(session, timeRange));
   }, [sessionsWithProgress, timeRange]);
+
+  const periodOptions = useMemo(() => {
+    const options = [
+      { value: 'week', label: 'Última semana' },
+      { value: 'month', label: 'Último mes' },
+      { value: 'quarter', label: '3 meses' },
+      { value: 'all', label: 'Todo' }
+    ];
+
+    return options.map((option) => ({
+      ...option,
+      count: sessionsWithProgress.filter((session) => (
+        isSessionInTimeRange(session, option.value) &&
+        hasSessionScoreForRubrics(session, selectedRubricIds)
+      )).length
+    }));
+  }, [selectedRubricIds, sessionsWithProgress]);
 
   // Calcular datos del dashboard
   const dashboardData = useMemo(() => {
     if (filteredByTime.length === 0) return null;
 
-    const rubricIds = selectedRubric === 'all' 
-      ? ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4', 'rubrica5']
-      : [selectedRubric];
+    const rubricIds = selectedRubricIds;
+    const comparableSessions = filteredByTime
+      .filter((session) => hasSessionScoreForRubrics(session, rubricIds))
+      .sort((a, b) => getSessionTimestamp(a) - getSessionTimestamp(b));
+
+    if (comparableSessions.length === 0) {
+      return {
+        hasComparableData: false,
+        sessionScores: [],
+        stats: {
+          totalSessions: 0,
+          averageScore: 0,
+          maxScore: 0,
+          minScore: 0,
+          totalAttempts: 0,
+          trendPercentage: 0,
+          trendDirection: 'stable'
+        },
+        distribution: {
+          excelente: 0,
+          bueno: 0,
+          regular: 0,
+          bajo: 0
+        },
+        rubricProgress: null
+      };
+    }
 
     // Calcular promedios por sesión
-    const sessionScores = filteredByTime.map((session, index) => {
-      const scores = rubricIds.map((rubricId) => getSessionRubricScore(session, rubricId));
-      const average = scores.reduce((sum, val) => sum + val, 0) / scores.length;
+    const sessionScores = comparableSessions.map((session, index) => {
+      const average = getSessionAverageForRubrics(session, rubricIds);
+      const rubricState = ANALYTICS_RUBRIC_IDS.reduce((acc, rubricId) => {
+        const hasData = hasSessionScoreForRubrics(session, [rubricId]);
+        const score = getSessionRubricScore(session, rubricId);
+        acc[rubricId] = hasData ? Math.round(score * 10) / 10 : null;
+        acc[`${rubricId}HasData`] = hasData;
+        return acc;
+      }, {});
 
       return {
         sessionNumber: index + 1,
         sessionTitle: session.title || `Sesión ${index + 1}`,
         average: Math.round(average * 10) / 10,
-        rubrica1: getSessionRubricScore(session, 'rubrica1'),
-        rubrica2: getSessionRubricScore(session, 'rubrica2'),
-        rubrica3: getSessionRubricScore(session, 'rubrica3'),
-        rubrica4: getSessionRubricScore(session, 'rubrica4'),
-        rubrica5: getSessionRubricScore(session, 'rubrica5'),
-        timestamp: session.timestamp || session.createdAt,
-        date: new Date(session.timestamp || session.createdAt).toLocaleDateString('es-ES', {
+        timestamp: getSessionTimestamp(session),
+        date: new Date(getSessionTimestamp(session)).toLocaleDateString('es-ES', {
           day: '2-digit',
           month: 'short'
-        })
+        }),
+        ...rubricState
       };
     });
 
     // Calcular estadísticas generales
     const allScores = sessionScores.map(s => s.average);
-    const totalAttempts = filteredByTime.reduce((sum, session) => (
+    const totalAttempts = comparableSessions.reduce((sum, session) => (
       sum + getSessionAttemptCount(session, rubricIds)
     ), 0);
 
@@ -113,10 +158,17 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
     const firstHalf = allScores.slice(0, midpoint);
     const secondHalf = allScores.slice(midpoint);
     const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
-    const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+    const avgSecond = secondHalf.length > 0
+      ? secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length
+      : avgFirst;
     const trendPercentage = avgFirst > 0
       ? ((avgSecond - avgFirst) / avgFirst) * 100
       : (avgSecond > 0 ? 100 : 0);
+    const roundedTrendPercentage = Math.round(trendPercentage * 10) / 10;
+    const normalizedTrendPercentage = Math.abs(roundedTrendPercentage) < 0.05 ? 0 : roundedTrendPercentage;
+    const trendDirection = normalizedTrendPercentage > 0
+      ? 'improving'
+      : (normalizedTrendPercentage < 0 ? 'declining' : 'stable');
 
     // Distribución de puntuaciones
     const distribution = {
@@ -127,40 +179,56 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
     };
 
     // Progreso por rúbrica (solo si "Todas")
-    const rubricProgress = selectedRubric === 'all' ? rubricIds.map(rubricId => {
-      const allRubricScores = filteredByTime.map((session) => getSessionRubricScore(session, rubricId));
-      const avg = allRubricScores.reduce((a, b) => a + b, 0) / allRubricScores.length;
-      
-      return {
-        id: rubricId,
-        name: rubrics.find(r => r.id === rubricId)?.name,
-        icon: rubrics.find(r => r.id === rubricId)?.icon,
-        average: Math.round(avg * 10) / 10,
-        color: rubrics.find(r => r.id === rubricId)?.color
-      };
-    }) : null;
+    const rubricProgress = selectedRubric === 'all'
+      ? rubricIds
+        .map((rubricId) => {
+          const allRubricScores = comparableSessions
+            .map((session) => getSessionRubricScore(session, rubricId))
+            .filter((score) => score > 0);
+
+          if (allRubricScores.length === 0) {
+            return null;
+          }
+
+          const avg = allRubricScores.reduce((sum, score) => sum + score, 0) / allRubricScores.length;
+          const rubricMeta = rubrics.find((rubric) => rubric.id === rubricId);
+
+          return {
+            id: rubricId,
+            name: rubricMeta?.name,
+            icon: rubricMeta?.icon,
+            average: Math.round(avg * 10) / 10,
+            color: rubricMeta?.color
+          };
+        })
+        .filter(Boolean)
+      : null;
 
     return {
+      hasComparableData: true,
       sessionScores,
       stats: {
-        totalSessions: filteredByTime.length,
+        totalSessions: comparableSessions.length,
         averageScore: Math.round((allScores.reduce((a, b) => a + b, 0) / allScores.length) * 10) / 10,
         maxScore: Math.max(...allScores),
         minScore: Math.min(...allScores),
         totalAttempts,
-        trendPercentage: Math.round(trendPercentage * 10) / 10,
-        isImproving: trendPercentage > 0
+        trendPercentage: normalizedTrendPercentage,
+        trendDirection
       },
       distribution,
-      rubricProgress
+      rubricProgress: rubricProgress?.length > 0 ? rubricProgress : null
     };
-  }, [filteredByTime, selectedRubric, rubrics]);
+  }, [filteredByTime, rubrics, selectedRubric, selectedRubricIds]);
 
   // Custom Tooltip
   const CustomTooltip = ({ active, payload }) => {
     if (!active || !payload || payload.length === 0) return null;
 
     const data = payload[0].payload;
+    const formatRubricValue = (rubricId) => (
+      data[`${rubricId}HasData`] ? `${data[rubricId].toFixed(1)}/10` : 'Sin dato'
+    );
     return (
       <TooltipContainer theme={theme}>
         <TooltipTitle>{data.sessionTitle}</TooltipTitle>
@@ -168,17 +236,17 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
         <TooltipDivider />
         {selectedRubric === 'all' ? (
           <>
-            <TooltipStat><strong>Promedio General:</strong> {data.average.toFixed(1)}/10</TooltipStat>
+            <TooltipStat><strong>Promedio con evidencia:</strong> {data.average.toFixed(1)}/10</TooltipStat>
             <TooltipDivider />
-            <TooltipStat>📖 Comprensión: {data.rubrica1.toFixed(1)}</TooltipStat>
-            <TooltipStat>🔍 ACD: {data.rubrica2.toFixed(1)}</TooltipStat>
-            <TooltipStat>🌍 Contextualización: {data.rubrica3.toFixed(1)}</TooltipStat>
-            <TooltipStat>💬 Argumentación: {data.rubrica4.toFixed(1)}</TooltipStat>
-            <TooltipStat>🧠 Metacognición: {data.rubrica5.toFixed(1)}</TooltipStat>
+            <TooltipStat>📖 Comprensión: {formatRubricValue('rubrica1')}</TooltipStat>
+            <TooltipStat>🔍 ACD: {formatRubricValue('rubrica2')}</TooltipStat>
+            <TooltipStat>🌍 Contextualización: {formatRubricValue('rubrica3')}</TooltipStat>
+            <TooltipStat>💬 Argumentación: {formatRubricValue('rubrica4')}</TooltipStat>
+            <TooltipStat>🧠 Metacognición: {formatRubricValue('rubrica5')}</TooltipStat>
           </>
         ) : (
           <TooltipStat>
-            <strong>{rubrics.find(r => r.id === selectedRubric)?.name}:</strong> {data[selectedRubric].toFixed(1)}/10
+            <strong>{rubrics.find(r => r.id === selectedRubric)?.name}:</strong> {formatRubricValue(selectedRubric)}
           </TooltipStat>
         )}
       </TooltipContainer>
@@ -235,6 +303,19 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
     );
   }
 
+  const resultDistributionData = dashboardData ? [
+    { name: 'Excelente\n(8-10)', count: dashboardData.distribution.excelente, fill: '#10B981' },
+    { name: 'Bueno\n(6-8)', count: dashboardData.distribution.bueno, fill: '#F59E0B' },
+    { name: 'Regular\n(4-6)', count: dashboardData.distribution.regular, fill: '#F97316' },
+    { name: 'Bajo\n(<4)', count: dashboardData.distribution.bajo, fill: '#EF4444' }
+  ] : [];
+  const trendDirection = dashboardData?.stats?.trendDirection || 'stable';
+  const trendIcon = trendDirection === 'improving' ? '📈' : trendDirection === 'declining' ? '📉' : '➡️';
+  const trendColor = trendDirection === 'improving'
+    ? '#10B981'
+    : (trendDirection === 'declining' ? '#EF4444' : (theme.textMuted || '#6B7280'));
+  const trendPrefix = trendDirection === 'improving' ? '+' : '';
+
   return (
     <Container>
       <Header>
@@ -249,24 +330,7 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
         <FilterGroup>
           <FilterLabel theme={theme}>📅 Período</FilterLabel>
           <FilterButtons>
-            {[
-              { value: 'week', label: 'Última semana', count: sessionsWithProgress.filter(s => {
-                const now = Date.now();
-                const week = 7 * 24 * 60 * 60 * 1000;
-                return (s.timestamp || s.createdAt || 0) >= (now - week);
-              }).length },
-              { value: 'month', label: 'Último mes', count: sessionsWithProgress.filter(s => {
-                const now = Date.now();
-                const month = 30 * 24 * 60 * 60 * 1000;
-                return (s.timestamp || s.createdAt || 0) >= (now - month);
-              }).length },
-              { value: 'quarter', label: '3 meses', count: sessionsWithProgress.filter(s => {
-                const now = Date.now();
-                const quarter = 90 * 24 * 60 * 60 * 1000;
-                return (s.timestamp || s.createdAt || 0) >= (now - quarter);
-              }).length },
-              { value: 'all', label: 'Todo', count: sessionsWithProgress.length }
-            ].map(option => (
+            {periodOptions.map(option => (
               <FilterButton
                 key={option.value}
                 theme={theme}
@@ -292,13 +356,25 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
                 $active={selectedRubric === rubric.id}
                 onClick={() => setSelectedRubric(rubric.id)}
               >
-                {rubric.icon} {rubric.name.split(' ')[0]}
+                {rubric.icon} {rubric.shortLabel}
               </FilterButton>
             ))}
           </FilterButtons>
         </FilterGroup>
       </FiltersSection>
 
+      {!dashboardData.hasComparableData ? (
+        <EmptyState theme={theme}>
+          <EmptyIcon>ðŸ”Ž</EmptyIcon>
+          <EmptyText>No hay notas comparables para este filtro</EmptyText>
+          <EmptyHint>
+            {selectedRubric === 'all'
+              ? 'AÃºn no existen sesiones con evidencia evaluada suficiente en este perÃ­odo.'
+              : 'Esta rÃºbrica todavÃ­a no tiene puntuaciones registradas en el perÃ­odo seleccionado.'}
+          </EmptyHint>
+        </EmptyState>
+      ) : (
+        <>
       {/* KPIs principales */}
       <KPIsGrid>
         <KPICard theme={theme}>
@@ -320,13 +396,11 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
         </KPICard>
 
         <KPICard theme={theme}>
-          <KPIIcon>
-            {dashboardData.stats.isImproving ? '📈' : '📉'}
-          </KPIIcon>
+          <KPIIcon>{trendIcon}</KPIIcon>
           <KPIValue 
-            $color={dashboardData.stats.isImproving ? '#10B981' : '#EF4444'}
+            $color={trendColor}
           >
-            {dashboardData.stats.isImproving ? '+' : ''}
+            {trendPrefix}
             {dashboardData.stats.trendPercentage}%
           </KPIValue>
           <KPILabel>Tendencia</KPILabel>
@@ -340,7 +414,9 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
             📈 Evolución Temporal
           </SectionTitle>
           <ChartLegend theme={theme}>
-            {selectedRubric === 'all' ? 'Promedio de todas las rúbricas' : rubrics.find(r => r.id === selectedRubric)?.name}
+            {selectedRubric === 'all'
+              ? 'Promedio de rúbricas con evidencia por sesión'
+              : rubrics.find(r => r.id === selectedRubric)?.name}
           </ChartLegend>
         </SectionHeader>
         
@@ -385,14 +461,7 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
           <SectionTitle theme={theme}>📊 Distribución de Resultados</SectionTitle>
           <ChartContainer>
             <ResponsiveContainer width="100%" height={250}>
-              <BarChart 
-                data={[
-                  { name: 'Excelente\n(8-10)', count: dashboardData.distribution.excelente, fill: '#10B981' },
-                  { name: 'Bueno\n(6-8)', count: dashboardData.distribution.bueno, fill: '#F59E0B' },
-                  { name: 'Regular\n(4-6)', count: dashboardData.distribution.regular, fill: '#F97316' },
-                  { name: 'Bajo\n(<4)', count: dashboardData.distribution.bajo, fill: '#EF4444' }
-                ]}
-              >
+              <BarChart data={resultDistributionData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={theme.border || '#E5E7EB'} />
                 <XAxis 
                   dataKey="name" 
@@ -411,13 +480,8 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
                   }}
                 />
                 <Bar dataKey="count" radius={[8, 8, 0, 0]}>
-                  {[
-                    { name: 'Excelente\n(8-10)', count: dashboardData.distribution.excelente, fill: '#10B981' },
-                    { name: 'Bueno\n(6-8)', count: dashboardData.distribution.bueno, fill: '#F59E0B' },
-                    { name: 'Regular\n(4-6)', count: dashboardData.distribution.regular, fill: '#F97316' },
-                    { name: 'Bajo\n(<4)', count: dashboardData.distribution.bajo, fill: '#EF4444' }
-                  ].map((entry, index) => (
-                    <Bar key={`cell-${index}`} dataKey="count" fill={entry.fill} />
+                  {resultDistributionData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Bar>
               </BarChart>
@@ -481,6 +545,8 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
           </SummaryCard>
         </SummaryGrid>
       </SummarySection>
+        </>
+      )}
     </Container>
   );
 };

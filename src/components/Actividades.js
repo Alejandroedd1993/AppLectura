@@ -924,25 +924,6 @@ export default function Actividades() {
                   onSelectRubric={openProgressRubric}
                 />
 
-                {/* 💡 Ayuda para el usuario */}
-                {false && <p style={{
-                  marginTop: '1rem',
-                  padding: '0.75rem 1rem',
-                  background: theme.primary + '10',
-                  border: `1px solid ${theme.primary}40`,
-                  borderRadius: '8px',
-                  color: theme.textSecondary,
-                  fontSize: '0.85rem',
-                  lineHeight: 1.5,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem'
-                }}>
-                  <span style={{ fontSize: '1.2rem' }}>💡</span>
-                  <span>
-                    <strong>Tip:</strong> Haz clic en cualquier tarjeta de rúbrica para ir a la vista de dimensiones y abrir el artefacto correspondiente para revisarlo o mejorarlo.
-                  </span>
-                </p>}
 
                 {/* 📈 Gráficas de progreso (dashboard analítico) */}
                 <AnalyticsPanel
@@ -957,14 +938,6 @@ export default function Actividades() {
                   <span>📊</span>
                   Mi Progreso Detallado
                 </SectionTitle>
-                {false && <p style={{
-                  margin: '0 0 1rem 0',
-                  color: theme.textSecondary,
-                  fontSize: '0.88rem',
-                  lineHeight: 1.55
-                }}>
-                  Esta columna resume <strong>solo la lectura actual</strong> y te deja exportar o reiniciar este avance sin mezclar otras lecturas.
-                </p>}
 
                 {/* Panel de Estadísticas de Progreso */}
                 <ProgressStats

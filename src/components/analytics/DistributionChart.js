@@ -1,11 +1,12 @@
 /**
- * DistributionChart - Gráfico de barras que muestra la distribución de intentos y scores
- * Útil para ver cuántas veces se ha evaluado cada rúbrica y el rango de puntuaciones
+ * DistributionChart - Grafico de barras que muestra la distribucion de intentos y scores
+ * Util para ver cuantas veces se ha evaluado cada rubrica y el rango de puntuaciones
  */
 
 import React, { useMemo } from 'react';
 import styled from 'styled-components';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { buildDistributionChartData, buildDistributionInsights } from '../../services/progressAnalyticsView';
 
 const ChartContainer = styled.div`
   background: ${props => props.theme.surface};
@@ -101,27 +102,15 @@ const InsightList = styled.ul`
   line-height: 1.6;
 `;
 
-const RUBRIC_COLORS = {
-  rubrica1: '#3B82F6',
-  rubrica2: '#8B5CF6',
-  rubrica3: '#10B981',
-  rubrica4: '#F59E0B',
-  rubrica5: '#EF4444',
-};
-
-const RUBRIC_NAMES = {
-  rubrica1: 'Comprensión',
-  rubrica2: 'ACD',
-  rubrica3: 'Contextualización',
-  rubrica4: 'Argumentación',
-  rubrica5: 'Metacognición',
-};
-
 const CustomTooltipContent = ({ active, payload, theme }) => {
   if (!active || !payload || !payload[0]) return null;
 
   const data = payload[0].payload;
-  
+  const formatScoreValue = (value) => {
+    if (Number.isFinite(value)) return `${Number(value).toFixed(1)}/10`;
+    return Number(data.attempts || 0) > 0 ? 'Pendiente' : 'Sin nota';
+  };
+
   return (
     <CustomTooltip theme={theme}>
       <TooltipLabel theme={theme}>{data.fullName}</TooltipLabel>
@@ -131,92 +120,35 @@ const CustomTooltipContent = ({ active, payload, theme }) => {
       </TooltipRow>
       <TooltipRow>
         <TooltipKey theme={theme}>Promedio:</TooltipKey>
-        <TooltipValue theme={theme}>{data.average.toFixed(1)}/10</TooltipValue>
+        <TooltipValue theme={theme}>{formatScoreValue(data.average)}</TooltipValue>
       </TooltipRow>
       <TooltipRow>
         <TooltipKey theme={theme}>Mejor:</TooltipKey>
-        <TooltipValue theme={theme} style={{ color: '#10B981' }}>{data.best.toFixed(1)}/10</TooltipValue>
+        <TooltipValue theme={theme} style={{ color: '#10B981' }}>{formatScoreValue(data.best)}</TooltipValue>
       </TooltipRow>
       <TooltipRow>
-        <TooltipKey theme={theme}>Último:</TooltipKey>
-        <TooltipValue theme={theme}>{data.last.toFixed(1)}/10</TooltipValue>
+        <TooltipKey theme={theme}>Ultimo:</TooltipKey>
+        <TooltipValue theme={theme}>{formatScoreValue(data.last)}</TooltipValue>
       </TooltipRow>
     </CustomTooltip>
   );
 };
 
-const DistributionChart = ({ rubricProgress = {}, theme }) => {
-  const chartData = useMemo(() => {
-    const data = [];
-    
-    // Ordenar por rubricId para mantener orden consistente
-    const sortedEntries = Object.entries(rubricProgress).sort((a, b) => a[0].localeCompare(b[0]));
-    
-    sortedEntries.forEach(([rubricId, rubricData]) => {
-      if (rubricId.startsWith('rubrica') && rubricData?.scores?.length > 0) {
-        const scores = rubricData.scores.map(s => 
-          typeof s === 'object' ? Number(s.score) : Number(s)
-        );
-        
-        data.push({
-          rubric: rubricId,
-          name: RUBRIC_NAMES[rubricId] || rubricId,
-          fullName: RUBRIC_NAMES[rubricId] || rubricId,
-          attempts: scores.length,
-          average: Number(rubricData.average || 0),
-          best: Math.max(...scores),
-          last: scores[scores.length - 1],
-          color: RUBRIC_COLORS[rubricId],
-        });
-      }
-    });
+const DistributionChart = ({ rubricProgress = {}, progressSnapshot = null, theme }) => {
+  const chartData = useMemo(
+    () => buildDistributionChartData({ rubricProgress, progressSnapshot }),
+    [rubricProgress, progressSnapshot]
+  );
 
-    return data; // Mantener orden por rubricId (ya ordenado arriba)
-  }, [rubricProgress]);
-
-  const insights = useMemo(() => {
-    if (chartData.length === 0) return [];
-
-    const insights = [];
-    const totalAttempts = chartData.reduce((sum, d) => sum + d.attempts, 0);
-    const avgAttemptsPerRubric = totalAttempts / chartData.length;
-
-    // Más practicada
-    const mostPracticed = chartData[0];
-    if (mostPracticed.attempts > avgAttemptsPerRubric * 1.5) {
-      insights.push(`${mostPracticed.name} es tu dimensión más practicada (${mostPracticed.attempts} intentos)`);
-    }
-
-    // Menos practicada
-    const leastPracticed = chartData[chartData.length - 1];
-    if (leastPracticed.attempts < avgAttemptsPerRubric * 0.5) {
-      insights.push(`Considera practicar más ${leastPracticed.name} (solo ${leastPracticed.attempts} intento${leastPracticed.attempts > 1 ? 's' : ''})`);
-    }
-
-    // Mayor mejora
-    const improvements = chartData.filter(d => d.last > d.average);
-    if (improvements.length > 0) {
-      const biggest = improvements.sort((a, b) => (b.last - b.average) - (a.last - a.average))[0];
-      insights.push(`¡Tu último intento en ${biggest.name} superó tu promedio! (${biggest.last.toFixed(1)} vs ${biggest.average.toFixed(1)})`);
-    }
-
-    // Distribución desigual
-    const maxAttempts = Math.max(...chartData.map(d => d.attempts));
-    const minAttempts = Math.min(...chartData.map(d => d.attempts));
-    if (maxAttempts - minAttempts > 5) {
-      insights.push('Tu práctica está desbalanceada. Intenta distribuir intentos más equitativamente');
-    }
-
-    return insights;
-  }, [chartData]);
+  const insights = useMemo(() => buildDistributionInsights(chartData), [chartData]);
 
   if (chartData.length === 0) {
     return (
       <ChartContainer theme={theme}>
-        <ChartTitle theme={theme}>📊 Distribución de Intentos</ChartTitle>
+        <ChartTitle theme={theme}>📊 Distribucion de Intentos</ChartTitle>
         <EmptyState theme={theme}>
-          <p>📊 Aún no hay datos</p>
-          <p>Completa evaluaciones para ver la distribución de tus intentos</p>
+          <p>Aun no hay datos.</p>
+          <p>Completa evaluaciones para ver la distribucion de tus intentos.</p>
         </EmptyState>
       </ChartContainer>
     );
@@ -224,10 +156,10 @@ const DistributionChart = ({ rubricProgress = {}, theme }) => {
 
   return (
     <ChartContainer theme={theme}>
-      <ChartTitle theme={theme}>📊 Distribución de Intentos por Dimensión</ChartTitle>
+      <ChartTitle theme={theme}>📊 Distribucion de Intentos por Dimension</ChartTitle>
       <ChartDescription theme={theme}>
-        Visualiza cuántas veces has evaluado cada dimensión y tu promedio en cada una.
-        Las barras más altas indican mayor práctica.
+        Visualiza cuantas veces has evaluado cada dimension y tu promedio en cada una.
+        Las barras mas altas indican mayor practica.
       </ChartDescription>
 
       <ResponsiveContainer width="100%" height={300}>
@@ -235,35 +167,35 @@ const DistributionChart = ({ rubricProgress = {}, theme }) => {
           data={chartData}
           margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
         >
-          <CartesianGrid 
-            strokeDasharray="3 3" 
+          <CartesianGrid
+            strokeDasharray="3 3"
             stroke={theme.border || '#E4EAF1'}
             opacity={0.5}
           />
-          <XAxis 
-            dataKey="name" 
+          <XAxis
+            dataKey="name"
             stroke={theme.textMuted || '#607D8B'}
             style={{ fontSize: '0.8rem' }}
             angle={-15}
             textAnchor="end"
             height={60}
           />
-          <YAxis 
+          <YAxis
             stroke={theme.textMuted || '#607D8B'}
             style={{ fontSize: '0.85rem' }}
-            label={{ 
-              value: 'Número de Intentos', 
-              angle: -90, 
+            label={{
+              value: 'Numero de Intentos',
+              angle: -90,
               position: 'insideLeft',
               style: { fill: theme.textMuted, fontSize: '0.8rem' }
             }}
           />
-          <Tooltip 
+          <Tooltip
             content={<CustomTooltipContent theme={theme} />}
             cursor={{ fill: theme.background, opacity: 0.5 }}
           />
-          <Bar 
-            dataKey="attempts" 
+          <Bar
+            dataKey="attempts"
             name="Intentos"
             radius={[8, 8, 0, 0]}
           >
@@ -276,7 +208,7 @@ const DistributionChart = ({ rubricProgress = {}, theme }) => {
 
       {insights.length > 0 && (
         <InsightBox theme={theme}>
-          <InsightTitle theme={theme}>💡 Insights de tu Práctica</InsightTitle>
+          <InsightTitle theme={theme}>💡 Insights de tu practica</InsightTitle>
           <InsightList theme={theme}>
             {insights.map((insight, index) => (
               <li key={index}>{insight}</li>

@@ -1,11 +1,12 @@
 /**
- * ProgressChart - Gráfico de evolución temporal de progreso por rúbrica
- * Muestra cómo ha evolucionado el puntaje en cada dimensión a lo largo del tiempo
+ * ProgressChart - Grafico de evolucion temporal de progreso por rubrica
+ * Muestra como ha evolucionado el puntaje en cada dimension a lo largo del tiempo
  */
 
 import React, { useMemo } from 'react';
 import styled from 'styled-components';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { buildProgressChartModel } from '../../services/progressAnalyticsView';
 
 const ChartContainer = styled.div`
   background: ${props => props.theme.surface};
@@ -64,7 +65,7 @@ const InfoIcon = styled.span`
 const InfoContent = styled.div`
   flex: 1;
   line-height: 1.5;
-  
+
   strong {
     color: ${props => props.theme.primary};
   }
@@ -88,12 +89,12 @@ const StatBadge = styled.div`
   border: 1px solid ${props => props.theme.border};
   border-radius: 6px;
   font-size: 0.8rem;
-  
+
   span:first-child {
     font-weight: 600;
     color: ${props => props.$color || props.theme.primary};
   }
-  
+
   span:last-child {
     color: ${props => props.theme.textMuted};
   }
@@ -130,19 +131,19 @@ const TooltipColor = styled.div`
 `;
 
 const RUBRIC_COLORS = {
-  rubrica1: '#3B82F6', // Azul - Comprensión
-  rubrica2: '#8B5CF6', // Púrpura - ACD
-  rubrica3: '#10B981', // Verde - Contextualización
-  rubrica4: '#F59E0B', // Naranja - Argumentación
-  rubrica5: '#EF4444', // Rojo - Metacognición
+  rubrica1: '#3B82F6',
+  rubrica2: '#8B5CF6',
+  rubrica3: '#10B981',
+  rubrica4: '#F59E0B',
+  rubrica5: '#EF4444'
 };
 
 const RUBRIC_NAMES = {
-  rubrica1: 'Comprensión',
+  rubrica1: 'Comprension',
   rubrica2: 'ACD',
-  rubrica3: 'Contextualización',
-  rubrica4: 'Argumentación',
-  rubrica5: 'Metacognición',
+  rubrica3: 'Contextualizacion',
+  rubrica4: 'Argumentacion',
+  rubrica5: 'Metacognicion'
 };
 
 const CustomTooltipContent = ({ active, payload, label, theme }) => {
@@ -155,7 +156,7 @@ const CustomTooltipContent = ({ active, payload, label, theme }) => {
         <TooltipItem key={index}>
           <TooltipColor $color={entry.color} />
           <span style={{ color: theme.text }}>
-            {entry.name}: <strong>{entry.value.toFixed(1)}</strong>/10
+            {entry.name}: <strong>{Number(entry.value || 0).toFixed(1)}</strong>/10
           </span>
         </TooltipItem>
       ))}
@@ -163,65 +164,19 @@ const CustomTooltipContent = ({ active, payload, label, theme }) => {
   );
 };
 
-const ProgressChart = ({ rubricProgress = {}, theme }) => {
-  // Transformar datos para el gráfico
-  const { chartData, stats } = useMemo(() => {
-    // Obtener todas las rúbricas con datos, ordenadas por ID
-    const rubrics = Object.entries(rubricProgress)
-      .filter(([key, data]) => key.startsWith('rubrica') && data.scores?.length > 0)
-      .sort((a, b) => a[0].localeCompare(b[0])); // Ordenar por rubricId
-
-    if (rubrics.length === 0) return { chartData: [], stats: null };
-
-    // Calcular estadísticas
-    const totalAttempts = rubrics.reduce((sum, [_, data]) => sum + data.scores.length, 0);
-    const maxAttempts = Math.max(...rubrics.map(([_, data]) => data.scores.length));
-    const avgAttemptsPerRubric = totalAttempts / rubrics.length;
-    const rubricsWithMultiple = rubrics.filter(([_, data]) => data.scores.length >= 2).length;
-
-    // Crear array de datos por intento
-    const data = [];
-    for (let i = 0; i < maxAttempts; i++) {
-      const point = { attempt: i + 1 };
-      
-      rubrics.forEach(([rubricId, rubricData]) => {
-        if (rubricData.scores[i] !== undefined) {
-          const score = typeof rubricData.scores[i] === 'object' 
-            ? Number(rubricData.scores[i].score) 
-            : Number(rubricData.scores[i]);
-          point[rubricId] = score;
-        }
-      });
-      
-      data.push(point);
-    }
-
-    return {
-      chartData: data,
-      stats: {
-        totalAttempts,
-        maxAttempts,
-        avgAttemptsPerRubric: avgAttemptsPerRubric.toFixed(1),
-        rubricsWithMultiple,
-        totalRubrics: rubrics.length,
-        needsMoreData: maxAttempts < 2
-      }
-    };
-  }, [rubricProgress]);
-
-  const activeRubrics = useMemo(() => {
-    return Object.keys(rubricProgress)
-      .filter(key => key.startsWith('rubrica') && rubricProgress[key]?.scores?.length > 0)
-      .sort(); // Ordenar alfabéticamente para consistencia
-  }, [rubricProgress]);
+const ProgressChart = ({ rubricProgress = {}, progressSnapshot = null, theme }) => {
+  const { chartData, stats, activeRubrics } = useMemo(
+    () => buildProgressChartModel({ rubricProgress, progressSnapshot }),
+    [rubricProgress, progressSnapshot]
+  );
 
   if (chartData.length === 0) {
     return (
       <ChartContainer theme={theme}>
-        <ChartTitle theme={theme}>📈 Evolución Temporal</ChartTitle>
+        <ChartTitle theme={theme}>📈 Evolucion Temporal</ChartTitle>
         <EmptyState theme={theme}>
-          <p>📊 Aún no hay suficientes datos para generar el gráfico</p>
-          <p>Completa al menos 1 evaluación en cualquier dimensión para comenzar</p>
+          <p>Aun no hay suficientes datos para generar el grafico.</p>
+          <p>Completa al menos 1 evaluacion en cualquier dimension para comenzar.</p>
         </EmptyState>
       </ChartContainer>
     );
@@ -229,21 +184,20 @@ const ProgressChart = ({ rubricProgress = {}, theme }) => {
 
   return (
     <ChartContainer theme={theme}>
-      <ChartTitle theme={theme}>📈 Evolución Temporal de Progreso</ChartTitle>
+      <ChartTitle theme={theme}>📈 Evolucion Temporal de Progreso</ChartTitle>
       <ChartDescription theme={theme}>
-        Observa cómo ha evolucionado tu desempeño en cada dimensión a lo largo de tus intentos.
-        Las líneas ascendentes indican mejora continua.
+        Observa como ha evolucionado tu desempeno en cada dimension a lo largo de tus intentos.
+        Las lineas ascendentes indican mejora continua.
       </ChartDescription>
 
-      {/* Panel informativo cuando hay pocos datos para evolución */}
       {stats?.needsMoreData && (
         <InfoBox theme={theme}>
           <InfoIcon>💡</InfoIcon>
           <InfoContent theme={theme}>
-            <strong>¡Buen comienzo!</strong> Has completado <strong>{stats.totalAttempts} evaluaciones</strong> en <strong>{stats.totalRubrics} dimensiones</strong>.
+            <strong>Buen comienzo.</strong> Has completado <strong>{stats.totalAttempts} evaluaciones</strong> en <strong>{stats.totalRubrics} dimensiones</strong>.
             <br />
-            Para ver la evolución temporal, necesitas al menos <strong>2 intentos en una misma dimensión</strong>.
-            ¡Vuelve a evaluar una dimensión para ver tu progreso!
+            Para ver la evolucion temporal, necesitas al menos <strong>2 intentos en una misma dimension</strong>.
+            Vuelve a evaluar una dimension para ver tu progreso.
             <StatsRow theme={theme}>
               <StatBadge theme={theme} $color="#3B82F6">
                 <span>{stats.totalAttempts}</span>
@@ -255,7 +209,7 @@ const ProgressChart = ({ rubricProgress = {}, theme }) => {
               </StatBadge>
               <StatBadge theme={theme} $color="#F59E0B">
                 <span>{stats.avgAttemptsPerRubric}</span>
-                <span>promedio por dimensión</span>
+                <span>promedio por dimension</span>
               </StatBadge>
             </StatsRow>
           </InfoContent>
@@ -267,59 +221,59 @@ const ProgressChart = ({ rubricProgress = {}, theme }) => {
           data={chartData}
           margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
         >
-          <CartesianGrid 
-            strokeDasharray="3 3" 
+          <CartesianGrid
+            strokeDasharray="3 3"
             stroke={theme.border || '#E4EAF1'}
             opacity={0.5}
           />
-          <XAxis 
-            dataKey="attempt" 
+          <XAxis
+            dataKey="attempt"
             stroke={theme.textMuted || '#607D8B'}
             style={{ fontSize: '0.85rem' }}
-            label={{ 
-              value: 'Número de Intento', 
-              position: 'insideBottom', 
+            label={{
+              value: 'Numero de Intento',
+              position: 'insideBottom',
               offset: -5,
               style: { fill: theme.textMuted, fontSize: '0.8rem' }
             }}
           />
-          <YAxis 
+          <YAxis
             domain={[0, 10]}
             stroke={theme.textMuted || '#607D8B'}
             style={{ fontSize: '0.85rem' }}
-            label={{ 
-              value: 'Puntuación (0-10)', 
-              angle: -90, 
+            label={{
+              value: 'Puntuacion (0-10)',
+              angle: -90,
               position: 'insideLeft',
               style: { fill: theme.textMuted, fontSize: '0.8rem' }
             }}
           />
-          <Tooltip 
+          <Tooltip
             content={<CustomTooltipContent theme={theme} />}
             cursor={{ stroke: theme.primary, strokeDasharray: '5 5' }}
           />
-          <Legend 
-            wrapperStyle={{ 
+          <Legend
+            wrapperStyle={{
               fontSize: '0.85rem',
               paddingTop: '1rem'
             }}
             formatter={(value) => RUBRIC_NAMES[value] || value}
           />
-          
-          {activeRubrics.map(rubricId => (
+
+          {activeRubrics.map((rubricId) => (
             <Line
               key={rubricId}
               type="monotone"
               dataKey={rubricId}
               stroke={RUBRIC_COLORS[rubricId]}
               strokeWidth={2.5}
-              dot={{ 
-                r: 4, 
+              dot={{
+                r: 4,
                 fill: RUBRIC_COLORS[rubricId],
                 strokeWidth: 2,
                 stroke: '#fff'
               }}
-              activeDot={{ 
+              activeDot={{
                 r: 6,
                 stroke: '#fff',
                 strokeWidth: 2

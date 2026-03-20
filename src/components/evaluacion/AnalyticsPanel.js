@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
 import { calculateDetailedStats } from '../../services/analyticsService';
+import { hasSessionScoreForRubrics } from '../../services/progressAnalyticsView';
 import { buildProgressSnapshot } from '../../services/progressSnapshot';
 import { getAllSessionsMerged } from '../../services/sessionManager';
 import ProgressChart from '../analytics/ProgressChart';
@@ -370,13 +371,23 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
       )
   ), [sessions, currentTextoId, sourceCourseId]);
 
+  const comparableScopedSessions = useMemo(() => (
+    scopedSessions.filter((session) => hasSessionScoreForRubrics(session))
+  ), [scopedSessions]);
+
   const hasProgressData = Boolean(progressSnapshot?.hasData) || analytics.summary.totalAttempts > 0;
-  const hasMultipleSessions = scopedSessions.length >= 2;
+  const hasMultipleSessions = comparableScopedSessions.length >= 2;
   const canShowTimeSeries = progressSnapshot?.hasMeaningfulTimeSeries;
   const canShowRadar = progressSnapshot?.canRenderRadar;
   const canShowDistribution = progressSnapshot?.canRenderDistribution;
   const sparseMode = Boolean(progressSnapshot) && !canShowTimeSeries && !canShowRadar && !canShowDistribution;
   const shownRecommendations = analytics.recommendations;
+
+  useEffect(() => {
+    if (!hasMultipleSessions && activeTab !== 'current') {
+      setActiveTab('current');
+    }
+  }, [activeTab, hasMultipleSessions]);
 
   if (!hasProgressData) {
     return (
@@ -485,7 +496,11 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
               <SectionTitle theme={theme}>Graficas de apoyo</SectionTitle>
 
               {canShowTimeSeries ? (
-                <ProgressChart rubricProgress={rubricProgress} theme={theme} />
+                <ProgressChart
+                  rubricProgress={rubricProgress}
+                  progressSnapshot={progressSnapshot}
+                  theme={theme}
+                />
               ) : (
                 <InsightCard theme={theme}>
                   Todavia no existen dos intentos en una misma dimension. Cuando eso ocurra, aqui veras una evolucion temporal mas util.
@@ -493,7 +508,11 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
               )}
 
               {canShowRadar ? (
-                <RadarComparisonChart rubricProgress={rubricProgress} theme={theme} />
+                <RadarComparisonChart
+                  rubricProgress={rubricProgress}
+                  progressSnapshot={progressSnapshot}
+                  theme={theme}
+                />
               ) : (
                 <InsightCard theme={theme}>
                   El radar aparece cuando hay al menos dos dimensiones con nota. Antes de eso conviene enfocarse en cobertura y siguiente accion.
@@ -501,7 +520,11 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
               )}
 
               {canShowDistribution ? (
-                <DistributionChart rubricProgress={rubricProgress} theme={theme} />
+                <DistributionChart
+                  rubricProgress={rubricProgress}
+                  progressSnapshot={progressSnapshot}
+                  theme={theme}
+                />
               ) : (
                 <InsightCard theme={theme}>
                   La distribucion por dimension se mostrara cuando exista mas de un intento o cobertura suficiente para comparar.
@@ -593,9 +616,9 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
           )}
         </>
       ) : activeTab === 'comparison' ? (
-        <SessionComparison sessions={scopedSessions} theme={theme} />
+        <SessionComparison sessions={comparableScopedSessions} theme={theme} />
       ) : (
-        <AnalyticsDashboard sessions={scopedSessions} theme={theme} />
+        <AnalyticsDashboard sessions={comparableScopedSessions} theme={theme} />
       )}
     </PanelContainer>
   );

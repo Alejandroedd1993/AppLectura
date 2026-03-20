@@ -13,52 +13,54 @@ import React, { useMemo } from 'react';
 import styled from 'styled-components';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import useMediaQuery from '../../hooks/useMediaQuery';
+import {
+  getSessionAverageForRubrics,
+  getSessionRubricScore,
+  getSessionTimestamp,
+  hasSessionScoreForRubrics
+} from '../../services/progressAnalyticsView';
 
-function getSessionRubricScore(session, rubricId) {
-  const snapshotScore = Number(session?.progressSnapshot?.rubricsById?.[rubricId]?.effectiveScore || 0);
-  if (snapshotScore > 0) return snapshotScore;
-  return Number(session?.rubricProgress?.[rubricId]?.average || 0);
-}
+const RUBRIC_COLUMNS = [
+  { id: 'rubrica1', label: '📖 Comprensión', icon: '📖' },
+  { id: 'rubrica2', label: '🔍 ACD', icon: '🔍' },
+  { id: 'rubrica3', label: '🌍 Contextualización', icon: '🌍' },
+  { id: 'rubrica4', label: '💬 Argumentación', icon: '💬' },
+  { id: 'rubrica5', label: '🧠 Metacognición', icon: '🧠' }
+];
 
-function getSessionAverageScore(session) {
-  const snapshotEvaluated = Number(session?.progressSnapshot?.summary?.evaluatedCount || 0);
-  if (snapshotEvaluated > 0) {
-    return Number(session?.progressSnapshot?.summary?.averageEvaluatedScore || 0);
-  }
-
-  const progress = session?.rubricProgress || {};
-  const rubrics = Object.keys(progress).filter((key) => key.startsWith('rubrica'));
-  if (rubrics.length === 0) return 0;
-
-  return rubrics.reduce((sum, key) => sum + Number(progress[key]?.average || 0), 0) / rubrics.length;
+function formatRubricValue(sessionData, rubricId) {
+  const hasData = Boolean(sessionData?.[`${rubricId}HasData`]);
+  const score = sessionData?.[rubricId];
+  return hasData && Number.isFinite(score) ? score.toFixed(1) : 'Sin dato';
 }
 
 const SessionComparison = ({ sessions, theme }) => {
   const isMobile = useMediaQuery('(max-width: 640px)');
   // Filtrar sesiones con progreso de rúbricas
   const sessionsWithProgress = useMemo(() => {
-    return sessions.filter((session) =>
-      Boolean(session?.progressSnapshot?.hasData) ||
-      Boolean(session?.rubricProgress && Object.keys(session.rubricProgress).length > 0)
-    );
+    return sessions.filter((session) => hasSessionScoreForRubrics(session));
   }, [sessions]);
 
   // Calcular datos para gráfico de tendencia
   const trendData = useMemo(() => {
     if (sessionsWithProgress.length === 0) return [];
     return sessionsWithProgress
-      .sort((a, b) => (a.timestamp || a.createdAt) - (b.timestamp || b.createdAt))
+      .sort((a, b) => getSessionTimestamp(a) - getSessionTimestamp(b))
       .map((session, index) => {
+        const rubricState = RUBRIC_COLUMNS.reduce((acc, rubric) => {
+          const hasData = hasSessionScoreForRubrics(session, [rubric.id]);
+          const score = getSessionRubricScore(session, rubric.id);
+          acc[rubric.id] = hasData ? Math.round(score * 10) / 10 : null;
+          acc[`${rubric.id}HasData`] = hasData;
+          return acc;
+        }, {});
+
         return {
           sessionNumber: index + 1,
           sessionTitle: session.title || `Sesión ${index + 1}`,
-          promedio: Math.round(getSessionAverageScore(session) * 10) / 10,
-          rubrica1: getSessionRubricScore(session, 'rubrica1'),
-          rubrica2: getSessionRubricScore(session, 'rubrica2'),
-          rubrica3: getSessionRubricScore(session, 'rubrica3'),
-          rubrica4: getSessionRubricScore(session, 'rubrica4'),
-          rubrica5: getSessionRubricScore(session, 'rubrica5'),
-          timestamp: session.timestamp || session.createdAt
+          promedio: Math.round(getSessionAverageForRubrics(session) * 10) / 10,
+          timestamp: getSessionTimestamp(session),
+          ...rubricState
         };
       });
   }, [sessionsWithProgress]);
@@ -109,11 +111,11 @@ const SessionComparison = ({ sessions, theme }) => {
           <strong>Promedio:</strong> {data.promedio.toFixed(1)}/10
         </TooltipStat>
         <TooltipDivider />
-        <TooltipStat>📖 Comprensión: {data.rubrica1.toFixed(1)}</TooltipStat>
-        <TooltipStat>🔍 ACD: {data.rubrica2.toFixed(1)}</TooltipStat>
-        <TooltipStat>🌍 Contextualización: {data.rubrica3.toFixed(1)}</TooltipStat>
-        <TooltipStat>💬 Argumentación: {data.rubrica4.toFixed(1)}</TooltipStat>
-        <TooltipStat>🧠 Metacognición: {data.rubrica5.toFixed(1)}</TooltipStat>
+        {RUBRIC_COLUMNS.map((rubric) => (
+          <TooltipStat key={rubric.id}>
+            {rubric.label}: {formatRubricValue(data, rubric.id)}
+          </TooltipStat>
+        ))}
       </TooltipContainer>
     );
   };
@@ -249,26 +251,12 @@ const SessionComparison = ({ sessions, theme }) => {
                     </ScoreBadge>
                   </SessionCardHeader>
                   <SessionStats>
-                    <SessionStatItem>
-                      <span className="label">📖</span>
-                      <span className="value">{session.rubrica1.toFixed(1)}</span>
-                    </SessionStatItem>
-                    <SessionStatItem>
-                      <span className="label">🔍</span>
-                      <span className="value">{session.rubrica2.toFixed(1)}</span>
-                    </SessionStatItem>
-                    <SessionStatItem>
-                      <span className="label">🌍</span>
-                      <span className="value">{session.rubrica3.toFixed(1)}</span>
-                    </SessionStatItem>
-                    <SessionStatItem>
-                      <span className="label">💬</span>
-                      <span className="value">{session.rubrica4.toFixed(1)}</span>
-                    </SessionStatItem>
-                    <SessionStatItem>
-                      <span className="label">🧠</span>
-                      <span className="value">{session.rubrica5.toFixed(1)}</span>
-                    </SessionStatItem>
+                    {RUBRIC_COLUMNS.map((rubric) => (
+                      <SessionStatItem key={rubric.id}>
+                        <span className="label">{rubric.icon}</span>
+                        <span className="value">{formatRubricValue(session, rubric.id)}</span>
+                      </SessionStatItem>
+                    ))}
                   </SessionStats>
                 </SessionCard>
               );
@@ -305,11 +293,9 @@ const SessionComparison = ({ sessions, theme }) => {
                         {session.promedio.toFixed(1)}
                       </ScoreBadge>
                     </Td>
-                    <Td theme={theme}>{session.rubrica1.toFixed(1)}</Td>
-                    <Td theme={theme}>{session.rubrica2.toFixed(1)}</Td>
-                    <Td theme={theme}>{session.rubrica3.toFixed(1)}</Td>
-                    <Td theme={theme}>{session.rubrica4.toFixed(1)}</Td>
-                    <Td theme={theme}>{session.rubrica5.toFixed(1)}</Td>
+                    {RUBRIC_COLUMNS.map((rubric) => (
+                      <Td key={rubric.id} theme={theme}>{formatRubricValue(session, rubric.id)}</Td>
+                    ))}
                   </Tr>
                 ))}
               </tbody>
