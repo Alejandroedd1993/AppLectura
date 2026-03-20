@@ -1,5 +1,5 @@
 import logger from './logger';
-import { getBackendBaseUrl } from './backendConfig';
+import { BACKEND_BASE_URL } from '../config/backend';
 
 function createAbortError() {
   try {
@@ -36,7 +36,7 @@ function extractStoragePath(fileURL) {
  */
 export async function recoverPdfBlobWithFallback(fileURL, options = {}) {
   const {
-    backendBaseUrl = getBackendBaseUrl(),
+    backendBaseUrl = BACKEND_BASE_URL,
     signal,
     logger: customLogger = logger,
     prefix = '[PDFRecovery]'

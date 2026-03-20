@@ -5,7 +5,7 @@
 import { fetchWithTimeout } from './netUtils';
 import logger from './logger';
 import { buildBackendError, unwrapBackendSuccessPayload } from '../services/unifiedAiService';
-import { buildBackendUrl, getBackendUrl as readBackendUrl } from './backendConfig';
+import { BACKEND_URL, buildBackendUrl } from '../config/backend';
 import { getFirebaseAuthHeader } from './backendRequest';
 
 /**
@@ -13,8 +13,7 @@ import { getFirebaseAuthHeader } from './backendRequest';
  * @returns {Promise<boolean>} true si el backend está disponible
  */
 export const checkBackendAvailability = async () => {
-  const backendUrl = readBackendUrl();
-  logger.log('🔍 Verificando disponibilidad del backend en:', backendUrl);
+  logger.log('🔍 Verificando disponibilidad del backend en:', BACKEND_URL);
   
   try {
     const response = await fetchWithTimeout(buildBackendUrl('/api/health'), {
@@ -68,8 +67,4 @@ export const processPdfWithBackend = async (file) => {
   return extractedText;
 };
 
-/**
- * Obtiene la URL base del backend
- * @returns {string} La URL del backend
- */
-export const getBackendUrl = () => readBackendUrl();
+export const getBackendUrl = () => BACKEND_URL;

@@ -39,7 +39,7 @@ import useFirestorePersistence from '../hooks/useFirestorePersistence';
 import { generateBasicAnalysis } from '../services/basicAnalysisService';
 import { normalizeBackendErrorPayload } from '../services/unifiedAiService';
 import { runLegacyTextAnalysisCacheMigrationOnce } from '../utils/cache';
-import { getBackendUrl } from '../utils/backendConfig';
+import { BACKEND_BASE_URL, BACKEND_URL } from '../config/backend';
 import { PRELECTURE_ANALYSIS_TIMEOUT_MS } from '../constants/timeoutConstants';
 import { createAbortControllerWithTimeout, fetchWithRetry } from '../utils/netUtils';
 import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
@@ -51,8 +51,6 @@ import {
   checkEssayPrerequisitesFromProgress
 } from '../services/rubricProgressV2';
 
-// Backend URL configuration
-const BACKEND_URL = getBackendUrl();
 logger.log('🔧 [AppContext] Backend URL configurada:', BACKEND_URL);
 
 const normalizeTutorInteraction = (entry) => {
@@ -3651,7 +3649,7 @@ export const AppContextProvider = ({ children }) => {
 
           try {
             const recovered = await recoverPdfBlobWithFallback(fileURL, {
-              backendBaseUrl: BACKEND_URL.replace(/\/$/, ''),
+              backendBaseUrl: BACKEND_BASE_URL,
               signal: restoreAbortController.signal,
               logger,
               prefix: '[AppContext]'

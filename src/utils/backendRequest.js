@@ -1,5 +1,5 @@
 import { auth } from '../firebase/config';
-import { buildBackendUrl } from './backendConfig';
+import { buildBackendUrl } from '../config/backend';
 
 export function buildBackendEndpoint(endpointPath = '') {
   return buildBackendUrl(endpointPath);

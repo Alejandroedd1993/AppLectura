@@ -6,7 +6,7 @@ import { OPENAI_CHAT_MODEL } from '../../constants/aiModelDefaults';
 import { WEB_SEARCH_TIMEOUT_MS } from '../../constants/timeoutConstants';
 import { detectHateOrSlur, redactHateOrSlur, slurAppearsInContext, validateResponse } from '../../pedagogy/safety/tutorGuard';
 import { fetchWebSearch } from '../../utils/fetchWebSearch';
-import { DEFAULT_BACKEND_URL } from '../../utils/backendConfig';
+import { DEFAULT_BACKEND_URL } from '../../config/backend';
 import { createAbortControllerWithTimeout } from '../../utils/netUtils';
 import { detectStudentNeeds } from '../../pedagogy/tutor/studentNeedsAnalyzer';
 import usePedagogyIntegration from '../../hooks/usePedagogyIntegration';

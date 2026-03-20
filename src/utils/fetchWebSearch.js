@@ -1,5 +1,5 @@
 import { auth } from '../firebase/config';
-import { getBackendBaseUrl } from './backendConfig';
+import { BACKEND_BASE_URL } from '../config/backend';
 import { WEB_SEARCH_TIMEOUT_MS } from '../constants/timeoutConstants';
 import { createAbortControllerWithTimeout } from './netUtils';
 import logger from './logger';
@@ -18,7 +18,7 @@ import logger from './logger';
  */
 export async function fetchWebSearch(query, opts = {}) {
   const { maxResults = 3, timeoutMs = WEB_SEARCH_TIMEOUT_MS, signal, backendUrl } = opts;
-  const backendBase = (backendUrl || getBackendBaseUrl()).replace(/\/+$/, '');
+  const backendBase = (backendUrl || BACKEND_BASE_URL).replace(/\/+$/, '');
 
   // Firebase auth header
   let authHeader = {};

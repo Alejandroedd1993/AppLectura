@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchWithTimeout, replaceAbortController } from '../../utils/netUtils';
-import { buildBackendUrl } from '../../utils/backendConfig';
+import { buildBackendUrl } from '../../config/backend';
 import { NotesServices } from '../../services/notes';
 import { buildBackendError, unwrapBackendSuccessPayload } from '../../services/unifiedAiService';
 import logger from '../../utils/logger';

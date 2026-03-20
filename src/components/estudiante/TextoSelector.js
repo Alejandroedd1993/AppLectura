@@ -32,10 +32,9 @@ import {
   cleanupMultipleCoursesBrowserData,
   inferCourseIdsFromBrowserData
 } from '../../utils/courseDataCleanup';
-import { getBackendBaseUrl } from '../../utils/backendConfig';
+import { BACKEND_BASE_URL } from '../../config/backend';
 
 import logger from '../../utils/logger';
-const BACKEND_BASE_URL = getBackendBaseUrl();
 
 const Container = styled.div`
   min-height: 100vh;
