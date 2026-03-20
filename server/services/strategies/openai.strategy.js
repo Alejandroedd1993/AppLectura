@@ -1,6 +1,7 @@
 
 import { getOpenAI } from '../../config/apiClients.js';
 import { settings } from '../../config/settings.js';
+import { parseAllowedModels, pickAllowedModel } from '../../utils/modelUtils.js';
 
 /**
  * Estrategia de análisis de texto utilizando la API de OpenAI.
@@ -12,21 +13,14 @@ import { settings } from '../../config/settings.js';
 export async function openaiStrategy(prompt, options = {}) {
   const openai = getOpenAI();
 
-  const parseAllowedModelsCsv = (csv) => {
-    if (typeof csv !== 'string') return [];
-    return csv
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
-  };
-
-  const allowedModels = (() => {
-    const fromEnv = parseAllowedModelsCsv(process.env.OPENAI_ALLOWED_MODELS);
-    return fromEnv.length ? fromEnv : ['gpt-4o-mini'];
-  })();
+  const allowedModels = parseAllowedModels(process.env.OPENAI_ALLOWED_MODELS, 'gpt-4o-mini');
 
   const requestedModel = settings.openai.model;
-  const model = allowedModels.includes(requestedModel) ? requestedModel : allowedModels[0];
+  const model = pickAllowedModel({
+    requested: requestedModel,
+    allowed: allowedModels,
+    fallback: 'gpt-4o-mini',
+  });
 
   const capFromEnv = Number.parseInt(process.env.ANALYSIS_OPENAI_MAX_TOKENS_CAP || '', 10);
   const maxTokensCap = Number.isFinite(capFromEnv)

@@ -1,20 +1,6 @@
 
 import { settings } from '../../config/settings.js';
-
-function parseAllowedModelsCsv(csv) {
-  if (typeof csv !== 'string') return [];
-  return csv
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
-}
-
-function pickAllowedModel(requested, allowed, fallback) {
-  const list = Array.isArray(allowed) ? allowed : [];
-  if (requested && list.includes(requested)) return requested;
-  if (list.length) return list[0];
-  return fallback;
-}
+import { parseAllowedModels, pickAllowedModel } from '../../utils/modelUtils.js';
 
 /**
  * Estrategia de análisis de texto utilizando la API de DeepSeek (OpenAI-compatible).
@@ -30,13 +16,13 @@ export async function deepseekStrategy(prompt, options = {}) {
   const baseUrl = String(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/+$/, '');
   const url = `${baseUrl}/chat/completions`;
 
-  const allowedModels = (() => {
-    const fromEnv = parseAllowedModelsCsv(process.env.DEEPSEEK_ALLOWED_MODELS);
-    return fromEnv.length ? fromEnv : ['deepseek-chat'];
-  })();
-
+  const allowedModels = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
   const requestedModel = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-  const model = pickAllowedModel(requestedModel, allowedModels, 'deepseek-chat');
+  const model = pickAllowedModel({
+    requested: requestedModel,
+    allowed: allowedModels,
+    fallback: 'deepseek-chat',
+  });
 
   const capFromEnv = Number.parseInt(process.env.ANALYSIS_DEEPSEEK_MAX_TOKENS_CAP || '', 10);
   const maxTokensCap = Number.isFinite(capFromEnv)
