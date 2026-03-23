@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { exportGenericPDF } from '../../utils/exportUtils';
 import {
   buildProgressSnapshot,
+  RUBRIC_PROGRESS_META,
   formatRubricAttemptDisplay,
   formatSnapshotDate
 } from '../../services/progressSnapshot';
@@ -123,13 +124,9 @@ const Button = styled.button`
   }
 `;
 
-const ARTEFACTO_NAMES = {
-  rubrica1: 'Resumen Academico',
-  rubrica2: 'Tabla ACD',
-  rubrica3: 'Mapa de Actores',
-  rubrica4: 'Respuesta Argumentativa',
-  rubrica5: 'Bitacora Etica IA'
-};
+const RUBRIC_CONTENT_KEYS = Object.fromEntries(
+  Object.entries(RUBRIC_PROGRESS_META).map(([rubricId, meta]) => [rubricId, meta?.artifactKey])
+);
 
 export const CSV_HEADERS = [
   'Fecha y Hora',
@@ -171,6 +168,10 @@ function formatAttemptExportValue(rubric) {
   return formatRubricAttemptDisplay(rubric, { legacyLabel: 'Sin registro legacy' });
 }
 
+function getArtifactName(rubricId, explicitName) {
+  return explicitName || RUBRIC_PROGRESS_META[rubricId]?.artifactName || rubricId;
+}
+
 function buildAggregateExportRow(rubric, nivelDescripcion) {
   const artifactScore = toNumber(rubric?.artifactData?.teacherOverrideScore) ||
     toNumber(rubric?.artifactData?.score) ||
@@ -200,7 +201,7 @@ function buildAggregateExportRow(rubric, nivelDescripcion) {
     sortTime: toMillis(rubric.lastActivityAt),
     values: [
       formatExportDate(rubric.lastActivityAt),
-      rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
+      getArtifactName(rubric.rubricId, rubric.artifactName),
       estado,
       rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
       rank,
@@ -230,7 +231,7 @@ export function buildCsvRows(snapshot) {
           sortTime: rowTime,
           values: [
             formatExportDate(rowTime),
-            rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
+            getArtifactName(rubric.rubricId, rubric.artifactName),
             'Evaluacion formativa',
             numericScore.toFixed(2),
             nivel,
@@ -259,7 +260,7 @@ export function buildCsvRows(snapshot) {
       sortTime: toMillis(rubric.lastActivityAt),
       values: [
         formatExportDate(rubric.lastActivityAt),
-        rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
+        getArtifactName(rubric.rubricId, rubric.artifactName),
         rubric.currentStatusLabel,
         rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
         rubric.scoreBand?.rank || '',
@@ -418,14 +419,6 @@ export default function ExportProgressButton({
     const artefactosContent = loadArtefactosContent();
     const legacyEvidenceCount = snapshot.rubrics.filter((rubric) => rubric.hasLegacyScoreOnlyEvidence).length;
 
-    const rubricToContentKey = {
-      rubrica1: 'resumenAcademico',
-      rubrica2: 'tablaACD',
-      rubrica3: 'mapaActores',
-      rubrica4: 'respuestaArgumentativa',
-      rubrica5: 'bitacoraEticaIA'
-    };
-
     const rows = snapshot.rubrics.map((rubric) => {
       const bestScore = rubric.bestRecordedScore > 0 ? rubric.bestRecordedScore : rubric.effectiveScore;
       const levelLabel = rubric.scoreBand?.rank
@@ -433,7 +426,7 @@ export default function ExportProgressButton({
         : rubric.badgeLabel;
 
       return [
-        rubric.artifactName || ARTEFACTO_NAMES[rubric.rubricId] || rubric.rubricId,
+        getArtifactName(rubric.rubricId, rubric.artifactName),
         rubric.currentStatusLabel,
         formatAttemptExportValue(rubric),
         rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : '—',
@@ -443,8 +436,8 @@ export default function ExportProgressButton({
     });
 
     const contenidoArtefactos = {};
-    Object.keys(rubricToContentKey).forEach((rubricId) => {
-      const contentKey = rubricToContentKey[rubricId];
+    Object.keys(RUBRIC_CONTENT_KEYS).forEach((rubricId) => {
+      const contentKey = RUBRIC_CONTENT_KEYS[rubricId];
       contenidoArtefactos[contentKey] = artefactosContent?.[contentKey];
     });
 

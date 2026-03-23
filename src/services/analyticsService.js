@@ -9,6 +9,10 @@ function getRubricLabel(rubricId) {
   return RUBRIC_PROGRESS_META[rubricId]?.name || rubricId;
 }
 
+function getRubricArtifactName(rubricId) {
+  return RUBRIC_PROGRESS_META[rubricId]?.artifactName || rubricId;
+}
+
 function toTimestamp(value) {
   if (value == null) return 0;
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -321,8 +325,9 @@ export function generateTimeSeriesData(rubricProgress) {
   const timeSeries = {};
 
   Object.entries(rubricProgress || {}).forEach(([rubricId, data]) => {
-    if (data?.scores && data.scores.length > 0) {
-      timeSeries[rubricId] = data.scores.map((scoreEntry, index) => {
+    const orderedScores = getArtifactScores(data?.scores || []);
+    if (orderedScores.length > 0) {
+      timeSeries[rubricId] = orderedScores.map((scoreEntry, index) => {
         const score = typeof scoreEntry === 'object' ? Number(scoreEntry.score) : Number(scoreEntry);
         const timestamp = typeof scoreEntry === 'object' ? scoreEntry.timestamp : null;
 
@@ -357,15 +362,8 @@ export function calculateEngagementMetrics(activityData) {
   };
 }
 
+// Legacy helper kept for backward compatibility with older exports.
 export function exportToCSV(rubricProgress) {
-  const rubricNames = {
-    rubrica1: 'Resumen Academico',
-    rubrica2: 'Tabla ACD',
-    rubrica3: 'Mapa de Actores',
-    rubrica4: 'Respuesta Argumentativa',
-    rubrica5: 'Bitacora Etica IA'
-  };
-
   const nivelDescripcion = {
     1: 'Inicial',
     2: 'Basico',
@@ -384,14 +382,14 @@ export function exportToCSV(rubricProgress) {
   ];
 
   const rows = Object.entries(rubricProgress || {}).map(([id, data]) => {
-    const scores = (data?.scores || []).map(s => typeof s === 'object' ? Number(s.score) : Number(s));
+    const scores = getArtifactScores(data?.scores || []).map(toNumericScore);
     const bestScore = scores.length > 0 ? Math.max(...scores) : 0;
     const lastScore = scores.length > 0 ? scores[scores.length - 1] : 0;
     const averageScore = Number(data?.average || 0);
     const nivel = Math.ceil(averageScore / 2.5);
 
     return [
-      rubricNames[id] || id,
+      getRubricArtifactName(id),
       averageScore.toFixed(2),
       nivel,
       nivelDescripcion[nivel] || 'Sin clasificar',
@@ -411,15 +409,8 @@ export function exportToCSV(rubricProgress) {
   return '\uFEFF' + csvContent;
 }
 
+// Legacy helper kept for backward compatibility with older exports.
 export function exportToJSON(rubricProgress, stats) {
-  const rubricNames = {
-    rubrica1: 'Resumen Academico',
-    rubrica2: 'Tabla ACD',
-    rubrica3: 'Mapa de Actores',
-    rubrica4: 'Respuesta Argumentativa',
-    rubrica5: 'Bitacora Etica IA'
-  };
-
   const nivelDescripcion = {
     1: 'Inicial - Requiere desarrollo',
     2: 'Basico - En progreso',
@@ -433,7 +424,7 @@ export function exportToJSON(rubricProgress, stats) {
     const nivel = Math.ceil(averageScore / 2.5);
 
     enrichedRubrics[id] = {
-      nombre: rubricNames[id] || id,
+      nombre: getRubricArtifactName(id),
       nivelAlcanzado: nivel,
       descripcionNivel: nivelDescripcion[nivel] || 'Sin clasificar',
       ...data

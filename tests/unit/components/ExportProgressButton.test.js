@@ -53,6 +53,30 @@ describe('ExportProgressButton helpers', () => {
     expect(rows[0].values[6]).toBe('Sin registro legacy');
   });
 
+  test('usa la metadata canonica del snapshot cuando falta artifactName explicito', () => {
+    const rows = buildCsvRows({
+      rubrics: [
+        {
+          rubricId: 'rubrica2',
+          formativeScores: [{ score: 8.5, timestamp: '2026-03-20T10:00:00.000Z' }],
+          lastActivityAt: Date.parse('2026-03-20T10:00:00.000Z'),
+          currentStatusLabel: 'Experto',
+          effectiveScore: 8.5,
+          totalAttempts: 1,
+          scoreBand: { rank: 4 },
+          badgeLabel: 'Experto',
+          started: true,
+          isPendingReview: false,
+          summativeAttempted: false,
+          artifactData: null
+        }
+      ]
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].values[1]).toBe('Tabla ACD');
+  });
+
   test('aclara en el encabezado cuando la ultima columna puede contener un registro legacy', () => {
     expect(CSV_HEADERS[6]).toBe('Intento o registro');
   });
