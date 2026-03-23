@@ -1,4 +1,4 @@
-import { buildCsvRows } from '../../../src/components/actividades/ExportProgressButton';
+import { buildCsvRows, CSV_HEADERS } from '../../../src/components/actividades/ExportProgressButton';
 
 describe('ExportProgressButton helpers', () => {
   test('no genera Invalid Date cuando un intento legacy no trae timestamp', () => {
@@ -51,5 +51,9 @@ describe('ExportProgressButton helpers', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].values[6]).toBe('Sin registro legacy');
+  });
+
+  test('aclara en el encabezado cuando la ultima columna puede contener un registro legacy', () => {
+    expect(CSV_HEADERS[6]).toBe('Intento o registro');
   });
 });

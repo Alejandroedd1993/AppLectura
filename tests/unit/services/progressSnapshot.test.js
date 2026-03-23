@@ -119,6 +119,7 @@ describe('progressSnapshot', () => {
     expect(snapshot.rubricsById.rubrica3.hasLegacyScoreOnlyEvidence).toBe(true);
     expect(snapshot.hasData).toBe(true);
     expect(snapshot.summary.coverageCount).toBe(1);
+    expect(snapshot.summary.legacyEvidenceCount).toBe(1);
   });
 
   test('mantiene el panel en modo inicial cuando solo existe un intento real registrado', () => {

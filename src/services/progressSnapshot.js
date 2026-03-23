@@ -423,6 +423,7 @@ export function buildProgressSnapshot({
     : 0;
   const bestScore = rubrics.reduce((best, rubric) => Math.max(best, rubric.bestRecordedScore || 0), 0);
   const totalAttempts = rubrics.reduce((sum, rubric) => sum + rubric.totalAttempts, 0);
+  const legacyEvidenceCount = rubrics.filter((rubric) => rubric.hasLegacyScoreOnlyEvidence).length;
   const coveragePercent = Math.round((coverageCount / RUBRIC_ORDER.length) * 100);
   const strongCount = rubrics.filter((rubric) => (rubric.scoreBand?.rank || 0) >= 3).length;
   const weakCount = rubrics.filter((rubric) => rubric.evaluated && (rubric.scoreBand?.rank || 0) > 0 && (rubric.scoreBand?.rank || 0) < 3).length;
@@ -458,6 +459,7 @@ export function buildProgressSnapshot({
       strongCount,
       weakCount,
       totalAttempts,
+      legacyEvidenceCount,
       bestScore,
       averageEvaluatedScore,
       coveragePercent

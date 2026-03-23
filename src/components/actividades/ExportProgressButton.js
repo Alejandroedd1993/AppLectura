@@ -131,6 +131,16 @@ const ARTEFACTO_NAMES = {
   rubrica5: 'Bitacora Etica IA'
 };
 
+export const CSV_HEADERS = [
+  'Fecha y Hora',
+  'Artefacto',
+  'Estado',
+  'Puntuacion (sobre 10)',
+  'Nivel Alcanzado (1-4)',
+  'Descripcion del Nivel',
+  'Intento o registro'
+];
+
 function toNumber(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -395,19 +405,9 @@ export default function ExportProgressButton({
   };
 
   const exportCSV = () => {
-    const headers = [
-      'Fecha y Hora',
-      'Artefacto',
-      'Estado',
-      'Puntuacion (sobre 10)',
-      'Nivel Alcanzado (1-4)',
-      'Descripcion del Nivel',
-      'Numero de Intento'
-    ];
-
     const rows = buildCsvRows(snapshot);
     const titleRow = `"Historial de Evaluaciones - Exportado: ${new Date().toLocaleString('es-ES')}"`;
-    const csv = [titleRow, headers.map(h => `"${h}"`).join(','), ...rows
+    const csv = [titleRow, CSV_HEADERS.map(h => `"${h}"`).join(','), ...rows
       .map(row => row.values.map(cell => `"${cell}"`).join(','))]
       .join('\n');
 
@@ -491,7 +491,7 @@ export default function ExportProgressButton({
           heading: 'Tabla por artefacto',
           text: 'Detalle por artefacto (estado, intentos y puntuaciones). Para el historial completo por intento, usa el CSV.',
           table: {
-            headers: ['Artefacto', 'Estado', 'Intentos', 'Ultima', 'Maxima', 'Nivel / Fecha'],
+            headers: ['Artefacto', 'Estado', 'Intentos / registro', 'Ultima', 'Maxima', 'Nivel / Fecha'],
             rows
           }
         },
