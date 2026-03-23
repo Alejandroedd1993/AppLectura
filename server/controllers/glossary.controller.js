@@ -3,6 +3,7 @@
  */
 
 import axios from 'axios';
+import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
@@ -386,7 +387,7 @@ function selectBestTerms(candidates, text, maxTerms) {
  */
 async function generateDefinitions(terms, context) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
-  const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1';
+  const baseURL = getDefaultDeepSeekBaseUrl();
 
   if (!apiKey) {
     throw new Error('DEEPSEEK_API_KEY no configurada');
@@ -424,7 +425,7 @@ Responde SOLO con JSON válido (sin markdown, sin \`\`\`json):
     const response = await axios.post(
       `${baseURL}/chat/completions`,
       {
-        model: 'deepseek-chat',
+        model: getDefaultDeepSeekModel(),
         messages: [
           {
             role: 'system',

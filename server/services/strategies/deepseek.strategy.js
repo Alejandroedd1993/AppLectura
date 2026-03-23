@@ -1,5 +1,6 @@
 
 import { settings } from '../../config/settings.js';
+import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../../config/providerDefaults.js';
 import { parseAllowedModels, pickAllowedModel } from '../../utils/modelUtils.js';
 
 /**
@@ -13,15 +14,16 @@ export async function deepseekStrategy(prompt, options = {}) {
     throw new Error('DEEPSEEK_API_KEY no configurada');
   }
 
-  const baseUrl = String(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/+$/, '');
+  const baseUrl = getDefaultDeepSeekBaseUrl();
   const url = `${baseUrl}/chat/completions`;
 
-  const allowedModels = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
-  const requestedModel = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+  const fallbackModel = getDefaultDeepSeekModel();
+  const allowedModels = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, fallbackModel);
+  const requestedModel = fallbackModel;
   const model = pickAllowedModel({
     requested: requestedModel,
     allowed: allowedModels,
-    fallback: 'deepseek-chat',
+    fallback: fallbackModel,
   });
 
   const capFromEnv = Number.parseInt(process.env.ANALYSIS_DEEPSEEK_MAX_TOKENS_CAP || '', 10);

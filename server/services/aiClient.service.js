@@ -1,4 +1,5 @@
 import { getOpenAICompatibleClient } from '../config/apiClients.js';
+import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
 
 export function getEvaluationProviderConfig(provider) {
   const resolvedProvider = String(provider || '').trim().toLowerCase();
@@ -14,9 +15,9 @@ export function getEvaluationProviderConfig(provider) {
 
   return {
     provider: 'deepseek',
-    baseURL: 'https://api.deepseek.com/v1',
+    baseURL: getDefaultDeepSeekBaseUrl(),
     apiKey: process.env.DEEPSEEK_API_KEY,
-    model: 'deepseek-chat',
+    model: getDefaultDeepSeekModel(),
   };
 }
 

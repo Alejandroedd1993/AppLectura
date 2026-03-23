@@ -12,6 +12,7 @@ import { searchWebSources } from './webSearch.controller.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { createFallbackAnalysis } from '../services/preLecturaFallback.service.js';
+import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -851,7 +852,7 @@ IMPORTANTE: Todas las preguntas deben estar fundamentadas en evidencia textual. 
  */
 async function callDeepSeekAnalysis(prompt) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
-  const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1';
+  const baseURL = getDefaultDeepSeekBaseUrl();
 
   if (!apiKey) {
     throw new Error('DEEPSEEK_API_KEY no configurada');
@@ -867,12 +868,13 @@ async function callDeepSeekAnalysis(prompt) {
     ? Math.floor(deepseekTimeoutMsRaw)
     : 300000;
 
-  const requestedModel = process.env.PRELECTURA_DEEPSEEK_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-  const allowedModels = parseAllowedModelsCsv(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
+  const fallbackModel = getDefaultDeepSeekModel();
+  const requestedModel = process.env.PRELECTURA_DEEPSEEK_MODEL || fallbackModel;
+  const allowedModels = parseAllowedModelsCsv(process.env.DEEPSEEK_ALLOWED_MODELS, fallbackModel);
   const selectedModel = pickAllowedModel({
     requested: requestedModel,
     allowed: allowedModels,
-    fallback: 'deepseek-chat'
+    fallback: fallbackModel
   });
 
   if (requestedModel && String(requestedModel).trim() !== selectedModel) {

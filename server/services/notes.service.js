@@ -1,4 +1,5 @@
 import { getOpenAI, getGemini } from '../config/apiClients.js';
+import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
 import { settings } from '../config/settings.js';
 
 const notesSystemPrompt = `Eres un asistente que genera notas de estudio a partir de un texto dado. Devuelve exclusivamente un JSON válido con esta forma:
@@ -121,14 +122,14 @@ export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcade
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), settings.openai.timeout || 45000);
   try {
-    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const res = await fetch(`${getDefaultDeepSeekBaseUrl()}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: getDefaultDeepSeekModel(),
         messages: [
           { role: 'system', content: notesSystemPrompt },
           { role: 'user', content: prompt }

@@ -7,6 +7,7 @@ import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels, pickAllowedModel } from '../utils/modelUtils.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendSuccess } from '../utils/apiResponse.js';
+import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
 
 const clampInt = (value, { min, max, fallback }) => {
   const n = Number(value);
@@ -23,11 +24,10 @@ const sanitizeQuery = (query, maxLen = 500) => {
 const isWebSearchEnabled = () => parseBool(process.env.ENABLE_WEB_SEARCH);
 
 const pickDeepseekModel = (desired) => {
-  const allowed = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
-  return pickAllowedModel({ requested: desired, allowed, fallback: 'deepseek-chat' });
+  const fallbackModel = getDefaultDeepSeekModel();
+  const allowed = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, fallbackModel);
+  return pickAllowedModel({ requested: desired, allowed, fallback: fallbackModel });
 };
-
-const normalizeBaseUrl = (raw) => String(raw ?? '').trim().replace(/\/+$/, '') || 'https://api.deepseek.com/v1';
 
 const sanitizeForPrompt = (value, maxLen = 450) => {
   const clean = String(value ?? '')
@@ -256,8 +256,8 @@ ${contextLines.join('\n')}`;
       if (!process.env.DEEPSEEK_API_KEY) {
         throw new Error('DEEPSEEK_API_KEY no configurada');
       }
-      const deepseekBase = normalizeBaseUrl(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1');
-      const deepseekModel = pickDeepseekModel(process.env.DEEPSEEK_MODEL || 'deepseek-chat');
+      const deepseekBase = getDefaultDeepSeekBaseUrl();
+      const deepseekModel = pickDeepseekModel(getDefaultDeepSeekModel());
       const resp = await fetch(`${deepseekBase}/chat/completions`, {
         method: 'POST',
         headers: {

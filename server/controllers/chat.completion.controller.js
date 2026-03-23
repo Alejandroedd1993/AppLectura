@@ -6,7 +6,7 @@ import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels } from '../utils/modelUtils.js';
 import { buildRequestId } from '../utils/requestContext.js';
 import { getOpenAICompatibleClient } from '../config/apiClients.js';
-import { getDefaultGeminiModel } from '../config/providerDefaults.js';
+import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel, getDefaultGeminiModel } from '../config/providerDefaults.js';
 
 // dotenv ya cargado en server/index.js al arranque
 
@@ -29,9 +29,9 @@ function getProviderConfig(provider) {
   }
   if (resolved === 'deepseek') {
     return {
-      baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
+      baseURL: getDefaultDeepSeekBaseUrl(),
       apiKey: process.env.DEEPSEEK_API_KEY,
-      defaultModel: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+      defaultModel: getDefaultDeepSeekModel(),
     };
   }
   return null;
@@ -225,7 +225,7 @@ export async function createChatCompletion(req, res) {
 
     // Hardening: evitar que un cliente fuerce modelos no previstos (p.ej. deepseek-reasoner)
     if (provider === 'deepseek') {
-      const allowed = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, 'deepseek-chat');
+      const allowed = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, getDefaultDeepSeekModel());
       if (!allowed.has(selectedModel)) {
         console.warn('⚠️ [chat/completion] 400', { requestId, error: `Modelo DeepSeek no permitido: ${selectedModel}`, provider, selectedModel });
         return sendValidationError(res, {
