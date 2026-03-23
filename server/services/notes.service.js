@@ -1,6 +1,5 @@
 import { getOpenAI, getGemini } from '../config/apiClients.js';
 import { settings } from '../config/settings.js';
-import fetch from 'node-fetch';
 
 const notesSystemPrompt = `Eres un asistente que genera notas de estudio a partir de un texto dado. Devuelve exclusivamente un JSON válido con esta forma:
 {
