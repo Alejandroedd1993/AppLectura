@@ -6,6 +6,7 @@ import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels } from '../utils/modelUtils.js';
 import { buildRequestId } from '../utils/requestContext.js';
 import { getOpenAICompatibleClient } from '../config/apiClients.js';
+import { getDefaultGeminiModel } from '../config/providerDefaults.js';
 
 // dotenv ya cargado en server/index.js al arranque
 
@@ -19,10 +20,11 @@ function getProviderConfig(provider) {
     };
   }
   if (resolved === 'gemini') {
+    const defaultGeminiModel = getDefaultGeminiModel();
     return {
       baseURL: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
       apiKey: process.env.GEMINI_API_KEY,
-      defaultModel: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+      defaultModel: defaultGeminiModel,
     };
   }
   if (resolved === 'deepseek') {
@@ -237,7 +239,7 @@ export async function createChatCompletion(req, res) {
     }
 
     if (provider === 'gemini') {
-      const allowed = parseAllowedModels(process.env.GEMINI_ALLOWED_MODELS, 'gemini-1.5-flash');
+      const allowed = parseAllowedModels(process.env.GEMINI_ALLOWED_MODELS, getDefaultGeminiModel());
       if (!allowed.has(selectedModel)) {
         console.warn('⚠️ [chat/completion] 400', { requestId, error: `Modelo Gemini no permitido: ${selectedModel}`, provider, selectedModel });
         return sendValidationError(res, {
