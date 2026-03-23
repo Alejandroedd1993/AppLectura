@@ -7,12 +7,17 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import crypto from 'crypto';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { createFallbackAnalysis } from '../services/preLecturaFallback.service.js';
 import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
 import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../services/deepseekClient.service.js';
+import {
+  buildPreLecturaWebCacheKey,
+  getCachedPreLecturaWebContext,
+  getPreLecturaWebCacheConfig,
+  setCachedPreLecturaWebContext,
+} from '../services/preLecturaWebCache.service.js';
 import { tryRepairJSON } from '../services/jsonRepair.service.js';
 import { searchWebSources } from '../services/webSearch.service.js';
 
@@ -61,10 +66,6 @@ function buildWebDecisionMetadata(searchDecision) {
         : (Array.isArray(searchDecision.reasons) ? searchDecision.reasons.length : 0)
   };
 }
-
-// Caché simple in-memory para resultados de web enrichment (reduce coste/latencia).
-// Nota: se reinicia al reiniciar el servidor y no persiste entre procesos.
-const PRELECTURA_WEB_CACHE = new Map();
 
 function logToDebug(message, data = null) {
   if (process.env.DEBUG_PRELECTURA_LOG !== 'true') return;
@@ -371,12 +372,7 @@ async function performWebSearch(text, searchDecision) {
     ? Math.max(1, Math.floor(maxFindingsRaw))
     : (classroomMode ? 3 : 5);
 
-  // Cache TTL (ms). 0 desactiva caché.
-  const cacheTtlRaw = Number(process.env.PRELECTURA_WEB_CACHE_TTL_MS);
-  const cacheTtlMs = Number.isFinite(cacheTtlRaw) ? Math.max(0, Math.floor(cacheTtlRaw)) : 300000;
-
-  const cacheMaxRaw = Number(process.env.PRELECTURA_WEB_CACHE_MAX_ENTRIES);
-  const cacheMaxEntries = Number.isFinite(cacheMaxRaw) ? Math.max(0, Math.floor(cacheMaxRaw)) : 200;
+  const cacheConfig = getPreLecturaWebCacheConfig();
 
   const cacheKeyPayload = {
     queries: queries.slice(0, maxQueries),
@@ -387,19 +383,11 @@ async function performWebSearch(text, searchDecision) {
     classroomMode
   };
 
-  const cacheKey = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(cacheKeyPayload))
-    .digest('hex');
+  const cacheKey = buildPreLecturaWebCacheKey(cacheKeyPayload);
 
-  if (cacheTtlMs > 0) {
-    const cached = PRELECTURA_WEB_CACHE.get(cacheKey);
-    if (cached && typeof cached.expiresAt === 'number' && cached.expiresAt > Date.now()) {
-      return cached.value;
-    }
-    if (cached) {
-      PRELECTURA_WEB_CACHE.delete(cacheKey);
-    }
+  const cachedWebContext = getCachedPreLecturaWebContext(cacheKey, cacheConfig);
+  if (cachedWebContext) {
+    return cachedWebContext;
   }
 
   const searchPromises = queries.slice(0, maxQueries).map((query) =>
@@ -415,15 +403,7 @@ async function performWebSearch(text, searchDecision) {
     categories: ['context', 'statistics', 'news']
   };
 
-  if (cacheTtlMs > 0 && cacheMaxEntries > 0) {
-    // Evitar crecimiento sin control: si excede, expulsar el más antiguo.
-    while (PRELECTURA_WEB_CACHE.size >= cacheMaxEntries) {
-      const oldestKey = PRELECTURA_WEB_CACHE.keys().next().value;
-      if (!oldestKey) break;
-      PRELECTURA_WEB_CACHE.delete(oldestKey);
-    }
-    PRELECTURA_WEB_CACHE.set(cacheKey, { expiresAt: Date.now() + cacheTtlMs, value: webContext });
-  }
+  setCachedPreLecturaWebContext(cacheKey, webContext, cacheConfig);
 
   return webContext;
 }
