@@ -7,6 +7,7 @@
 
 import logger from '../../utils/logger';
 import { scopeKey } from '../../utils/storageKeys';
+import { buildEdgeFingerprint, hashStringDjb2, legacyContentHash } from '../../utils/hash';
 
 /**
  * Servicio de Almacenamiento Local
@@ -69,22 +70,20 @@ class StorageService {
    */
   generarIdTexto(texto) {
     if (!texto) return '';
-    
-    // Crear hash simple del contenido con muestras de inicio y fin
-    let hash = 0;
-    const head = texto.substring(0, 1000);
-    const tail = texto.substring(Math.max(0, texto.length - 1000));
-    const content = `${head}::${tail}::${texto.length}`;
-    
-    for (let i = 0; i < content.length; i++) {
-      const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convertir a entero de 32 bits
-    }
+    const fingerprint = buildEdgeFingerprint(texto, {
+      headChars: 1000,
+      tailChars: 1000,
+      includeLength: true,
+    });
+    const hash = hashStringDjb2(fingerprint, {
+      mode: 'absolute',
+      radix: 10,
+      emptyValue: '0',
+    });
     
     // ⚠️ IMPORTANTE: debe ser estable para poder cargar/guardar de forma consistente.
     // (Si falta textoId, este ID es solo fallback legacy.)
-    return `texto_${Math.abs(hash)}`;
+    return `texto_${hash}`;
   }
 
   /**
@@ -276,15 +275,8 @@ class StorageService {
    */
   generarHashTexto(texto) {
     if (!texto) return '';
-    
-    let hash = 0;
-    for (let i = 0; i < texto.length; i++) {
-      const char = texto.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    
-    return Math.abs(hash).toString(36);
+
+    return legacyContentHash(texto, { emptyValue: '' });
   }
 
   /**

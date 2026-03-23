@@ -1,4 +1,5 @@
 import logger from '../utils/logger';
+import { buildEdgeFingerprint, hashStringDjb2 } from '../utils/hash';
 
 
 /**
@@ -155,13 +156,18 @@ function extractBasicKeywords(text, count = 5) {
  * Genera un ID único basado en el contenido del texto
  */
 function generateDocId(text) {
-    const fingerprint = text.substring(0, 100) + text.slice(-100) + text.length;
-    let hash = 0;
-    for (let i = 0; i < fingerprint.length; i++) {
-        hash = ((hash << 5) - hash) + fingerprint.charCodeAt(i);
-        hash = hash & hash;
-    }
-    return `basic_${Math.abs(hash)}_${text.length}`;
+    const fingerprint = buildEdgeFingerprint(text, {
+        headChars: 100,
+        tailChars: 100,
+        includeLength: true,
+        separator: ''
+    });
+    const hash = hashStringDjb2(fingerprint, {
+        mode: 'absolute',
+        radix: 10,
+        emptyValue: '0'
+    });
+    return `basic_${hash}_${text.length}`;
 }
 
 /**

@@ -1,4 +1,5 @@
 import logger from './logger';
+import { buildDistributedFingerprint, hashStringDjb2 } from './hash';
 
 
 /**
@@ -167,31 +168,14 @@ export function runLegacyTextAnalysisCacheMigrationOnce({ limit = 5, dropExpired
  */
 export const generateTextHash = (text, apiType) => {
   if (!text || text.length === 0) return `${apiType}_empty`;
-  
-  // Usar más caracteres para reducir colisiones
-  const sampleSize = CACHE_CONFIG.SAMPLE_SIZE;
-  
-  // Tomar muestras del principio, medio y final del texto
-  let sampleText = '';
-  if (text.length <= sampleSize) {
-    sampleText = text;
-  } else {
-    const firstPart = text.slice(0, Math.floor(sampleSize/3));
-    
-    const middleStart = Math.floor(text.length/2 - sampleSize/6);
-    const middlePart = text.slice(middleStart, middleStart + Math.floor(sampleSize/3));
-    
-    const lastPart = text.slice(-Math.floor(sampleSize/3));
-    sampleText = firstPart + middlePart + lastPart;
-  }
-  
-  // Algoritmo de hash mejorado
-  let hash = 0;
-  for (let i = 0; i < sampleText.length; i++) {
-    const char = sampleText.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convertir a entero de 32 bits
-  }
+  const sampleText = buildDistributedFingerprint(text, {
+    sampleSize: CACHE_CONFIG.SAMPLE_SIZE,
+  });
+  const hash = hashStringDjb2(sampleText, {
+    mode: 'signed',
+    radix: 10,
+    emptyValue: '0',
+  });
   
   // Factor adicional: incluir longitud exacta del texto y una muestra de caracteres específicos
   // para mejorar la unicidad del hash

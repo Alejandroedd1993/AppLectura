@@ -1,4 +1,5 @@
 import logger from './logger';
+import { hashStringDjb2 } from './hash';
 
 
 /**
@@ -14,16 +15,8 @@ import logger from './logger';
 export function simpleHash(obj) {
   if (!obj) return '0';
 
-  const str = JSON.stringify(obj, Object.keys(obj).sort());
-  let hash = 0;
-
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-
-  return Math.abs(hash).toString(16);
+  const serialized = JSON.stringify(obj, Object.keys(obj).sort());
+  return hashStringDjb2(serialized, { mode: 'absolute', radix: 16, emptyValue: '0' });
 }
 
 /**

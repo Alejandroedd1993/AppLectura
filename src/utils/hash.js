@@ -2,6 +2,46 @@ function coerceText(value) {
   return String(value || '');
 }
 
+export function buildEdgeFingerprint(value, {
+  headChars = 0,
+  tailChars = 0,
+  includeLength = true,
+  separator = '::',
+} = {}) {
+  const text = coerceText(value);
+  if (!text) return includeLength ? '0' : '';
+
+  const head = headChars > 0 ? text.slice(0, headChars) : '';
+  const tail = tailChars > 0 ? text.slice(Math.max(0, text.length - tailChars)) : '';
+  const parts = [];
+
+  if (head) parts.push(head);
+  if (tail) parts.push(tail);
+  if (includeLength) parts.push(String(text.length));
+
+  return parts.join(separator) || (includeLength ? String(text.length) : text);
+}
+
+export function buildDistributedFingerprint(value, {
+  sampleSize = 3000,
+  includeLength = false,
+} = {}) {
+  const text = coerceText(value);
+  if (!text) return includeLength ? '0' : '';
+
+  if (text.length <= sampleSize) {
+    return includeLength ? `${text}${text.length}` : text;
+  }
+
+  const firstPart = text.slice(0, Math.floor(sampleSize / 3));
+  const middleStart = Math.floor(text.length / 2 - sampleSize / 6);
+  const middlePart = text.slice(middleStart, middleStart + Math.floor(sampleSize / 3));
+  const lastPart = text.slice(-Math.floor(sampleSize / 3));
+  const fingerprint = firstPart + middlePart + lastPart;
+
+  return includeLength ? `${fingerprint}${text.length}` : fingerprint;
+}
+
 export function hashStringDjb2(value, {
   maxChars = Infinity,
   mode = 'unsigned',
@@ -20,6 +60,10 @@ export function hashStringDjb2(value, {
 
   if (mode === 'absolute') {
     return Math.abs(hash).toString(radix);
+  }
+
+  if (mode === 'signed') {
+    return hash.toString(radix);
   }
 
   return (hash >>> 0).toString(radix);

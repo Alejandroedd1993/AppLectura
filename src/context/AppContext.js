@@ -20,6 +20,7 @@ import {
   deleteAllSessions as deleteAllSessionsFromManager
 } from '../services/sessionManager';
 import { simpleHash as simpleObjectHash } from '../utils/sessionHash';
+import { buildEdgeFingerprint, hashStringDjb2 } from '../utils/hash';
 import { scopeKey, rubricProgressKey, activitiesProgressKey, activitiesProgressMigratedKey } from '../utils/storageKeys.js';
 import { useAuth } from './AuthContext';
 import {
@@ -4177,13 +4178,18 @@ export const AppContextProvider = ({ children }) => {
         return `analysis_cache_tid_${textoId}`;
       }
       // Fallback: hash del texto para textos sin ID
-      const fingerprint = inputText.substring(0, 200) + inputText.slice(-200) + inputText.length;
-      let hash = 0;
-      for (let i = 0; i < fingerprint.length; i++) {
-        hash = ((hash << 5) - hash) + fingerprint.charCodeAt(i);
-        hash = hash & hash;
-      }
-      return `analysis_cache_${Math.abs(hash)}`;
+      const fingerprint = buildEdgeFingerprint(inputText, {
+        headChars: 200,
+        tailChars: 200,
+        includeLength: true,
+        separator: ''
+      });
+      const hash = hashStringDjb2(fingerprint, {
+        mode: 'absolute',
+        radix: 10,
+        emptyValue: '0'
+      });
+      return `analysis_cache_${hash}`;
     };
 
     const cacheKey = generateAnalysisCacheKey(text, effectiveId);

@@ -6,6 +6,7 @@
  */
 
 import logger from '../../utils/logger';
+import { buildEdgeFingerprint, hashStringDjb2 } from '../../utils/hash';
 
 /**
  * Servicio de OpenAI para notas de estudio
@@ -64,20 +65,19 @@ class OpenAINotesService {
    */
   generateCacheKey(prefix, content) {
     if (!content) return '';
-    
-    // Crear hash simple del contenido con muestras de inicio y fin
-    let hash = 0;
-    const head = content.substring(0, 500);
-    const tail = content.substring(Math.max(0, content.length - 500));
-    const sample = `${head}::${tail}::${content.length}`;
-    
-    for (let i = 0; i < sample.length; i++) {
-      const char = sample.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convertir a entero de 32 bits
-    }
-    
-    return `${prefix}_${Math.abs(hash)}_${content.length}`;
+
+    const sample = buildEdgeFingerprint(content, {
+      headChars: 500,
+      tailChars: 500,
+      includeLength: true,
+    });
+    const hash = hashStringDjb2(sample, {
+      mode: 'absolute',
+      radix: 10,
+      emptyValue: '0',
+    });
+
+    return `${prefix}_${hash}_${content.length}`;
   }
 
   /**
