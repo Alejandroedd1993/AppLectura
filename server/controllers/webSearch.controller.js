@@ -4,10 +4,9 @@
  */
 
 import { parseBool } from '../utils/envUtils.js';
-import { parseAllowedModels, pickAllowedModel } from '../utils/modelUtils.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendSuccess } from '../utils/apiResponse.js';
-import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
+import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../services/deepseekClient.service.js';
 
 const clampInt = (value, { min, max, fallback }) => {
   const n = Number(value);
@@ -22,12 +21,6 @@ const sanitizeQuery = (query, maxLen = 500) => {
 };
 
 const isWebSearchEnabled = () => parseBool(process.env.ENABLE_WEB_SEARCH);
-
-const pickDeepseekModel = (desired) => {
-  const fallbackModel = getDefaultDeepSeekModel();
-  const allowed = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, fallbackModel);
-  return pickAllowedModel({ requested: desired, allowed, fallback: fallbackModel });
-};
 
 const sanitizeForPrompt = (value, maxLen = 450) => {
   const clean = String(value ?? '')
@@ -253,30 +246,22 @@ ${contextLines.join('\n')}`;
       respuestaIA = completion.choices?.[0]?.message?.content?.trim() || null;
     } else if (usarDeepseek) {
       // Fallback sencillo: usar fetch a DeepSeek si hay API key configurada
-      if (!process.env.DEEPSEEK_API_KEY) {
-        throw new Error('DEEPSEEK_API_KEY no configurada');
-      }
-      const deepseekBase = getDefaultDeepSeekBaseUrl();
-      const deepseekModel = pickDeepseekModel(getDefaultDeepSeekModel());
-      const resp = await fetch(`${deepseekBase}/chat/completions`, {
+      const deepseekRequest = buildDeepSeekChatRequest({
+        messages: [
+          { role: 'system', content: 'Eres un asistente que sintetiza hallazgos con citas numeradas.' },
+          { role: 'user', content: pregunta }
+        ],
+        temperature: 0.2,
+        maxTokens: 1200,
+      });
+      const resp = await fetch(deepseekRequest.url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: deepseekModel,
-          messages: [
-            { role: 'system', content: 'Eres un asistente que sintetiza hallazgos con citas numeradas.' },
-            { role: 'user', content: pregunta }
-          ],
-          temperature: 0.2,
-          max_tokens: 1200
-        })
+        headers: deepseekRequest.headers,
+        body: JSON.stringify(deepseekRequest.payload)
       });
       if (!resp.ok) throw new Error(`DeepSeek API error: ${resp.status}`);
       const data = await resp.json();
-      respuestaIA = data.choices?.[0]?.message?.content?.trim() || null;
+      respuestaIA = parseDeepSeekChatContent(data, { trim: true });
     }
 
     // 4) Fallback básico si no hay proveedor/clave

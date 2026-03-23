@@ -1,5 +1,5 @@
 import { getOpenAI, getGemini } from '../config/apiClients.js';
-import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
+import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from './deepseekClient.service.js';
 import { settings } from '../config/settings.js';
 
 const notesSystemPrompt = `Eres un asistente que genera notas de estudio a partir de un texto dado. Devuelve exclusivamente un JSON válido con esta forma:
@@ -122,21 +122,19 @@ export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcade
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), settings.openai.timeout || 45000);
   try {
-    const res = await fetch(`${getDefaultDeepSeekBaseUrl()}/chat/completions`, {
+    const deepseekRequest = buildDeepSeekChatRequest({
+      messages: [
+        { role: 'system', content: notesSystemPrompt },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.4,
+      maxTokens: 1000,
+    });
+
+    const res = await fetch(deepseekRequest.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: getDefaultDeepSeekModel(),
-        messages: [
-          { role: 'system', content: notesSystemPrompt },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.4,
-        max_tokens: 1000
-      }),
+      headers: deepseekRequest.headers,
+      body: JSON.stringify(deepseekRequest.payload),
       signal: controller.signal
     });
     if (!res.ok) {
@@ -144,8 +142,7 @@ export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcade
       throw new Error(`DeepSeek error ${res.status}: ${text}`);
     }
     const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Respuesta vacía de DeepSeek');
+    const content = parseDeepSeekChatContent(data, { emptyMessage: 'Respuesta vacía de DeepSeek' });
     return JSON.parse(content);
   } catch (e) {
     throw e;

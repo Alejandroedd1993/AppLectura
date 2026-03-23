@@ -3,7 +3,7 @@
  */
 
 import axios from 'axios';
-import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
+import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../services/deepseekClient.service.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
@@ -386,13 +386,6 @@ function selectBestTerms(candidates, text, maxTerms) {
  * Genera definiciones para los términos seleccionados
  */
 async function generateDefinitions(terms, context) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  const baseURL = getDefaultDeepSeekBaseUrl();
-
-  if (!apiKey) {
-    throw new Error('DEEPSEEK_API_KEY no configurada');
-  }
-
   const contextPreview = context.substring(0, 1000);
   
   const prompt = `Eres un experto en educación y terminología académica. Genera definiciones claras y concisas para los siguientes términos extraídos de un texto académico.
@@ -422,33 +415,31 @@ Responde SOLO con JSON válido (sin markdown, sin \`\`\`json):
 }`;
 
   try {
-    const response = await axios.post(
-      `${baseURL}/chat/completions`,
-      {
-        model: getDefaultDeepSeekModel(),
-        messages: [
-          {
-            role: 'system',
-            content: 'Eres un experto pedagogo. Respondes SOLO con JSON válido.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.4,
-        max_tokens: 2000
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
+    const deepseekRequest = buildDeepSeekChatRequest({
+      messages: [
+        {
+          role: 'system',
+          content: 'Eres un experto pedagogo. Respondes SOLO con JSON válido.'
         },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.4,
+      maxTokens: 2000,
+    });
+
+    const response = await axios.post(
+      deepseekRequest.url,
+      deepseekRequest.payload,
+      {
+        headers: deepseekRequest.headers,
         timeout: 60000
       }
     );
 
-    const content = response.data.choices[0].message.content;
+    const content = parseDeepSeekChatContent(response.data);
     
     // Limpiar respuesta
     let cleaned = content.trim();

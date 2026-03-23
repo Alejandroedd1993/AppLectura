@@ -13,6 +13,7 @@ import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { createFallbackAnalysis } from '../services/preLecturaFallback.service.js';
 import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
+import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../services/deepseekClient.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -881,33 +882,33 @@ async function callDeepSeekAnalysis(prompt) {
     console.warn(`⚠️ [PreLectura] Modelo DeepSeek no permitido: ${requestedModel}. Usando: ${selectedModel}`);
   }
 
-  const response = await axios.post(
-    `${baseURL}/chat/completions`,
-    {
-      model: selectedModel,
-      messages: [
-        {
-          role: 'system',
-          content: 'Eres un experto en análisis académico de textos. Respondes SOLO con JSON válido.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: deepseekMaxTokens
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+  const deepseekRequest = buildDeepSeekChatRequest({
+    messages: [
+      {
+        role: 'system',
+        content: 'Eres un experto en análisis académico de textos. Respondes SOLO con JSON válido.'
       },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ],
+    requestedModel,
+    temperature: 0.3,
+    maxTokens: deepseekMaxTokens,
+    apiKey,
+  });
+
+  const response = await axios.post(
+    deepseekRequest.url,
+    deepseekRequest.payload,
+    {
+      headers: deepseekRequest.headers,
       timeout: deepseekTimeoutMs
     }
   );
 
-  return response.data.choices[0].message.content;
+  return parseDeepSeekChatContent(response.data);
 }
 
 /**

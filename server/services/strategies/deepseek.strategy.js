@@ -1,7 +1,6 @@
 
 import { settings } from '../../config/settings.js';
-import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../../config/providerDefaults.js';
-import { parseAllowedModels, pickAllowedModel } from '../../utils/modelUtils.js';
+import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../deepseekClient.service.js';
 
 /**
  * Estrategia de análisis de texto utilizando la API de DeepSeek (OpenAI-compatible).
@@ -13,18 +12,6 @@ export async function deepseekStrategy(prompt, options = {}) {
   if (!process.env.DEEPSEEK_API_KEY) {
     throw new Error('DEEPSEEK_API_KEY no configurada');
   }
-
-  const baseUrl = getDefaultDeepSeekBaseUrl();
-  const url = `${baseUrl}/chat/completions`;
-
-  const fallbackModel = getDefaultDeepSeekModel();
-  const allowedModels = parseAllowedModels(process.env.DEEPSEEK_ALLOWED_MODELS, fallbackModel);
-  const requestedModel = fallbackModel;
-  const model = pickAllowedModel({
-    requested: requestedModel,
-    allowed: allowedModels,
-    fallback: fallbackModel,
-  });
 
   const capFromEnv = Number.parseInt(process.env.ANALYSIS_DEEPSEEK_MAX_TOKENS_CAP || '', 10);
   const maxTokensCap = Number.isFinite(capFromEnv)
@@ -45,23 +32,21 @@ export async function deepseekStrategy(prompt, options = {}) {
         { role: 'user', content: prompt },
       ];
 
+  const deepseekRequest = buildDeepSeekChatRequest({
+    messages,
+    temperature,
+    maxTokens: max_tokens,
+  });
+
   const timeoutMs = settings.deepseek?.timeout || 90000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(deepseekRequest.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens,
-      }),
+      headers: deepseekRequest.headers,
+      body: JSON.stringify(deepseekRequest.payload),
       signal: controller.signal,
     });
 
@@ -71,9 +56,7 @@ export async function deepseekStrategy(prompt, options = {}) {
     }
 
     const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Respuesta vacía de DeepSeek API');
-    return content;
+    return parseDeepSeekChatContent(data);
   } catch (error) {
     if (error?.name === 'AbortError') {
       throw new Error('Timeout en análisis con DeepSeek');
