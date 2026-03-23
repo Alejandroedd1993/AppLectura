@@ -13,6 +13,7 @@ import { sendSuccess } from '../utils/apiResponse.js';
 import { createFallbackAnalysis } from '../services/preLecturaFallback.service.js';
 import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
 import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../services/deepseekClient.service.js';
+import { tryRepairJSON } from '../services/jsonRepair.service.js';
 import { searchWebSources } from '../services/webSearch.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -78,123 +79,6 @@ function logToDebug(message, data = null) {
     });
   } catch (e) {
     console.error('Error writing to debug log:', e);
-  }
-}
-
-/**
- * Intenta reparar JSON truncado o malformado
- */
-/**
- * Intenta reparar JSON truncado o malformado
- * Robustez mejorada para JSONs cortados
- */
-function tryRepairJSON(jsonString) {
-  let repaired = jsonString.trim();
-
-  // Remover markdown si existe
-  if (repaired.startsWith('```json')) {
-    repaired = repaired.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
-  }
-  if (repaired.startsWith('```')) {
-    repaired = repaired.replace(/```\n?/g, '').replace(/```\n?$/g, '');
-  }
-
-  repaired = repaired.trim();
-
-  // Limpieza agresiva de caracteres finales inválidos antes de intentar reparar
-  // A veces el truncamiento deja basura al final
-  if (repaired.length > 0 && !['}', ']'].includes(repaired[repaired.length - 1])) {
-    // Buscar el último cierre válido y cortar ahí si parece muy roto
-    const lastCloseBrace = repaired.lastIndexOf('}');
-    const lastCloseBracket = repaired.lastIndexOf(']');
-    const cutoff = Math.max(lastCloseBrace, lastCloseBracket);
-
-    // Solo si está muy cerca del final (truncamiento evidente)
-    if (cutoff > repaired.length - 100 && cutoff > 0) {
-      // Intento conservador: no cortar, mejor añadir lo que falta
-    }
-  }
-
-  // Intentar parsear directamente primero
-  try {
-    return JSON.parse(repaired);
-  } catch (e) {
-    console.log('🔧 [JSON Repair] Intento de reparación estándar...');
-  }
-
-  // ESTRATEGIA DE REPARACIÓN DE PILA (STACK-BASED)
-  // Mucho más robusta para JSON truncados
-  const stack = [];
-  let inString = false;
-  let escape = false;
-  let finalRepaired = '';
-
-  for (let i = 0; i < repaired.length; i++) {
-    const char = repaired[i];
-
-    finalRepaired += char;
-
-    if (escape) {
-      escape = false;
-      continue;
-    }
-
-    if (char === '\\' && inString) {
-      escape = true;
-      continue;
-    }
-
-    if (char === '"') {
-      inString = !inString;
-    } else if (!inString) {
-      if (char === '{') stack.push('}');
-      else if (char === '[') stack.push(']');
-      else if (char === '}') {
-        if (stack.length > 0 && stack[stack.length - 1] === '}') stack.pop();
-      }
-      else if (char === ']') {
-        if (stack.length > 0 && stack[stack.length - 1] === ']') stack.pop();
-      }
-    }
-  }
-
-  // Si terminó dentro de un string, cerrarlo
-  if (inString) {
-    finalRepaired += '"';
-  }
-
-  // Limpiar trailing commas que hayan podido quedar al final antes de cerrar
-  // Ejemplo: {"a": 1, 
-  finalRepaired = finalRepaired.replace(/,\s*$/, '');
-
-  // Cerrar todas las estructuras abiertas en orden inverso
-  while (stack.length > 0) {
-    const closer = stack.pop();
-    finalRepaired += closer;
-  }
-
-  console.log('🔧 [JSON Repair] Resultado intentado (últimos 50 chars):', finalRepaired.slice(-50));
-
-  try {
-    return JSON.parse(finalRepaired);
-  } catch (e) {
-    console.log('❌ [JSON Repair] Falló reparación por pila, intentando método fallback...');
-    // Fallback: intentar regex básica por si acaso
-    try {
-      // Cerrar arrays y objetos abiertos (método simple)
-      const openBrackets = (finalRepaired.match(/\[/g) || []).length;
-      const closeBrackets = (finalRepaired.match(/\]/g) || []).length;
-      const openBraces = (finalRepaired.match(/\{/g) || []).length;
-      const closeBraces = (finalRepaired.match(/\}/g) || []).length;
-
-      for (let i = 0; i < openBrackets - closeBrackets; i++) finalRepaired += ']';
-      for (let i = 0; i < openBraces - closeBraces; i++) finalRepaired += '}';
-
-      return JSON.parse(finalRepaired);
-    } catch (e2) {
-      console.error('❌ [JSON Repair] Falló reparación definitiva:', e2.message);
-      return null; // Imposible reparar
-    }
   }
 }
 
