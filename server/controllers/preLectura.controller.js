@@ -8,12 +8,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import { searchWebSources } from './webSearch.controller.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { createFallbackAnalysis } from '../services/preLecturaFallback.service.js';
 import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
 import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../services/deepseekClient.service.js';
+import { searchWebSources } from '../services/webSearch.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
