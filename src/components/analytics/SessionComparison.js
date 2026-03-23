@@ -16,6 +16,7 @@ import useMediaQuery from '../../hooks/useMediaQuery';
 import { RUBRIC_PROGRESS_META } from '../../services/progressSnapshot';
 import {
   ANALYTICS_RUBRIC_IDS,
+  compareSessionsByTimestamp,
   getSessionAverageForRubrics,
   getSessionRubricScore,
   getSessionTimestamp,
@@ -45,7 +46,7 @@ const SessionComparison = ({ sessions, theme }) => {
   const trendData = useMemo(() => {
     if (sessionsWithProgress.length === 0) return [];
     return sessionsWithProgress
-      .sort((a, b) => getSessionTimestamp(a) - getSessionTimestamp(b))
+      .sort(compareSessionsByTimestamp)
       .map((session, index) => {
         const rubricState = RUBRIC_COLUMNS.reduce((acc, rubric) => {
           const hasData = hasSessionScoreForRubrics(session, [rubric.id]);

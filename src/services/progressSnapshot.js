@@ -500,3 +500,38 @@ export function formatRubricAttemptDisplay(rubric, {
   if (rubric?.hasLegacyScoreOnlyEvidence) return legacyLabel;
   return emptyLabel;
 }
+
+export function buildAttemptSummaryMeta({
+  totalAttempts = 0,
+  legacyEvidenceCount = 0,
+  coverageCount = 0
+} = {}) {
+  const safeAttempts = Number(totalAttempts || 0);
+  const safeLegacyCount = Number(legacyEvidenceCount || 0);
+  const safeCoverageCount = Number(coverageCount || 0);
+
+  if (safeLegacyCount > 0 && safeAttempts > 0) {
+    return {
+      label: 'Intentos / registros',
+      value: String(safeAttempts),
+      helper: `${safeAttempts} intento(s) reales y ${safeLegacyCount} registro(s) legacy.`,
+      sparseSummary: `Hay ${safeCoverageCount} dimension(es) activas, ${safeAttempts} intento(s) reales y ${safeLegacyCount} registro(s) legacy en esta lectura.`
+    };
+  }
+
+  if (safeLegacyCount > 0) {
+    return {
+      label: 'Intentos / registros',
+      value: 'Sin registro legacy',
+      helper: `Hay ${safeLegacyCount} dimension(es) con nota legacy sin historial detallado.`,
+      sparseSummary: `Hay ${safeCoverageCount} dimension(es) activas y ${safeLegacyCount} dimension(es) con nota legacy sin historial detallado.`
+    };
+  }
+
+  return {
+    label: 'Intentos',
+    value: String(safeAttempts),
+    helper: 'Datos disponibles en esta lectura',
+    sparseSummary: `Hay ${safeCoverageCount} dimension(es) activas y ${safeAttempts} intento(s) registrados.`
+  };
+}

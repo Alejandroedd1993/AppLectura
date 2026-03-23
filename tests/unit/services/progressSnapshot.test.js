@@ -1,4 +1,8 @@
-import { buildProgressSnapshot, formatRubricAttemptDisplay } from '../../../src/services/progressSnapshot';
+import {
+  buildAttemptSummaryMeta,
+  buildProgressSnapshot,
+  formatRubricAttemptDisplay
+} from '../../../src/services/progressSnapshot';
 
 describe('progressSnapshot', () => {
   test('no mezcla artefactos de otra lectura cuando existe progreso scopeado por texto', () => {
@@ -155,6 +159,19 @@ describe('progressSnapshot', () => {
 
     expect(formatRubricAttemptDisplay(snapshot.rubricsById.rubrica4)).toBe('Sin registro legacy');
     expect(formatRubricAttemptDisplay(snapshot.rubricsById.rubrica1)).toBe('0');
+  });
+
+  test('resume de forma consistente los estados mixtos de intentos reales y registros legacy', () => {
+    expect(buildAttemptSummaryMeta({
+      totalAttempts: 1,
+      legacyEvidenceCount: 1,
+      coverageCount: 2
+    })).toEqual({
+      label: 'Intentos / registros',
+      value: '1',
+      helper: '1 intento(s) reales y 1 registro(s) legacy.',
+      sparseSummary: 'Hay 2 dimension(es) activas, 1 intento(s) reales y 1 registro(s) legacy en esta lectura.'
+    });
   });
 
   test('usa una etapa de cobertura completa con foco de mejora cuando aun hay dimensiones debiles', () => {

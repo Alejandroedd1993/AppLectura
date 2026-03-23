@@ -4,6 +4,7 @@ import {
   buildDistributionInsights,
   buildProgressChartModel,
   buildRadarChartData,
+  compareSessionsByTimestamp,
   getSessionAttemptCount,
   getSessionAverageForRubrics,
   getSessionTimestamp,
@@ -290,5 +291,14 @@ describe('progressAnalyticsView', () => {
     expect(getSessionTimestamp({
       lastModified: 1710844300000
     })).toBe(1710844300000);
+  });
+
+  test('ordena sesiones sin fecha al final para no inventar cronologia en comparaciones', () => {
+    const datedSession = { createdAt: '2026-03-18T10:30:00.000Z' };
+    const undatedSession = {};
+
+    expect(compareSessionsByTimestamp(datedSession, undatedSession)).toBeLessThan(0);
+    expect(compareSessionsByTimestamp(undatedSession, datedSession)).toBeGreaterThan(0);
+    expect(compareSessionsByTimestamp({}, {})).toBe(0);
   });
 });

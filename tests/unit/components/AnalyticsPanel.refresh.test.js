@@ -71,4 +71,77 @@ describe('AnalyticsPanel session refresh', () => {
       expect(getAllSessionsMerged).toHaveBeenCalled();
     });
   });
+
+  test('mantiene el copy mixto de intentos reales y registros legacy desde la misma fuente comun', async () => {
+    const rubricProgress = {
+      rubrica1: {
+        scores: [{ score: 8, artefacto: 'ResumenAcademico', timestamp: 1 }],
+        average: 8,
+        artefactos: ['ResumenAcademico']
+      },
+      rubrica3: {
+        average: 6.5,
+        artefactos: ['MapaActores']
+      }
+    };
+
+    const progressSnapshot = {
+      hasData: true,
+      hasMeaningfulTimeSeries: false,
+      canRenderRadar: false,
+      canRenderDistribution: false,
+      nextAction: null,
+      rubrics: [
+        {
+          rubricId: 'rubrica1',
+          effectiveScore: 8,
+          formativeScores: [{ score: 8, timestamp: 1 }]
+        },
+        {
+          rubricId: 'rubrica3',
+          effectiveScore: 6.5,
+          formativeScores: []
+        }
+      ],
+      rubricsById: {
+        rubrica1: {
+          rubricId: 'rubrica1',
+          effectiveScore: 8,
+          formativeScores: [{ score: 8, timestamp: 1 }]
+        },
+        rubrica3: {
+          rubricId: 'rubrica3',
+          effectiveScore: 6.5,
+          formativeScores: []
+        }
+      },
+      summary: {
+        totalRubrics: 5,
+        coverageCount: 2,
+        coveragePercent: 40,
+        evaluatedCount: 2,
+        totalAttempts: 1,
+        legacyEvidenceCount: 1,
+        averageEvaluatedScore: 7.25
+      }
+    };
+
+    render(
+      <ThemeProvider theme={lightTheme}>
+        <AppContext.Provider value={{ currentTextoId: 'lectura-mixta', sourceCourseId: 'curso-1' }}>
+          <AnalyticsPanel
+            rubricProgress={rubricProgress}
+            progressSnapshot={progressSnapshot}
+            theme={lightTheme}
+          />
+        </AppContext.Provider>
+      </ThemeProvider>
+    );
+
+    expect(screen.getByText(/1 intento\(s\) reales y 1 registro\(s\) legacy/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(getAllSessionsMerged).toHaveBeenCalled();
+    });
+  });
 });

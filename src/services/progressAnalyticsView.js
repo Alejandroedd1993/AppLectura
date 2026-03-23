@@ -299,6 +299,15 @@ export function getSessionTimestamp(session) {
   );
 }
 
+export function compareSessionsByTimestamp(a, b) {
+  const aTimestamp = getSessionTimestamp(a);
+  const bTimestamp = getSessionTimestamp(b);
+  if (!aTimestamp && !bTimestamp) return 0;
+  if (!aTimestamp) return 1;
+  if (!bTimestamp) return -1;
+  return aTimestamp - bTimestamp;
+}
+
 export function getSessionRubricScore(session, rubricId) {
   const snapshotScore = Number(session?.progressSnapshot?.rubricsById?.[rubricId]?.effectiveScore || 0);
   if (snapshotScore > 0) return snapshotScore;

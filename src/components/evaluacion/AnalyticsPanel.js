@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { AppContext } from '../../context/AppContext';
 import { calculateDetailedStats } from '../../services/analyticsService';
 import { hasSessionScoreForRubrics } from '../../services/progressAnalyticsView';
-import { buildProgressSnapshot } from '../../services/progressSnapshot';
+import { buildAttemptSummaryMeta, buildProgressSnapshot } from '../../services/progressSnapshot';
 import { getAllSessionsMerged } from '../../services/sessionManager';
 import ProgressChart from '../analytics/ProgressChart';
 import RadarComparisonChart from '../analytics/RadarComparisonChart';
@@ -408,16 +408,11 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
   const sparseMode = Boolean(progressSnapshot) && !canShowTimeSeries && !canShowRadar && !canShowDistribution;
   const shownRecommendations = analytics.recommendations;
   const legacyEvidenceCount = getLegacyEvidenceCount(progressSnapshot);
-  const hasLegacyEvidenceWithoutAttempts = analytics.summary.totalAttempts === 0 && legacyEvidenceCount > 0;
-  const attemptsValue = hasLegacyEvidenceWithoutAttempts ? 'Sin registro legacy' : analytics.summary.totalAttempts;
-  const attemptsHelper = hasLegacyEvidenceWithoutAttempts
-    ? `Hay ${legacyEvidenceCount} dimension(es) con nota legacy sin historial detallado.`
-    : (legacyEvidenceCount > 0 && analytics.summary.totalAttempts > 0
-      ? `${analytics.summary.totalAttempts} intento(s) reales y ${legacyEvidenceCount} registro(s) legacy.`
-      : 'Datos disponibles en esta lectura');
-  const sparseAttemptsSummary = hasLegacyEvidenceWithoutAttempts
-    ? `Hay ${progressSnapshot?.summary?.coverageCount || 0} dimension(es) activas y ${legacyEvidenceCount} dimension(es) con nota legacy sin historial detallado.`
-    : `Hay ${progressSnapshot?.summary?.coverageCount || 0} dimension(es) activas y ${analytics.summary.totalAttempts} intento(s) registrados.`;
+  const attemptSummary = buildAttemptSummaryMeta({
+    totalAttempts: analytics.summary.totalAttempts,
+    legacyEvidenceCount,
+    coverageCount: progressSnapshot?.summary?.coverageCount || 0
+  });
 
   useEffect(() => {
     if (!hasMultipleSessions && activeTab !== 'current') {
@@ -490,9 +485,9 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
                 <span className="helper">Promedio {analytics.summary.averageScore.toFixed(1)}/10</span>
               </OverviewCard>
               <OverviewCard theme={theme} $accent={theme.warning}>
-                <span className="label">{legacyEvidenceCount > 0 ? 'Intentos / registros' : 'Intentos'}</span>
-                <span className="value">{attemptsValue}</span>
-                <span className="helper">{attemptsHelper}</span>
+                <span className="label">{attemptSummary.label}</span>
+                <span className="value">{attemptSummary.value}</span>
+                <span className="helper">{attemptSummary.helper}</span>
               </OverviewCard>
               <OverviewCard theme={theme} $accent={theme.secondary}>
                 <span className="label">Tendencia</span>
@@ -509,7 +504,7 @@ const AnalyticsPanel = ({ rubricProgress = {}, progressSnapshot, theme }) => {
                 <SparseCard theme={theme}>
                   <strong>Lo que ya tienes</strong>
                   <p>
-                    {sparseAttemptsSummary}
+                    {attemptSummary.sparseSummary}
                     {analytics.summary.averageScore > 0 ? ` En lo evaluado llevas ${analytics.summary.averageScore.toFixed(1)}/10.` : ''}
                   </p>
                 </SparseCard>

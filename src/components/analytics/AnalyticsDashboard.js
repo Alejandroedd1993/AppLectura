@@ -20,6 +20,7 @@ import {
 import { RUBRIC_PROGRESS_META } from '../../services/progressSnapshot';
 import {
   ANALYTICS_RUBRIC_IDS,
+  compareSessionsByTimestamp,
   getSessionAverageForRubrics,
   getSessionAttemptCount,
   getSessionRubricScore,
@@ -57,15 +58,6 @@ export function isSessionInTimeRange(session, range, now = Date.now()) {
   const timestamp = getSessionTimestamp(session);
   if (!timestamp) return false;
   return timestamp >= (now - windowMs);
-}
-
-function compareSessionsByTimestamp(a, b) {
-  const aTimestamp = getSessionTimestamp(a);
-  const bTimestamp = getSessionTimestamp(b);
-  if (!aTimestamp && !bTimestamp) return 0;
-  if (!aTimestamp) return 1;
-  if (!bTimestamp) return -1;
-  return aTimestamp - bTimestamp;
 }
 
 export function formatSessionDateLabel(session, locale = 'es-ES') {
