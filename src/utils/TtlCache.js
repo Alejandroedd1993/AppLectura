@@ -14,6 +14,15 @@ export class TtlCache {
     this._ttlMs = ttlMs;
   }
 
+  _purgeExpired() {
+    const now = Date.now();
+    for (const [key, entry] of this._map.entries()) {
+      if (now > entry.expiresAt) {
+        this._map.delete(key);
+      }
+    }
+  }
+
   has(key) {
     if (!this._map.has(key)) return false;
     const entry = this._map.get(key);
@@ -34,6 +43,8 @@ export class TtlCache {
   }
 
   set(key, value) {
+    this._purgeExpired();
+
     // Si ya existe, borrar para reciclarlo al final
     if (this._map.has(key)) this._map.delete(key);
 
@@ -55,10 +66,12 @@ export class TtlCache {
   }
 
   get size() {
+    this._purgeExpired();
     return this._map.size;
   }
 
   keys() {
+    this._purgeExpired();
     return this._map.keys();
   }
 }

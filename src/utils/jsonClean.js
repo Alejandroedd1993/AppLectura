@@ -17,14 +17,16 @@ export function stripJsonFences(rawContent) {
   cleaned = cleaned.replace(/```json\s*/gi, '');
   cleaned = cleaned.replace(/```\s*/g, '');
 
-  // Extraer solo el JSON entre { y } (o [ y ])
+  // Extraer el primer bloque JSON detectado, preservando arrays cuando abren antes que objetos.
   const objectMatch = cleaned.match(/\{[\s\S]*\}/);
   const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+  const objectIndex = objectMatch ? cleaned.indexOf(objectMatch[0]) : -1;
+  const arrayIndex = arrayMatch ? cleaned.indexOf(arrayMatch[0]) : -1;
 
-  if (objectMatch) {
-    cleaned = objectMatch[0];
-  } else if (arrayMatch) {
+  if (arrayIndex !== -1 && (objectIndex === -1 || arrayIndex < objectIndex)) {
     cleaned = arrayMatch[0];
+  } else if (objectIndex !== -1) {
+    cleaned = objectMatch[0];
   }
 
   return cleaned;

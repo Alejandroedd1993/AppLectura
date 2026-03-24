@@ -1,10 +1,6 @@
 /* jsPDF se importa dinámicamente para no cargar ~280KB en el bundle principal */
 
-import { isDevelopmentEnvironment } from '../utils/runtimeEnv';
-
-const isDev = isDevelopmentEnvironment;
-const devLog = (...args) => isDev && console.log(...args);
-const devWarn = (...args) => isDev && console.warn(...args);
+import logger from '../utils/logger';
 
 /**
  * Genera y descarga un PDF profesional del glosario
@@ -13,7 +9,7 @@ const devWarn = (...args) => isDev && console.warn(...args);
  */
 export async function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectura') {
   try {
-    devLog('📄 Generando PDF del glosario...');
+    logger.log('📄 Generando PDF del glosario...');
 
     // Importar jsPDF dinámicamente (~280KB solo cuando se necesita)
     const { jsPDF } = await import('jspdf');
@@ -219,11 +215,11 @@ export async function downloadGlossaryAsPDF(glossary, filename = 'glosario_lectu
     
     doc.save(pdfFilename);
     
-    devLog(`✅ PDF generado exitosamente: ${pdfFilename}`);
+    logger.log(`✅ PDF generado exitosamente: ${pdfFilename}`);
     return pdfFilename;
 
   } catch (error) {
-    devWarn('❌ Error generando PDF:', error);
+    logger.warn('❌ Error generando PDF:', error);
     throw error;
   }
 }
@@ -265,7 +261,7 @@ export async function generateGlossaryPDFBlob(glossary) {
 
     return doc.output('blob');
   } catch (error) {
-    devWarn('❌ Error generando blob PDF:', error);
+    logger.warn('❌ Error generando blob PDF:', error);
     throw error;
   }
 }
