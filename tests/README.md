@@ -55,7 +55,7 @@ Los siguientes tests pasan consistentemente:
 - RubricProgressPanel integration (100%)
 - Hooks: useFileCache, useTextAnalysis, useNotesWorkspaceAdapter
 - Services: annotations, studyItems, segmentText
-- Utils: backendUtils, contextBuilders, enrichmentConstants
+- Utils: backendUtils, contextBuilders
 - Integration: feedbackPipeline, evaluationToStudyItems
 
 ## 🧪 Estructura de Tests

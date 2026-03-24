@@ -266,4 +266,3 @@ Usuario → sendPrompt() → backend responde → onAssistantMessage() → heur�
 ### Tests Clave
 - `ReadingWorkspace.actions.test.js` — reader-action → prompt tutor
 - `ReadingWorkspace.smoke.test.js` — flujo notas + prompt + enriquecimiento
-- `enrichmentConstants.test.js` — estabilidad frase sentinela
