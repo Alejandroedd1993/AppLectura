@@ -2,8 +2,9 @@
  * Controlador para generación de glosario dinámico
  */
 
-import axios from 'axios';
 import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../services/deepseekClient.service.js';
+import { getOpenAICompatibleClient } from '../config/apiClients.js';
+import { getDefaultDeepSeekBaseUrl } from '../config/providerDefaults.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
@@ -415,31 +416,38 @@ Responde SOLO con JSON válido (sin markdown, sin \`\`\`json):
 }`;
 
   try {
+    const messages = [
+      {
+        role: 'system',
+        content: 'Eres un experto pedagogo. Respondes SOLO con JSON válido.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ];
+
+    // Reusar buildDeepSeekChatRequest solo para model selection centralizada
     const deepseekRequest = buildDeepSeekChatRequest({
-      messages: [
-        {
-          role: 'system',
-          content: 'Eres un experto pedagogo. Respondes SOLO con JSON válido.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
+      messages,
       temperature: 0.4,
       maxTokens: 2000,
     });
 
-    const response = await axios.post(
-      deepseekRequest.url,
-      deepseekRequest.payload,
-      {
-        headers: deepseekRequest.headers,
-        timeout: 60000
-      }
-    );
+    const client = getOpenAICompatibleClient({
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      baseURL: getDefaultDeepSeekBaseUrl(),
+      timeout: 60000,
+    });
 
-    const content = parseDeepSeekChatContent(response.data);
+    const completion = await client.chat.completions.create({
+      model: deepseekRequest.selectedModel,
+      messages,
+      temperature: 0.4,
+      max_tokens: 2000,
+    });
+
+    const content = parseDeepSeekChatContent(completion);
     
     // Limpiar respuesta
     let cleaned = content.trim();
