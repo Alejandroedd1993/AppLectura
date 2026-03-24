@@ -5,6 +5,7 @@ import { DEEPSEEK_CHAT_MODEL, OPENAI_CHAT_MODEL } from '../constants/aiModelDefa
 import { AI_DEEP_EVALUATION_TIMEOUT_MS, AI_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 import logger from '../utils/logger';
+import { stripJsonFences } from '../utils/jsonClean';
 const DEEPSEEK_MODEL = DEEPSEEK_CHAT_MODEL;
 const OPENAI_MODEL = OPENAI_CHAT_MODEL;
 const DIMENSION_KEY = 'acd'; // Dimensión: Análisis Crítico del Discurso
@@ -23,24 +24,6 @@ function wrapServiceError(error, prefix) {
   return wrapped;
 }
 
-/**
- * Limpia respuestas JSON que vienen con bloques markdown o texto adicional
- */
-function cleanJsonResponse(rawContent) {
-  let cleaned = rawContent.trim();
-  
-  // Eliminar bloques markdown ```json ... ```
-  cleaned = cleaned.replace(/```json\s*/g, '');
-  cleaned = cleaned.replace(/```\s*/g, '');
-  
-  // Extraer solo el JSON entre { y }
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    cleaned = jsonMatch[0];
-  }
-  
-  return cleaned;
-}
 
 /**
  * 🤖 DEEPSEEK: Validación estructural del análisis ACD
@@ -208,7 +191,7 @@ async function evaluateWithDeepSeek(text, marcoIdeologico, estrategiasRetoricas,
     const rawContent = extractContent(response);
     logger.log('🔍 [DeepSeek TablaACD] Respuesta cruda:', rawContent.slice(0, 200));
     
-    const cleanedContent = cleanJsonResponse(rawContent);
+    const cleanedContent = stripJsonFences(rawContent);
     logger.log('✅ [DeepSeek TablaACD] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
@@ -251,7 +234,7 @@ async function evaluateWithOpenAI(text, marcoIdeologico, estrategiasRetoricas, v
     const rawContent = extractContent(response);
     logger.log('🔍 [OpenAI TablaACD] Respuesta cruda:', rawContent.slice(0, 200));
     
-    const cleanedContent = cleanJsonResponse(rawContent);
+    const cleanedContent = stripJsonFences(rawContent);
     logger.log('✅ [OpenAI TablaACD] Respuesta limpia:', cleanedContent.slice(0, 200));
     
     const parsed = JSON.parse(cleanedContent);

@@ -3,6 +3,7 @@ import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendReq
 import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { GLOSSARY_TERM_TIMEOUT_MS } from '../constants/timeoutConstants';
 import { isDevelopmentEnvironment } from '../utils/runtimeEnv';
+import { stripJsonFences } from '../utils/jsonClean';
 
 const isDev = isDevelopmentEnvironment;
 const devLog = (...args) => isDev && console.log(...args);
@@ -90,7 +91,7 @@ IMPORTANTE:
     });
 
     const content = extractContent(data);
-    const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const cleanContent = stripJsonFences(content);
     const parsed = JSON.parse(cleanContent);
 
     return {

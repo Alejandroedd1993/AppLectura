@@ -1,6 +1,7 @@
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { isDevelopmentEnvironment } from '../utils/runtimeEnv';
+import { stripJsonFences } from '../utils/jsonClean';
 
 const isDev = isDevelopmentEnvironment;
 const devLog = (...args) => isDev && console.log(...args);
@@ -72,10 +73,7 @@ IMPORTANTE:
     let definition;
     try {
       // Limpiar posibles marcadores de markdown
-      const cleanContent = content
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
+      const cleanContent = stripJsonFences(content);
       
       definition = JSON.parse(cleanContent);
     } catch (parseError) {

@@ -5,6 +5,7 @@ import { OPENAI_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { AI_DEEP_EVALUATION_TIMEOUT_MS, AI_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
 
 import logger from '../utils/logger';
+import { stripJsonFences } from '../utils/jsonClean';
 const OPENAI_MODEL = OPENAI_CHAT_MODEL;
 
 function isAiAuthOrConfigError(error) {
@@ -532,38 +533,6 @@ async function evaluarRespuesta({ texto, pregunta, respuesta, dimension, onProgr
   }
 }
 
-/**
- * Limpia respuesta JSON de marcadores markdown (MEJORADO)
- */
-function cleanJsonResponse(text) {
-  if (!text) return text;
-  
-  // 1. Eliminar bloques de código markdown (```json ... ```)
-  let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
-  
-  // 2. Buscar el JSON válido dentro del texto (entre { y })
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    cleaned = jsonMatch[0];
-  }
-  
-  // 3. Eliminar texto antes del primer {
-  const firstBrace = cleaned.indexOf('{');
-  if (firstBrace > 0) {
-    cleaned = cleaned.substring(firstBrace);
-  }
-  
-  // 4. Eliminar texto después del último }
-  const lastBrace = cleaned.lastIndexOf('}');
-  if (lastBrace !== -1 && lastBrace < cleaned.length - 1) {
-    cleaned = cleaned.substring(0, lastBrace + 1);
-  }
-  
-  // 5. Eliminar espacios en blanco al inicio y final
-  cleaned = cleaned.trim();
-  
-  return cleaned;
-}
 
 /**
  * Evaluación estructural (claridad, anclaje textual, completitud)
@@ -619,7 +588,7 @@ Responde SOLO con JSON:
     const rawContent = extractContent(response);
     logger.log('🔍 [Estructural] Respuesta cruda:', rawContent.substring(0, 200));
     
-    const cleanedContent = cleanJsonResponse(rawContent);
+    const cleanedContent = stripJsonFences(rawContent);
     logger.log('✅ [Estructural] Respuesta limpia:', cleanedContent.substring(0, 200));
     
     const parsed = JSON.parse(cleanedContent);
@@ -708,7 +677,7 @@ Responde SOLO con JSON:
     const rawContent = extractContent(response);
     logger.log('🔍 [Profundidad] Respuesta cruda:', rawContent.substring(0, 200));
     
-    const cleanedContent = cleanJsonResponse(rawContent);
+    const cleanedContent = stripJsonFences(rawContent);
     logger.log('✅ [Profundidad] Respuesta limpia:', cleanedContent.substring(0, 200));
     
     const parsed = JSON.parse(cleanedContent);

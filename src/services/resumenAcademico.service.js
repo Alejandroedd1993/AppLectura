@@ -9,6 +9,7 @@
 
 import { chatCompletion, extractContent } from './unifiedAiService';
 import { AI_DEEP_EVALUATION_TIMEOUT_MS, AI_EVALUATION_TIMEOUT_MS } from '../constants/timeoutConstants';
+import { stripJsonFences } from '../utils/jsonClean';
 
 import logger from '../utils/logger';
 
@@ -167,13 +168,7 @@ ${citas.map((c, i) => `${i + 1}. "${c.cita}"`).join('\n')}
     logger.log('🔍 [DeepSeek ResumenAcademico] Respuesta cruda:', rawContent.slice(0, 200));
     
     // Limpiar markdown
-    let cleaned = rawContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
-    // Extraer solo JSON
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      cleaned = jsonMatch[0];
-    }
+    let cleaned = stripJsonFences(rawContent);
     
     logger.log('✅ [DeepSeek ResumenAcademico] Respuesta limpia:', cleaned.slice(0, 200));
     
@@ -264,7 +259,7 @@ Analiza si el estudiante:
     });
     
     const content = extractContent(response);
-    const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const cleaned = stripJsonFences(content);
     return JSON.parse(cleaned);
   } catch (error) {
     logger.error('[ResumenService] Error OpenAI:', error);
