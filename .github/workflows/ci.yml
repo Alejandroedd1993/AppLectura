@@ -16,8 +16,7 @@ jobs:
           node-version: 18
           cache: npm
       - run: npm ci
-      - run: npm test -- --silent
-      - run: npm run test:coverage
+      - run: npm run test:ci
 
   build:
     runs-on: ubuntu-latest
