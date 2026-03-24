@@ -103,8 +103,10 @@ export function segmentText(raw, options = {}) {
 /** Utilidad para obtener hash global del texto (reuse en storage keys) */
 export function hashText(raw) { return compactTextHash(normalize(raw), { maxChars: 120 }); }
 
+import { TtlCache } from '../utils/TtlCache';
+
 // Sencilla caché en memoria (evita recalcular en vistas múltiples)
-const _cache = new Map();
+const _cache = new TtlCache({ maxEntries: 50, ttlMs: 30 * 60 * 1000 });
 export function getSegmentedCached(raw, opts) {
   const key = hashText(raw) + ':' + (opts?.strategy || 'hybrid');
   if (_cache.has(key)) return _cache.get(key);

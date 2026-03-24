@@ -7,6 +7,7 @@
 
 import logger from '../../utils/logger';
 import { buildEdgeFingerprint, hashStringDjb2 } from '../../utils/hash';
+import { TtlCache } from '../../utils/TtlCache';
 
 /**
  * Servicio de OpenAI para notas de estudio
@@ -15,7 +16,7 @@ import { buildEdgeFingerprint, hashStringDjb2 } from '../../utils/hash';
 class OpenAINotesService {
   constructor() {
     // Cache interno para respuestas de la API
-    this.cache = new Map();
+    this.cache = new TtlCache({ maxEntries: 100, ttlMs: 30 * 60 * 1000 });
     
     // Configuración de reintentos
     this.maxRetries = 3;

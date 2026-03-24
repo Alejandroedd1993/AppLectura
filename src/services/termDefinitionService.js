@@ -2,13 +2,14 @@ import { chatCompletion, extractContent } from './unifiedAiService';
 import { DEEPSEEK_CHAT_MODEL } from '../constants/aiModelDefaults';
 import { isDevelopmentEnvironment } from '../utils/runtimeEnv';
 import { stripJsonFences } from '../utils/jsonClean';
+import { TtlCache } from '../utils/TtlCache';
 
 const isDev = isDevelopmentEnvironment;
 const devLog = (...args) => isDev && console.log(...args);
 const devWarn = (...args) => isDev && console.warn(...args);
 
 // Caché en memoria para evitar llamadas duplicadas a la API
-const _definitionCache = new Map();
+const _definitionCache = new TtlCache({ maxEntries: 150, ttlMs: 60 * 60 * 1000 });
 
 /**
  * Obtiene una definición contextual de un término usando IA
