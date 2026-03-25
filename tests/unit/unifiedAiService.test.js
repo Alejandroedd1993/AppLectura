@@ -53,4 +53,28 @@ describe('unifiedAiService helpers', () => {
       requestId: 'req-123'
     }));
   });
+
+  test('normalizeBackendErrorPayload soporta envelope nuevo con errorInfo', () => {
+    const normalized = normalizeBackendErrorPayload({
+      ok: false,
+      error: 'Respuesta invalida del proveedor',
+      mensaje: 'La evaluacion no pudo interpretarse correctamente.',
+      codigo: 'ASSESSMENT_INVALID_PROVIDER_RESPONSE',
+      errorInfo: {
+        code: 'ASSESSMENT_INVALID_PROVIDER_RESPONSE',
+        message: 'La evaluacion no pudo interpretarse correctamente.',
+        details: { degraded: true }
+      },
+      requestId: 'req-new'
+    }, { status: 503 });
+
+    expect(normalized).toEqual(expect.objectContaining({
+      status: 503,
+      code: 'ASSESSMENT_INVALID_PROVIDER_RESPONSE',
+      backendError: 'Respuesta invalida del proveedor',
+      message: 'La evaluacion no pudo interpretarse correctamente.',
+      requestId: 'req-new',
+      details: { degraded: true }
+    }));
+  });
 });

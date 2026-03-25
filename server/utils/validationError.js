@@ -1,4 +1,5 @@
 import { getRequestIdFromResponse } from './requestContext.js';
+import { buildErrorPayload } from './apiResponse.js';
 
 export function buildValidationErrorPayload({
   error,
@@ -8,14 +9,14 @@ export function buildValidationErrorPayload({
   requestId,
   ...extra
 }) {
-  return {
+  return buildErrorPayload({
     error,
     mensaje,
     codigo,
     ...(details !== undefined ? { details } : {}),
     ...(requestId ? { requestId } : {}),
     ...extra
-  };
+  });
 }
 
 export function sendValidationError(res, payload) {

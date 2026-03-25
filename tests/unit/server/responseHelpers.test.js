@@ -22,9 +22,15 @@ describe('responseHelpers — sendError', () => {
     });
     expect(res._status).toBe(400);
     expect(res._body).toEqual({
+      ok: false,
       error: 'Bad input',
       mensaje: 'Revisa los datos.',
-      codigo: 'BAD_INPUT'
+      message: 'Revisa los datos.',
+      codigo: 'BAD_INPUT',
+      errorInfo: {
+        code: 'BAD_INPUT',
+        message: 'Revisa los datos.'
+      }
     });
   });
 
@@ -41,6 +47,11 @@ describe('responseHelpers — sendError', () => {
     expect(res._body.requestId).toBe('req_123');
     expect(res._body.details).toEqual({ hint: 'set env' });
     expect(res._body.error).toBe('No config');
+    expect(res._body.errorInfo).toEqual({
+      code: 'NOT_CONFIGURED',
+      message: 'Provider not configured.',
+      details: { hint: 'set env' }
+    });
   });
 
   test('uses requestId from response context when not provided explicitly', () => {
@@ -90,10 +101,16 @@ describe('errorHandler middleware', () => {
     errorHandler(new Error('boom'), req, res, () => {});
     expect(res._status).toBe(500);
     expect(res._body).toMatchObject({
+      ok: false,
       error: 'INTERNAL_ERROR',
       mensaje: expect.any(String),
+      message: expect.any(String),
       codigo: 'INTERNAL_ERROR',
-      requestId: 'req_middleware_1'
+      requestId: 'req_middleware_1',
+      errorInfo: {
+        code: 'INTERNAL_ERROR',
+        message: expect.any(String)
+      }
     });
   });
 

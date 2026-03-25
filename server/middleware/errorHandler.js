@@ -1,8 +1,9 @@
 import { sendError } from '../utils/responseHelpers.js';
+import { ErrorCodes } from '../constants/errorCodes.js';
 
 export function errorHandler(error, req, res, next) {
   const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-  const code = typeof error?.code === 'string' && error.code ? error.code : 'INTERNAL_ERROR';
+  const code = typeof error?.code === 'string' && error.code ? error.code : ErrorCodes.INTERNAL_ERROR;
 
   console.error('❌ [errorHandler] Unhandled error:', {
     path: req?.originalUrl,

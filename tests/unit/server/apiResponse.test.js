@@ -1,4 +1,4 @@
-import { buildSuccessPayload, sendSuccess } from '../../../server/utils/apiResponse.js';
+import { buildErrorPayload, buildSuccessPayload, sendErrorResponse, sendSuccess } from '../../../server/utils/apiResponse.js';
 
 describe('apiResponse util', () => {
   function mockRes() {
@@ -45,6 +45,50 @@ describe('apiResponse util', () => {
       ok: true,
       data: { id: 'job_1' },
       queued: true
+    });
+  });
+
+  test('buildErrorPayload crea envelope transicional con ok=false y errorInfo', () => {
+    expect(buildErrorPayload({
+      error: 'Bad input',
+      mensaje: 'Revisa los datos.',
+      codigo: 'BAD_INPUT',
+      details: { field: 'texto' }
+    })).toEqual({
+      ok: false,
+      error: 'Bad input',
+      mensaje: 'Revisa los datos.',
+      message: 'Revisa los datos.',
+      codigo: 'BAD_INPUT',
+      details: { field: 'texto' },
+      errorInfo: {
+        code: 'BAD_INPUT',
+        message: 'Revisa los datos.',
+        details: { field: 'texto' }
+      }
+    });
+  });
+
+  test('sendErrorResponse responde con payload de error estandarizado', () => {
+    const res = mockRes();
+
+    sendErrorResponse(res, 400, {
+      error: 'Bad input',
+      mensaje: 'Revisa los datos.',
+      codigo: 'BAD_INPUT'
+    });
+
+    expect(res._status).toBe(400);
+    expect(res._body).toEqual({
+      ok: false,
+      error: 'Bad input',
+      mensaje: 'Revisa los datos.',
+      message: 'Revisa los datos.',
+      codigo: 'BAD_INPUT',
+      errorInfo: {
+        code: 'BAD_INPUT',
+        message: 'Revisa los datos.'
+      }
     });
   });
 });

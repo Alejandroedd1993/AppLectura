@@ -39,7 +39,13 @@ function sanitizeText(value) {
 export function normalizeBackendErrorPayload(payload, options = {}) {
   const { status, fallbackMessage = DEFAULT_ERROR_MESSAGE } = options;
   const safePayload = payload && typeof payload === 'object' ? payload : {};
-  const backendError = sanitizeText(safePayload.error);
+  const nestedError = safePayload.error && typeof safePayload.error === 'object'
+    ? safePayload.error
+    : (safePayload.errorInfo && typeof safePayload.errorInfo === 'object' ? safePayload.errorInfo : null);
+  const backendError = typeof safePayload.error === 'string' ? sanitizeText(safePayload.error) : '';
+  const nestedMessage = sanitizeText(nestedError?.message);
+  const nestedCode = sanitizeText(nestedError?.code);
+  const nestedDetails = nestedError?.details;
   const explicitMessage = sanitizeText(safePayload.mensaje);
   const legacyMessage = sanitizeText(safePayload.message);
   const responseCode = sanitizeText(safePayload.codigo) || sanitizeText(safePayload.code);
@@ -47,10 +53,11 @@ export function normalizeBackendErrorPayload(payload, options = {}) {
 
   return {
     status,
-    code: responseCode || undefined,
+    code: responseCode || nestedCode || undefined,
     backendError: backendError || undefined,
-    message: explicitMessage || backendError || legacyMessage || fallbackMessage,
+    message: explicitMessage || nestedMessage || backendError || legacyMessage || fallbackMessage,
     requestId: requestId || undefined,
+    details: nestedDetails,
     payload: safePayload
   };
 }
@@ -84,6 +91,7 @@ export async function buildBackendError(response, options = {}) {
   error.code = normalized.code;
   error.backendError = normalized.backendError;
   error.requestId = normalized.requestId;
+  error.details = normalized.details;
   error.payload = normalized.payload;
   return error;
 }
