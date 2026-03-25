@@ -154,7 +154,7 @@ function getAccent(rubric, theme) {
 }
 
 function formatScore(rubric) {
-  if (rubric.isPendingReview) return 'Pend.';
+  if (rubric.isPendingReview) return 'En rev.';
   if (rubric.effectiveScore > 0) return `${rubric.effectiveScore.toFixed(1)}/10`;
   return 'Lista';
 }
@@ -190,7 +190,7 @@ export default function DashboardRubricas({ theme, onSelectRubric, progressSnaps
     <DashboardContainer theme={theme}>
       <DashboardTitle theme={theme}>📊 Tu progreso en las 5 dimensiones</DashboardTitle>
       <ScopeNote theme={theme}>
-        Hay {snapshot.summary.coverageCount} activa(s), {snapshot.lists.unstarted.length} por abrir y {snapshot.summary.pendingCount} pendiente(s) en esta lectura.
+        Hay {snapshot.summary.coverageCount} activa(s), {snapshot.lists.unstarted.length} por abrir y {snapshot.summary.pendingCount} esperando revisión en esta lectura.
       </ScopeNote>
 
       <RubricsGrid>

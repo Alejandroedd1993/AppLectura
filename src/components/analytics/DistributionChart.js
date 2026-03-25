@@ -108,7 +108,7 @@ const CustomTooltipContent = ({ active, payload, theme }) => {
   const data = payload[0].payload;
   const formatScoreValue = (value) => {
     if (Number.isFinite(value)) return `${Number(value).toFixed(1)}/10`;
-    return Number(data.attempts || 0) > 0 ? 'Pendiente' : 'Sin nota';
+    return Number(data.attempts || 0) > 0 ? 'En revisión' : 'Sin nota';
   };
   const attemptsLabel = Number(data.attempts || 0) > 0
     ? String(data.attempts)

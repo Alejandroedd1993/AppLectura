@@ -254,13 +254,13 @@ function createRubricSnapshot(rubricId, rubricData, activitiesProgress, lectureI
     evaluated,
     isPendingReview,
     lastActivityAt,
-    badgeLabel: !started ? 'Sin iniciar' : isPendingReview ? 'Pendiente' : (scoreBand?.label || 'En progreso'),
+    badgeLabel: !started ? 'Sin iniciar' : isPendingReview ? 'En revisión' : (scoreBand?.label || 'En progreso'),
     badgeTone: !started ? 'idle' : isPendingReview ? 'warning' : (scoreBand?.tone || 'info'),
     badgeColor: !started ? '#94A3B8' : isPendingReview ? '#F59E0B' : (scoreBand?.color || meta.color),
     currentStatusLabel: !started
       ? 'Sin iniciar'
       : isPendingReview
-        ? 'Pendiente de revision'
+        ? 'Esperando revisión'
         : evaluated
           ? scoreBand?.label || 'Evaluado'
           : 'En progreso'
@@ -284,9 +284,9 @@ function buildStageSummary(summary) {
   if (summary.pendingCount > 0) {
     return {
       id: 'pending',
-      label: 'Pendiente de revision',
+      label: 'Esperando revisión',
       tone: 'warning',
-      description: 'Hay entregas enviadas o ensayos sumativos esperando retroalimentacion.'
+      description: 'Hay entregas enviadas o ensayos sumativos esperando revisión o retroalimentación docente.'
     };
   }
 
@@ -343,8 +343,8 @@ function buildNextAction(rubrics, summary) {
       icon: '⏳',
       rubricId: pendingRubric.rubricId,
       title: `Revisa ${pendingRubric.artifactName}`,
-      description: 'Ya hay una entrega pendiente de revision. Puedes volver a la dimension para revisar el artefacto o afinarlo antes del feedback.',
-      ctaLabel: 'Abrir dimension pendiente'
+      description: 'Ya hay una entrega esperando revisión docente. Puedes volver a la dimensión para revisar el artefacto o afinarlo antes del feedback.',
+      ctaLabel: 'Abrir dimensión en revisión'
     };
   }
 

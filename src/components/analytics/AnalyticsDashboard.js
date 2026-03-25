@@ -28,6 +28,23 @@ import {
   hasSessionScoreForRubrics
 } from '../../services/progressAnalyticsView';
 
+const UI_ICONS = {
+  dashboard: '\u{1F4CA}',
+  period: '\u{1F4C5}',
+  rubric: '\u{1F3AF}',
+  empty: '\u{1F50E}',
+  sessions: '\u{1F4DA}',
+  score: '\u{1F3AF}',
+  trophy: '\u{1F3C6}',
+  trendUp: '\u{1F4C8}',
+  trendDown: '\u{1F4C9}',
+  trendStable: '\u{27A1}\u{FE0F}',
+  evolution: '\u{1F4C8}',
+  distribution: '\u{1F4CA}',
+  competencies: '\u{1F4CB}',
+  rubricFallback: '\u{1F4D8}'
+};
+
 const TIME_RANGE_WINDOWS = {
   week: 7 * 24 * 60 * 60 * 1000,
   month: 30 * 24 * 60 * 60 * 1000,
@@ -35,19 +52,19 @@ const TIME_RANGE_WINDOWS = {
 };
 
 const RUBRIC_OPTIONS = [
-  { id: 'all', name: 'Todas las Rubricas', shortLabel: 'Todas', icon: '📊', color: '#3B82F6' },
+  { id: 'all', name: 'Todas las rubricas', shortLabel: 'Todas', icon: UI_ICONS.dashboard, color: '#3B82F6' },
   ...ANALYTICS_RUBRIC_IDS.map((rubricId) => ({
     id: rubricId,
     name: RUBRIC_PROGRESS_META[rubricId]?.name || rubricId,
     shortLabel: RUBRIC_PROGRESS_META[rubricId]?.shortName || rubricId,
-    icon: RUBRIC_PROGRESS_META[rubricId]?.icon || '📘',
+    icon: RUBRIC_PROGRESS_META[rubricId]?.icon || UI_ICONS.rubricFallback,
     color: RUBRIC_PROGRESS_META[rubricId]?.color || '#3B82F6'
   }))
 ];
 
 const TOOLTIP_RUBRIC_OPTIONS = ANALYTICS_RUBRIC_IDS.map((rubricId) => ({
   id: rubricId,
-  icon: RUBRIC_PROGRESS_META[rubricId]?.icon || '📘',
+  icon: RUBRIC_PROGRESS_META[rubricId]?.icon || UI_ICONS.rubricFallback,
   shortLabel: RUBRIC_PROGRESS_META[rubricId]?.shortName || rubricId
 }));
 
@@ -407,12 +424,12 @@ const AnalyticsDashboard = ({ sessions, theme }) => {
 
       {!dashboardData.hasComparableData ? (
         <EmptyState theme={theme}>
-          <EmptyIcon>ðŸ”Ž</EmptyIcon>
+          <EmptyIcon>{"\u{1F50E}"}</EmptyIcon>
           <EmptyText>No hay notas comparables para este filtro</EmptyText>
           <EmptyHint>
             {selectedRubric === 'all'
-              ? 'AÃºn no existen sesiones con evidencia evaluada suficiente en este perÃ­odo.'
-              : 'Esta rÃºbrica todavÃ­a no tiene puntuaciones registradas en el perÃ­odo seleccionado.'}
+              ? 'Aun no existen sesiones con evidencia evaluada suficiente en este periodo.'
+              : 'Esta rubrica todavia no tiene puntuaciones registradas en el periodo seleccionado.'}
           </EmptyHint>
         </EmptyState>
       ) : (

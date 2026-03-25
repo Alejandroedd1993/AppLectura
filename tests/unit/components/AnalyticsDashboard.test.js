@@ -119,6 +119,34 @@ describe('AnalyticsDashboard', () => {
     expect(screen.queryByText('-0%')).not.toBeInTheDocument();
   });
 
+  test('muestra el empty state filtrado sin texto corrupto cuando la rubrica no tiene sesiones comparables', () => {
+    const sessions = [
+      createSession({
+        title: 'Sesion 1',
+        createdAt: '2026-03-10T08:00:00.000Z',
+        rubricProgress: {
+          rubrica1: {
+            scores: [{ score: 8, artefacto: 'ResumenAcademico', timestamp: 1 }],
+            average: 8,
+            artefactos: ['ResumenAcademico']
+          },
+          rubrica2: {
+            scores: [{ score: 6, artefacto: 'TablaACD', timestamp: 2 }],
+            average: 6,
+            artefactos: ['TablaACD']
+          }
+        }
+      })
+    ];
+
+    render(<AnalyticsDashboard sessions={sessions} theme={lightTheme} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Argumentacion/i }));
+
+    expect(screen.getByText('No hay notas comparables para este filtro')).toBeInTheDocument();
+    expect(screen.getByText('Esta rubrica todavia no tiene puntuaciones registradas en el periodo seleccionado.')).toBeInTheDocument();
+  });
+
   test('solo muestra competencias con evidencia comparable en el panel de progreso', () => {
     const sessions = [
       createSession({
@@ -152,7 +180,8 @@ describe('AnalyticsDashboard', () => {
 
     render(<AnalyticsDashboard sessions={sessions} theme={lightTheme} />);
 
-    const progressSection = screen.getByText('📋 Progreso por Competencia').closest('section') || screen.getByText('📋 Progreso por Competencia').parentElement;
+    const progressHeading = screen.getByText(/Progreso por Competencia/i);
+    const progressSection = progressHeading.closest('section') || progressHeading.parentElement;
     const scopedQueries = within(progressSection);
 
     expect(scopedQueries.getByText('Comprension Analitica')).toBeInTheDocument();

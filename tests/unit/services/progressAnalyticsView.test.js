@@ -123,7 +123,7 @@ describe('progressAnalyticsView', () => {
             totalAttempts: 2,
             effectiveScore: 0,
             bestRecordedScore: 0,
-            currentStatusLabel: 'Pendiente de revision',
+            currentStatusLabel: 'Esperando revisión',
             formativeScores: []
           }
         ]
@@ -138,7 +138,7 @@ describe('progressAnalyticsView', () => {
         best: null,
         last: null,
         hasScoreData: false,
-        statusLabel: 'Pendiente de revision'
+        statusLabel: 'Esperando revisión'
       })
     ]);
   });

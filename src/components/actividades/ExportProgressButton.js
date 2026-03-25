@@ -184,8 +184,8 @@ function buildAggregateExportRow(rubric, nivelDescripcion) {
   if (rubric.isPendingReview) {
     const sumStatus = String(rubric?.summative?.status || '').toLowerCase();
     estado = sumStatus === 'submitted'
-      ? 'Sumativo pendiente de revision'
-      : 'Artefacto pendiente de revision';
+      ? 'Sumativo esperando revisión'
+      : 'Artefacto esperando revisión';
   } else if (rubric.summativeAttempted && rubric.summativeScore > 0) {
     estado = 'Evaluacion sumativa';
   } else if (toNumber(rubric?.artifactData?.teacherOverrideScore) > 0) {
@@ -203,7 +203,9 @@ function buildAggregateExportRow(rubric, nivelDescripcion) {
       formatExportDate(rubric.lastActivityAt),
       getArtifactName(rubric.rubricId, rubric.artifactName),
       estado,
-      rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
+      rubric.effectiveScore > 0
+        ? rubric.effectiveScore.toFixed(2)
+        : (rubric.isPendingReview ? 'Esperando revisión' : 'Sin nota'),
       rank,
       rankDescription,
       formatAttemptExportValue(rubric)
@@ -262,7 +264,9 @@ export function buildCsvRows(snapshot) {
         formatExportDate(rubric.lastActivityAt),
         getArtifactName(rubric.rubricId, rubric.artifactName),
         rubric.currentStatusLabel,
-        rubric.effectiveScore > 0 ? rubric.effectiveScore.toFixed(2) : 'Pendiente',
+        rubric.effectiveScore > 0
+          ? rubric.effectiveScore.toFixed(2)
+          : (rubric.isPendingReview ? 'Esperando revisión' : 'Sin nota'),
         rubric.scoreBand?.rank || '',
         rubric.badgeLabel,
         formatAttemptExportValue(rubric)
@@ -588,12 +592,12 @@ export default function ExportProgressButton({
                     <li><strong>Fecha y hora</strong> de cada evaluacion registrada</li>
                     <li><strong>Artefacto y estado</strong> actual de la dimension</li>
                     <li><strong>Puntuacion sobre 10</strong> cuando exista</li>
-                    <li><strong>Nivel alcanzado</strong> o estado pendiente</li>
+                    <li><strong>Nivel alcanzado</strong> o estado en revisión</li>
                     <li><strong>Numero de intento</strong> por registro</li>
                   </>
                 ) : (
                   <>
-                    <li><strong>Resumen general:</strong> cobertura, notas, pendientes y mejor puntaje</li>
+                    <li><strong>Resumen general:</strong> cobertura, notas, revisiones en espera y mejor puntaje</li>
                     <li><strong>Tabla por artefacto:</strong> estado, intentos, ultima nota y maxima</li>
                     <li><strong>Contenido del estudiante:</strong> respuestas guardadas si existen</li>
                     <li><strong>Soporte:</strong> muestra de interacciones con tutor y citas guardadas</li>

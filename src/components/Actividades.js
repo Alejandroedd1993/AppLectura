@@ -857,9 +857,9 @@ export default function Actividades() {
                     </span>
                   </HeroMetricCard>
                   <HeroMetricCard theme={theme} $accent={theme.warning}>
-                    <span className="label">Pendientes</span>
+                    <span className="label">Esperando revisión</span>
                     <span className="value">{progressSnapshot.summary.pendingCount}</span>
-                    <span className="helper">Entregas o revisiones por cerrar</span>
+                    <span className="helper">Entregas ya enviadas al docente</span>
                   </HeroMetricCard>
                   <HeroMetricCard theme={theme} $accent={theme.secondary}>
                     <span className="label">Fortalezas</span>
