@@ -1,17 +1,9 @@
 import { ocrImageBuffer } from '../services/ocr.service.js';
 import { sendError } from '../utils/responseHelpers.js';
-import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 
 export async function ocrImageUpload(req, res) {
   try {
-    if (!req.file) {
-      return sendValidationError(res, {
-        error: 'No se recibio imagen.',
-        mensaje: 'Debes adjuntar una imagen antes de ejecutar OCR.',
-        codigo: 'MISSING_OCR_IMAGE'
-      });
-    }
     const buffer = req.file.buffer;
     const result = await ocrImageBuffer(buffer, { lang: 'spa' });
     return sendSuccess(res, {

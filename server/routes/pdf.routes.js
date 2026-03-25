@@ -1,10 +1,12 @@
 
 import { Router } from 'express';
-import multer from 'multer';
 import { processPdfUpload, detectPdfTables } from '../controllers/pdf.controller.js';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
-import { sendError } from '../utils/responseHelpers.js';
+import {
+  createSingleFileUploadMiddleware,
+  requireUploadedFile
+} from '../middleware/uploadValidation.js';
 
 const router = Router();
 const DEFAULT_PDF_MAX_BYTES = 20 * 1024 * 1024;
@@ -13,51 +15,29 @@ const pdfMaxBytes = Number.isFinite(pdfMaxBytesRaw) && pdfMaxBytesRaw > 0
   ? Math.floor(pdfMaxBytesRaw)
   : DEFAULT_PDF_MAX_BYTES;
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: pdfMaxBytes,
-    files: 1
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype !== 'application/pdf') {
-      const err = new Error('Solo se permiten archivos PDF');
-      err.code = 'UNSUPPORTED_MEDIA_TYPE';
-      return cb(err);
-    }
-    cb(null, true);
-  }
+const uploadPdfMiddleware = createSingleFileUploadMiddleware({
+  fieldName: 'pdfFile',
+  maxBytes: pdfMaxBytes,
+  allowedMimeTypes: ['application/pdf'],
+  tooLargeCode: 'PDF_TOO_LARGE',
+  tooLargeError: `El archivo excede el limite de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB`,
+  tooLargeMessage: `El archivo PDF supera el tamaño maximo permitido de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB.`,
+  unsupportedCode: 'UNSUPPORTED_PDF_TYPE',
+  unsupportedError: 'Formato de archivo no soportado.',
+  unsupportedMessage: 'El tipo de archivo enviado no es compatible con procesamiento PDF.',
+  uploadCode: 'PDF_UPLOAD_ERROR',
+  uploadError: 'Error procesando upload de PDF',
+  uploadMessage: 'No se pudo procesar la subida del archivo PDF.'
 });
 
-const uploadPdfMiddleware = (req, res, next) => {
-  upload.single('pdfFile')(req, res, (err) => {
-    if (!err) return next();
+const requirePdfFile = requireUploadedFile({
+  fieldName: 'pdfFile',
+  missingCode: 'MISSING_PDF_FILE',
+  missingError: 'No se ha subido ningun archivo PDF.',
+  missingMessage: 'Debes adjuntar un archivo PDF antes de procesarlo.'
+});
 
-    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-      return sendError(res, 413, {
-        error: `El archivo excede el limite de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB`,
-        mensaje: `El archivo PDF supera el tamaño maximo permitido de ${Math.floor(pdfMaxBytes / (1024 * 1024))} MB.`,
-        codigo: 'PDF_TOO_LARGE'
-      });
-    }
-
-    if (err.code === 'UNSUPPORTED_MEDIA_TYPE') {
-      return sendError(res, 415, {
-        error: 'Formato de archivo no soportado.',
-        mensaje: 'El tipo de archivo enviado no es compatible con procesamiento PDF.',
-        codigo: 'UNSUPPORTED_PDF_TYPE'
-      });
-    }
-
-    return sendError(res, 400, {
-      error: 'Error procesando upload de PDF',
-      mensaje: 'No se pudo procesar la subida del archivo PDF.',
-      codigo: 'PDF_UPLOAD_ERROR'
-    });
-  });
-};
-
-router.post('/process-pdf', requireFirebaseAuth, uploadLimiter, uploadPdfMiddleware, processPdfUpload);
-router.post('/detect-tables', requireFirebaseAuth, uploadLimiter, uploadPdfMiddleware, detectPdfTables);
+router.post('/process-pdf', requireFirebaseAuth, uploadLimiter, uploadPdfMiddleware, requirePdfFile, processPdfUpload);
+router.post('/detect-tables', requireFirebaseAuth, uploadLimiter, uploadPdfMiddleware, requirePdfFile, detectPdfTables);
 
 export default router;

@@ -1,6 +1,5 @@
 import { generarNotasConOpenAI, generarNotasConDeepSeek, generarNotasConGemini } from '../services/notes.service.js';
 import { notesSchema } from '../validators/schemas.js';
-import { sendValidationError } from '../utils/validationError.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 
@@ -58,16 +57,9 @@ function getNotesErrorResponse(error) {
  * }
  */
 export async function generarNotas(req, res) {
+  // Validación de texto y provider ya cubierta por Zod en la ruta
   const { texto, api = 'openai', contexto = null, nivelAcademico = 'pregrado', tipoTexto = 'auto', numeroTarjetas = undefined } = req.body || {};
   const provider = String(api || 'openai').trim().toLowerCase();
-
-  if (!texto || typeof texto !== 'string' || texto.trim().length === 0) {
-    return sendValidationError(res, {
-      error: 'Texto vacio',
-      mensaje: 'Proporciona texto para generar notas',
-      codigo: 'EMPTY_NOTES_TEXT'
-    });
-  }
 
   // Log del contexto enriquecido y nivel académico
   if (contexto || nivelAcademico !== 'pregrado') {
@@ -80,15 +72,7 @@ export async function generarNotas(req, res) {
     });
   }
 
-  // Validación por proveedor
-  if (!['openai', 'deepseek', 'gemini'].includes(provider)) {
-    return sendError(res, 400, {
-      error: 'API no soportada',
-      mensaje: 'El proveedor solicitado no es valido.',
-      codigo: 'UNSUPPORTED_AI_PROVIDER'
-    });
-  }
-
+  // Validación de proveedor configurado (lógica de negocio, no forma)
   if (!isProviderConfigured(provider)) {
     return sendError(res, 503, {
       error: 'Proveedor no disponible',

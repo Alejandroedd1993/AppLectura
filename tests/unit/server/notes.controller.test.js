@@ -31,20 +31,6 @@ describe('notes.controller', () => {
     process.env.OPENAI_API_KEY = originalOpenAiKey;
   });
 
-  test('generarNotas responde 400 semantico si texto falta o es vacio', async () => {
-    const req = { body: {} };
-    const res = makeRes();
-
-    await generarNotas(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: 'Texto vacio',
-      mensaje: 'Proporciona texto para generar notas',
-      codigo: 'EMPTY_NOTES_TEXT'
-    }));
-  });
-
   test('generarNotas responde 503 si el proveedor devuelve formato invalido', async () => {
     generarNotasConOpenAI.mockResolvedValue({ invalido: true });
     const req = { body: { texto: 'Texto suficiente para generar notas.', api: 'openai' } };

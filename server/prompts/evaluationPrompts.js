@@ -1,3 +1,5 @@
+import { truncateText } from '../utils/textLimits.js';
+
 /**
  * ⭐ PROMPTS DE EVALUACIÓN CRITERIAL - Sistema de Literacidad Crítica
  * 
@@ -207,13 +209,13 @@ ${preguntasGuia}
 📄 RESPUESTA DEL ESTUDIANTE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${respuesta.slice(0, 3000)}
+${truncateText(respuesta, 3000, { suffix: '' })}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📖 TEXTO DE REFERENCIA (para verificar citas y contexto)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${texto.slice(0, 4000)}
+${truncateText(texto, 4000, { suffix: '' })}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -361,13 +363,13 @@ ${dimensionesInfo}
 📄 RESPUESTA DEL ESTUDIANTE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${respuesta.slice(0, 4000)}
+${truncateText(respuesta, 4000, { suffix: '' })}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📖 TEXTO DE REFERENCIA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${texto.slice(0, 5000)}
+${truncateText(texto, 5000, { suffix: '' })}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -377,44 +379,11 @@ Ahora evalúa las 4 dimensiones. Responde SOLO con el JSON estructurado.`;
 /**
  * Valida entrada para evaluación criterial
  */
-export function validateCriterialEvaluationInput({ respuesta, texto, dimensionKey }) {
+export function validateCriterialEvaluationInput({ dimensionKey }) {
   const errors = [];
-
-  if (!respuesta || typeof respuesta !== 'string') {
-    errors.push('Respuesta es requerida y debe ser string');
-  } else if (respuesta.trim().length < 20) {
-    errors.push('Respuesta debe tener al menos 20 caracteres');
-  }
-
-  if (!texto || typeof texto !== 'string') {
-    errors.push('Texto es requerido y debe ser string');
-  } else if (texto.trim().length < 50) {
-    errors.push('Texto debe tener al menos 50 caracteres');
-  }
 
   if (!dimensionKey || !RUBRIC.dimensiones[dimensionKey]) {
     errors.push(`Dimensión inválida: ${dimensionKey}. Dimensiones válidas: ${Object.keys(RUBRIC.dimensiones).join(', ')}`);
-  }
-
-  return errors;
-}
-
-/**
- * Valida entrada para evaluación comprehensiva
- */
-export function validateComprehensiveEvaluationInput({ respuesta, texto }) {
-  const errors = [];
-
-  if (!respuesta || typeof respuesta !== 'string') {
-    errors.push('Respuesta es requerida y debe ser string');
-  } else if (respuesta.trim().length < 100) {
-    errors.push('Para evaluación comprehensiva, respuesta debe tener al menos 100 caracteres');
-  }
-
-  if (!texto || typeof texto !== 'string') {
-    errors.push('Texto es requerido y debe ser string');
-  } else if (texto.trim().length < 200) {
-    errors.push('Para evaluación comprehensiva, texto debe tener al menos 200 caracteres');
   }
 
   return errors;
@@ -425,6 +394,5 @@ export default {
   buildCriterialEvaluationPrompt,
   getComprehensiveEvaluationSchema,
   buildComprehensiveEvaluationPrompt,
-  validateCriterialEvaluationInput,
-  validateComprehensiveEvaluationInput
+  validateCriterialEvaluationInput
 };

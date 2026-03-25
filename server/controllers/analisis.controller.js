@@ -4,7 +4,7 @@ import { analizarTextoBasico } from '../services/basic.service.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { analysisSchema } from '../validators/schemas.js';
-import { sendValidationError } from '../utils/validationError.js';
+import { truncateText } from '../utils/textLimits.js';
 
 /**
  * @typedef {import('express').Request} Request
@@ -17,29 +17,12 @@ import { sendValidationError } from '../utils/validationError.js';
  * @param {Response} res - El objeto de respuesta de Express.
  */
 export async function analizarTexto(req, res) {
-  // Ahora el backend soporta estrategias: 'deepseek', 'openai', 'smart', 'alternate', 'debate'
+  // Validación de texto y api ya cubierta por Zod en la ruta
   const { texto, api = 'smart' } = req.body || {};
-
-  if (!texto || texto.trim().length === 0) {
-    return sendValidationError(res, {
-      error: 'Texto vacio',
-      mensaje: 'Por favor proporciona un texto para analizar.',
-      codigo: 'EMPTY_ANALYSIS_TEXT'
-    });
-  }
-
-  const validApis = ['openai', 'gemini', 'deepseek', 'smart', 'alternate', 'debate'];
-  if (!validApis.includes(api)) {
-    return sendValidationError(res, {
-      error: 'API no valida',
-      mensaje: `API debe ser una de: ${validApis.join(', ')}`,
-      codigo: 'INVALID_ANALYSIS_PROVIDER'
-    });
-  }
 
   try {
     console.log(`Procesando solicitud de análisis con API: ${api}`);
-    const textoTruncado = texto.slice(0, 4000) + (texto.length > 4000 ? '...' : '');
+    const textoTruncado = truncateText(texto, 4000);
 
     // Usamos el nuevo servicio unificado para todos los proveedores soportados
     const resultado = await analizarTextoService(textoTruncado, api);
@@ -79,7 +62,7 @@ export async function analizarTexto(req, res) {
     // (evita 500 y mantiene la UX funcional)
     if (api === 'gemini' && String(error?.message || '').toLowerCase().includes('api key de gemini no configurada')) {
       try {
-        const textoTruncado = texto.slice(0, 4000) + (texto.length > 4000 ? '...' : '');
+        const textoTruncado = truncateText(texto, 4000);
         const fallback = analizarTextoBasico(textoTruncado);
         return sendSuccess(res, fallback);
       } catch (fallbackErr) {

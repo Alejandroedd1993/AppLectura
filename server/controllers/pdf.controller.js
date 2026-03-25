@@ -4,7 +4,6 @@ import OCRService, { ocrPdfBuffer } from '../services/ocr.service.js';
 import TableDetectService, { detectTablesAndThumbnails } from '../services/tableDetect.service.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { sendError } from '../utils/responseHelpers.js';
-import { sendValidationError } from '../utils/validationError.js';
 
 /**
  * Controlador para manejar la subida y procesamiento de archivos PDF.
@@ -12,14 +11,6 @@ import { sendValidationError } from '../utils/validationError.js';
  * @param {import('express').Response} res - El objeto de respuesta de Express.
  */
 export async function processPdfUpload(req, res) {
-  if (!req.file) {
-    return sendValidationError(res, {
-      error: 'No se ha subido ningun archivo PDF.',
-      mensaje: 'Debes adjuntar un archivo PDF antes de procesarlo.',
-      codigo: 'MISSING_PDF_FILE'
-    });
-  }
-
   const pdfBuffer = req.file.buffer;
 
   try {
@@ -61,13 +52,6 @@ export async function processPdfUpload(req, res) {
  * Detecta tablas y genera miniaturas desde un PDF.
  */
 export async function detectPdfTables(req, res) {
-  if (!req.file) {
-    return sendValidationError(res, {
-      error: 'No se ha subido ningun archivo PDF.',
-      mensaje: 'Debes adjuntar un archivo PDF antes de detectar tablas.',
-      codigo: 'MISSING_PDF_FILE'
-    });
-  }
   const pdfBuffer = req.file.buffer;
   try {
     const data = await detectTablesAndThumbnails(pdfBuffer, { maxPages: 5, scale: 1.8 });

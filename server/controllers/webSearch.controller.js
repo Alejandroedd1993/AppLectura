@@ -106,8 +106,8 @@ const responderBusquedaIA = async (req, res) => {
   try {
     const enabled = isWebSearchEnabled();
     const { query, maxResults = 5, provider = 'smart', type } = req.body || {};
-    const q = sanitizeQuery(query);
-    const max = clampInt(maxResults, { min: 1, max: 10, fallback: 5 });
+    const q = sanitizeWebQuery(query);
+    const max = clampWebResultCount(maxResults, { min: 1, max: 10, fallback: 5 });
     if (!q) {
       return sendError(res, 400, {
         error: 'Query requerida',

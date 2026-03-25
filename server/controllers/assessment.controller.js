@@ -4,12 +4,12 @@ import {
   getCriterialEvaluationSchema,
   buildComprehensiveEvaluationPrompt,
   getComprehensiveEvaluationSchema,
-  validateCriterialEvaluationInput,
-  validateComprehensiveEvaluationInput
+  validateCriterialEvaluationInput
 } from '../prompts/evaluationPrompts.js';
 import { normalizeDimensionInput } from '../../src/pedagogy/rubrics/criticalLiteracyRubric.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendSuccess } from '../utils/apiResponse.js';
+import { truncateText } from '../utils/textLimits.js';
 
 const safeJsonParse = (value) => {
   if (typeof value !== 'string') return { ok: true, data: value };
@@ -115,7 +115,7 @@ export async function evaluateAnswer(req, res) {
     const dimension = normalizeDimensionInput(rawDimension);
 
     // Validar entrada
-    const validationErrors = validateCriterialEvaluationInput({ respuesta, texto, dimensionKey: dimension });
+    const validationErrors = validateCriterialEvaluationInput({ dimensionKey: dimension });
     if (validationErrors.length > 0) {
       return sendError(res, 400, {
         error: 'Datos de entrada inválidos',
@@ -245,17 +245,6 @@ export async function evaluateComprehensive(req, res) {
       provider = 'openai'
     } = req.body || {};
 
-    // Validar entrada
-    const validationErrors = validateComprehensiveEvaluationInput({ respuesta, texto });
-    if (validationErrors.length > 0) {
-      return sendError(res, 400, {
-        error: 'Datos de entrada inválidos',
-        mensaje: 'Revisa los campos requeridos antes de volver a intentar.',
-        codigo: 'INVALID_COMPREHENSIVE_ASSESSMENT_INPUT',
-        details: sanitizeValidationErrors(validationErrors)
-      });
-    }
-
     console.log(`📊 [assessment.evaluateComprehensive] Evaluando las 4 dimensiones`);
 
     // Construir prompt comprehensivo
@@ -359,22 +348,6 @@ export async function bulkEvaluate(req, res) {
   try {
     const { items } = req.body || {};
 
-    if (!Array.isArray(items) || items.length === 0) {
-      return sendError(res, 400, {
-        error: 'items debe ser un array con al menos una evaluacion',
-        mensaje: 'Proporciona al menos una evaluacion para procesar.',
-        codigo: 'INVALID_BULK_ASSESSMENT_INPUT'
-      });
-    }
-
-    if (items.length > 10) {
-      return sendError(res, 400, {
-        error: 'Maximo 10 evaluaciones por lote',
-        mensaje: 'Reduce la cantidad de evaluaciones enviadas en una sola solicitud.',
-        codigo: 'ASSESSMENT_BULK_LIMIT_EXCEEDED'
-      });
-    }
-
     console.log(`📊 [assessment.bulkEvaluate] Procesando ${items.length} evaluaciones`);
 
     const results = [];
@@ -395,16 +368,14 @@ export async function bulkEvaluate(req, res) {
 
       try {
         // Sanitizar/limitar tamaños para controlar coste y evitar prompts excesivos
-        const safeTexto = typeof item?.texto === 'string' ? item.texto.slice(0, 10000) : item?.texto;
-        const safeRespuesta = typeof item?.respuesta === 'string' ? item.respuesta.slice(0, 5000) : item?.respuesta;
+        const safeTexto = typeof item?.texto === 'string' ? truncateText(item.texto, 10000, { suffix: '' }) : item?.texto;
+        const safeRespuesta = typeof item?.respuesta === 'string' ? truncateText(item.respuesta, 5000, { suffix: '' }) : item?.respuesta;
 
         // Normalizar dimensión
         const dimension = normalizeDimensionInput(item.dimension || 'comprensionAnalitica');
 
-        // Validar item
+        // Validar dimensión contra rúbrica
         const validationErrors = validateCriterialEvaluationInput({
-          respuesta: safeRespuesta,
-          texto: safeTexto,
           dimensionKey: dimension
         });
 

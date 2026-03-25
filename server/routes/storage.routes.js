@@ -2,9 +2,20 @@ import express from 'express';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 import { storageProxyLimiter } from '../middleware/rateLimiters.js';
 import { sendError } from '../utils/responseHelpers.js';
-import { sendValidationError } from '../utils/validationError.js';
+import { validateRequest } from '../middleware/validateRequest.js';
+import { storageProxyQuerySchema } from '../validators/requestSchemas.js';
 
 const router = express.Router();
+export const validateStorageProxyQuery = validateRequest(storageProxyQuerySchema, {
+  source: 'query',
+  buildErrorPayload: ({ details }) => ({
+    error: 'Solicitud de storage proxy invalida',
+    mensaje: details[0]?.message || 'Revisa los datos enviados antes de reintentar.',
+    codigo: 'INVALID_STORAGE_PROXY_REQUEST',
+    ...(details[0]?.path ? { field: details[0].path } : {}),
+    details
+  })
+});
 
 const isAllowedStorageUrl = (value = '') => {
   try {
@@ -16,22 +27,14 @@ const isAllowedStorageUrl = (value = '') => {
   }
 };
 
-router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, async (req, res) => {
+router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, validateStorageProxyQuery, async (req, res) => {
   const targetUrl = req.query.url;
 
   console.log('📥 [StorageProxy] Solicitud recibida para:', targetUrl?.substring(0, 80));
 
-  if (!targetUrl) {
-    return sendValidationError(res, {
-      error: 'Missing "url" query parameter',
-      mensaje: 'Debes enviar el parametro url para recuperar el archivo.',
-      codigo: 'MISSING_STORAGE_URL'
-    });
-  }
-
   if (!isAllowedStorageUrl(targetUrl)) {
     console.warn('⚠️ [StorageProxy] URL no permitida:', targetUrl);
-    return sendValidationError(res, {
+    return sendError(res, 400, {
       error: 'Invalid or disallowed storage URL',
       mensaje: 'La URL solicitada no pertenece a un origen de Storage permitido.',
       codigo: 'INVALID_STORAGE_URL'

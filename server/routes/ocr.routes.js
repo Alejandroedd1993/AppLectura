@@ -1,9 +1,11 @@
 import { Router } from 'express';
-import multer from 'multer';
 import { ocrImageUpload } from '../controllers/ocr.controller.js';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
-import { sendError } from '../utils/responseHelpers.js';
+import {
+  createSingleFileUploadMiddleware,
+  requireUploadedFile
+} from '../middleware/uploadValidation.js';
 
 const router = Router();
 const DEFAULT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -22,50 +24,28 @@ const allowedImageMimeTypes = new Set([
   'image/bmp'
 ]);
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: imageMaxBytes,
-    files: 1
-  },
-  fileFilter: (req, file, cb) => {
-    if (!allowedImageMimeTypes.has(file.mimetype)) {
-      const err = new Error('Tipo de imagen no soportado para OCR');
-      err.code = 'UNSUPPORTED_MEDIA_TYPE';
-      return cb(err);
-    }
-    cb(null, true);
-  }
+const uploadImageMiddleware = createSingleFileUploadMiddleware({
+  fieldName: 'image',
+  maxBytes: imageMaxBytes,
+  allowedMimeTypes: Array.from(allowedImageMimeTypes),
+  tooLargeCode: 'IMAGE_TOO_LARGE',
+  tooLargeError: `La imagen excede el limite de ${Math.floor(imageMaxBytes / (1024 * 1024))} MB`,
+  tooLargeMessage: `El archivo de imagen supera el tamaño maximo permitido de ${Math.floor(imageMaxBytes / (1024 * 1024))} MB.`,
+  unsupportedCode: 'UNSUPPORTED_IMAGE_TYPE',
+  unsupportedError: 'Formato de imagen no soportado.',
+  unsupportedMessage: 'El tipo de archivo enviado no es compatible con OCR de imagen.',
+  uploadCode: 'IMAGE_UPLOAD_ERROR',
+  uploadError: 'Error procesando upload de imagen',
+  uploadMessage: 'No se pudo procesar la subida de la imagen.'
 });
 
-const uploadImageMiddleware = (req, res, next) => {
-  upload.single('image')(req, res, (err) => {
-    if (!err) return next();
+const requireImageFile = requireUploadedFile({
+  fieldName: 'image',
+  missingCode: 'MISSING_OCR_IMAGE',
+  missingError: 'No se recibio imagen.',
+  missingMessage: 'Debes adjuntar una imagen antes de ejecutar OCR.'
+});
 
-    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-      return sendError(res, 413, {
-        error: `La imagen excede el limite de ${Math.floor(imageMaxBytes / (1024 * 1024))} MB`,
-        mensaje: `El archivo de imagen supera el tamaño maximo permitido de ${Math.floor(imageMaxBytes / (1024 * 1024))} MB.`,
-        codigo: 'IMAGE_TOO_LARGE'
-      });
-    }
-
-    if (err.code === 'UNSUPPORTED_MEDIA_TYPE') {
-      return sendError(res, 415, {
-        error: 'Formato de imagen no soportado.',
-        mensaje: 'El tipo de archivo enviado no es compatible con OCR de imagen.',
-        codigo: 'UNSUPPORTED_IMAGE_TYPE'
-      });
-    }
-
-    return sendError(res, 400, {
-      error: 'Error procesando upload de imagen',
-      mensaje: 'No se pudo procesar la subida de la imagen.',
-      codigo: 'IMAGE_UPLOAD_ERROR'
-    });
-  });
-};
-
-router.post('/ocr-image', requireFirebaseAuth, uploadLimiter, uploadImageMiddleware, ocrImageUpload);
+router.post('/ocr-image', requireFirebaseAuth, uploadLimiter, uploadImageMiddleware, requireImageFile, ocrImageUpload);
 
 export default router;

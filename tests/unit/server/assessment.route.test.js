@@ -12,7 +12,11 @@ jest.mock('../../../server/middleware/firebaseAuth.js', () => ({
   requireFirebaseAuth: (req, res, next) => next()
 }));
 
-import { validateAssessmentInput, validateComprehensiveInput } from '../../../server/routes/assessment.route.js';
+import {
+  validateAssessmentInput,
+  validateBulkAssessmentInput,
+  validateComprehensiveInput
+} from '../../../server/routes/assessment.route.js';
 
 function makeRes() {
   const res = {};
@@ -68,6 +72,21 @@ describe('assessment.route validators', () => {
       codigo: 'INVALID_COMPREHENSIVE_TEXT',
       mensaje: expect.any(String),
       field: 'texto'
+    }));
+  });
+
+  test('validateBulkAssessmentInput responde 400 cuando items no es valido', () => {
+    const req = { body: { items: [] } };
+    const res = makeRes();
+    const next = jest.fn();
+
+    validateBulkAssessmentInput(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      codigo: 'INVALID_BULK_ASSESSMENT_REQUEST',
+      field: 'items'
     }));
   });
 });

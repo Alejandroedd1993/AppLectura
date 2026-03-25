@@ -7,7 +7,6 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { createFallbackAnalysis } from '../services/preLecturaFallback.service.js';
 import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
@@ -26,6 +25,7 @@ import {
   extractKeyFindings,
   buildWebDecisionMetadata,
 } from '../services/preLecturaWebDecision.service.js';
+import { readBoundedIntEnv, truncateTextWithNotice } from '../utils/textLimits.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,14 +118,6 @@ export async function analyzePreLecture(req, res) {
 
   try {
     const { text, metadata = {} } = req.body || {};
-
-    if (!text || typeof text !== 'string' || text.trim().length < 100) {
-      return sendValidationError(res, {
-        error: 'Texto invalido o muy corto (minimo 100 caracteres)',
-        mensaje: 'Debes enviar un texto mas extenso para el analisis de prelectura.',
-        codigo: 'INVALID_PRELECTURA_TEXT'
-      });
-    }
 
     console.log('📊 [PreLectura Controller] Iniciando análisis completo...');
     console.log(`   Longitud texto: ${text.length} caracteres`);
@@ -322,10 +314,12 @@ async function performWebSearch(text, searchDecision) {
  * Construye el prompt unificado para IA
  */
 function buildUnifiedPrompt(text, webContext, webEnriched) {
-  const maxChars = Number.parseInt(process.env.PRELECTURA_MAX_TEXT_CHARS || '18000', 10);
-  const safeText = (Number.isFinite(maxChars) && maxChars > 0 && text.length > maxChars)
-    ? `${text.slice(0, maxChars)}\n\n[NOTA: Texto truncado para el análisis. Longitud original: ${text.length} caracteres]`
-    : text;
+  const maxChars = readBoundedIntEnv('PRELECTURA_MAX_TEXT_CHARS', 18000, { min: 1000, max: 50000 });
+  const safeText = truncateTextWithNotice(
+    text,
+    maxChars,
+    (originalLength) => `\n\n[NOTA: Texto truncado para el análisis. Longitud original: ${originalLength} caracteres]`
+  );
 
   let prompt = `Eres un experto en análisis de textos académicos con formación en pedagogía crítica y literacidad crítica. 
 Analiza el siguiente texto siguiendo un modelo académico estructurado de 4 fases, enfocado en comprensión analítica, 

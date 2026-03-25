@@ -1,6 +1,7 @@
 import { getOpenAI, getGemini } from '../config/apiClients.js';
 import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from './deepseekClient.service.js';
 import { settings } from '../config/settings.js';
+import { limitItems, truncateText } from '../utils/textLimits.js';
 
 const notesSystemPrompt = `Eres un asistente que genera notas de estudio a partir de un texto dado. Devuelve exclusivamente un JSON válido con esta forma:
 {
@@ -46,7 +47,7 @@ export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademi
     if (contexto.tesis_central) prompt += `\n- Tesis central: ${contexto.tesis_central}`;
     if (contexto.conceptos_clave?.length) prompt += `\n- Conceptos clave: ${contexto.conceptos_clave.join(', ')}`;
     if (contexto.resumen_previo) prompt += `\n- Resumen: ${contexto.resumen_previo}`;
-    if (contexto.argumentos_principales?.length) prompt += `\n- Argumentos principales: ${contexto.argumentos_principales.slice(0, 3).join('; ')}`;
+    if (contexto.argumentos_principales?.length) prompt += `\n- Argumentos principales: ${limitItems(contexto.argumentos_principales, 3).join('; ')}`;
     
     prompt += `\n\nUSA este contexto para generar notas MÁS RELEVANTES y ESPECÍFICAS al contenido analizado.`;
   }
@@ -56,7 +57,7 @@ export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademi
     prompt += `\n\nGenera exactamente ${tarjetasObjetivo} tarjetas (flashcards).`;
   }
   
-  prompt += `\n\nTexto:\n"""${texto.slice(0, 6000)}"""\n\nDevuelve solo el JSON:`;
+  prompt += `\n\nTexto:\n"""${truncateText(texto, 6000, { suffix: '' })}"""\n\nDevuelve solo el JSON:`;
 
   const timeoutMs = settings.openai.timeout || 45000;
   const controller = new AbortController();
@@ -117,7 +118,7 @@ export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcade
     prompt += `\n\nGenera exactamente ${tarjetasObjetivo} tarjetas (flashcards).`;
   }
   
-  prompt += `\n\nTexto: """${texto.slice(0, 6000)}"""\n\nDevuelve solo el JSON con la forma {"resumen":"","notas":[{"titulo":"","contenido":""}],"preguntas":[""],"tarjetas":[{"frente":"","reverso":""}]}:`;
+  prompt += `\n\nTexto: """${truncateText(texto, 6000, { suffix: '' })}"""\n\nDevuelve solo el JSON con la forma {"resumen":"","notas":[{"titulo":"","contenido":""}],"preguntas":[""],"tarjetas":[{"frente":"","reverso":""}]}:`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), settings.openai.timeout || 45000);
@@ -187,7 +188,7 @@ export async function generarNotasConGemini(texto, contexto = null, nivelAcademi
   "preguntas": ["string", "string"],
   "tarjetas": [ { "frente": "string", "reverso": "string" } ]
 }`;
-  const user = `Texto:\n"""${texto.slice(0, 6000)}"""`;
+  const user = `Texto:\n"""${truncateText(texto, 6000, { suffix: '' })}"""`;
   const model = gemini.getGenerativeModel({ model: settings.gemini.model });
   const timeoutMs = settings.gemini?.timeout || settings.openai.timeout || 45000;
   const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout: La solicitud a Gemini tardó demasiado')), timeoutMs));

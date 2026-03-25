@@ -1,3 +1,5 @@
+import { limitItems, truncateText } from '../utils/textLimits.js';
+
 
 
 import { getAnalysisPrompt } from '../prompts/analysis.prompt.js';
@@ -196,15 +198,15 @@ async function analizarTextoDebate(texto) {
       ? Math.max(64, Math.min(criticCapFromEnv, 1024))
       : 512;
 
-    const primarySnapshot = JSON.stringify({
+    const primarySnapshot = truncateText(JSON.stringify({
       resumen: primaryObj?.resumen,
-      ideasPrincipales: Array.isArray(primaryObj?.ideasPrincipales) ? primaryObj.ideasPrincipales.slice(0, 8) : [],
+      ideasPrincipales: limitItems(primaryObj?.ideasPrincipales, 8),
       analisisEstilistico: primaryObj?.analisisEstilistico,
-      preguntasReflexion: Array.isArray(primaryObj?.preguntasReflexion) ? primaryObj.preguntasReflexion.slice(0, 8) : [],
-      vocabulario: Array.isArray(primaryObj?.vocabulario) ? primaryObj.vocabulario.slice(0, 10) : [],
+      preguntasReflexion: limitItems(primaryObj?.preguntasReflexion, 8),
+      vocabulario: limitItems(primaryObj?.vocabulario, 10),
       complejidad: primaryObj?.complejidad,
-      temas: Array.isArray(primaryObj?.temas) ? primaryObj.temas.slice(0, 10) : [],
-    }).slice(0, 6000);
+      temas: limitItems(primaryObj?.temas, 10),
+    }), 6000, { suffix: '' });
 
     const criticPrompt = [
       'Eres un CRÍTICO SOCRÁTICO de análisis textual (educación).',

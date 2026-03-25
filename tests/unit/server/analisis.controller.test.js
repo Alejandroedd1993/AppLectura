@@ -68,13 +68,4 @@ describe('analisis.controller success envelope', () => {
       })
     );
   });
-
-  test('returns 400 for empty text', async () => {
-    const req = { body: { texto: '' } };
-    const res = makeRes();
-
-    await analizarTexto(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-  });
 });
