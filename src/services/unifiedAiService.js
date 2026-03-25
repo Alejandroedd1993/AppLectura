@@ -5,6 +5,7 @@ import { fetchWithTimeout } from '../utils/netUtils';
 import { buildBackendEndpoint, getFirebaseAuthHeader } from '../utils/backendRequest';
 import { DEFAULT_PROVIDER_MODELS } from '../constants/aiModelDefaults';
 import { CHAT_TIMEOUT_MS, NETWORK_TIMEOUT_MS } from '../constants/timeoutConstants';
+import { stripJsonFences } from '../utils/jsonClean';
 
 /**
  * Llama al endpoint unificado de chat/completion del backend
@@ -206,17 +207,10 @@ export function extractContent(json) {
  */
 export function parseJSONFromContent(content) {
   if (typeof content !== 'string') return null;
-  const cleaned = content
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/```\s*$/i, '');
+  const cleaned = stripJsonFences(content);
   try {
     return JSON.parse(cleaned);
   } catch {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { return JSON.parse(match[0]); } catch { }
-    }
     return null;
   }
 }

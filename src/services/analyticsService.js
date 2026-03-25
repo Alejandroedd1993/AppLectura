@@ -1,5 +1,19 @@
 import { RUBRIC_PROGRESS_META } from './progressSnapshot';
 
+const NIVEL_DESCRIPCION_SHORT = {
+  1: 'Inicial',
+  2: 'Basico',
+  3: 'Competente',
+  4: 'Avanzado'
+};
+
+const NIVEL_DESCRIPCION_FULL = {
+  1: 'Inicial - Requiere desarrollo',
+  2: 'Basico - En progreso',
+  3: 'Competente - Satisfactorio',
+  4: 'Avanzado - Excelente'
+};
+
 function toNumericScore(entry) {
   if (typeof entry === 'object' && entry !== null) return Number(entry.score);
   return Number(entry);
@@ -364,13 +378,6 @@ export function calculateEngagementMetrics(activityData) {
 
 // Legacy helper kept for backward compatibility with older exports.
 export function exportToCSV(rubricProgress) {
-  const nivelDescripcion = {
-    1: 'Inicial',
-    2: 'Basico',
-    3: 'Competente',
-    4: 'Avanzado'
-  };
-
   const headers = [
     'Artefacto',
     'Promedio (sobre 10)',
@@ -392,7 +399,7 @@ export function exportToCSV(rubricProgress) {
       getRubricArtifactName(id),
       averageScore.toFixed(2),
       nivel,
-      nivelDescripcion[nivel] || 'Sin clasificar',
+      NIVEL_DESCRIPCION_SHORT[nivel] || 'Sin clasificar',
       scores.length,
       bestScore.toFixed(2),
       lastScore.toFixed(2)
@@ -411,13 +418,6 @@ export function exportToCSV(rubricProgress) {
 
 // Legacy helper kept for backward compatibility with older exports.
 export function exportToJSON(rubricProgress, stats) {
-  const nivelDescripcion = {
-    1: 'Inicial - Requiere desarrollo',
-    2: 'Basico - En progreso',
-    3: 'Competente - Satisfactorio',
-    4: 'Avanzado - Excelente'
-  };
-
   const enrichedRubrics = {};
   Object.entries(rubricProgress || {}).forEach(([id, data]) => {
     const averageScore = Number(data?.average || 0);
@@ -426,7 +426,7 @@ export function exportToJSON(rubricProgress, stats) {
     enrichedRubrics[id] = {
       nombre: getRubricArtifactName(id),
       nivelAlcanzado: nivel,
-      descripcionNivel: nivelDescripcion[nivel] || 'Sin clasificar',
+      descripcionNivel: NIVEL_DESCRIPCION_FULL[nivel] || 'Sin clasificar',
       ...data
     };
   });

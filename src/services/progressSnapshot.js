@@ -1,5 +1,7 @@
 const RUBRIC_ORDER = ['rubrica1', 'rubrica2', 'rubrica3', 'rubrica4', 'rubrica5'];
 
+import { toMillis } from '../utils/dateUtils';
+
 export const RUBRIC_PROGRESS_META = {
   rubrica1: {
     rubricId: 'rubrica1',
@@ -64,22 +66,6 @@ function parseScore(value) {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function toMillis(value) {
-  if (value == null) return 0;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  if (typeof value === 'string') {
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  if (typeof value?.toDate === 'function') {
-    return value.toDate().getTime();
-  }
-  if (typeof value?.seconds === 'number') {
-    return value.seconds * 1000;
-  }
-  return 0;
 }
 
 function getPerformanceBand(score) {

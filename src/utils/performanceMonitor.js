@@ -51,7 +51,7 @@ class PerformanceMonitor {
 
         // Métricas de memoria (si está disponible)
         if ('memory' in performance) {
-          setInterval(() => {
+          this._memoryInterval = setInterval(() => {
             this.metrics.set('memory', {
               used: performance.memory.usedJSHeapSize,
               total: performance.memory.totalJSHeapSize,
@@ -264,6 +264,11 @@ class PerformanceMonitor {
       }
     });
     
+    if (this._memoryInterval) {
+      clearInterval(this._memoryInterval);
+      this._memoryInterval = null;
+    }
+    
     this.observers = [];
     this.metrics.clear();
   }
@@ -273,8 +278,9 @@ class PerformanceMonitor {
 const performanceMonitor = new PerformanceMonitor();
 
 // Limpiar métricas cada hora
+let _cleanupInterval;
 if (performanceMonitor.isEnabled) {
-  setInterval(() => {
+  _cleanupInterval = setInterval(() => {
     performanceMonitor.cleanup();
   }, 60 * 60 * 1000); // 1 hora
 }

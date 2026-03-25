@@ -2,22 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db, isConfigValid } from '../firebase/config';
 import logger from '../utils/logger';
+import { toMillis } from '../utils/dateUtils';
 
 const MAX_THREADS_PER_TEXT_DEFAULT = 5;
 const MAX_SEED_MESSAGES = 40;
 const REMOTE_MESSAGE_BATCH = 120;
 const EMPTY = [];
-
-function toMillis(value) {
-  try {
-    if (!value) return 0;
-    if (typeof value === 'number') return value;
-    if (typeof value.toMillis === 'function') return value.toMillis();
-    return new Date(value).getTime() || 0;
-  } catch {
-    return 0;
-  }
-}
 
 function truncateTitle(raw) {
   const text = String(raw || '').replace(/\s+/g, ' ').trim();

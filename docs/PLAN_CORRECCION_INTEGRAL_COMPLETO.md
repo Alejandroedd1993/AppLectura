@@ -32,6 +32,34 @@ Este plan organiza **todas las correcciones necesarias** en 7 fases priorizadas,
 
 ---
 
+## ESTADO DE PROGRESO (actualizado 2026-03-25)
+
+| Fase / Track | Estado | Progreso |
+|---|---|---|
+| **Track 0** — Quick Wins | ✅ COMPLETADO | Archivos basura, exports duplicados resueltos |
+| **Track A1** — Saneamiento urgente | ✅ COMPLETADO | errorHandler, fugas, backdoor, globals, admin-cleanup |
+| **Track A2** — Auth robustez | ✅ COMPLETADO | Migración a firebase-admin completa |
+| **Track A3** — Contrato API | ✅ COMPLETADO | Envelope, Zod, error codes, textLimits |
+| **Track B1** — Dedup bajo riesgo | 🔶 PARCIAL | envUtils, modelUtils, BACKEND_URL, rateLimiters, dotenv ✅ — hashes frontend ⬜ |
+| **Track B2** — Infra medio riesgo | 🔶 PARCIAL | AI client, pooling, timeouts ✅ — caches TTL, retry, streaming ⬜ |
+| **Track B3** — Resiliencia avanzada | ⬜ PENDIENTE | Circuit breaker postergado |
+| **Track C1** — Reorganización segura | 🔶 PARCIAL | BACKEND_URL ✅ — firestore split, docs ⬜ |
+| **Track C2** — Calidad | 🔶 PARCIAL | CI, react-doctor, cross-env ✅ — ESLint strict, coverage 45% ⬜ |
+| **Track C3** — Refactor mayor | ⬜ PENDIENTE | AppContext split, sync, Router |
+| **Track C4** — Estilos y limpieza | ⬜ PENDIENTE | Dark mode, theme, dead code |
+
+| Fase | Completado | Total | % |
+|---|---|---|---|
+| Fase 1 — Seguridad | 6.5/7 | 7 | ~93% |
+| Fase 2 — Arquitectura | 1.5/7 | 7 | ~21% |
+| Fase 3 — Duplicación | 11/13 | 13 | ~85% |
+| Fase 4 — Performance | 5/10 | 10 | ~50% |
+| Fase 5 — API Standard | 6/6 | 6 | ✅ 100% |
+| Fase 6 — CI/Tests | 6/9 | 9 | ~67% |
+| Fase 7 — Estilos/Limpieza | 0.5/18 | 18 | ~3% |
+
+---
+
 ## FASE 1 — Seguridad y Fugas Críticas
 
 **Prioridad:** URGENTE — riesgos activos en producción
@@ -39,7 +67,7 @@ Este plan organiza **todas las correcciones necesarias** en 7 fases priorizadas,
 
 > **Ajuste de alcance:** dentro de esta fase, la prioridad real es cerrar fugas activas (`error.message`, backdoors, globals de debug y rutas administrativas incompletamente protegidas). La migración de JWT manual a `firebase-admin` es recomendable, pero no debe bloquear el cierre del resto de la fase.
 
-### 1.1 Error handler global — Dejar de filtrar error.message al cliente
+### 1.1 Error handler global — Dejar de filtrar error.message al cliente ✅ COMPLETADO
 
 Los siguientes endpoints devuelven `error.message` crudo, exponiendo rutas internas, URLs de API y config:
 
@@ -57,7 +85,7 @@ Los siguientes endpoints devuelven `error.message` crudo, exponiendo rutas inter
 - Devuelva al cliente solo `{ error: "código_genérico", mensaje: "Descripción segura" }`
 - Se monte como último middleware en `server/index.js`
 
-### 1.2 Eliminar backdoor de testing en producción
+### 1.2 Eliminar backdoor de testing en producción ✅ COMPLETADO
 
 | Archivo | Detalle |
 |---------|---------|
@@ -65,7 +93,7 @@ Los siguientes endpoints devuelven `error.message` crudo, exponiendo rutas inter
 
 **Acción:** Envolver toda la lógica en `if (process.env.NODE_ENV === 'development')`. En producción el hook debe ser un no-op.
 
-### 1.3 Usar firebase-admin SDK para verificación JWT
+### 1.3 Usar firebase-admin SDK para verificación JWT ✅ COMPLETADO
 
 | Archivo | Línea(s) |
 |---------|----------|
@@ -77,7 +105,7 @@ Los siguientes endpoints devuelven `error.message` crudo, exponiendo rutas inter
 
 **Prerequisito operativo:** verificar antes del merge y del deploy que Render tenga configurado `FIREBASE_SERVICE_ACCOUNT_JSON` o `FIREBASE_SERVICE_ACCOUNT_BASE64`. Sin este prerrequisito, la migración puede degradar o romper completamente la autenticación server-side.
 
-### 1.4 Proteger endpoint admin-cleanup con Firebase Auth
+### 1.4 Proteger endpoint admin-cleanup con Firebase Auth ✅ COMPLETADO
 
 | Archivo | Línea |
 |---------|-------|
@@ -85,7 +113,7 @@ Los siguientes endpoints devuelven `error.message` crudo, exponiendo rutas inter
 
 **Acción:** Agregar `requireFirebaseAuth` como middleware antes de `run-pending`. Mantener el `x-cleanup-secret` como segunda capa, no como única.
 
-### 1.5 Agregar headers de seguridad en Firebase Hosting
+### 1.5 Agregar headers de seguridad en Firebase Hosting ✅ COMPLETADO
 
 | Archivo |
 |---------|
@@ -99,16 +127,16 @@ Los siguientes endpoints devuelven `error.message` crudo, exponiendo rutas inter
 { "key": "Content-Security-Policy", "value": "default-src 'self'; ..." }
 ```
 
-### 1.6 Limpiar globals de debug en producción
+### 1.6 Limpiar globals de debug en producción 🔶 PARCIAL
 
-| Archivo | Global expuesto |
+> **Estado:** `window.ACDAnalyzer` y `window.RewardsEngine` (clases) están envueltos en dev check ✅. `window.__rewardsEngine` (instancia) en `PedagogyContext.js` NO es un debug global: es un puente cross-context usado por AppContext.js (20+ refs para sync, export/import de estado). Se resolverá como parte del split de AppContext (Fase 2.1), no aquí.
 |---------|----------------|
 | `src/pedagogy/discourse/ACDAnalyzer.js` | `window.ACDAnalyzer` |
 | `src/pedagogy/rewards/RewardsEngine.js` | `window.RewardsEngine` |
 
 **Acción:** Envolver en `if (process.env.NODE_ENV === 'development')`.
 
-### 1.7 Dejar de loguear información de API keys
+### 1.7 Dejar de loguear información de API keys ✅ COMPLETADO
 
 | Archivo | Línea(s) |
 |---------|----------|
@@ -160,7 +188,7 @@ Para evitar ambigüedad durante la ejecución:
 | `C3` | Fase 2B + 2C + 2D + 2E |
 | `C4` | Fase 7 |
 
-### 2.1 Dividir AppContext.js (5,896 líneas) en contextos especializados
+### 2.1 Dividir AppContext.js (5,896 líneas) en contextos especializados ⬜ PENDIENTE
 
 **Archivo fuente:** `src/context/AppContext.js`
 
@@ -211,7 +239,7 @@ Para evitar ambigüedad durante la ejecución:
 - `src/components/common/ClearHistoryButton.js` → SessionContext
 - `src/utils/fetchWebSearch.js` → extraer BACKEND_URL a config (ver 2.3)
 
-### 2.2 Dividir firestore.js (4,369 líneas) en módulos por dominio
+### 2.2 Dividir firestore.js (4,369 líneas) en módulos por dominio ⬜ PENDIENTE
 
 **Archivo fuente:** `src/firebase/firestore.js`
 **Archivos a crear:**
@@ -227,7 +255,7 @@ Para evitar ambigüedad durante la ejecución:
 | `src/firebase/firestore/shared.js` | `__firestoreWritesDisabled` flag, `simpleHash`, helpers comunes |
 | `src/firebase/firestore/index.js` | Re-export barrel para backwards compatibility |
 
-### 2.3 Centralizar BACKEND_URL (6+ definiciones)
+### 2.3 Centralizar BACKEND_URL (6+ definiciones) ✅ COMPLETADO
 
 **Definiciones actuales que deben eliminarse:**
 
@@ -246,7 +274,7 @@ export const BACKEND_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localho
 ```
 Todos los archivos deben importar desde este módulo. `backendRequest.js` ya tiene `buildBackendEndpoint` que hace exactamente esto — usarlo como fuente canónica.
 
-### 2.4 Refactorizar preLectura.controller.js (1,527 líneas)
+### 2.4 Refactorizar preLectura.controller.js (1,527 líneas) ⬜ PENDIENTE
 
 **Archivo fuente:** `server/controllers/preLectura.controller.js`
 **Extraer a:**
@@ -260,7 +288,7 @@ Todos los archivos deben importar desde este módulo. `backendRequest.js` ya tie
 
 **Resolver dependencia cruzada:** Línea 11 importa `searchWebSources` de `webSearch.controller.js` → mover esa función a `server/services/webSearch.service.js`.
 
-### 2.5 Usar React Router para navegación de tabs
+### 2.5 Usar React Router para navegación de tabs ⬜ PENDIENTE
 
 **Archivo:** `src/App.js` (~800 líneas)
 
@@ -278,13 +306,13 @@ Esto desmonta componentes no visibles y reduce consumo de memoria.
 
 **Secuencia recomendada:** no abordar este punto hasta que `AppContext.js` y la sincronización compartida estén suficientemente desacoplados. Migrar navegación antes de estabilizar estado y side effects aumenta la probabilidad de regresiones por desmontaje/remontaje.
 
-### 2.6 Resolver desfase documentación↔código
+### 2.6 Resolver desfase documentación↔código 🔶 PARCIAL
 
 **Problema (del INFORME):** `ARQUITECTURA.md` describe un sistema centralizado en `useApiConfig`, pero este archivo no existe. La delegación real recae sobre `unifiedAiService.js`.
 
 **Acción:** Reescribir `ARQUITECTURA.md` para reflejar la arquitectura real. Mover a `docs/`.
 
-### 2.7 Resolver cruces de responsabilidades en sincronización
+### 2.7 Resolver cruces de responsabilidades en sincronización ⬜ PENDIENTE
 
 **Problema (del INFORME):** `AppContext.js` importa métodos directamente de `sessionManager.js` pero al mismo tiempo implementa lógicas de respaldo que colisionan conceptualmente. Los comentarios tipo `// 🛡️ Anti-loop: cuando el progreso se actualiza` sugieren que la arquitectura de sincronización inicial fue defectuosa.
 
@@ -306,7 +334,7 @@ Esto desmonta componentes no visibles y reduce consumo de memoria.
 
 ### 3.1 Backend: Extraer utilidades duplicadas
 
-#### 3.1.1 `parseBooleanEnv` → `server/utils/envUtils.js`
+#### 3.1.1 `parseBooleanEnv` → `server/utils/envUtils.js` ✅ COMPLETADO
 
 Duplicado en 4 archivos:
 - `server/controllers/preLectura.controller.js:17`
@@ -316,7 +344,7 @@ Duplicado en 4 archivos:
 
 **Acción:** Crear `server/utils/envUtils.js` con `parseBooleanEnv(key, defaultVal)` y reemplazar todas las ocurrencias.
 
-#### 3.1.2 `parseAllowedModels` + `pickAllowedModel` → `server/utils/modelUtils.js`
+#### 3.1.2 `parseAllowedModels` + `pickAllowedModel` → `server/utils/modelUtils.js` ✅ COMPLETADO
 
 Duplicado en 5 archivos con 3 firmas distintas:
 - `server/controllers/chat.completion.controller.js:64`
@@ -331,7 +359,7 @@ export function parseAllowedModels(envVar, defaults) { ... }
 export function pickAllowedModel({ requested, allowed, fallback }) { ... }
 ```
 
-#### 3.1.3 Unificar instanciación de clientes AI
+#### 3.1.3 Unificar instanciación de clientes AI ✅ COMPLETADO
 
 Actualmente se crean de 5 formas distintas:
 - `server/config/apiClients.js` — singleton cached (el correcto)
@@ -342,7 +370,7 @@ Actualmente se crean de 5 formas distintas:
 
 **Acción:** Todos deben usar `apiClients.js`. Mover el `aiClient` de `index.js:54-113` a `server/services/aiClient.service.js`. Eliminar instanciaciones inline.
 
-#### 3.1.4 Unificar llamadas a DeepSeek API
+#### 3.1.4 Unificar llamadas a DeepSeek API 🔶 PARCIAL
 
 5 métodos distintos (axios, node-fetch, native fetch) para lo mismo:
 - `server/services/strategies/deepseek.strategy.js` — native fetch
@@ -353,7 +381,7 @@ Actualmente se crean de 5 formas distintas:
 
 **Acción:** Todas las llamadas DeepSeek deben pasar por `deepseek.strategy.js` o por el cliente de `apiClients.js`. Eliminar dependencia `node-fetch` (usar native fetch de Node 18+).
 
-#### 3.1.5 Consolidar rate limiters con factory
+#### 3.1.5 Consolidar rate limiters con factory ✅ COMPLETADO
 
 **Archivo:** `server/middleware/rateLimiters.js`
 
@@ -365,7 +393,7 @@ function createLimiter(prefix, { windowMs, max, envPrefix }) { ... }
 export const analysisLimiter = createLimiter('analysis', { ... });
 ```
 
-#### 3.1.6 Unificar `dotenv.config()` — llamar una sola vez
+#### 3.1.6 Unificar `dotenv.config()` — llamar una sola vez ✅ COMPLETADO
 
 Llamado 5 veces en archivos distintos:
 - `server/index.js:27-28` (dos veces, distinto path)
@@ -377,7 +405,7 @@ Llamado 5 veces en archivos distintos:
 
 ### 3.2 Frontend: Extraer utilidades duplicadas
 
-#### 3.2.1 Hash functions → `src/utils/hash.js`
+#### 3.2.1 Hash functions → `src/utils/hash.js` ⬜ PENDIENTE
 
 7 implementaciones independientes:
 
@@ -393,42 +421,42 @@ Llamado 5 veces en archivos distintos:
 
 **Acción:** Crear `src/utils/hash.js` con 1-2 funciones canónicas. Reemplazar todas las demás.
 
-#### 3.2.2 `toMillis()` — duplicada en 2 hooks
+#### 3.2.2 `toMillis()` — duplicada en 2 hooks ✅ COMPLETADO
 
 - `src/hooks/useTutorPersistence.js:116`
 - `src/hooks/useTutorThreads.js:11`
 
 **Acción:** Mover a `src/utils/dateUtils.js`.
 
-#### 3.2.3 `dimensionMap` duplicada en practiceService
+#### 3.2.3 `dimensionMap` duplicada en practiceService ✅ COMPLETADO
 
 - `src/services/practiceService.js:171-182` (en `determineDifficultyLevel`)
 - `src/services/practiceService.js:206-217` (en `getHintsForDimension`)
 
 **Acción:** Extraer a constante de módulo fuera de las funciones.
 
-#### 3.2.4 `rubricNames` duplicada en analyticsService
+#### 3.2.4 `rubricNames` duplicada en analyticsService ✅ COMPLETADO
 
 - `src/services/analyticsService.js:284-290` (en `exportToCSV`)
 - `src/services/analyticsService.js:343-349` (en `exportToJSON`)
 
 **Acción:** Extraer a constante compartida en el módulo. Reusar `RUBRICS` de `rubricProgressV2.js:3`.
 
-#### 3.2.5 JSON fence-stripping duplicado
+#### 3.2.5 JSON fence-stripping duplicado ✅ COMPLETADO
 
 - `src/services/unifiedAiService.js:139-142`
 - `src/services/termDefinitionService.js:73-76`
 
 **Acción:** Una sola función en `unifiedAiService.js`, importada por los demás.
 
-#### 3.2.6 `devLog`/`devWarn` en lugar de `logger.js`
+#### 3.2.6 `devLog`/`devWarn` en lugar de `logger.js` ✅ COMPLETADO
 
 - `src/services/pdfGlossaryService.js:3-5`
 - `src/services/termDefinitionService.js:3-5`
 
 **Acción:** Reemplazar por `import { logger } from '../utils/logger'`.
 
-### 3.3 Flujo huérfano de Web Search (del react-doctor plan)
+### 3.3 Flujo huérfano de Web Search (del react-doctor plan) ⬜ PENDIENTE
 
 Archivos potencialmente huérfanos:
 - `src/components/chat/WebEnrichmentButton.js`
@@ -451,7 +479,7 @@ Archivos potencialmente huérfanos:
 
 **Prioridad:** ALTA — afecta experiencia de usuario
 
-### 4.1 Corregir memory leaks en performanceMonitor.js
+### 4.1 Corregir memory leaks en performanceMonitor.js ✅ COMPLETADO
 
 **Archivo:** `src/utils/performanceMonitor.js`
 
@@ -460,7 +488,7 @@ Archivos potencialmente huérfanos:
 | 54 | `setInterval` cada 5s para memory tracking — nunca limpiado | Asignar a `this._memoryInterval` y limpiar en un método `destroy()` |
 | 277 | `setInterval` cada 1h — nunca limpiado | Asignar a variable de módulo, exponer `cleanup()` |
 
-### 4.2 Agregar límite y TTL a caches in-memory
+### 4.2 Agregar límite y TTL a caches in-memory ⬜ PENDIENTE
 
 | Archivo | Línea | Cache | Corrección |
 |---------|-------|-------|-----------|
@@ -476,7 +504,7 @@ if (cache.size >= MAX_SIZE) {
 cache.set(key, { data, timestamp: Date.now() });
 ```
 
-### 4.3 Backend: Connection pooling para clientes AI
+### 4.3 Backend: Connection pooling para clientes AI ✅ COMPLETADO
 
 | Archivo | Línea | Problema |
 |---------|-------|---------|
@@ -485,7 +513,7 @@ cache.set(key, { data, timestamp: Date.now() });
 
 **Acción:** Usar singleton de `apiClients.js` para todas las llamadas. Crear factory que cachee por `{baseURL, apiKey}`.
 
-### 4.4 Backend: Circuit breaker para APIs externas
+### 4.4 Backend: Circuit breaker para APIs externas ⬜ PENDIENTE (postergado)
 
 Ningún endpoint tiene protección contra falla sostenida de OpenAI/DeepSeek/Gemini.
 
@@ -496,13 +524,13 @@ Ningún endpoint tiene protección contra falla sostenida de OpenAI/DeepSeek/Gem
 
 **Prioridad ajustada:** este punto se considera **postergable** y no debe bloquear la Fase 4. Para el volumen actual esperado de la aplicación, `retryWithBackoff` cubre primero el mayor retorno. Implementar circuit breaker solo si se observan fallos sostenidos, cascadas de timeout o presión operativa real en producción.
 
-### 4.5 Backend: Retry con backoff para llamadas AI
+### 4.5 Backend: Retry con backoff para llamadas AI ⬜ PENDIENTE
 
 **Archivo existente a reusar:** `src/services/retryWrapper.js` — ya tiene exponential backoff con jitter.
 
 **Acción:** Portar el patrón al backend como `server/utils/retryWithBackoff.js`. Aplicar a todos los `fetch`/`axios.post` hacia APIs AI.
 
-### 4.6 Backend: Streaming para archivos grandes
+### 4.6 Backend: Streaming para archivos grandes ⬜ PENDIENTE
 
 | Archivo | Problema |
 |---------|---------|
@@ -511,7 +539,7 @@ Ningún endpoint tiene protección contra falla sostenida de OpenAI/DeepSeek/Gem
 
 **Acción:** Para storage proxy, usar streaming con `pipeline()`. Para PDF, evaluar `multer.diskStorage()` con archivos temporales.
 
-### 4.7 Bulk evaluation secuencial → paralela
+### 4.7 Bulk evaluation secuencial → paralela ⬜ PENDIENTE
 
 **Archivo:** `server/controllers/assessment.controller.js`
 **Línea:** 366 — procesa hasta 10 evaluaciones AI en serie
@@ -525,7 +553,7 @@ for (let i = 0; i < items.length; i += 3) {
 }
 ```
 
-### 4.8 Estandarizar timeouts
+### 4.8 Estandarizar timeouts ✅ COMPLETADO
 
 | Componente | Timeout actual | Timeout propuesto |
 |-----------|---------------|-------------------|
@@ -538,13 +566,13 @@ for (let i = 0; i < items.length; i += 3) {
 
 **Acción:** Centralizar en `server/config/settings.js` y que todos lean de ahí.
 
-### 4.9 Middleware CORS: línea redundante a limpiar
+### 4.9 Middleware CORS: línea redundante a limpiar ✅ COMPLETADO
 
 `server/index.js` línea 207: `app.options('*', cors())` está colocado DESPUÉS del montaje de rutas. Sin embargo, `app.use(cors(...))` en línea 128 ya maneja preflights OPTIONS implícitamente, por lo que la línea 207 es **código muerto**, no un bug funcional.
 
 **Acción:** Eliminar la línea 207 (`app.options('*', cors())`) por ser redundante. No es necesario moverla.
 
-### 4.10 Error handler global faltante tras rutas
+### 4.10 Error handler global faltante tras rutas ✅ COMPLETADO
 
 No existe middleware de error (4 args) después del montaje de rutas. Si un controller lanza una excepción no capturada, Express la maneja con su handler default. **Nota:** Express solo expone stack traces cuando `NODE_ENV !== 'production'`, por lo que el riesgo real no es el stack trace sino los `error.message` que los controllers devuelven explícitamente en `res.json()` (cubierto en Fase 1.1).
 
@@ -559,7 +587,7 @@ No existe middleware de error (4 args) después del montaje de rutas. Si un cont
 
 ## FASE 5 — Estandarización de API y Error Handling
 
-### 5.1 Error envelope estándar
+### 5.1 Error envelope estándar ✅ COMPLETADO
 
 Actualmente hay 8+ formatos de error distintos en el backend:
 - `{ error: string }`
@@ -593,7 +621,7 @@ Aplicar en TODOS los controllers. No devolver `error.message` — usar códigos 
 
 **Requisito de rollout:** definir una ventana explícita de compatibilidad temporal y una fecha de retiro del formato viejo. No cerrar 5.1 sin esa capa de compatibilidad o sin probar todos los consumidores del frontend.
 
-### 5.2 Estandarizar códigos de error
+### 5.2 Estandarizar códigos de error ✅ COMPLETADO
 
 Crear `server/constants/errorCodes.js`:
 ```js
@@ -610,14 +638,14 @@ export const ErrorCodes = {
 };
 ```
 
-### 5.3 Corregir status codes incorrectos
+### 5.3 Corregir status codes incorrectos ✅ COMPLETADO
 
 | Archivo | Situación | Actual | Correcto |
 |---------|-----------|--------|----------|
 | `server/controllers/preLectura.controller.js:260,393` | Fallback por error AI | 200 | 200 pero con campo `degraded: true` |
 | `server/controllers/notes.controller.js:34-42` | API key no configurada | 500 | 503 |
 
-### 5.4 Validación de request bodies con Zod
+### 5.4 Validación de request bodies con Zod ✅ COMPLETADO
 
 Actualmente solo 2 endpoints usan Zod (para validar respuestas AI, no inputs).
 
@@ -638,7 +666,7 @@ export const validate = (schema) => (req, res, next) => {
 };
 ```
 
-### 5.5 Inconsistencia de modelos Gemini
+### 5.5 Inconsistencia de modelos Gemini ✅ COMPLETADO
 
 | Archivo | Default |
 |---------|---------|
@@ -648,7 +676,7 @@ export const validate = (schema) => (req, res, next) => {
 
 **Acción:** Definir un solo default en `settings.js` y que todos lo lean de ahí. Si la decisión vigente del proyecto ya es `gemini-2.0-flash`, actualizar el plan, `settings.js`, `chat.completion.controller.js` y `.env.example` para reflejar ese target único. No mantener defaults divergentes en documentación, código y configuración.
 
-### 5.6 Truncación de texto inconsistente
+### 5.6 Truncación de texto inconsistente ✅ COMPLETADO
 
 Diferentes controllers truncan el texto del usuario a longitudes distintas sin razón documentada:
 
@@ -671,7 +699,7 @@ Diferentes controllers truncan el texto del usuario a longitudes distintas sin r
 
 ## FASE 6 — Tests, CI/CD y Calidad
 
-### 6.1 Crear GitHub Actions workflow
+### 6.1 Crear GitHub Actions workflow ✅ COMPLETADO
 
 **Archivo a crear:** `.github/workflows/ci.yml`
 
@@ -697,7 +725,7 @@ jobs:
       - run: npx eslint src/ server/ --max-warnings 0
 ```
 
-### 6.2 Corregir scripts de test para multiplataforma
+### 6.2 Corregir scripts de test para multiplataforma ✅ COMPLETADO
 
 **Archivo:** `package.json`
 
@@ -708,7 +736,7 @@ Actualmente usan `set NODE_OPTIONS=...` (solo Windows).
 "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage"
 ```
 
-### 6.3 Subir coverage threshold progresivamente
+### 6.3 Subir coverage threshold progresivamente 🔶 PARCIAL
 
 | Fase | Threshold | Target |
 |------|-----------|--------|
@@ -719,7 +747,7 @@ Actualmente usan `set NODE_OPTIONS=...` (solo Windows).
 
 **Nota de realismo:** no asumir que 45% llegará solo por inercia. El salto debe apoyarse en tests de backend, middleware, auth, rutas críticas y algunos flujos UI de alto impacto antes de intentar cubrir componentes pesados como `PreLectura.js` o `TeacherDashboard.js`.
 
-### 6.4 ESLint: cambiar warn a error + agregar plugins
+### 6.4 ESLint: cambiar warn a error + agregar plugins ⬜ PENDIENTE
 
 **Archivo:** `package.json` o `.eslintrc`
 
@@ -728,7 +756,7 @@ Actualmente usan `set NODE_OPTIONS=...` (solo Windows).
 - Agregar `eslint-plugin-jsx-a11y` (accesibilidad)
 - `jest-axe` está instalado pero nunca usado — agregar a al menos 5 tests de componentes
 
-### 6.5 Tests prioritarios a escribir
+### 6.5 Tests prioritarios a escribir 🔶 PARCIAL
 
 | Componente | Tipo | Justificación |
 |-----------|------|---------------|
@@ -742,7 +770,7 @@ Actualmente usan `set NODE_OPTIONS=...` (solo Windows).
 | AI chat flow | Integration | Path principal de la app |
 | Backend Express routes | Unit | Zero coverage en server/ |
 
-### 6.6 Limpiar archivos basura del repo
+### 6.6 Limpiar archivos basura del repo 🔶 PARCIAL
 
 | Archivos a eliminar | Motivo |
 |---------------------|--------|
@@ -754,11 +782,11 @@ Actualmente usan `set NODE_OPTIONS=...` (solo Windows).
 | `tests/FINAL_SUCCESS_REPORT.md` | Reporte obsoleto |
 | `PROMPTS_*.backup` | Backups en raíz |
 
-### 6.7 Corregir README con datos reales de coverage
+### 6.7 Corregir README con datos reales de coverage ✅ COMPLETADO
 
 El README afirma 95% statements pero la realidad es ~74% pass rate con threshold de 30%.
 
-### 6.8 Integrar react-doctor en CI (del plan react-doctor existente)
+### 6.8 Integrar react-doctor en CI (del plan react-doctor existente) ✅ COMPLETADO
 
 **Acción:** Agregar paso en CI:
 ```yaml
@@ -768,7 +796,7 @@ Con umbrales:
 - Fallar PR si `duplicates > 0`
 - Fallar PR si `files` o `exports` warnings aumentan contra baseline
 
-### 6.9 Resolver exports duplicados (del plan react-doctor)
+### 6.9 Resolver exports duplicados (del plan react-doctor) ✅ COMPLETADO
 
 12 casos `Duplicate export: X|default` identificados. Definir convención única:
 - Hooks: named export
@@ -787,7 +815,7 @@ Con umbrales:
 
 ## FASE 7 — Estilos, Temas y Limpieza Final
 
-### 7.1 Unificar mecanismo de dark mode
+### 7.1 Unificar mecanismo de dark mode ⬜ PENDIENTE
 
 Actualmente hay 3 mecanismos compitiendo:
 1. `ThemeProvider` de styled-components (activo y principal)
@@ -796,7 +824,7 @@ Actualmente hay 3 mecanismos compitiendo:
 
 **Acción:** Eliminar los selectores `.dark-mode` y `[data-theme="dark"]` de todos los CSS. Solo usar `theme` via `ThemeProvider`.
 
-### 7.2 Agregar propiedades de tema faltantes
+### 7.2 Agregar propiedades de tema faltantes ⬜ PENDIENTE
 
 15+ componentes referencian `textPrimary`, `danger`, `surfaceVariant` que no existen en `src/styles/theme.js`.
 
@@ -809,7 +837,7 @@ surfaceVariant: '#f5f5f5',  // light
 surfaceVariant: '#2a2a3e',  // dark
 ```
 
-### 7.3 Unificar breakpoints
+### 7.3 Unificar breakpoints ⬜ PENDIENTE
 
 4 breakpoints no estándar (720px, 860px, 992px, 1200px) usados fuera del sistema de tema.
 
@@ -818,7 +846,7 @@ surfaceVariant: '#2a2a3e',  // dark
 breakpoints: { sm: '576px', md: '768px', lg: '992px', xl: '1200px' }
 ```
 
-### 7.4 framer-motion + prefers-reduced-motion
+### 7.4 framer-motion + prefers-reduced-motion ⬜ PENDIENTE
 
 CSS media queries no afectan animaciones JavaScript.
 
@@ -828,7 +856,7 @@ const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)
 // Usar variantes sin animación cuando es true
 ```
 
-### 7.5 Resolver conflicto de focus-visible
+### 7.5 Resolver conflicto de focus-visible ⬜ PENDIENTE
 
 | Archivo | Estilo |
 |---------|--------|
@@ -837,7 +865,7 @@ const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)
 
 **Acción:** Definir en `a11y.css` (es el archivo de accesibilidad canónico) y eliminar de `index.css`.
 
-### 7.6 Eliminar colores hardcodeados en styled-components
+### 7.6 Eliminar colores hardcodeados en styled-components ⬜ PENDIENTE
 
 | Archivo | Problema |
 |---------|---------|
@@ -847,11 +875,11 @@ const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)
 
 **Acción:** Reemplazar todos los colores hardcodeados por `${({ theme }) => theme.propiedad}`.
 
-### 7.7 Reducir !important rules (33 encontradas)
+### 7.7 Reducir !important rules (33 encontradas) ⬜ PENDIENTE
 
 22 en CSS, 11 en JS. Revisar cada una — la mayoría se resuelven aumentando la especificidad del selector.
 
-### 7.8 Corregir cache rota en pedagogía
+### 7.8 Corregir cache rota en pedagogía ⬜ PENDIENTE
 
 **Archivo:** `src/pedagogy/rubrics/` (función `getCriteriaByDimension`)
 
@@ -859,13 +887,13 @@ El `Map` se crea DENTRO de la función — se recrea en cada llamada, nullifican
 
 **Acción:** Mover el Map a nivel de módulo.
 
-### 7.9 Alinear 5ta dimensión de rúbrica
+### 7.9 Alinear 5ta dimensión de rúbrica ⬜ PENDIENTE
 
 JSON tiene 5 dimensiones, JS tiene 4. La 5ta (metacognición ética AI) existe en UI pero sin pathway de evaluación completo.
 
 **Acción:** Decidir si activar (agregar pathway) o retirar de UI.
 
-### 7.10 Código muerto a eliminar
+### 7.10 Código muerto a eliminar ⬜ PENDIENTE
 
 | Archivo | Elemento | Motivo |
 |---------|----------|--------|
@@ -880,7 +908,7 @@ JSON tiene 5 dimensiones, JS tiene 4. La 5ta (metacognición ética AI) existe e
 | `server/controllers/preLectura.controller.js:83-86` | JSDoc duplicado | Doble `/** Intenta reparar JSON truncado */` |
 | `server/controllers/preLectura.controller.js:100-113` | Lógica comentada | Bloque que no hace nada |
 
-### 7.11 Resolver inconsistencia de import style de firebaseAuth
+### 7.11 Resolver inconsistencia de import style de firebaseAuth ⬜ PENDIENTE
 
 Algunos archivos importan como default, otros como named:
 ```js
@@ -890,7 +918,7 @@ import { requireFirebaseAuth } from ...   // named
 
 **Acción:** Elegir una convención (named export preferido) y aplicar consistentemente. Eliminar el `export default` duplicado.
 
-### 7.12 Limpiar ruido en raíz del proyecto
+### 7.12 Limpiar ruido en raíz del proyecto 🔶 PARCIAL
 
 Archivos que no deberían estar en raíz:
 - `ARQUITECTURA.md` → mover a `docs/`
@@ -899,13 +927,13 @@ Archivos que no deberían estar en raíz:
 - Todos los `diff-*.txt` → eliminar
 - Todos los `*.backup` → eliminar
 
-### 7.13 Actualizar ARQUITECTURA.md
+### 7.13 Actualizar ARQUITECTURA.md 🔶 PARCIAL
 
 El documento describe un sistema centralizado en `useApiConfig` que **no existe**. La delegación real pasa por `unifiedAiService.js`.
 
 **Acción:** Reescribir secciones para reflejar la arquitectura real post-correcciones.
 
-### 7.14 Resolver naming confuso de dos sessionManagers
+### 7.14 Resolver naming confuso de dos sessionManagers ⬜ PENDIENTE
 
 - `src/firebase/sessionManager.js` — Login session management (single-session enforcement, heartbeat)
 - `src/services/sessionManager.js` — Work session persistence (localStorage + Firestore, tombstones)
@@ -914,13 +942,13 @@ El documento describe un sistema centralizado en `useApiConfig` que **no existe*
 - `src/firebase/sessionManager.js` → `src/firebase/loginSessionManager.js`
 - `src/services/sessionManager.js` → `src/services/workSessionManager.js`
 
-### 7.15 Resolver dual auth export
+### 7.15 Resolver dual auth export ⬜ PENDIENTE
 
 `auth` se exporta desde `src/firebase/config.js` Y desde `src/firebase/auth.js`.
 
 **Acción:** Exportar solo desde `auth.js`. Que `config.js` no exporte `auth`.
 
-### 7.16 Eliminar side effects en imports
+### 7.16 Eliminar side effects en imports ⬜ PENDIENTE
 
 | Archivo | Línea | Side effect |
 |---------|-------|-------------|
@@ -929,13 +957,13 @@ El documento describe un sistema centralizado en `useApiConfig` que **no existe*
 
 **Acción:** Mover logs a funciones de inicialización explícita, no a nivel de módulo.
 
-### 7.17 Detección Bloom mejorable
+### 7.17 Detección Bloom mejorable ⬜ PENDIENTE
 
 `"por qué"` siempre trigger nivel 4 (Análisis) aunque sea pregunta fáctica.
 
 **Acción:** Agregar contexto adicional al matching — verificar si hay marcadores de análisis genuino (comparar, contrastar, examinar) vs preguntas simples de causa-efecto.
 
-### 7.18 Regex de nominalización con falsos positivos
+### 7.18 Regex de nominalización con falsos positivos ⬜ PENDIENTE
 
 `\b\w+(ción|miento|dad)\b` genera falsos positivos abundantes.
 
@@ -1003,15 +1031,14 @@ El documento describe un sistema centralizado en `useApiConfig` que **no existe*
 ## ORDEN DE EJECUCIÓN RECOMENDADO
 
 ```
-Track 0 (Quick Wins)   █████████░  → obligatorio antes de tocar arquitectura grande
-Fase 1 (Seguridad)     ████████░░  → inmediatamente después de Track 0
-Fase 3 (Duplicación)   ████████░░  → en paralelo con Fase 1
-Fase 4 (Performance)   ███████░░░  → en paralelo con Fase 3 cuando no cambie contratos
-Fase 5 (API Standard)  ██████░░░░  → después del saneamiento inicial; desplegar con transición
-Fase 2A/2B             ███████░░░  → `firestore.js`, `BACKEND_URL`, preLectura por partes
-Fase 6 (CI/CD+Tests)   ████████░░  → en cuanto existan contratos más estables
-Fase 2C/2D/2E          ██████████  → sincronización, AppContext y Router al final
-Fase 7 (Estilos+Clean) ██████░░░░  → cierre visual y limpieza final
+Track 0 (Quick Wins)   ██████████  ✅ COMPLETADO
+Fase 1 (Seguridad)     █████████░  ~93% — falta: window.__rewardsEngine → se resuelve en Fase 2.1
+Fase 5 (API Standard)  ██████████  ✅ COMPLETADO
+Fase 3 (Duplicación)   ████████░░  ~85% — falta: hashes consolidation, web search gate
+Fase 4 (Performance)   █████░░░░░  ~50% — falta: caches TTL, retry, streaming, bulk eval
+Fase 6 (CI/CD+Tests)   ██████░░░░  ~67% — falta: ESLint strict, coverage 45%, más tests
+Fase 2 (Arquitectura)  ██░░░░░░░░  ~21% — falta: firestore split, preLectura, AppContext, Router
+Fase 7 (Estilos+Clean) ░░░░░░░░░░  ~3%  — todo pendiente
 ```
 
 Lectura práctica del orden:
@@ -1045,7 +1072,7 @@ El plan se considera cerrado cuando:
 
 Este plan es demasiado grande para una sola ola. Se recomienda dividir en 3 tracks paralelos con un **track 0** de quick wins que debe completarse primero:
 
-### Track 0 — Quick Wins (prerequisito)
+### Track 0 — Quick Wins (prerequisito) ✅ COMPLETADO
 Derivado del análisis react-doctor. Bajo riesgo, alto impacto medible.
 1. Resolver 12 exports duplicados (`Duplicate export: X|default`)
 2. Decision gate Web Search: activar o retirar flujo huérfano (4 archivos)
@@ -1054,7 +1081,7 @@ Derivado del análisis react-doctor. Bajo riesgo, alto impacto medible.
 
 **Criterio de salida Track 0:** react-doctor duplicates = 0, archivos huérfanos resueltos.
 
-### Track A — Seguridad + API (Fases 1, 5)
+### Track A — Seguridad + API (Fases 1, 5) ✅ COMPLETADO
 Puede ejecutarse inmediatamente tras Track 0.
 - `A1` Saneamiento urgente: error handler global, fugas `error.message`, backdoor, globals y `admin-cleanup`
 - `A2` Robustez auth: migración a `firebase-admin` y endurecimiento restante
@@ -1074,7 +1101,7 @@ Puede ejecutarse inmediatamente tras Track 0.
 - Se agregaron tests dedicados del middleware y documentación operativa para `FIREBASE_SERVICE_ACCOUNT_JSON` / `FIREBASE_SERVICE_ACCOUNT_BASE64`.
 - Validación focalizada en verde; la suite completa mostró una falla aislada y no reproducible en sync (`useTutorPersistence.sync`), actualmente tratada como inestabilidad ajena a A2.
 
-### Track B — Deduplicación + Performance (Fases 3, 4)
+### Track B — Deduplicación + Performance (Fases 3, 4) 🔶 PARCIAL
 Puede ejecutarse en paralelo con Track A.
 - `B1` Bajo riesgo: `BACKEND_URL`, hashes, `envUtils`, `modelUtils`, cleanup de duplicaciones directas
 - `B2` Riesgo medio: AI client singleton, caches con TTL/límite, connection pooling, retry con backoff, timeouts, streaming
@@ -1082,7 +1109,7 @@ Puede ejecutarse en paralelo con Track A.
 
 **Regla de priorización de `B`:** no introducir circuit breaker antes de cerrar `B1` y `B2`. El retorno inmediato está en deduplicación simple, retry y pooling; la resiliencia con estado se deja para una etapa posterior o para producción si la telemetría lo justifica.
 
-### Track C — Arquitectura + Calidad (Fases 2, 6, 7)
+### Track C — Arquitectura + Calidad (Fases 2, 6, 7) 🔶 PARCIAL
 Requiere Track 0 completado. Track A y B ayudan pero no son bloqueantes estrictos.
 - `C1` Reorganización segura: split de `firestore.js`, centralización de `BACKEND_URL`, documentación real
 - `C2` Calidad: CI/CD, ESLint, tests prioritarios y baseline de profiler

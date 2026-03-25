@@ -163,25 +163,26 @@ export const HINTS_LIBRARY = {
 };
 
 /**
+ * Mapeo de dimensionId (numérico o string) a rubricId
+ */
+const DIMENSION_TO_RUBRIC = {
+  '1': 'rubrica1',
+  '2': 'rubrica2',
+  '3': 'rubrica3',
+  '4': 'rubrica4',
+  '5': 'rubrica5',
+  'comprension_analitica': 'rubrica1',
+  'acd': 'rubrica2',
+  'contextualizacion': 'rubrica3',
+  'argumentacion': 'rubrica4',
+  'metacognicion_etica_ia': 'rubrica5'
+};
+
+/**
  * Determina el nivel apropiado basado en el historial del usuario
  */
 export const determineDifficultyLevel = (rubricProgress, dimensionId) => {
-  // dimensionId puede ser 1-5 o comprension_analitica, acd, etc.
-  // Mapear a rubrica1-5
-  const dimensionMap = {
-    '1': 'rubrica1',
-    '2': 'rubrica2',
-    '3': 'rubrica3',
-    '4': 'rubrica4',
-    '5': 'rubrica5',
-    'comprension_analitica': 'rubrica1',
-    'acd': 'rubrica2',
-    'contextualizacion': 'rubrica3',
-    'argumentacion': 'rubrica4',
-    'metacognicion_etica_ia': 'rubrica5'
-  };
-  
-  const rubricId = dimensionMap[dimensionId] || dimensionId;
+  const rubricId = DIMENSION_TO_RUBRIC[dimensionId] || dimensionId;
   const rubricData = rubricProgress[rubricId];
   
   if (!rubricData || !rubricData.scores || rubricData.scores.length === 0) {
@@ -203,20 +204,7 @@ export const determineDifficultyLevel = (rubricProgress, dimensionId) => {
  * Obtiene hints para una dimensión y nivel específicos
  */
 export const getHintsForDimension = (dimensionId, difficulty) => {
-  const dimensionMap = {
-    '1': 'rubrica1',
-    '2': 'rubrica2',
-    '3': 'rubrica3',
-    '4': 'rubrica4',
-    '5': 'rubrica5',
-    'comprension_analitica': 'rubrica1',
-    'acd': 'rubrica2',
-    'contextualizacion': 'rubrica3',
-    'argumentacion': 'rubrica4',
-    'metacognicion_etica_ia': 'rubrica5'
-  };
-  
-  const rubricId = dimensionMap[dimensionId] || dimensionId;
+  const rubricId = DIMENSION_TO_RUBRIC[dimensionId] || dimensionId;
   const hints = HINTS_LIBRARY[rubricId];
   
   if (!hints || !hints[difficulty]) {

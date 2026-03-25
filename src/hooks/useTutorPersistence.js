@@ -3,6 +3,7 @@ import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnap
 import { db, isConfigValid } from '../firebase/config';
 import logger from '../utils/logger';
 import { legacyContentHash } from '../utils/hash';
+import { toMillis } from '../utils/dateUtils';
 
 const EMPTY_MESSAGES = [];
 const ID_PREFIX = 'legacy_';
@@ -102,17 +103,6 @@ function deriveTitle(compact) {
   const text = String(userMessage?.c || 'Nuevo hilo').replace(/\s+/g, ' ').trim();
   if (!text) return 'Nuevo hilo';
   return text.length > 60 ? `${text.slice(0, 60)}…` : text;
-}
-
-function toMillis(value) {
-  try {
-    if (!value) return 0;
-    if (typeof value === 'number') return value;
-    if (typeof value.toMillis === 'function') return value.toMillis();
-    return new Date(value).getTime() || 0;
-  } catch {
-    return 0;
-  }
 }
 
 function nextLogicalMs(prev = 0) {
