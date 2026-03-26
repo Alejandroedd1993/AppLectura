@@ -11,6 +11,7 @@ import { createProgressionEngine } from '../pedagogy/progression/progressionEngi
 import { ZDPDetector } from '../pedagogy/tutor/zdpDetector';
 import { ACDAnalyzer } from '../pedagogy/discourse/acdAnalyzer';
 import { RewardsEngine } from '../pedagogy/rewards/rewardsEngine';
+import { clearRewardsEngine, setRewardsEngine } from '../utils/rewardsBridge';
 
 export const PedagogyContext = createContext(null);
 
@@ -27,12 +28,13 @@ export function PedagogyProvider({ children }) {
   // 🆕 Crear instancia de RewardsEngine y exponerla globalmente
   const [rewardsEngine] = useState(() => {
     const engine = new RewardsEngine();
-    // Exponer globalmente para acceso desde AppContext
-    if (typeof window !== 'undefined') {
-      window.__rewardsEngine = engine;
-    }
+    setRewardsEngine(engine);
     return engine;
   });
+
+  useEffect(() => () => {
+    clearRewardsEngine(rewardsEngine);
+  }, [rewardsEngine]);
 
   const updateConfig = useCallback((patch) => {
     setConfig(prev => {

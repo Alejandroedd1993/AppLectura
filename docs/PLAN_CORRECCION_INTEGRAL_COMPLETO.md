@@ -129,7 +129,7 @@ Los siguientes endpoints devuelven `error.message` crudo, exponiendo rutas inter
 
 ### 1.6 Limpiar globals de debug en producción 🔶 PARCIAL
 
-> **Estado:** `window.ACDAnalyzer` y `window.RewardsEngine` (clases) están envueltos en dev check ✅. `window.__rewardsEngine` (instancia) en `PedagogyContext.js` NO es un debug global: es un puente cross-context usado por AppContext.js (20+ refs para sync, export/import de estado). Se resolverá como parte del split de AppContext (Fase 2.1), no aquí.
+> **Estado:** `window.ACDAnalyzer` y `window.RewardsEngine` (clases) están envueltos en dev check ✅. El acceso a `window.__rewardsEngine` quedó encapsulado en `src/utils/rewardsBridge.js` como paso previo al split de `AppContext.js`; la dependencia global todavía existe, pero ya no está dispersa en consumidores.
 |---------|----------------|
 | `src/pedagogy/discourse/ACDAnalyzer.js` | `window.ACDAnalyzer` |
 | `src/pedagogy/rewards/RewardsEngine.js` | `window.RewardsEngine` |

@@ -44,6 +44,7 @@ import { BACKEND_BASE_URL, BACKEND_URL } from '../config/backend';
 import { PRELECTURE_ANALYSIS_TIMEOUT_MS } from '../constants/timeoutConstants';
 import { createAbortControllerWithTimeout, fetchWithRetry } from '../utils/netUtils';
 import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
+import { getRewardsEngine } from '../utils/rewardsBridge';
 import logger from '../utils/logger';
 import {
   createEmptyRubricProgressV2,
@@ -478,14 +479,16 @@ export const AppContextProvider = ({ children }) => {
       cleanupExpiredFirestoreBackups(currentUser.uid);
 
       // 🎮 Sincronizar motor de recompensas con el UID para aislamiento
-      if (window.__rewardsEngine) {
-        window.__rewardsEngine.setUserId(currentUser.uid);
+      const rewardsEngine = getRewardsEngine();
+      if (rewardsEngine) {
+        rewardsEngine.setUserId(currentUser.uid);
       }
     } else {
       setSessionManagerUser(null);
       // 🎮 Limpiar motor de recompensas al cerrar sesión
-      if (window.__rewardsEngine) {
-        window.__rewardsEngine.setUserId(null);
+      const rewardsEngine = getRewardsEngine();
+      if (rewardsEngine) {
+        rewardsEngine.setUserId(null);
       }
     }
   }, [currentUser]);
@@ -2258,7 +2261,7 @@ export const AppContextProvider = ({ children }) => {
 
       // Disparar eventos de rewards para dimensiones (activar eventos huérfanos)
       try {
-        const engine = typeof window !== 'undefined' ? window.__rewardsEngine : null;
+        const engine = getRewardsEngine();
         if (engine && newScoreEntry.artefacto !== 'PracticaGuiada') {
           // DIMENSION_UNLOCKED: primera vez que se evalúa un artefacto en esta dimensión
           const prevArtifactScores = (rubrica.scores || []).filter(s => s.artefacto !== 'PracticaGuiada');
@@ -2916,7 +2919,7 @@ export const AppContextProvider = ({ children }) => {
 
     const flushPendingRewardsSync = () => {
       try {
-        const currentRewardsState = window.__rewardsEngine?.exportState();
+        const currentRewardsState = getRewardsEngine()?.exportState();
         if (!currentRewardsState) return;
 
         const progressData = {
@@ -2953,7 +2956,7 @@ export const AppContextProvider = ({ children }) => {
         // Sincronizar inmediatamente
         (async () => {
           try {
-            const currentRewardsState = window.__rewardsEngine?.exportState();
+            const currentRewardsState = getRewardsEngine()?.exportState();
             if (!currentRewardsState) return;
 
             logger.log('🗑️ [AppContext] Estado de rewards a guardar:', {
@@ -3000,7 +3003,7 @@ export const AppContextProvider = ({ children }) => {
       debounceTimer = setTimeout(async () => {
         logger.log('⏱️ [AppContext] Debounce completado, sincronizando...');
         try {
-          const currentRewardsState = window.__rewardsEngine?.exportState();
+          const currentRewardsState = getRewardsEngine()?.exportState();
           if (!currentRewardsState) {
             logger.log('⚠️ [AppContext] No hay rewardsState para sincronizar');
             return;
@@ -5239,9 +5242,10 @@ export const AppContextProvider = ({ children }) => {
         }
 
         // FALLBACK EN ERROR: Intentar cargar caché local
-        if (window.__rewardsEngine) {
+        const rewardsEngine = getRewardsEngine();
+        if (rewardsEngine) {
           logger.log('⚠️ [AppContext] Error en Firebase, usando caché local para rewards...');
-          window.__rewardsEngine.loadFromCache();
+          rewardsEngine.loadFromCache();
         }
       }
     };
@@ -5580,10 +5584,11 @@ export const AppContextProvider = ({ children }) => {
         const globalData = await getStudentProgress(currentUser.uid, 'global_progress');
         if (!mounted) return;
 
-        if (!window.__rewardsEngine) return;
+        const rewardsEngine = getRewardsEngine();
+        if (!rewardsEngine) return;
 
         // 🧩 Merge seguro: no pisar puntos locales más nuevos/mayores con estado remoto stale
-        const localRewardsState = window.__rewardsEngine.exportState();
+        const localRewardsState = rewardsEngine.exportState();
         const remoteState = globalData?.rewardsState;
 
         if (remoteState) {
@@ -5606,7 +5611,7 @@ export const AppContextProvider = ({ children }) => {
           if (localWasResetRecently) {
             logger.log('🛡️ [AppContext] Reset local reciente detectado, ignorando estado remoto');
             // Subir el estado reseteado a Firestore
-            const currentRewardsState = window.__rewardsEngine.exportState();
+            const currentRewardsState = rewardsEngine.exportState();
             Promise.resolve(saveGlobalProgress({
               rewardsState: currentRewardsState,
               lastSync: new Date().toISOString(),
@@ -5618,13 +5623,13 @@ export const AppContextProvider = ({ children }) => {
             if (localIsEmpty && remotePoints > 0) {
               logger.log('✅ [AppContext] Estado local vacío, cargando desde Firestore:', remotePoints, 'pts');
               lastRewardsStateFromCloudAtRef.current = Date.now();
-              window.__rewardsEngine.importState(remoteState, false);
+              rewardsEngine.importState(remoteState, false);
             } else {
               // 🆕 FIX: Si ambos tienen el mismo resetAt pero local tiene más puntos, NO sobrescribir
               const sameResetEpoch = localResetAt === remoteResetAt && localResetAt > 0;
               if (sameResetEpoch && localPoints > remotePoints) {
                 logger.log('🛡️ [AppContext] Local tiene más puntos en mismo epoch de reset, subiendo a Firestore');
-                const currentRewardsState = window.__rewardsEngine.exportState();
+                const currentRewardsState = rewardsEngine.exportState();
                 Promise.resolve(saveGlobalProgress({
                   rewardsState: currentRewardsState,
                   lastSync: new Date().toISOString(),
@@ -5638,10 +5643,10 @@ export const AppContextProvider = ({ children }) => {
 
                 if (remoteIsNewer || remoteHasMoreProgress) {
                   lastRewardsStateFromCloudAtRef.current = Date.now();
-                  window.__rewardsEngine.importState(remoteState, false);
+                  rewardsEngine.importState(remoteState, false);
                 } else if (localIsNewer || localHasMoreProgress) {
                   // Subir local si el remoto está atrasado (por ejemplo, navegación antes de debounce)
-                  const currentRewardsState = window.__rewardsEngine.exportState();
+                  const currentRewardsState = rewardsEngine.exportState();
                   Promise.resolve(saveGlobalProgress({
                     rewardsState: currentRewardsState,
                     lastSync: new Date().toISOString(),
@@ -5652,10 +5657,10 @@ export const AppContextProvider = ({ children }) => {
             }
           }
         } else {
-          window.__rewardsEngine.loadFromCache();
+          rewardsEngine.loadFromCache();
         }
 
-        const safe = window.__rewardsEngine.exportState();
+        const safe = rewardsEngine.exportState();
         window.dispatchEvent(new CustomEvent('rewards-state-changed', {
           detail: {
             totalPoints: safe.totalPoints,
@@ -5664,8 +5669,9 @@ export const AppContextProvider = ({ children }) => {
         }));
       } catch (error) {
         logger.error('❌ [AppContext] Error cargando rewardsState inicial (global_progress):', error);
-        if (window.__rewardsEngine) {
-          window.__rewardsEngine.loadFromCache();
+        const rewardsEngine = getRewardsEngine();
+        if (rewardsEngine) {
+          rewardsEngine.loadFromCache();
         }
       }
     };
@@ -5679,13 +5685,14 @@ export const AppContextProvider = ({ children }) => {
         if (!mounted) return;
         if (!progressData?.rewardsState) return;
 
-        if (!window.__rewardsEngine) {
+        if (!getRewardsEngine()) {
           setTimeout(() => {
+            const rewardsEngine = getRewardsEngine();
             if (!mounted) return;
-            if (window.__rewardsEngine) {
+            if (rewardsEngine) {
               lastRewardsStateFromCloudAtRef.current = Date.now();
-              window.__rewardsEngine.importState(progressData.rewardsState, false);
-              const safe = window.__rewardsEngine.exportState();
+              rewardsEngine.importState(progressData.rewardsState, false);
+              const safe = rewardsEngine.exportState();
               window.dispatchEvent(new CustomEvent('rewards-state-changed', {
                 detail: {
                   totalPoints: safe.totalPoints,
@@ -5698,7 +5705,9 @@ export const AppContextProvider = ({ children }) => {
         }
 
         try {
-          const localRewardsState = window.__rewardsEngine.exportState();
+          const rewardsEngine = getRewardsEngine();
+          if (!rewardsEngine) return;
+          const localRewardsState = rewardsEngine.exportState();
           const remoteState = progressData.rewardsState;
 
           const remotePoints = remoteState.totalPoints || 0;
@@ -5726,8 +5735,8 @@ export const AppContextProvider = ({ children }) => {
           if (localIsEmpty && remotePoints > 0) {
             logger.log('✅ [AppContext] Listener: Estado local vacío, cargando desde Firestore:', remotePoints, 'pts');
             lastRewardsStateFromCloudAtRef.current = Date.now();
-            window.__rewardsEngine.importState(remoteState, false);
-            const safe = window.__rewardsEngine.exportState();
+            rewardsEngine.importState(remoteState, false);
+            const safe = rewardsEngine.exportState();
             window.dispatchEvent(new CustomEvent('rewards-state-changed', {
               detail: {
                 totalPoints: safe.totalPoints,
@@ -5742,7 +5751,7 @@ export const AppContextProvider = ({ children }) => {
           const sameResetEpoch = localResetAt === remoteResetAt && localResetAt > 0;
           if (sameResetEpoch && localPoints > remotePoints) {
             logger.log('🛡️ [AppContext] Listener: Local tiene más puntos en mismo epoch de reset, subiendo a Firestore');
-            const currentRewardsState = window.__rewardsEngine.exportState();
+            const currentRewardsState = rewardsEngine.exportState();
             await saveGlobalProgress({
               rewardsState: currentRewardsState,
               lastSync: new Date().toISOString(),
@@ -5758,8 +5767,8 @@ export const AppContextProvider = ({ children }) => {
 
           if (remoteIsNewer) {
             lastRewardsStateFromCloudAtRef.current = Date.now();
-            window.__rewardsEngine.importState(remoteState, false);
-            const safe = window.__rewardsEngine.exportState();
+            rewardsEngine.importState(remoteState, false);
+            const safe = rewardsEngine.exportState();
             window.dispatchEvent(new CustomEvent('rewards-state-changed', {
               detail: {
                 totalPoints: safe.totalPoints,
@@ -5767,7 +5776,7 @@ export const AppContextProvider = ({ children }) => {
               }
             }));
           } else if (localIsNewer) {
-            const currentRewardsState = window.__rewardsEngine.exportState();
+            const currentRewardsState = rewardsEngine.exportState();
             await saveGlobalProgress({
               rewardsState: currentRewardsState,
               lastSync: new Date().toISOString(),
@@ -5776,8 +5785,8 @@ export const AppContextProvider = ({ children }) => {
           } else {
             if (remoteHasMoreProgress) {
               lastRewardsStateFromCloudAtRef.current = Date.now();
-              window.__rewardsEngine.importState(remoteState, false);
-              const safe = window.__rewardsEngine.exportState();
+              rewardsEngine.importState(remoteState, false);
+              const safe = rewardsEngine.exportState();
               window.dispatchEvent(new CustomEvent('rewards-state-changed', {
                 detail: {
                   totalPoints: safe.totalPoints,
@@ -5785,7 +5794,7 @@ export const AppContextProvider = ({ children }) => {
                 }
               }));
             } else if (localHasMoreProgress) {
-              const currentRewardsState = window.__rewardsEngine.exportState();
+              const currentRewardsState = rewardsEngine.exportState();
               await saveGlobalProgress({
                 rewardsState: currentRewardsState,
                 lastSync: new Date().toISOString(),

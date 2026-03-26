@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRewards } from '../../context/PedagogyContext';
+import { getRewardsEngine } from '../../utils/rewardsBridge';
 
 import logger from '../../utils/logger';
 /**
@@ -456,7 +457,7 @@ export default function RewardsAnalytics({ isOpen, onClose }) {
 
   // 🆕 Obtener analytics directamente (sin cache de useMemo problemático)
   const getAnalyticsNow = useCallback(() => {
-    const engine = typeof window !== 'undefined' ? window.__rewardsEngine : rewards;
+    const engine = getRewardsEngine() || rewards;
     if (!engine) {
       logger.warn('📊 [RewardsAnalytics] No hay engine disponible');
       return null;
@@ -480,7 +481,7 @@ export default function RewardsAnalytics({ isOpen, onClose }) {
   }, [refreshKey, isOpen, getAnalyticsNow]);
 
   const handleResetPoints = useCallback(async () => {
-    const engine = typeof window !== 'undefined' ? window.__rewardsEngine : rewards;
+    const engine = getRewardsEngine() || rewards;
     if (confirmText !== 'CONFIRMAR' || !engine) return;
     
     setIsResetting(true);
