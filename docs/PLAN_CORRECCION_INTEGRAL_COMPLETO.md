@@ -53,7 +53,7 @@ Este plan organiza **todas las correcciones necesarias** en 7 fases priorizadas,
 | Fase 1 — Seguridad | 6.5/7 | 7 | ~93% |
 | Fase 2 — Arquitectura | 1.5/7 | 7 | ~21% |
 | Fase 3 — Duplicación | 12/13 | 13 | ~92% |
-| Fase 4 — Performance | 8/10 | 10 | ~80% |
+| Fase 4 — Performance | 9/10 | 10 | ~90% |
 | Fase 5 — API Standard | 6/6 | 6 | ✅ 100% |
 | Fase 6 — CI/Tests | 6/9 | 9 | ~67% |
 | Fase 7 — Estilos/Limpieza | 0.5/18 | 18 | ~3% |
@@ -490,20 +490,16 @@ Archivos potencialmente huérfanos:
 | 54 | `setInterval` cada 5s para memory tracking — nunca limpiado | Asignar a `this._memoryInterval` y limpiar en un método `destroy()` |
 | 277 | `setInterval` cada 1h — nunca limpiado | Asignar a variable de módulo, exponer `cleanup()` |
 
-### 4.2 Agregar límite y TTL a caches in-memory ⬜ PENDIENTE
+### 4.2 Agregar límite y TTL a caches in-memory ✅ COMPLETADO
 
 | Archivo | Línea | Cache | Corrección |
 |---------|-------|-------|-----------|
-| `src/services/termDefinitionService.js` | 8 | `_definitionCache = new Map()` | Agregar `MAX_SIZE = 200` y TTL de 30 min |
-| `src/services/segmentTextService.js` | 111 | `_cache = new Map()` | Agregar `MAX_SIZE = 100` y TTL de 1h |
+| `src/services/termDefinitionService.js` | 8 | `_definitionCache` | Migrado a `TtlCache` con `maxEntries` y `ttlMs` |
+| `src/services/segmentTextService.js` | 111 | `_cache` | Migrado a `TtlCache` con `maxEntries` y `ttlMs` |
 
-Patrón a usar (crear `src/utils/LRUCache.js` si no existe):
+Implementación actual:
 ```js
-if (cache.size >= MAX_SIZE) {
-  const firstKey = cache.keys().next().value;
-  cache.delete(firstKey);
-}
-cache.set(key, { data, timestamp: Date.now() });
+const cache = new TtlCache({ maxEntries, ttlMs });
 ```
 
 ### 4.3 Backend: Connection pooling para clientes AI ✅ COMPLETADO
@@ -1037,7 +1033,7 @@ Track 0 (Quick Wins)   ██████████  ✅ COMPLETADO
 Fase 1 (Seguridad)     █████████░  ~93% — falta: window.__rewardsEngine → se resuelve en Fase 2.1
 Fase 5 (API Standard)  ██████████  ✅ COMPLETADO
 Fase 3 (Duplicación)   █████████░  ~92% — falta: limpieza final de aliases/hash legacy no críticos
-Fase 4 (Performance)   ████████░░  ~80% — falta: circuit breaker/caches finales
+Fase 4 (Performance)   █████████░  ~90% — falta: circuit breaker y decisión final sobre diskStorage PDF
 Fase 6 (CI/CD+Tests)   ██████░░░░  ~67% — falta: ESLint strict, coverage 45%, más tests
 Fase 2 (Arquitectura)  ██░░░░░░░░  ~21% — falta: firestore split, preLectura, AppContext, Router
 Fase 7 (Estilos+Clean) ░░░░░░░░░░  ~3%  — todo pendiente

@@ -8,6 +8,7 @@ import { getDefaultDeepSeekBaseUrl } from '../config/providerDefaults.js';
 import { sendError } from '../utils/responseHelpers.js';
 import { sendValidationError } from '../utils/validationError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
+import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 
 /**
  * Genera glosario de términos clave del texto
@@ -440,11 +441,13 @@ Responde SOLO con JSON válido (sin markdown, sin \`\`\`json):
       timeout: 60000,
     });
 
-    const completion = await client.chat.completions.create({
+    const completion = await retryWithBackoff(() => client.chat.completions.create({
       model: deepseekRequest.selectedModel,
       messages,
       temperature: 0.4,
       max_tokens: 2000,
+    }), {
+      retries: 2,
     });
 
     const content = parseDeepSeekChatContent(completion);

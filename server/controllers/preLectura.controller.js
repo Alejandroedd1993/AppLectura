@@ -26,6 +26,7 @@ import {
   buildWebDecisionMetadata,
 } from '../services/preLecturaWebDecision.service.js';
 import { readBoundedIntEnv, truncateTextWithNotice } from '../utils/textLimits.js';
+import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -588,14 +589,16 @@ async function callDeepSeekAnalysis(prompt) {
     apiKey,
   });
 
-  const response = await axios.post(
+  const response = await retryWithBackoff(() => axios.post(
     deepseekRequest.url,
     deepseekRequest.payload,
     {
       headers: deepseekRequest.headers,
       timeout: deepseekTimeoutMs
     }
-  );
+  ), {
+    retries: 2,
+  });
 
   return parseDeepSeekChatContent(response.data);
 }
@@ -763,7 +766,7 @@ NOTAS SOBRE CAMPOS:
 - Si no encuentras figuras retóricas CON CONFIDENCE >= 0.7, retorna un array vacío []
 - Prioriza figuras con alta confidence (>0.85) sobre cantidad`;
 
-    const response = await axios.post(
+    const response = await retryWithBackoff(() => axios.post(
       `${baseURL}/chat/completions`,
       {
         model: selectedModel,
@@ -809,7 +812,9 @@ Si no encuentras figuras retóricas REALES e INEQUÍVOCAS, retorna un array vac�
         },
         timeout: openaiFigurasTimeoutMs
       }
-    );
+    ), {
+      retries: 2,
+    });
 
     let content = response.data.choices[0].message.content.trim();
     console.log('🔍 [DEBUG] Respuesta de OpenAI recibida, longitud:', content.length);

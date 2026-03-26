@@ -5,6 +5,7 @@ import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels } from '../utils/modelUtils.js';
 import { buildRequestId } from '../utils/requestContext.js';
+import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 import { getOpenAICompatibleClient } from '../config/apiClients.js';
 import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel, getDefaultGeminiModel } from '../config/providerDefaults.js';
 
@@ -390,13 +391,15 @@ export async function createChatCompletion(req, res) {
       }
     }
 
-    const completion = await client.chat.completions.create({
+    const completion = await retryWithBackoff(() => client.chat.completions.create({
       model: selectedModel,
       messages: safeMessages,
       temperature: resolvedTemperature,
       max_tokens: resolvedMaxTokens,
       stream: false,
       ...(response_format?.type === 'json_object' ? { response_format: { type: 'json_object' } } : {}),
+    }), {
+      retries: 2,
     });
 
     const latencyMs = Date.now() - startTime;
