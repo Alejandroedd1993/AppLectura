@@ -2,6 +2,7 @@ import { getOpenAI, getGemini } from '../config/apiClients.js';
 import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from './deepseekClient.service.js';
 import { settings } from '../config/settings.js';
 import { limitItems, truncateText } from '../utils/textLimits.js';
+import { getSharedCircuitBreaker } from '../utils/circuitBreaker.js';
 import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 
 const notesSystemPrompt = `Eres un asistente que genera notas de estudio a partir de un texto dado. Devuelve exclusivamente un JSON válido con esta forma:
@@ -66,7 +67,8 @@ export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademi
 
   let completion;
   try {
-    completion = await openai.chat.completions.create({
+    const openaiBreaker = getSharedCircuitBreaker('notes:openai');
+    completion = await openaiBreaker.execute(() => openai.chat.completions.create({
       model: settings.openai.model,
       messages: [
         { role: 'system', content: notesSystemPrompt },
@@ -74,7 +76,7 @@ export async function generarNotasConOpenAI(texto, contexto = null, nivelAcademi
       ],
       response_format: { type: 'json_object' },
       temperature: 0.4,
-    }, { signal: controller.signal });
+    }, { signal: controller.signal }));
   } catch (e) {
     if (controller.signal.aborted) {
       throw new Error('Timeout: La solicitud a OpenAI tardó demasiado');
@@ -133,14 +135,15 @@ export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcade
       maxTokens: 1000,
     });
 
-    const res = await retryWithBackoff(() => fetch(deepseekRequest.url, {
+    const deepseekBreaker = getSharedCircuitBreaker('notes:deepseek');
+    const res = await deepseekBreaker.execute(() => retryWithBackoff(() => fetch(deepseekRequest.url, {
       method: 'POST',
       headers: deepseekRequest.headers,
       body: JSON.stringify(deepseekRequest.payload),
       signal: controller.signal
     }), {
       retries: 2,
-    });
+    }));
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`DeepSeek error ${res.status}: ${text}`);
@@ -196,10 +199,11 @@ export async function generarNotasConGemini(texto, contexto = null, nivelAcademi
   const timeoutMs = settings.gemini?.timeout || settings.openai.timeout || 45000;
   const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout: La solicitud a Gemini tardó demasiado')), timeoutMs));
 
-  const result = await Promise.race([
+  const geminiBreaker = getSharedCircuitBreaker('notes:gemini');
+  const result = await geminiBreaker.execute(() => Promise.race([
     model.generateContent(`${base}\n${user}`),
     timeoutPromise
-  ]);
+  ]));
   const response = result.response;
   const text = response.text();
   const jsonMatch = text.match(/\{[\s\S]*\}/);

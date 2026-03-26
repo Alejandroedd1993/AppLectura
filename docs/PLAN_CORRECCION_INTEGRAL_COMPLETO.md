@@ -53,7 +53,7 @@ Este plan organiza **todas las correcciones necesarias** en 7 fases priorizadas,
 | Fase 1 — Seguridad | 6.5/7 | 7 | ~93% |
 | Fase 2 — Arquitectura | 1.5/7 | 7 | ~21% |
 | Fase 3 — Duplicación | 12/13 | 13 | ~92% |
-| Fase 4 — Performance | 9/10 | 10 | ~90% |
+| Fase 4 — Performance | 10/10 | 10 | ✅ 100% |
 | Fase 5 — API Standard | 6/6 | 6 | ✅ 100% |
 | Fase 6 — CI/Tests | 6/9 | 9 | ~67% |
 | Fase 7 — Estilos/Limpieza | 0.5/18 | 18 | ~3% |
@@ -511,7 +511,7 @@ const cache = new TtlCache({ maxEntries, ttlMs });
 
 **Acción:** Usar singleton de `apiClients.js` para todas las llamadas. Crear factory que cachee por `{baseURL, apiKey}`.
 
-### 4.4 Backend: Circuit breaker para APIs externas ⬜ PENDIENTE (postergado)
+### 4.4 Backend: Circuit breaker para APIs externas ✅ COMPLETADO
 
 Ningún endpoint tiene protección contra falla sostenida de OpenAI/DeepSeek/Gemini.
 
@@ -520,7 +520,7 @@ Ningún endpoint tiene protección contra falla sostenida de OpenAI/DeepSeek/Gem
 - Threshold: 5 fallos consecutivos → abrir circuito por 30s
 - Aplicar a: `analisis.service.js`, `chat.completion.controller.js`, `preLectura.controller.js`, `notes.service.js`
 
-**Prioridad ajustada:** este punto se considera **postergable** y no debe bloquear la Fase 4. Para el volumen actual esperado de la aplicación, `retryWithBackoff` cubre primero el mayor retorno. Implementar circuit breaker solo si se observan fallos sostenidos, cascadas de timeout o presión operativa real en producción.
+**Implementación aplicada:** `server/utils/circuitBreaker.js` con estados `CLOSED → OPEN → HALF_OPEN`, threshold por defecto de 5 fallos y reapertura tras 30s. Integrado en `analisis.service.js`, `chat.completion.controller.js`, `preLectura.controller.js` y `notes.service.js`.
 
 ### 4.5 Backend: Retry con backoff para llamadas AI ✅ COMPLETADO
 
@@ -1033,7 +1033,7 @@ Track 0 (Quick Wins)   ██████████  ✅ COMPLETADO
 Fase 1 (Seguridad)     █████████░  ~93% — falta: window.__rewardsEngine → se resuelve en Fase 2.1
 Fase 5 (API Standard)  ██████████  ✅ COMPLETADO
 Fase 3 (Duplicación)   █████████░  ~92% — falta: limpieza final de aliases/hash legacy no críticos
-Fase 4 (Performance)   █████████░  ~90% — falta: circuit breaker y decisión final sobre diskStorage PDF
+Fase 4 (Performance)   ██████████  ✅ COMPLETADO
 Fase 6 (CI/CD+Tests)   ██████░░░░  ~67% — falta: ESLint strict, coverage 45%, más tests
 Fase 2 (Arquitectura)  ██░░░░░░░░  ~21% — falta: firestore split, preLectura, AppContext, Router
 Fase 7 (Estilos+Clean) ░░░░░░░░░░  ~3%  — todo pendiente

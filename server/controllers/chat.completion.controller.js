@@ -5,6 +5,7 @@ import { sendValidationError } from '../utils/validationError.js';
 import { parseBool } from '../utils/envUtils.js';
 import { parseAllowedModels } from '../utils/modelUtils.js';
 import { buildRequestId } from '../utils/requestContext.js';
+import { getSharedCircuitBreaker } from '../utils/circuitBreaker.js';
 import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 import { getOpenAICompatibleClient } from '../config/apiClients.js';
 import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel, getDefaultGeminiModel } from '../config/providerDefaults.js';
@@ -313,13 +314,14 @@ export async function createChatCompletion(req, res) {
 
       let streamedContent = '';
       try {
-        const streamResp = await client.chat.completions.create({
+        const streamBreaker = getSharedCircuitBreaker(`chat:${provider}:stream`);
+        const streamResp = await streamBreaker.execute(() => client.chat.completions.create({
           model: selectedModel,
           messages: safeMessages,
           temperature: resolvedTemperature,
           max_tokens: resolvedMaxTokens,
           stream: true,
-        });
+        }));
 
         console.log('📊 [chat/completion] stream start', { ...requestTag, resolvedMaxTokens });
 
@@ -391,7 +393,8 @@ export async function createChatCompletion(req, res) {
       }
     }
 
-    const completion = await retryWithBackoff(() => client.chat.completions.create({
+    const completionBreaker = getSharedCircuitBreaker(`chat:${provider}:complete`);
+    const completion = await completionBreaker.execute(() => retryWithBackoff(() => client.chat.completions.create({
       model: selectedModel,
       messages: safeMessages,
       temperature: resolvedTemperature,
@@ -400,7 +403,7 @@ export async function createChatCompletion(req, res) {
       ...(response_format?.type === 'json_object' ? { response_format: { type: 'json_object' } } : {}),
     }), {
       retries: 2,
-    });
+    }));
 
     const latencyMs = Date.now() - startTime;
 

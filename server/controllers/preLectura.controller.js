@@ -26,6 +26,7 @@ import {
   buildWebDecisionMetadata,
 } from '../services/preLecturaWebDecision.service.js';
 import { readBoundedIntEnv, truncateTextWithNotice } from '../utils/textLimits.js';
+import { getSharedCircuitBreaker } from '../utils/circuitBreaker.js';
 import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -589,7 +590,8 @@ async function callDeepSeekAnalysis(prompt) {
     apiKey,
   });
 
-  const response = await retryWithBackoff(() => axios.post(
+  const deepseekBreaker = getSharedCircuitBreaker('preLectura:deepseek');
+  const response = await deepseekBreaker.execute(() => retryWithBackoff(() => axios.post(
     deepseekRequest.url,
     deepseekRequest.payload,
     {
@@ -598,7 +600,7 @@ async function callDeepSeekAnalysis(prompt) {
     }
   ), {
     retries: 2,
-  });
+  }));
 
   return parseDeepSeekChatContent(response.data);
 }
@@ -766,7 +768,8 @@ NOTAS SOBRE CAMPOS:
 - Si no encuentras figuras retóricas CON CONFIDENCE >= 0.7, retorna un array vacío []
 - Prioriza figuras con alta confidence (>0.85) sobre cantidad`;
 
-    const response = await retryWithBackoff(() => axios.post(
+    const figuresBreaker = getSharedCircuitBreaker('preLectura:openai:figures');
+    const response = await figuresBreaker.execute(() => retryWithBackoff(() => axios.post(
       `${baseURL}/chat/completions`,
       {
         model: selectedModel,
@@ -814,7 +817,7 @@ Si no encuentras figuras retóricas REALES e INEQUÍVOCAS, retorna un array vac�
       }
     ), {
       retries: 2,
-    });
+    }));
 
     let content = response.data.choices[0].message.content.trim();
     console.log('🔍 [DEBUG] Respuesta de OpenAI recibida, longitud:', content.length);

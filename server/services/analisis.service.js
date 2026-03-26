@@ -7,6 +7,7 @@ import { settings } from '../config/settings.js';
 import { openaiStrategy } from './strategies/openai.strategy.js';
 import { geminiStrategy } from './strategies/gemini.strategy.js';
 import { deepseekStrategy } from './strategies/deepseek.strategy.js';
+import { getSharedCircuitBreaker } from '../utils/circuitBreaker.js';
 
 // Mapa de estrategias para seleccionar el proveedor de IA dinámicamente.
 const strategies = {
@@ -34,7 +35,8 @@ function pickDebateMode(defaultMode = 'lite') {
 async function runProviderJson(providerName, prompt, options) {
   const strategy = strategies[providerName];
   if (!strategy) throw new Error(`Proveedor de IA no válido: ${providerName}`);
-  const res = await strategy(prompt, options);
+  const breaker = getSharedCircuitBreaker(`analysis:${providerName}`);
+  const res = await breaker.execute(() => strategy(prompt, options));
   const jsonText = extractJson(res);
   return JSON.parse(jsonText);
 }
