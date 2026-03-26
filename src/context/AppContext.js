@@ -45,6 +45,7 @@ import { PRELECTURE_ANALYSIS_TIMEOUT_MS } from '../constants/timeoutConstants';
 import { createAbortControllerWithTimeout, fetchWithRetry } from '../utils/netUtils';
 import { recoverPdfBlobWithFallback } from '../utils/pdfRecovery';
 import { getRewardsEngine } from '../utils/rewardsBridge';
+import { decideInitialRewardsSyncAction, decideRealtimeRewardsSyncAction } from '../utils/rewardsSync';
 import logger from '../utils/logger';
 import {
   createEmptyRubricProgressV2,
@@ -5579,6 +5580,30 @@ export const AppContextProvider = ({ children }) => {
     let mounted = true;
     let unsubscribe = null;
 
+    const emitRewardsStateChanged = (rewardsState) => {
+      window.dispatchEvent(new CustomEvent('rewards-state-changed', {
+        detail: {
+          totalPoints: rewardsState.totalPoints,
+          availablePoints: rewardsState.availablePoints
+        }
+      }));
+    };
+
+    const pushRewardsState = async (rewardsEngine, syncType) => {
+      const currentRewardsState = rewardsEngine.exportState();
+      await saveGlobalProgress({
+        rewardsState: currentRewardsState,
+        lastSync: new Date().toISOString(),
+        syncType
+      });
+    };
+
+    const importRewardsState = (rewardsEngine, remoteState) => {
+      lastRewardsStateFromCloudAtRef.current = Date.now();
+      rewardsEngine.importState(remoteState, false);
+      emitRewardsStateChanged(rewardsEngine.exportState());
+    };
+
     const loadInitialRewards = async () => {
       try {
         const globalData = await getStudentProgress(currentUser.uid, 'global_progress');
@@ -5592,81 +5617,27 @@ export const AppContextProvider = ({ children }) => {
         const remoteState = globalData?.rewardsState;
 
         if (remoteState) {
-          const remotePoints = remoteState.totalPoints || 0;
-          const localPoints = localRewardsState.totalPoints || 0;
-          const remoteTimestamp = remoteState.lastInteraction || remoteState.lastUpdate || 0;
-          const localTimestamp = localRewardsState.lastInteraction || localRewardsState.lastUpdate || 0;
-          const TIME_TOLERANCE = 2000;
+          const syncAction = decideInitialRewardsSyncAction({
+            localState: localRewardsState,
+            remoteState,
+            now: Date.now()
+          });
 
-          // 🆕 FIX: Si local tiene resetAt reciente, SIEMPRE preferir local (reset intencional)
-          const localResetAt = localRewardsState.resetAt || 0;
-          const remoteResetAt = remoteState.resetAt || 0;
-
-          // Solo considerar "reset reciente" si:
-          // 1. Local tiene un resetAt válido (> 0) - evita falsos positivos después de logout
-          // 2. Local resetAt es más reciente que el remoto
-          // 3. El reset fue hace menos de 10 segundos
-          const localWasResetRecently = localResetAt > 0 && localResetAt > remoteResetAt && (Date.now() - localResetAt) < 10000;
-
-          if (localWasResetRecently) {
+          if (syncAction === 'push-local-reset') {
             logger.log('🛡️ [AppContext] Reset local reciente detectado, ignorando estado remoto');
-            // Subir el estado reseteado a Firestore
-            const currentRewardsState = rewardsEngine.exportState();
-            Promise.resolve(saveGlobalProgress({
-              rewardsState: currentRewardsState,
-              lastSync: new Date().toISOString(),
-              syncType: 'reset_preserve'
-            })).catch(() => { });
-          } else {
-            // 🆕 FIX: Si local no tiene datos válidos (resetAt=0 o puntos=0), preferir remoto
-            const localIsEmpty = localResetAt === 0 || (localPoints === 0 && remotePoints > 0);
-            if (localIsEmpty && remotePoints > 0) {
-              logger.log('✅ [AppContext] Estado local vacío, cargando desde Firestore:', remotePoints, 'pts');
-              lastRewardsStateFromCloudAtRef.current = Date.now();
-              rewardsEngine.importState(remoteState, false);
-            } else {
-              // 🆕 FIX: Si ambos tienen el mismo resetAt pero local tiene más puntos, NO sobrescribir
-              const sameResetEpoch = localResetAt === remoteResetAt && localResetAt > 0;
-              if (sameResetEpoch && localPoints > remotePoints) {
-                logger.log('🛡️ [AppContext] Local tiene más puntos en mismo epoch de reset, subiendo a Firestore');
-                const currentRewardsState = rewardsEngine.exportState();
-                Promise.resolve(saveGlobalProgress({
-                  rewardsState: currentRewardsState,
-                  lastSync: new Date().toISOString(),
-                  syncType: 'initial_local_more_same_reset'
-                })).catch(() => { });
-              } else {
-                const remoteIsNewer = remoteTimestamp > (localTimestamp + TIME_TOLERANCE);
-                const localIsNewer = localTimestamp > (remoteTimestamp + TIME_TOLERANCE);
-                const remoteHasMoreProgress = remotePoints > localPoints;
-                const localHasMoreProgress = localPoints > remotePoints;
-
-                if (remoteIsNewer || remoteHasMoreProgress) {
-                  lastRewardsStateFromCloudAtRef.current = Date.now();
-                  rewardsEngine.importState(remoteState, false);
-                } else if (localIsNewer || localHasMoreProgress) {
-                  // Subir local si el remoto está atrasado (por ejemplo, navegación antes de debounce)
-                  const currentRewardsState = rewardsEngine.exportState();
-                  Promise.resolve(saveGlobalProgress({
-                    rewardsState: currentRewardsState,
-                    lastSync: new Date().toISOString(),
-                    syncType: 'initial_local_preferred'
-                  })).catch(() => { });
-                }
-              }
-            }
+            Promise.resolve(pushRewardsState(rewardsEngine, 'reset_preserve')).catch(() => { });
+          } else if (syncAction === 'import-remote') {
+            logger.log('✅ [AppContext] Estado de rewards importado desde Firestore');
+            importRewardsState(rewardsEngine, remoteState);
+          } else if (syncAction === 'push-local') {
+            logger.log('🛡️ [AppContext] Estado local de rewards preferido, sincronizando a Firestore');
+            Promise.resolve(pushRewardsState(rewardsEngine, 'initial_local_preferred')).catch(() => { });
           }
         } else {
           rewardsEngine.loadFromCache();
         }
 
-        const safe = rewardsEngine.exportState();
-        window.dispatchEvent(new CustomEvent('rewards-state-changed', {
-          detail: {
-            totalPoints: safe.totalPoints,
-            availablePoints: safe.availablePoints
-          }
-        }));
+        emitRewardsStateChanged(rewardsEngine.exportState());
       } catch (error) {
         logger.error('❌ [AppContext] Error cargando rewardsState inicial (global_progress):', error);
         const rewardsEngine = getRewardsEngine();
@@ -5710,97 +5681,26 @@ export const AppContextProvider = ({ children }) => {
           const localRewardsState = rewardsEngine.exportState();
           const remoteState = progressData.rewardsState;
 
-          const remotePoints = remoteState.totalPoints || 0;
-          const localPoints = localRewardsState.totalPoints || 0;
-          // 🧩 FASE 4 HARDEN: soportar esquemas legacy (lastUpdate) y nuevo (lastInteraction)
-          const remoteTimestamp = remoteState.lastInteraction || remoteState.lastUpdate || 0;
-          const localTimestamp = localRewardsState.lastInteraction || localRewardsState.lastUpdate || 0;
+          const syncAction = decideRealtimeRewardsSyncAction({
+            localState: localRewardsState,
+            remoteState,
+            now: Date.now()
+          });
 
-          const TIME_TOLERANCE = 2000;
-
-          // 🆕 FIX: Si local tiene resetAt reciente, SIEMPRE preferir local (reset intencional)
-          const localResetAt = localRewardsState.resetAt || 0;
-          const remoteResetAt = remoteState.resetAt || 0;
-
-          // Solo considerar "reset reciente" si resetAt local es válido (> 0)
-          const localWasResetRecently = localResetAt > 0 && localResetAt > remoteResetAt && (Date.now() - localResetAt) < 10000;
-
-          if (localWasResetRecently) {
+          if (syncAction === 'noop') {
             logger.log('🛡️ [AppContext] Listener: Reset local reciente detectado, ignorando estado remoto');
-            return; // No hacer nada, el reset ya sincronizó
-          }
-
-          // 🆕 FIX: Si local está vacío (resetAt=0 después de logout), preferir remoto
-          const localIsEmpty = localResetAt === 0 || (localPoints === 0 && remotePoints > 0);
-          if (localIsEmpty && remotePoints > 0) {
-            logger.log('✅ [AppContext] Listener: Estado local vacío, cargando desde Firestore:', remotePoints, 'pts');
-            lastRewardsStateFromCloudAtRef.current = Date.now();
-            rewardsEngine.importState(remoteState, false);
-            const safe = rewardsEngine.exportState();
-            window.dispatchEvent(new CustomEvent('rewards-state-changed', {
-              detail: {
-                totalPoints: safe.totalPoints,
-                availablePoints: safe.availablePoints
-              }
-            }));
             return;
           }
 
-          // 🆕 FIX: Si ambos tienen el mismo resetAt pero local tiene más puntos, NO sobrescribir
-          // Esto evita que el estado reseteado (0 pts) sobrescriba puntos ganados después del reset
-          const sameResetEpoch = localResetAt === remoteResetAt && localResetAt > 0;
-          if (sameResetEpoch && localPoints > remotePoints) {
-            logger.log('🛡️ [AppContext] Listener: Local tiene más puntos en mismo epoch de reset, subiendo a Firestore');
-            const currentRewardsState = rewardsEngine.exportState();
-            await saveGlobalProgress({
-              rewardsState: currentRewardsState,
-              lastSync: new Date().toISOString(),
-              syncType: 'local_more_progress_same_reset'
-            });
+          if (syncAction === 'import-remote') {
+            logger.log('✅ [AppContext] Listener: Estado de rewards importado desde Firestore');
+            importRewardsState(rewardsEngine, remoteState);
             return;
           }
 
-          const remoteIsNewer = remoteTimestamp > (localTimestamp + TIME_TOLERANCE);
-          const localIsNewer = localTimestamp > (remoteTimestamp + TIME_TOLERANCE);
-          const remoteHasMoreProgress = remotePoints > localPoints;
-          const localHasMoreProgress = localPoints > remotePoints;
-
-          if (remoteIsNewer) {
-            lastRewardsStateFromCloudAtRef.current = Date.now();
-            rewardsEngine.importState(remoteState, false);
-            const safe = rewardsEngine.exportState();
-            window.dispatchEvent(new CustomEvent('rewards-state-changed', {
-              detail: {
-                totalPoints: safe.totalPoints,
-                availablePoints: safe.availablePoints
-              }
-            }));
-          } else if (localIsNewer) {
-            const currentRewardsState = rewardsEngine.exportState();
-            await saveGlobalProgress({
-              rewardsState: currentRewardsState,
-              lastSync: new Date().toISOString(),
-              syncType: 'local_newer'
-            });
-          } else {
-            if (remoteHasMoreProgress) {
-              lastRewardsStateFromCloudAtRef.current = Date.now();
-              rewardsEngine.importState(remoteState, false);
-              const safe = rewardsEngine.exportState();
-              window.dispatchEvent(new CustomEvent('rewards-state-changed', {
-                detail: {
-                  totalPoints: safe.totalPoints,
-                  availablePoints: safe.availablePoints
-                }
-              }));
-            } else if (localHasMoreProgress) {
-              const currentRewardsState = rewardsEngine.exportState();
-              await saveGlobalProgress({
-                rewardsState: currentRewardsState,
-                lastSync: new Date().toISOString(),
-                syncType: 'local_more_progress'
-              });
-            }
+          if (syncAction === 'push-local') {
+            logger.log('🛡️ [AppContext] Listener: Estado local de rewards preferido, sincronizando a Firestore');
+            await pushRewardsState(rewardsEngine, 'local_preferred_after_compare');
           }
         } catch (error) {
           logger.error('❌ [Sync] Error en merge de rewardsState (global_progress):', error);
