@@ -1,4 +1,4 @@
-import { evaluateAnswer, evaluateComprehensive } from '../../../server/controllers/assessment.controller.js';
+import { bulkEvaluate, evaluateAnswer, evaluateComprehensive } from '../../../server/controllers/assessment.controller.js';
 
 function makeRes() {
   const res = {};
@@ -84,5 +84,51 @@ describe('assessment.controller provider response semantics', () => {
       codigo: 'COMPREHENSIVE_ASSESSMENT_INCOMPLETE_PROVIDER_RESPONSE'
     }));
     expect(res.json.mock.calls[0][0].evaluaciones).toBeUndefined();
+  });
+
+  test('bulkEvaluate procesa en lotes de 3, preserva orden y limita concurrencia', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const complete = jest.fn().mockImplementation(async ({ prompt }) => {
+      const itemId = Number(String(prompt).match(/respuesta-(\d+)/)?.[1] || '0');
+
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10 * (4 - ((itemId % 3) || 3))));
+      inFlight -= 1;
+
+      return JSON.stringify({
+        dimension: 'comprensionAnalitica',
+        scoreGlobal: itemId,
+        nivel: 3,
+        criteriosEvaluados: []
+      });
+    });
+
+    const req = makeReq({
+      items: Array.from({ length: 5 }, (_, index) => ({
+        texto: 'x'.repeat(80),
+        respuesta: `respuesta-${index + 1}`.padEnd(30, 'z'),
+        dimension: 'comprensionAnalitica',
+        provider: 'openai'
+      }))
+    }, complete);
+    const res = makeRes();
+
+    await bulkEvaluate(req, res);
+
+    expect(maxInFlight).toBeLessThanOrEqual(3);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload).toEqual(expect.objectContaining({
+      ok: true,
+      data: expect.objectContaining({
+        totalItems: 5,
+        successCount: 5,
+        failureCount: 0
+      })
+    }));
+    expect(payload.data.results).toHaveLength(5);
+    expect(payload.data.results.map((entry) => entry.data.scoreGlobal)).toEqual([1, 2, 3, 4, 5]);
   });
 });

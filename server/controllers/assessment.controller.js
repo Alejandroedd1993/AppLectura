@@ -71,6 +71,59 @@ function sanitizeValidationErrors(errors) {
   return Array.isArray(errors) ? errors.filter(Boolean).map(String) : [];
 }
 
+async function evaluateBulkItem({ item, index, aiClient }) {
+  try {
+    const safeTexto = typeof item?.texto === 'string' ? truncateText(item.texto, 10000, { suffix: '' }) : item?.texto;
+    const safeRespuesta = typeof item?.respuesta === 'string' ? truncateText(item.respuesta, 5000, { suffix: '' }) : item?.respuesta;
+
+    const dimension = normalizeDimensionInput(item.dimension || 'comprensionAnalitica');
+    const validationErrors = validateCriterialEvaluationInput({
+      dimensionKey: dimension
+    });
+
+    if (validationErrors.length > 0) {
+      return {
+        ok: false,
+        error: `Item ${index + 1}: ${validationErrors.join(', ')}`
+      };
+    }
+
+    const prompt = buildCriterialEvaluationPrompt({
+      respuesta: safeRespuesta,
+      texto: safeTexto,
+      dimensionKey: dimension,
+      idioma: item.idioma || 'es'
+    });
+
+    const schema = getCriterialEvaluationSchema(dimension);
+    const response = await aiClient.complete({
+      provider: item.provider || 'openai',
+      prompt,
+      response_format: { type: 'json_object', schema }
+    });
+
+    let data = response;
+    if (typeof response === 'string') {
+      data = JSON.parse(response);
+    }
+
+    return {
+      ok: true,
+      data: {
+        ...data,
+        timestamp: new Date().toISOString()
+      }
+    };
+  } catch (error) {
+    console.error(`[assessment.bulkEvaluate] Error en item ${index + 1}:`, error);
+    return {
+      ok: false,
+      error: `Item ${index + 1}: evaluación no completada`,
+      codigo: 'ASSESSMENT_ITEM_ERROR'
+    };
+  }
+}
+
 /**
  * ✅ EVALUACIÓN CRITERIAL - Evalúa UNA dimensión con feedback estructurado por criterio
  * 
@@ -347,6 +400,7 @@ export async function evaluateComprehensive(req, res) {
 export async function bulkEvaluate(req, res) {
   try {
     const { items } = req.body || {};
+    const batchSize = 3;
 
     console.log(`📊 [assessment.bulkEvaluate] Procesando ${items.length} evaluaciones`);
 
@@ -361,72 +415,32 @@ export async function bulkEvaluate(req, res) {
       });
     }
 
-    // Procesar secuencialmente para evitar rate limits
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      console.log(`📝 [assessment.bulkEvaluate] Procesando item ${i + 1}/${items.length}`);
+    // Procesar por lotes con concurrencia limitada para balancear throughput y rate limits.
+    for (let startIndex = 0; startIndex < items.length; startIndex += batchSize) {
+      const batch = items.slice(startIndex, startIndex + batchSize);
+      console.log(`📝 [assessment.bulkEvaluate] Procesando lote ${Math.floor(startIndex / batchSize) + 1} (${startIndex + 1}-${startIndex + batch.length} de ${items.length})`);
 
-      try {
-        // Sanitizar/limitar tamaños para controlar coste y evitar prompts excesivos
-        const safeTexto = typeof item?.texto === 'string' ? truncateText(item.texto, 10000, { suffix: '' }) : item?.texto;
-        const safeRespuesta = typeof item?.respuesta === 'string' ? truncateText(item.respuesta, 5000, { suffix: '' }) : item?.respuesta;
+      const settledBatch = await Promise.allSettled(
+        batch.map((item, batchIndex) => evaluateBulkItem({
+          item,
+          index: startIndex + batchIndex,
+          aiClient
+        }))
+      );
 
-        // Normalizar dimensión
-        const dimension = normalizeDimensionInput(item.dimension || 'comprensionAnalitica');
-
-        // Validar dimensión contra rúbrica
-        const validationErrors = validateCriterialEvaluationInput({
-          dimensionKey: dimension
-        });
-
-        if (validationErrors.length > 0) {
-          results.push({
-            ok: false,
-            error: `Item ${i + 1}: ${validationErrors.join(', ')}`
-          });
-          continue;
+      settledBatch.forEach((entry, batchIndex) => {
+        if (entry.status === 'fulfilled') {
+          results.push(entry.value);
+          return;
         }
 
-        // Construir prompt
-        const prompt = buildCriterialEvaluationPrompt({
-          respuesta: safeRespuesta,
-          texto: safeTexto,
-          dimensionKey: dimension,
-          idioma: item.idioma || 'es'
-        });
-
-        // Obtener schema
-        const schema = getCriterialEvaluationSchema(dimension);
-
-        // Evaluar
-        const response = await aiClient.complete({
-          provider: item.provider || 'openai',
-          prompt,
-          response_format: { type: 'json_object', schema }
-        });
-
-        // Parsear
-        let data = response;
-        if (typeof response === 'string') {
-          data = JSON.parse(response);
-        }
-
-        results.push({
-          ok: true,
-          data: {
-            ...data,
-            timestamp: new Date().toISOString()
-          }
-        });
-
-      } catch (error) {
-        console.error(`[assessment.bulkEvaluate] Error en item ${i + 1}:`, error);
+        console.error(`[assessment.bulkEvaluate] Error inesperado en item ${startIndex + batchIndex + 1}:`, entry.reason);
         results.push({
           ok: false,
-          error: `Item ${i + 1}: evaluación no completada`,
+          error: `Item ${startIndex + batchIndex + 1}: evaluación no completada`,
           codigo: 'ASSESSMENT_ITEM_ERROR'
         });
-      }
+      });
     }
 
     const successCount = results.filter(r => r.ok).length;
