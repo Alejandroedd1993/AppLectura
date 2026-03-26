@@ -208,6 +208,10 @@ function resolveAchievement(achievementId) {
   return Object.values(ACHIEVEMENTS).find(a => a.id === rawId) || null;
 }
 
+function getLocalDateKey(timestamp) {
+  return new Date(timestamp).toLocaleDateString('en-CA');
+}
+
 /**
  * Clase principal del motor de recompensas
  */
@@ -230,6 +234,52 @@ class RewardsEngine {
       }
     }
     */
+  }
+
+  normalizeState(rawState = {}) {
+    const totalPointsRaw = Number(rawState?.totalPoints || 0);
+    const safeTotalPoints = Number.isFinite(totalPointsRaw) ? Math.max(0, totalPointsRaw) : 0;
+    const availablePointsRaw = Number(rawState?.availablePoints || 0);
+    const safeAvailablePoints = Number.isFinite(availablePointsRaw) ? Math.max(0, availablePointsRaw) : 0;
+    const explicitSpentPoints = Number(rawState?.spentPoints);
+    const derivedSpentPoints = safeTotalPoints > safeAvailablePoints
+      ? safeTotalPoints - safeAvailablePoints
+      : 0;
+    const spentPoints = Number.isFinite(explicitSpentPoints)
+      ? Math.max(0, explicitSpentPoints)
+      : Math.max(0, derivedSpentPoints);
+    const currentStreak = Math.max(
+      0,
+      Number(rawState?.currentStreak ?? rawState?.streak ?? 0) || 0
+    );
+    const maxStreak = Math.max(
+      currentStreak,
+      Number(rawState?.maxStreak || 0) || 0
+    );
+    const lastInteraction = rawState?.lastInteraction || rawState?.lastUpdate || null;
+    const lastUpdate = rawState?.lastUpdate || lastInteraction || null;
+
+    return {
+      ...this.initialState(),
+      ...rawState,
+      totalPoints: Math.max(0, safeTotalPoints),
+      spentPoints,
+      availablePoints: Math.max(0, safeTotalPoints - spentPoints),
+      streak: currentStreak,
+      currentStreak,
+      maxStreak,
+      lastInteraction,
+      lastUpdate,
+      resetAt: Number(rawState?.resetAt || 0) || 0,
+      history: Array.isArray(rawState?.history) ? rawState.history : [],
+      achievements: Array.isArray(rawState?.achievements) ? rawState.achievements : [],
+      dailyLog: rawState?.dailyLog || {},
+      recordedMilestones: rawState?.recordedMilestones || {},
+      stats: {
+        ...this.initialState().stats,
+        ...(rawState?.stats || {})
+      }
+    };
   }
 
   /**
@@ -341,13 +391,7 @@ class RewardsEngine {
 
       const parsed = JSON.parse(raw);
       // Validar estructura
-      return {
-        ...this.initialState(),
-        ...parsed,
-        history: Array.isArray(parsed.history) ? parsed.history : [],
-        achievements: Array.isArray(parsed.achievements) ? parsed.achievements : [],
-        dailyLog: parsed.dailyLog || {}
-      };
+      return this.normalizeState(parsed);
     } catch (err) {
       logger.warn('Error loading rewards state:', err);
       return this.initialState();
@@ -363,7 +407,10 @@ class RewardsEngine {
       spentPoints: 0,
       availablePoints: 0,
       streak: 0,
+      currentStreak: 0,
+      maxStreak: 0,
       lastInteraction: null,
+      lastUpdate: null,
       resetAt: 0, // 🆕 Timestamp del último reset (para sincronización)
       history: [], // { event, points, timestamp, metadata }
       achievements: [], // IDs de achievements desbloqueados
@@ -468,13 +515,15 @@ class RewardsEngine {
       currentCount = this.state.recordedMilestones?.[dailyKey] || 0;
       
       if (currentCount >= config.dailyLimit) {
+        this.recordDailyEngagement();
         logger.log(`🛡️ [RewardsEngine] Límite diario alcanzado para ${eventType}: ${currentCount}/${config.dailyLimit}`);
-        return { 
+        return {
           points: 0, 
           multiplier: 1, 
           totalEarned: 0, 
           message: `Límite diario alcanzado (${config.dailyLimit}/${config.dailyLimit})`,
-          dailyLimitReached: true
+          dailyLimitReached: true,
+          streak: this.state.streak
         };
       }
     }
@@ -485,8 +534,15 @@ class RewardsEngine {
     if (resourceId && (config.points > 10 || config.dedupe === true)) {
       const milestoneKey = `${eventType}_${resourceId}`;
       if (this.state.recordedMilestones?.[milestoneKey]) {
+        this.recordDailyEngagement();
         logger.log(`🛡️ [RewardsEngine] Evento duplicado evitado para ${milestoneKey}`);
-        return { points: 0, multiplier: 1, totalEarned: 0, message: 'Ya has ganado puntos por esto!' };
+        return {
+          points: 0,
+          multiplier: 1,
+          totalEarned: 0,
+          message: 'Ya has ganado puntos por esto!',
+          streak: this.state.streak
+        };
       }
       // Marcar como reclamado
       if (!this.state.recordedMilestones) this.state.recordedMilestones = {};
@@ -513,6 +569,7 @@ class RewardsEngine {
     this.state.totalPoints += earnedPoints;
     this.state.availablePoints = this.state.totalPoints - this.state.spentPoints;
     this.state.lastInteraction = Date.now();
+    this.state.lastUpdate = this.state.lastInteraction;
     this.state.lastEventLabel = config.label; // 🆕 Para feedback en UI
     this.state.lastMultiplier = multiplier;  // 🆕 Para feedback en UI
 
@@ -559,44 +616,66 @@ class RewardsEngine {
    * Actualiza racha de días consecutivos
    * 🆕 FIX: Usa hora LOCAL en lugar de UTC para evitar el "bug de medianoche"
    */
-  updateStreak() {
-    const now = Date.now();
-
-    // Helper para obtener fecha YYYY-MM-DD en hora local
-    const getLocalDate = (ts) => new Date(ts).toLocaleDateString('en-CA'); // 'en-CA' = YYYY-MM-DD
-
+  updateStreak(now = Date.now()) {
     const lastDate = this.state.lastInteraction
-      ? getLocalDate(this.state.lastInteraction)
+      ? getLocalDateKey(this.state.lastInteraction)
       : null;
-    const today = getLocalDate(now);
+    const today = getLocalDateKey(now);
+    let nextStreak = this.state.currentStreak || this.state.streak || 0;
 
     if (!lastDate) {
       // Primera interacción
-      this.state.streak = 1;
+      nextStreak = 1;
     } else if (lastDate === today) {
       // Mismo día, no incrementar
-      return;
+      this.state.currentStreak = nextStreak;
+      this.state.streak = nextStreak;
+      this.state.maxStreak = Math.max(this.state.maxStreak || 0, nextStreak);
+      return { sameDay: true, streak: nextStreak };
     } else {
       // 🆕 FIX: Calcular "ayer" usando setDate para manejar horario de verano
       const yesterdayDate = new Date(now);
       yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-      const yesterday = getLocalDate(yesterdayDate);
+      const yesterday = getLocalDateKey(yesterdayDate);
 
       if (lastDate === yesterday) {
         // Día consecutivo
-        this.state.streak += 1;
+        nextStreak += 1;
 
         // Check achievements de racha
-        if (this.state.streak === 7 && !this.state.achievements.includes('week_streak')) {
+        if (nextStreak === 7 && !this.state.achievements.includes('week_streak')) {
           this.unlockAchievement('week_streak');
-        } else if (this.state.streak === 30 && !this.state.achievements.includes('month_streak')) {
+        } else if (nextStreak === 30 && !this.state.achievements.includes('month_streak')) {
           this.unlockAchievement('month_streak');
         }
       } else {
         // Racha rota
-        this.state.streak = 1;
+        nextStreak = 1;
       }
     }
+
+    this.state.currentStreak = nextStreak;
+    this.state.streak = nextStreak;
+    this.state.maxStreak = Math.max(this.state.maxStreak || 0, nextStreak);
+
+    return { sameDay: false, streak: nextStreak };
+  }
+
+  recordDailyEngagement(now = Date.now()) {
+    const lastDate = this.state.lastInteraction
+      ? getLocalDateKey(this.state.lastInteraction)
+      : null;
+    const today = getLocalDateKey(now);
+
+    if (lastDate === today) {
+      return false;
+    }
+
+    this.updateStreak(now);
+    this.state.lastInteraction = now;
+    this.state.lastUpdate = now;
+    this.persist();
+    return true;
   }
 
   /**
@@ -924,7 +1003,7 @@ class RewardsEngine {
     }
 
     if (merge) {
-      // Merge inteligente: combinar puntos, mantener racha más alta, unir achievements
+      // Merge inteligente: combinar puntos, conservar la racha actual más reciente y el máximo histórico
 
       // 🆕 FIX: Deduplicar historial basándose en timestamp
       const existingTimestamps = new Set((this.state.history || []).map(h => h.timestamp));
@@ -941,14 +1020,32 @@ class RewardsEngine {
         ...(externalState.recordedMilestones || {})
       };
 
+      const externalCurrentStreak = Number(
+        externalState.currentStreak ?? externalState.streak ?? 0
+      ) || 0;
+      const localCurrentStreak = Number(
+        this.state.currentStreak ?? this.state.streak ?? 0
+      ) || 0;
+      const externalTimestamp = externalState.lastInteraction || externalState.lastUpdate || 0;
+      const localTimestamp = this.state.lastInteraction || this.state.lastUpdate || 0;
+      const preferredCurrentStreak = externalTimestamp >= localTimestamp
+        ? externalCurrentStreak
+        : localCurrentStreak;
+
       this.state = {
         ...this.state,
         totalPoints: mergedTotalPoints,
         spentPoints: mergedSpentPoints,
         // 🆕 FIX: Recalcular availablePoints en lugar de usar Math.max directo
         availablePoints: mergedTotalPoints - mergedSpentPoints,
-        streak: Math.max(this.state.streak, externalState.streak || 0),
+        currentStreak: preferredCurrentStreak,
+        streak: preferredCurrentStreak,
+        maxStreak: Math.max(
+          this.state.maxStreak || this.state.currentStreak || this.state.streak || 0,
+          externalState.maxStreak || externalState.currentStreak || externalState.streak || 0
+        ),
         lastInteraction: externalState.lastInteraction || this.state.lastInteraction,
+        lastUpdate: externalState.lastUpdate || externalState.lastInteraction || this.state.lastUpdate || this.state.lastInteraction,
         history: mergedHistory,
         achievements: [...new Set([...(this.state.achievements || []), ...(externalState.achievements || [])])],
         dailyLog: { ...(this.state.dailyLog || {}), ...(externalState.dailyLog || {}) },
@@ -956,17 +1053,14 @@ class RewardsEngine {
       };
     } else {
       // Reemplazar completamente (usado al restaurar sesión)
-      this.state = {
-        ...this.initialState(),
+      this.state = this.normalizeState({
         ...externalState,
         history: externalHistory,
         achievements: Array.isArray(externalState.achievements) ? externalState.achievements : [],
         dailyLog: externalState.dailyLog || {},
-        // 🆕 FIX Pass 10: Preservar recordedMilestones del estado externo o inicializar vacío
         recordedMilestones: externalState.recordedMilestones || {},
-        // 🆕 FIX: Preservar resetAt explícitamente para detección de reset
         resetAt: externalState.resetAt || this.state.resetAt || 0
-      };
+      });
     }
 
     // 🆕 FIX Pass 10: Si después de importar hay puntos pero no historial, crear entrada sintética

@@ -438,6 +438,161 @@ function __stripVerboseFromRubricProgress(rubricProgress) {
   return stripped;
 }
 
+function __getRewardsTimestamp(rewardsState = {}) {
+  const timestamp = Number(rewardsState?.lastInteraction || rewardsState?.lastUpdate || 0);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function __normalizeRewardsStateForMerge(rewardsState = {}) {
+  const totalPointsRaw = Number(rewardsState?.totalPoints || 0);
+  const totalPoints = Number.isFinite(totalPointsRaw) ? Math.max(0, totalPointsRaw) : 0;
+  const availablePointsRaw = Number(rewardsState?.availablePoints || 0);
+  const availablePoints = Number.isFinite(availablePointsRaw) ? Math.max(0, availablePointsRaw) : 0;
+  const explicitSpentPoints = Number(rewardsState?.spentPoints);
+  const spentPoints = Number.isFinite(explicitSpentPoints)
+    ? Math.max(0, explicitSpentPoints)
+    : Math.max(0, totalPoints - availablePoints);
+  const currentStreak = Math.max(
+    0,
+    Number(rewardsState?.currentStreak ?? rewardsState?.streak ?? 0) || 0
+  );
+  const maxStreak = Math.max(
+    currentStreak,
+    Number(rewardsState?.maxStreak || 0) || 0
+  );
+  const timestamp = __getRewardsTimestamp(rewardsState);
+  const lastUpdateRaw = Number(rewardsState?.lastUpdate || 0);
+  const lastUpdate = Number.isFinite(lastUpdateRaw) && lastUpdateRaw > 0
+    ? lastUpdateRaw
+    : (timestamp || null);
+
+  return {
+    ...rewardsState,
+    totalPoints,
+    spentPoints,
+    availablePoints: Math.max(0, totalPoints - spentPoints),
+    currentStreak,
+    streak: currentStreak,
+    maxStreak,
+    history: Array.isArray(rewardsState?.history) ? rewardsState.history : [],
+    achievements: Array.isArray(rewardsState?.achievements) ? rewardsState.achievements : [],
+    dailyLog: rewardsState?.dailyLog || {},
+    recordedMilestones: rewardsState?.recordedMilestones || {},
+    stats: rewardsState?.stats || {},
+    lastInteraction: timestamp || null,
+    lastUpdate,
+    resetAt: Number(rewardsState?.resetAt || 0) || 0
+  };
+}
+
+function __pickPreferredRewardsState(existingRewards = {}, newRewards = {}) {
+  const existingTs = __getRewardsTimestamp(existingRewards);
+  const newTs = __getRewardsTimestamp(newRewards);
+
+  if (newTs !== existingTs) {
+    return newTs > existingTs ? newRewards : existingRewards;
+  }
+
+  const existingHistoryLength = existingRewards.history?.length || 0;
+  const newHistoryLength = newRewards.history?.length || 0;
+  if (newHistoryLength !== existingHistoryLength) {
+    return newHistoryLength > existingHistoryLength ? newRewards : existingRewards;
+  }
+
+  const existingPoints = Number(existingRewards.totalPoints || 0);
+  const newPoints = Number(newRewards.totalPoints || 0);
+  if (newPoints !== existingPoints) {
+    return newPoints >= existingPoints ? newRewards : existingRewards;
+  }
+
+  return newRewards;
+}
+
+export function mergeRewardsStateForStorage(existingRewards = {}, newRewards = {}) {
+  const normalizedExisting = __normalizeRewardsStateForMerge(existingRewards);
+  const normalizedNew = __normalizeRewardsStateForMerge(newRewards);
+
+  const isIntentionalReset =
+    normalizedNew.resetAt > normalizedExisting.resetAt &&
+    normalizedNew.totalPoints === 0;
+
+  if (isIntentionalReset) {
+    const resetTimestamp = normalizedNew.lastInteraction || normalizedNew.lastUpdate || Date.now();
+    return {
+      ...normalizedNew,
+      totalPoints: 0,
+      spentPoints: 0,
+      availablePoints: 0,
+      currentStreak: 0,
+      streak: 0,
+      maxStreak: 0,
+      history: normalizedNew.history,
+      achievements: normalizedNew.achievements,
+      dailyLog: normalizedNew.dailyLog,
+      recordedMilestones: normalizedNew.recordedMilestones,
+      lastInteraction: resetTimestamp,
+      lastUpdate: normalizedNew.lastUpdate || resetTimestamp,
+      resetAt: normalizedNew.resetAt
+    };
+  }
+
+  const preferredState = __pickPreferredRewardsState(normalizedExisting, normalizedNew);
+  const existingTs = __getRewardsTimestamp(normalizedExisting);
+  const newTs = __getRewardsTimestamp(normalizedNew);
+  const mergedTotalPoints = Math.max(normalizedExisting.totalPoints, normalizedNew.totalPoints);
+  const mergedSpentPoints = Math.max(normalizedExisting.spentPoints, normalizedNew.spentPoints);
+  const mergedCurrentStreak = preferredState.currentStreak || 0;
+  const mergedMaxStreak = Math.max(
+    normalizedExisting.maxStreak || 0,
+    normalizedNew.maxStreak || 0,
+    mergedCurrentStreak
+  );
+  const mergedHistory = (() => {
+    const existingHistoryLength = normalizedExisting.history.length;
+    const newHistoryLength = normalizedNew.history.length;
+    if (newHistoryLength === 0) return normalizedExisting.history;
+    if (existingHistoryLength === 0) return normalizedNew.history;
+    if (newHistoryLength !== existingHistoryLength) {
+      return newHistoryLength > existingHistoryLength
+        ? normalizedNew.history
+        : normalizedExisting.history;
+    }
+    return preferredState === normalizedNew
+      ? normalizedNew.history
+      : normalizedExisting.history;
+  })();
+
+  return {
+    ...preferredState,
+    totalPoints: mergedTotalPoints,
+    spentPoints: mergedSpentPoints,
+    availablePoints: Math.max(0, mergedTotalPoints - mergedSpentPoints),
+    currentStreak: mergedCurrentStreak,
+    streak: mergedCurrentStreak,
+    maxStreak: mergedMaxStreak,
+    achievements: [...new Set([
+      ...normalizedExisting.achievements,
+      ...normalizedNew.achievements
+    ])],
+    history: mergedHistory,
+    stats: preferredState.stats || {},
+    dailyLog: {
+      ...normalizedExisting.dailyLog,
+      ...normalizedNew.dailyLog
+    },
+    recordedMilestones: {
+      ...normalizedExisting.recordedMilestones,
+      ...normalizedNew.recordedMilestones
+    },
+    lastInteraction: preferredState.lastInteraction || Math.max(existingTs, newTs) || null,
+    lastUpdate: Math.max(
+      normalizedExisting.lastUpdate || existingTs || 0,
+      normalizedNew.lastUpdate || newTs || 0
+    ) || null,
+    resetAt: Math.max(normalizedExisting.resetAt, normalizedNew.resetAt)
+  };
+}
+
 /**
  * 🔧 FIX Firestore global_progress hardening:
  * keep only compact/essential fields for the global progress doc.
@@ -1156,8 +1311,6 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
       if (textoId === 'global_progress' && progressData.rewardsState) {
         const existingRewards = mergedData.rewardsState || {};
         const newRewards = progressData.rewardsState;
-
-        // 🆕 FIX: Detectar reset intencional
         const newResetAt = newRewards.resetAt || 0;
         const existingResetAt = existingRewards.resetAt || 0;
         const isIntentionalReset = newResetAt > existingResetAt && newRewards.totalPoints === 0;
@@ -1171,48 +1324,10 @@ async function __saveStudentProgressDirect(estudianteUid, textoId, progressData)
         });
 
         if (isIntentionalReset) {
-          // 🗑️ RESET: Reemplazar completamente con el estado vacío, NO hacer merge
           logger.log('🗑️ [Firestore] Reset intencional detectado, reemplazando estado de rewards');
-          mergedData.rewardsState = {
-            ...newRewards,
-            lastInteraction: newRewards.lastInteraction || Date.now(),
-            lastUpdate: newRewards.lastUpdate || Date.now(),
-            resetAt: newResetAt
-          };
-        } else {
-          // Merge normal: mantener máximos y concatenar historial
-          const existingTs = existingRewards.lastInteraction || existingRewards.lastUpdate || 0;
-          const newTs = newRewards.lastInteraction || newRewards.lastUpdate || Date.now();
-          const mergedTs = Math.max(existingTs, newTs);
-
-          mergedData.rewardsState = {
-            totalPoints: Math.max(existingRewards.totalPoints || 0, newRewards.totalPoints || 0),
-            availablePoints: Math.max(existingRewards.availablePoints || 0, newRewards.availablePoints || 0),
-            currentStreak: Math.max(existingRewards.currentStreak || 0, newRewards.currentStreak || 0),
-            maxStreak: Math.max(existingRewards.maxStreak || 0, newRewards.maxStreak || 0),
-            streak: Math.max(existingRewards.streak || 0, newRewards.streak || 0),
-            // Combinar achievements únicos
-            achievements: [...new Set([
-              ...(existingRewards.achievements || []),
-              ...(newRewards.achievements || [])
-            ])],
-            // Mantener el historial más reciente o largo
-            history: (newRewards.history?.length || 0) >= (existingRewards.history?.length || 0)
-              ? newRewards.history
-              : existingRewards.history,
-            // Preservar stats del más reciente
-            stats: newTs >= existingTs ? (newRewards.stats || existingRewards.stats) : (existingRewards.stats || newRewards.stats),
-            // Preservar recordedMilestones (anti-farming)
-            recordedMilestones: {
-              ...(existingRewards.recordedMilestones || {}),
-              ...(newRewards.recordedMilestones || {})
-            },
-            // Mantener ambos campos por compatibilidad; lastInteraction es el preferido.
-            lastInteraction: mergedTs,
-            lastUpdate: mergedTs,
-            resetAt: Math.max(existingResetAt, newResetAt) // Preservar el más reciente
-          };
         }
+
+        mergedData.rewardsState = mergeRewardsStateForStorage(existingRewards, newRewards);
       }
 
       // Calcular métricas agregadas

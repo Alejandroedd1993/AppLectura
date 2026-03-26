@@ -2,11 +2,16 @@ import { RewardsEngine } from '../../../src/pedagogy/rewards/rewardsEngine';
 
 describe('RewardsEngine anti-farming', () => {
   beforeEach(() => {
+    jest.useRealTimers();
     try {
       localStorage.clear();
     } catch {
       // ignore
     }
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   test('EVALUATION_SUBMITTED deduplica cuando dedupe=true y resourceId está presente', () => {
@@ -110,5 +115,53 @@ describe('RewardsEngine anti-farming', () => {
     expect(r1.totalEarned).toBeGreaterThan(0);
     expect(r2.totalEarned).toBe(0);
     expect(afterSecond).toBe(afterFirst);
+  });
+
+  test('cuenta la racha en un nuevo día aunque el evento quede deduplicado', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-03-01T12:00:00.000Z'));
+
+    const engine = new RewardsEngine(localStorage);
+    engine.setUserId('u_test');
+
+    const first = engine.recordEvent('EVALUATION_SUBMITTED', { resourceId: 'texto_1:eval' });
+    const afterFirst = engine.getState().totalPoints;
+
+    expect(first.totalEarned).toBeGreaterThan(0);
+    expect(engine.getState().streak).toBe(1);
+    expect(engine.getState().currentStreak).toBe(1);
+    expect(engine.getState().maxStreak).toBe(1);
+
+    jest.setSystemTime(new Date('2026-03-02T12:00:00.000Z'));
+
+    const second = engine.recordEvent('EVALUATION_SUBMITTED', { resourceId: 'texto_1:eval' });
+    const state = engine.getState();
+
+    expect(second.totalEarned).toBe(0);
+    expect(state.totalPoints).toBe(afterFirst);
+    expect(state.streak).toBe(2);
+    expect(state.currentStreak).toBe(2);
+    expect(state.maxStreak).toBe(2);
+    expect(state.lastInteraction).toBe(new Date('2026-03-02T12:00:00.000Z').getTime());
+  });
+
+  test('no infla la racha cuando el duplicado ocurre el mismo día', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-03-01T12:00:00.000Z'));
+
+    const engine = new RewardsEngine(localStorage);
+    engine.setUserId('u_test');
+
+    engine.recordEvent('TABLA_ACD_COMPLETED', { resourceId: 'texto_1:tabla' });
+    const afterFirst = engine.getState();
+
+    const second = engine.recordEvent('TABLA_ACD_COMPLETED', { resourceId: 'texto_1:tabla' });
+    const state = engine.getState();
+
+    expect(second.totalEarned).toBe(0);
+    expect(state.totalPoints).toBe(afterFirst.totalPoints);
+    expect(state.streak).toBe(1);
+    expect(state.currentStreak).toBe(1);
+    expect(state.maxStreak).toBe(1);
   });
 });
