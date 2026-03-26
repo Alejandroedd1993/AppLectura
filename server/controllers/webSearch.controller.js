@@ -6,6 +6,7 @@
 import { sendError } from '../utils/responseHelpers.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from '../services/deepseekClient.service.js';
+import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 import {
   clampWebResultCount,
   isWebSearchEnabled,
@@ -192,10 +193,12 @@ ${contextLines.join('\n')}`;
         temperature: 0.2,
         maxTokens: 1200,
       });
-      const resp = await fetch(deepseekRequest.url, {
+      const resp = await retryWithBackoff(() => fetch(deepseekRequest.url, {
         method: 'POST',
         headers: deepseekRequest.headers,
         body: JSON.stringify(deepseekRequest.payload)
+      }), {
+        retries: 2,
       });
       if (!resp.ok) throw new Error(`DeepSeek API error: ${resp.status}`);
       const data = await resp.json();

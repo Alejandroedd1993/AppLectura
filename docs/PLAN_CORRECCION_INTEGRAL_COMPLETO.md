@@ -40,8 +40,8 @@ Este plan organiza **todas las correcciones necesarias** en 7 fases priorizadas,
 | **Track A1** — Saneamiento urgente | ✅ COMPLETADO | errorHandler, fugas, backdoor, globals, admin-cleanup |
 | **Track A2** — Auth robustez | ✅ COMPLETADO | Migración a firebase-admin completa |
 | **Track A3** — Contrato API | ✅ COMPLETADO | Envelope, Zod, error codes, textLimits |
-| **Track B1** — Dedup bajo riesgo | 🔶 PARCIAL | envUtils, modelUtils, BACKEND_URL, rateLimiters, dotenv ✅ — hashes frontend ⬜ |
-| **Track B2** — Infra medio riesgo | 🔶 PARCIAL | AI client, pooling, timeouts ✅ — caches TTL, retry, streaming ⬜ |
+| **Track B1** — Dedup bajo riesgo | 🔶 PARCIAL | envUtils, modelUtils, BACKEND_URL, rateLimiters, dotenv ✅ — hashes frontend consolidados con aliases legacy mínimos |
+| **Track B2** — Infra medio riesgo | 🔶 PARCIAL | AI client, pooling, timeouts, retry, streaming ✅ |
 | **Track B3** — Resiliencia avanzada | ⬜ PENDIENTE | Circuit breaker postergado |
 | **Track C1** — Reorganización segura | 🔶 PARCIAL | BACKEND_URL ✅ — firestore split, docs ⬜ |
 | **Track C2** — Calidad | 🔶 PARCIAL | CI, react-doctor, cross-env ✅ — ESLint strict, coverage 45% ⬜ |
@@ -52,8 +52,8 @@ Este plan organiza **todas las correcciones necesarias** en 7 fases priorizadas,
 |---|---|---|---|
 | Fase 1 — Seguridad | 6.5/7 | 7 | ~93% |
 | Fase 2 — Arquitectura | 1.5/7 | 7 | ~21% |
-| Fase 3 — Duplicación | 11/13 | 13 | ~85% |
-| Fase 4 — Performance | 5/10 | 10 | ~50% |
+| Fase 3 — Duplicación | 12/13 | 13 | ~92% |
+| Fase 4 — Performance | 7/10 | 10 | ~70% |
 | Fase 5 — API Standard | 6/6 | 6 | ✅ 100% |
 | Fase 6 — CI/Tests | 6/9 | 9 | ~67% |
 | Fase 7 — Estilos/Limpieza | 0.5/18 | 18 | ~3% |
@@ -456,7 +456,9 @@ Llamado 5 veces en archivos distintos:
 
 **Acción:** Reemplazar por `import { logger } from '../utils/logger'`.
 
-### 3.3 Flujo huérfano de Web Search (del react-doctor plan) ⬜ PENDIENTE
+### 3.3 Flujo huérfano de Web Search (del react-doctor plan) ✅ COMPLETADO
+
+> **Estado:** los archivos huérfanos listados por el plan ya no existen en el repo. Se considera resuelto por retirada del flujo legacy, no por reactivación.
 
 Archivos potencialmente huérfanos:
 - `src/components/chat/WebEnrichmentButton.js`
@@ -524,13 +526,13 @@ Ningún endpoint tiene protección contra falla sostenida de OpenAI/DeepSeek/Gem
 
 **Prioridad ajustada:** este punto se considera **postergable** y no debe bloquear la Fase 4. Para el volumen actual esperado de la aplicación, `retryWithBackoff` cubre primero el mayor retorno. Implementar circuit breaker solo si se observan fallos sostenidos, cascadas de timeout o presión operativa real en producción.
 
-### 4.5 Backend: Retry con backoff para llamadas AI ⬜ PENDIENTE
+### 4.5 Backend: Retry con backoff para llamadas AI ✅ COMPLETADO
 
 **Archivo existente a reusar:** `src/services/retryWrapper.js` — ya tiene exponential backoff con jitter.
 
 **Acción:** Portar el patrón al backend como `server/utils/retryWithBackoff.js`. Aplicar a todos los `fetch`/`axios.post` hacia APIs AI.
 
-### 4.6 Backend: Streaming para archivos grandes ⬜ PENDIENTE
+### 4.6 Backend: Streaming para archivos grandes ✅ COMPLETADO
 
 | Archivo | Problema |
 |---------|---------|
@@ -1034,8 +1036,8 @@ El documento describe un sistema centralizado en `useApiConfig` que **no existe*
 Track 0 (Quick Wins)   ██████████  ✅ COMPLETADO
 Fase 1 (Seguridad)     █████████░  ~93% — falta: window.__rewardsEngine → se resuelve en Fase 2.1
 Fase 5 (API Standard)  ██████████  ✅ COMPLETADO
-Fase 3 (Duplicación)   ████████░░  ~85% — falta: hashes consolidation, web search gate
-Fase 4 (Performance)   █████░░░░░  ~50% — falta: caches TTL, retry, streaming, bulk eval
+Fase 3 (Duplicación)   █████████░  ~92% — falta: limpieza final de aliases/hash legacy no críticos
+Fase 4 (Performance)   ███████░░░  ~70% — falta: bulk eval, circuit breaker/caches finales
 Fase 6 (CI/CD+Tests)   ██████░░░░  ~67% — falta: ESLint strict, coverage 45%, más tests
 Fase 2 (Arquitectura)  ██░░░░░░░░  ~21% — falta: firestore split, preLectura, AppContext, Router
 Fase 7 (Estilos+Clean) ░░░░░░░░░░  ~3%  — todo pendiente

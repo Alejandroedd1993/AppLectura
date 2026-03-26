@@ -1,5 +1,5 @@
 import logger from './logger';
-import { hashStringDjb2 } from './hash';
+import { simpleStableObjectHash } from './hash';
 
 
 /**
@@ -13,10 +13,7 @@ import { hashStringDjb2 } from './hash';
  * @returns {string} - Hash hexadecimal
  */
 export function simpleHash(obj) {
-  if (!obj) return '0';
-
-  const serialized = JSON.stringify(obj, Object.keys(obj).sort());
-  return hashStringDjb2(serialized, { mode: 'absolute', radix: 16, emptyValue: '0' });
+  return simpleStableObjectHash(obj, { emptyValue: '0', radix: 16 });
 }
 
 /**

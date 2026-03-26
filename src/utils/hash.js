@@ -2,6 +2,24 @@ function coerceText(value) {
   return String(value || '');
 }
 
+export function hashStringFnv1a(value, {
+  radix = 16,
+  padLength = radix === 16 ? 8 : 0,
+  emptyValue = radix === 16 ? '00000000' : '0',
+} = {}) {
+  const text = coerceText(value);
+  if (!text) return emptyValue;
+
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+
+  const normalized = (hash >>> 0).toString(radix);
+  return padLength > 0 ? normalized.padStart(padLength, '0') : normalized;
+}
+
 export function buildEdgeFingerprint(value, {
   headChars = 0,
   tailChars = 0,
@@ -71,6 +89,13 @@ export function hashStringDjb2(value, {
 
 export function simpleTextHash(value) {
   return hashStringDjb2(value, { mode: 'unsigned', radix: 36, emptyValue: '0' });
+}
+
+export function simpleStableObjectHash(value, { emptyValue = '0', radix = 16 } = {}) {
+  if (!value) return emptyValue;
+
+  const serialized = JSON.stringify(value, Object.keys(value).sort());
+  return hashStringDjb2(serialized, { mode: 'absolute', radix, emptyValue });
 }
 
 export function compactTextHash(value, { maxChars = 120 } = {}) {

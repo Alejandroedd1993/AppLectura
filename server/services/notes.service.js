@@ -2,6 +2,7 @@ import { getOpenAI, getGemini } from '../config/apiClients.js';
 import { buildDeepSeekChatRequest, parseDeepSeekChatContent } from './deepseekClient.service.js';
 import { settings } from '../config/settings.js';
 import { limitItems, truncateText } from '../utils/textLimits.js';
+import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 
 const notesSystemPrompt = `Eres un asistente que genera notas de estudio a partir de un texto dado. Devuelve exclusivamente un JSON válido con esta forma:
 {
@@ -132,11 +133,13 @@ export async function generarNotasConDeepSeek(texto, contexto = null, nivelAcade
       maxTokens: 1000,
     });
 
-    const res = await fetch(deepseekRequest.url, {
+    const res = await retryWithBackoff(() => fetch(deepseekRequest.url, {
       method: 'POST',
       headers: deepseekRequest.headers,
       body: JSON.stringify(deepseekRequest.payload),
       signal: controller.signal
+    }), {
+      retries: 2,
     });
     if (!res.ok) {
       const text = await res.text();

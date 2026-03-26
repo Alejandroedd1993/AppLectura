@@ -1,5 +1,7 @@
 // Utilidades compartidas: IDs robustos, hash de texto y fetch con timeout/abort
 
+import { hashStringFnv1a } from './hash';
+
 export const genId = () => {
   try {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -8,13 +10,7 @@ export const genId = () => {
 };
 
 export const hashText = (str) => {
-  const s = (str || '').toString();
-  let h = 0x811c9dc5; // FNV-1a 32-bit
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
-  }
-  return ('0000000' + (h >>> 0).toString(16)).slice(-8);
+  return hashStringFnv1a(str, { radix: 16, padLength: 8, emptyValue: '00000000' });
 };
 
 export const createAbortControllerWithTimeout = ({

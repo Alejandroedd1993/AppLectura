@@ -1,4 +1,6 @@
 import express from 'express';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 import { storageProxyLimiter } from '../middleware/rateLimiters.js';
 import { sendError } from '../utils/responseHelpers.js';
@@ -59,20 +61,27 @@ router.get('/storage/proxy', requireFirebaseAuth, storageProxyLimiter, validateS
 
     const contentType = upstreamResponse.headers.get('content-type') || 'application/octet-stream';
     const contentDisposition = upstreamResponse.headers.get('content-disposition');
+    const contentLength = upstreamResponse.headers.get('content-length');
 
-    // Get buffer to avoid stream compatibility issues
-    const buffer = Buffer.from(await upstreamResponse.arrayBuffer());
-
-    console.log('✅ [StorageProxy] Descargado:', buffer.length, 'bytes, tipo:', contentType);
+    console.log('✅ [StorageProxy] Streaming tipo:', contentType, 'largo:', contentLength || 'desconocido');
 
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', buffer.length);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
     if (contentDisposition) {
       res.setHeader('Content-Disposition', contentDisposition);
     }
     res.setHeader('Cache-Control', 'public, max-age=120');
 
-    res.send(buffer);
+    if (upstreamResponse.body) {
+      const upstreamStream = Readable.fromWeb(upstreamResponse.body);
+      await pipeline(upstreamStream, res);
+      return;
+    }
+
+    const buffer = Buffer.from(await upstreamResponse.arrayBuffer());
+    res.end(buffer);
   } catch (error) {
     console.error('❌ [StorageProxy] Error fetching file from Storage:', error.message);
     return sendError(res, 500, {

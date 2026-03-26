@@ -100,17 +100,21 @@ export function segmentText(raw, options = {}) {
   return paragraphs;
 }
 
-/** Utilidad para obtener hash global del texto (reuse en storage keys) */
-export function hashText(raw) { return compactTextHash(normalize(raw), { maxChars: 120 }); }
+/** Utilidad para obtener clave compacta del texto (reuse en storage keys) */
+export function buildSegmentTextKey(raw) {
+  return compactTextHash(normalize(raw), { maxChars: 120 });
+}
 
 import { TtlCache } from '../utils/TtlCache';
 
 // Sencilla caché en memoria (evita recalcular en vistas múltiples)
 const _cache = new TtlCache({ maxEntries: 50, ttlMs: 30 * 60 * 1000 });
 export function getSegmentedCached(raw, opts) {
-  const key = hashText(raw) + ':' + (opts?.strategy || 'hybrid');
+  const key = buildSegmentTextKey(raw) + ':' + (opts?.strategy || 'hybrid');
   if (_cache.has(key)) return _cache.get(key);
   const seg = segmentText(raw, opts);
   _cache.set(key, seg);
   return seg;
 }
+
+export { buildSegmentTextKey as hashText };

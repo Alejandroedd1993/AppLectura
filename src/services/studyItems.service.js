@@ -1,5 +1,5 @@
 import logger from '../utils/logger';
-import { simpleTextHash } from '../utils/textHash';
+import { simpleTextHash } from '../utils/hash';
 
 
 /**

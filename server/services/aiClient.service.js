@@ -1,5 +1,6 @@
 import { getOpenAICompatibleClient } from '../config/apiClients.js';
 import { getDefaultDeepSeekBaseUrl, getDefaultDeepSeekModel } from '../config/providerDefaults.js';
+import { retryWithBackoff } from '../utils/retryWithBackoff.js';
 
 export function getEvaluationProviderConfig(provider) {
   const resolvedProvider = String(provider || '').trim().toLowerCase();
@@ -53,7 +54,7 @@ export function createEvaluationAIClient({ clientFactory = getOpenAICompatibleCl
       try {
         console.log(`🤖 [aiClient] Usando ${selectedConfig.provider} con modelo ${selectedConfig.model}, max_tokens: ${max_tokens}`);
 
-        const completion = await client.chat.completions.create({
+        const completion = await retryWithBackoff(() => client.chat.completions.create({
           model: selectedConfig.model,
           messages: [
             { role: 'system', content: 'Eres un evaluador experto en literacidad crítica. Siempre respondes en español.' },
@@ -62,6 +63,8 @@ export function createEvaluationAIClient({ clientFactory = getOpenAICompatibleCl
           temperature: 0.3,
           max_tokens,
           ...(resolvedFormat ? { response_format: resolvedFormat } : {}),
+        }), {
+          retries: 2,
         });
 
         const content = completion.choices?.[0]?.message?.content;
